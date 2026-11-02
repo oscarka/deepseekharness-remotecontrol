@@ -12,3 +12,4 @@ ENV HUB_STATE_FILE=/tmp/dsh-hub-state.json
 EXPOSE 8080
 
 CMD ["node", "hub/server.js"]
+

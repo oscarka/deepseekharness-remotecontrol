@@ -3,47 +3,43 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DSH 飞书遥控与多机总控台</title>
+  <title>DSH 全功能自托管总控中心 · 飞书多机 + 零第三方服务器</title>
   <style>
     :root {
-      --bg: #0f172a;
-      --bg-card: #1e293b;
-      --bg-card-hover: #26354d;
-      --bg-input: #0b1120;
-      --border: #334155;
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
+      --bg: #0b0f19;
+      --card: #131b2e;
+      --card-hover: #18233c;
+      --border: #23304f;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
       --primary: #3b82f6;
       --primary-hover: #2563eb;
-      --success: #10b981;
-      --warning: #f59e0b;
-      --danger: #ef4444;
-      --radius: 12px;
+      --green: #10b981;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --purple: #8b5cf6;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.5;
-      padding-bottom: 60px;
-    }
-    .container {
-      max-width: 1240px;
-      margin: 0 auto;
-      padding: 20px;
     }
     header {
+      border-bottom: 1px solid var(--border);
+      background: rgba(19, 27, 46, 0.9);
+      backdrop-filter: blur(10px);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      padding: 12px 24px;
       display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
       align-items: center;
-      gap: 16px;
-      padding: 18px 24px;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      margin-bottom: 24px;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
     }
     .brand {
       display: flex;
@@ -54,548 +50,483 @@
       width: 40px;
       height: 40px;
       border-radius: 10px;
-      background: linear-gradient(135deg, #3b82f6, #06b6d4);
+      background: linear-gradient(135deg, var(--primary), var(--purple));
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 20px;
-      font-weight: bold;
+      font-weight: 800;
+      font-size: 16px;
     }
-    .brand h1 {
-      font-size: 18px;
-      font-weight: 700;
-    }
-    .brand p {
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-    .header-stats {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
-    }
-    .pill {
+    .mascot-pill {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
+      gap: 8px;
+      background: #0d1424;
+      border: 1px solid var(--border);
       border-radius: 999px;
-      font-size: 13px;
-      font-weight: 500;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid var(--border);
-    }
-    .pill.active {
-      background: rgba(16, 185, 129, 0.15);
-      border-color: rgba(16, 185, 129, 0.4);
-      color: #34d399;
-    }
-    .pill.warn {
-      background: rgba(245, 158, 11, 0.15);
-      border-color: rgba(245, 158, 11, 0.4);
-      color: #fbbf24;
-    }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      padding: 8px 14px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      border: 1px solid var(--border);
-      background: #283548;
-      color: var(--text);
-      cursor: pointer;
-      transition: all 0.15s ease;
-      text-decoration: none;
-    }
-    .btn:hover:not(:disabled) {
-      background: #334155;
-    }
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    .btn-primary {
-      background: var(--primary);
-      border-color: var(--primary);
-      color: #fff;
-    }
-    .btn-primary:hover:not(:disabled) {
-      background: var(--primary-hover);
-    }
-    .btn-success {
-      background: var(--success);
-      border-color: var(--success);
-      color: #fff;
-    }
-    .btn-danger {
-      background: rgba(239, 68, 68, 0.15);
-      border-color: rgba(239, 68, 68, 0.45);
-      color: #f87171;
-    }
-    .btn-danger:hover:not(:disabled) {
-      background: var(--danger);
-      color: #fff;
-    }
-    .btn-sm {
-      padding: 5px 10px;
+      padding: 6px 14px;
       font-size: 12px;
+      color: #cbd5e1;
+    }
+    .container {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 20px 24px 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
     }
     .grid-2 {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      grid-template-columns: 1.15fr 0.85fr;
       gap: 20px;
-      margin-bottom: 24px;
     }
-    .section-card {
-      background: var(--bg-card);
+    @media (max-width: 960px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: var(--card);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 20px;
-      margin-bottom: 24px;
+      border-radius: 14px;
+      padding: 18px 20px;
     }
-    .section-header {
+    .panel-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 0 0 6px 0;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
-      gap: 12px;
+      justify-content: space-between;
+      gap: 8px;
       flex-wrap: wrap;
     }
-    .section-title {
-      font-size: 16px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .panel-sub {
+      font-size: 12.5px;
+      color: var(--muted);
+      margin: 0 0 14px 0;
     }
-    .section-sub {
-      font-size: 13px;
-      color: var(--text-muted);
+    .hosts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+      gap: 14px;
     }
     .host-card {
-      background: rgba(15, 23, 42, 0.6);
+      background: #0e1525;
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px;
+      border-radius: 12px;
+      padding: 15px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      position: relative;
-    }
-    .host-card.feishu-active {
-      border-color: var(--success);
-      box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.3);
-    }
-    .host-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
       gap: 10px;
+      transition: border-color 0.15s;
     }
-    .host-name {
-      font-size: 16px;
-      font-weight: 700;
+    .host-card.active-feishu {
+      border-color: var(--green);
+      box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25);
+    }
+    .host-card.selected {
+      border-color: var(--primary);
+    }
+    .badges {
       display: flex;
-      align-items: center;
-      gap: 8px;
+      flex-wrap: wrap;
+      gap: 6px;
     }
-    .host-id {
-      font-size: 12px;
-      color: var(--text-muted);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 600;
     }
-    .host-metrics {
+    .badge.green { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); }
+    .badge.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); }
+    .badge.amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); }
+    .badge.red { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); }
+    .badge.muted { background: rgba(148, 163, 184, 0.12); color: var(--muted); }
+    .metrics {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 8px;
-      background: rgba(255,255,255,0.03);
-      padding: 10px;
+      background: rgba(19, 27, 46, 0.6);
+      padding: 8px 10px;
       border-radius: 8px;
       font-size: 12px;
     }
-    .metric-label { color: var(--text-muted); }
-    .metric-val { font-weight: 600; font-size: 14px; margin-top: 2px; }
-    .host-actions {
+    .metric-val { font-weight: 700; font-size: 14px; color: var(--text); }
+    .metric-lbl { color: var(--muted); font-size: 11px; }
+    .btn-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 4px;
+      gap: 6px;
+    }
+    button {
+      cursor: pointer;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 7px 11px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text);
+      background: #1e293b;
+      transition: all 0.15s;
+    }
+    button:hover { background: #334155; }
+    button.primary { background: var(--primary); color: #fff; }
+    button.primary:hover { background: var(--primary-hover); }
+    button.green { background: var(--green); color: #052e16; }
+    button.amber { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border-color: rgba(245, 158, 11, 0.4); }
+    button.danger { background: rgba(239, 68, 68, 0.16); color: #f87171; border-color: rgba(239, 68, 68, 0.35); }
+    button.danger:hover { background: rgba(239, 68, 68, 0.28); }
+    input, select, textarea {
+      background: #090d16;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 11px;
+      border-radius: 8px;
+      font-size: 13px;
+      width: 100%;
     }
     .form-row {
       display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-    input[type="text"], input[type="password"], select, textarea {
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 9px 12px;
-      border-radius: 8px;
-      font-size: 13px;
-      outline: none;
-    }
-    input[type="text"]:focus, input[type="password"]:focus, select:focus, textarea:focus {
-      border-color: var(--primary);
-    }
-    .checkbox-label {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 13px;
-      color: var(--text-muted);
-      cursor: pointer;
-    }
-    .task-item {
-      background: rgba(15, 23, 42, 0.55);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 14px 16px;
-      margin-bottom: 12px;
-    }
-    .task-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
       gap: 10px;
-      flex-wrap: wrap;
-      margin-bottom: 8px;
+      margin-bottom: 10px;
+      align-items: center;
     }
-    .task-title {
-      font-weight: 600;
-      font-size: 15px;
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+      color: #cbd5e1;
+      margin-bottom: 6px;
     }
-    .task-meta {
-      font-size: 12px;
-      color: var(--text-muted);
+    .checkbox-row input { width: auto; }
+    .task-item {
+      border: 1px solid var(--border);
+      background: #0d1424;
+      border-radius: 10px;
+      padding: 13px;
+      margin-bottom: 10px;
     }
     .task-output {
-      background: #090e1a;
-      border: 1px solid rgba(255,255,255,0.07);
+      margin-top: 8px;
+      padding: 10px;
       border-radius: 8px;
-      padding: 10px 12px;
-      font-size: 13px;
+      background: #070b13;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
       white-space: pre-wrap;
       word-break: break-word;
       max-height: 220px;
       overflow-y: auto;
-      margin: 8px 0 12px;
       color: #cbd5e1;
     }
-    .approval-box {
-      background: rgba(245, 158, 11, 0.1);
-      border: 1px solid rgba(245, 158, 11, 0.4);
-      border-radius: 10px;
-      padding: 14px 16px;
-      margin-bottom: 12px;
+    .transcript-box {
+      margin-top: 10px;
+      border-top: 1px dashed var(--border);
+      padding-top: 10px;
+      display: none;
+    }
+    .transcript-box.open { display: block; }
+    .chat-bubble {
+      padding: 8px 11px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      font-size: 12.5px;
+      background: #111a2e;
+      border-left: 3px solid var(--primary);
+    }
+    .chat-bubble.assistant {
+      background: #0b1322;
+      border-left-color: var(--green);
+    }
+    .file-entry {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      cursor: pointer;
+      border-bottom: 1px solid rgba(35, 48, 79, 0.4);
     }
-    .snap-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-      margin-top: 10px;
-    }
-    .snap-table th, .snap-table td {
-      text-align: left;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-    }
-    .snap-table th {
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-    .toast-container {
+    .file-entry:hover { background: rgba(59, 130, 246, 0.12); }
+    .toast {
       position: fixed;
       bottom: 20px;
       right: 20px;
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .toast {
       background: #1e293b;
-      border-left: 4px solid var(--primary);
+      border: 1px solid var(--primary);
       color: #fff;
-      padding: 12px 16px;
-      border-radius: 8px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.4);
-      font-size: 13px;
-      min-width: 260px;
-    }
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.7);
+      padding: 11px 16px;
+      border-radius: 10px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.45);
       display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-      padding: 20px;
-    }
-    .modal-backdrop.open { display: flex; }
-    .modal {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      max-width: 680px;
-      width: 100%;
-      max-height: 90vh;
-      overflow-y: auto;
-      padding: 24px;
-    }
-    pre.code-block {
-      background: #090e1a;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px;
-      font-size: 12px;
-      overflow-x: auto;
-      color: #38bdf8;
-      margin: 8px 0 14px;
-    }
-    .empty-hint {
-      text-align: center;
-      padding: 28px;
-      color: var(--text-muted);
-      font-size: 14px;
+      z-index: 100;
+      font-size: 13px;
     }
   </style>
 </head>
 <body>
+  <header>
+    <div class="brand">
+      <div class="brand-icon">DSH</div>
+      <div>
+        <div style="font-weight: 700; font-size: 15px;">DeepSeek Harness 自托管全功能总控台</div>
+        <div style="font-size: 11.5px; color: var(--muted);">平时用飞书 · 多电脑自由切换与迁移 · 100% 脱离第三方服务器</div>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+      <div id="deepyMascot" class="mascot-pill">🐋 Deepy: 正在同步状态...</div>
+      <span id="connBadge" class="badge green">实时同步中</span>
+      <button onclick="openPairingModal()">📱 手机免密配对码</button>
+      <button onclick="promptToken()">🔑 访问密钥</button>
+      <button onclick="refreshState()">🔄 刷新</button>
+    </div>
+  </header>
+
   <div class="container">
-    <header>
-      <div class="brand">
-        <div class="brand-icon">飞</div>
-        <div>
-          <h1>DeepSeek Harness · 飞书多机总控台</h1>
-          <p>平时用飞书单聊卡片控制 · 页面端一键切换电脑、跨机迁移与安全清理</p>
-        </div>
+    <!-- Pairing Code Banner (Hidden by default) -->
+    <div id="pairingBox" class="panel" style="display:none; border-color:var(--primary);">
+      <div class="panel-title">
+        <span>📱 手机扫码 / 6位配对码免密登录（对标并替代官方扫码配对）</span>
+        <button onclick="document.getElementById('pairingBox').style.display='none'">关闭</button>
       </div>
-      <div class="header-stats">
-        <span class="pill active" id="activeHostBadge">🖥 飞书主控：未连接</span>
-        <span class="pill" id="onlineCountBadge">在线电脑：0</span>
-        <span class="pill" id="runningTasksBadge">运行中任务：0</span>
-        <button class="btn btn-sm" onclick="openSetupModal()">⚙️ 新电脑接入与配置生成</button>
-        <button class="btn btn-sm" onclick="promptToken()" id="tokenBtn">🔐 访问密钥</button>
-      </div>
-    </header>
-
-    <!-- 待审批收件箱 -->
-    <div class="section-card" id="approvalsSection" style="display:none;">
-      <div class="section-header">
-        <div class="section-title">⏳ 待处理工具审批 (<span id="approvalCount">0</span>)</div>
-        <div class="section-sub">与飞书卡片同步，任一端点击即刻生效</div>
-      </div>
-      <div id="approvalsList"></div>
+      <div id="pairingContent" style="font-size:13px; color:#cbd5e1;"></div>
     </div>
 
-    <!-- 一、多电脑总控与飞书切换 -->
-    <div class="section-card">
-      <div class="section-header">
-        <div>
-          <div class="section-title">🖥 多电脑管理与飞书绑定切换</div>
-          <div class="section-sub">多台电脑可共用同一个飞书机器人；点击「设为飞书主控」即可让该电脑接管飞书长连接，其余电脑自动待机防冲突</div>
-        </div>
-        <button class="btn btn-sm" onclick="refreshState()">🔄 立即刷新</button>
+    <!-- 1. Multi-Host Fleet & Feishu Switcher -->
+    <div class="panel">
+      <div class="panel-title">
+        <span>🖥 已接入的电脑（点击「设为飞书主控」即可切换飞书控制的电脑）</span>
+        <span id="fleetStats" style="font-size: 12px; color: var(--muted);"></span>
       </div>
-      <div class="grid-2" id="hostsGrid">
-        <div class="empty-hint">暂无电脑接入，点击右上角「⚙️ 新电脑接入与配置生成」查看 1 分钟接入指令。</div>
-      </div>
-    </div>
-
-    <!-- 二、跨电脑一键迁移与临时清理 -->
-    <div class="section-card">
-      <div class="section-header">
-        <div>
-          <div class="section-title">🚀 跨电脑一键转移与安全清理</div>
-          <div class="section-sub">将一台电脑的 DSH 会话历史与配置一键打包转移到另一台电脑，并可选自动清空源电脑数据</div>
-        </div>
-      </div>
-
-      <div style="background: rgba(15,23,42,0.5); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 18px;">
-        <div style="font-weight: 600; font-size: 14px; margin-bottom: 10px;">⚡ 一键跨机转移向导（源电脑 → 目标电脑）</div>
-        <div class="form-row">
-          <label style="font-size:13px;">源电脑 (迁出)：</label>
-          <select id="migSourceHost"><option value="">-- 选择源电脑 --</option></select>
-          <span style="color:var(--text-muted);">➔</span>
-          <label style="font-size:13px;">目标电脑 (迁入)：</label>
-          <select id="migTargetHost"><option value="">-- 选择目标电脑 --</option></select>
-          <button class="btn btn-primary" onclick="startOneClickMigration()" id="btnMigrate">🚀 立即一键迁移</button>
-        </div>
-        <div class="form-row" style="margin-bottom:0;">
-          <label class="checkbox-label">
-            <input type="checkbox" id="migSwitchFeishu" checked />
-            迁移后自动将飞书控制权切换到目标电脑
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="migWipeSource" />
-            迁移后自动移除源电脑上的 DSH 会话与配置（临时换机推荐）
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="migIncludeCreds" />
-            包含 feishu.env 密钥文件
-          </label>
-        </div>
-        <div id="migrationsStatusList" style="margin-top: 10px;"></div>
-      </div>
-
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:8px;">
-        <div style="font-weight: 600; font-size: 14px;">📦 云端快照中转站（支持单机备份、任意电脑拉取恢复、或下载到本地）</div>
-        <div>
-          <input type="file" id="uploadSnapInput" accept=".gz,.json" style="display:none" onchange="uploadSnapshotFile(event)" />
-          <button class="btn btn-sm" onclick="document.getElementById('uploadSnapInput').click()">⬆️ 从浏览器上传备份包 (.dshsnap.gz)</button>
-        </div>
-      </div>
-      <div style="overflow-x:auto;">
-        <table class="snap-table">
-          <thead>
-            <tr>
-              <th>快照 ID</th>
-              <th>来源电脑</th>
-              <th>包含内容</th>
-              <th>压缩大小</th>
-              <th>创建时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="snapshotsTableBody">
-            <tr><td colspan="6" class="empty-hint" style="padding:16px;">暂无快照，可在上方电脑卡片点击「导出备份」生成</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- 三、实时任务查看与控制 -->
-    <div class="section-card">
-      <div class="section-header">
-        <div>
-          <div class="section-title">📋 实时任务控制台</div>
-          <div class="section-sub">平时在飞书卡片操作；也可以在这里直接查看输出、停止运行中的任务或继续发送指令</div>
-        </div>
-        <div class="form-row" style="margin-bottom:0;">
-          <label style="font-size:13px; color:var(--text-muted);">筛选电脑：</label>
-          <select id="taskHostFilter" onchange="renderTasks()">
-            <option value="ALL">全部电脑</option>
-          </select>
-        </div>
-      </div>
-      <div id="tasksContainer">
-        <div class="empty-hint">当前没有活跃任务</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 新电脑接入与配置弹窗 -->
-  <div class="modal-backdrop" id="setupModal">
-    <div class="modal">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-        <h3 style="font-size:17px;">⚙️ 飞书与多机接入配置生成器</h3>
-        <button class="btn btn-sm" onclick="closeSetupModal()">✕ 关闭</button>
-      </div>
-      <p style="font-size:13px; color:var(--text-muted); margin-bottom:14px;">
-        填写你的飞书自建应用信息后，直接复制下方命令到任意电脑终端执行，即可完成配对并接入本总控台：
+      <p class="panel-sub">
+        每一台电脑都使用本地 Ed25519 密钥对自动锁定设备指纹（防止设备伪造）。同一时间只有「飞书主控」保持飞书长连接，其余电脑在线待机，随时一键接管。
       </p>
-      <div class="form-row">
-        <input type="text" id="cfgHostName" placeholder="电脑名称 (如 MacBook-Pro)" value="MacBook-Pro" oninput="updateGeneratedConfig()" style="flex:1;" />
-        <input type="text" id="cfgAppId" placeholder="FEISHU_APP_ID (cli_xxx)" oninput="updateGeneratedConfig()" style="flex:1;" />
+      <div id="hostsGrid" class="hosts-grid"></div>
+    </div>
+
+    <!-- 2. Cross-Computer Migration & E2EE Shares -->
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-title">🚀 跨电脑一键转移与原机临时清空</div>
+        <p class="panel-sub">
+          将源电脑的 DSH 会话记录与配置打包加密传输到目标电脑恢复，并可自动清空源电脑数据。
+        </p>
+        <div class="form-row">
+          <div style="flex: 1;">
+            <label style="font-size: 12px; color: var(--muted);">源电脑（转出）</label>
+            <select id="migSource"></select>
+          </div>
+          <div style="padding-top: 18px; color: var(--muted);">➔</div>
+          <div style="flex: 1;">
+            <label style="font-size: 12px; color: var(--muted);">目标电脑（转入）</label>
+            <select id="migTarget"></select>
+          </div>
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="migSwitchFeishu" checked />
+          转移完成后，自动把「飞书主控」切换到目标电脑
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="migWipeSource" />
+          转移后临时清空源电脑上的会话与历史数据（保留飞书连接配置，方便随时迁回）
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="migIncludeCreds" />
+          连同源电脑的鉴权密钥（feishu.env / auth）一并迁移覆盖
+        </label>
+        <div style="margin-top: 10px;">
+          <button class="primary" style="width: 100%; padding: 9px;" onclick="startMigration()">
+            ⚡ 立即执行跨电脑转移
+          </button>
+        </div>
+        <div id="migrationsList" style="margin-top: 12px; font-size: 12px;"></div>
       </div>
-      <div class="form-row">
-        <input type="password" id="cfgAppSecret" placeholder="FEISHU_APP_SECRET" oninput="updateGeneratedConfig()" style="flex:1;" />
-        <input type="text" id="cfgOpenId" placeholder="允许的飞书 open_id (ou_xxx)" oninput="updateGeneratedConfig()" style="flex:1;" />
+
+      <div class="panel">
+        <div class="panel-title">
+          <span>📦 云端快照 & 🔒 端到端加密对话分享</span>
+        </div>
+        <p class="panel-sub">
+          快照可随时恢复到任意电脑；加密分享采用 AES-256-GCM 浏览器端解密（密钥仅在 #k= 锚点中，完全替代 go.dshtui.com）。
+        </p>
+        <div style="font-size:12px; font-weight:700; margin-bottom:6px; color:#93c5fd;">📦 备份快照列表</div>
+        <div id="snapshotsList" style="max-height:130px; overflow-y:auto; margin-bottom:12px;"></div>
+        <div style="font-size:12px; font-weight:700; margin-bottom:6px; color:#34d399;">🔒 端到端加密会话回放链接</div>
+        <div id="sharesList" style="max-height:130px; overflow-y:auto;"></div>
       </div>
-      <div style="font-size:13px; font-weight:600; margin-top:8px;">在目标电脑终端运行以下命令生成 <code>~/.dsh/feishu.env</code>：</div>
-      <pre class="code-block" id="generatedEnvCode"></pre>
-      <div style="font-size:13px; font-weight:600;">飞书常用口令速查（日常在手机飞书直接发给机器人）：</div>
-      <pre class="code-block">连接 / 断开       — 开启或关闭 2 小时远程完成推送与卡片审批
-!sessions        — 查看当前电脑的运行中任务与历史会话卡片
-!hosts / 主机     — 查看所有在线电脑，并在飞书卡片里一键切换要控制的电脑
-!web             — 获取本总控台页面链接
-!whoami          — 查看你自己的飞书 open_id</pre>
+    </div>
+
+    <!-- 3. Selected Host Remote Console + Workspace File Explorer -->
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-title">
+          <span id="consoleTitle">🎮 电脑远程任务控制台</span>
+          <div class="btn-row" id="consoleActions"></div>
+        </div>
+        <p class="panel-sub">
+          支持远程新建会话、查看完整对话与思考/工具调用步骤、运行中实时插话（Steer / 打断重发）、重命名/删除会话与生成加密回放。
+        </p>
+
+        <!-- New Session Bar -->
+        <div style="background:#0d1424; border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:14px;">
+          <div style="font-size:12.5px; font-weight:700; margin-bottom:8px; color:#60a5fa;">➕ 在此电脑远程新建会话</div>
+          <div class="form-row" style="margin-bottom:8px;">
+            <input id="newSessionCwd" placeholder="工作区路径（留空默认使用最近项目路径）" style="flex:1;" />
+            <input id="newSessionTitle" placeholder="会话标题（可选）" style="width:180px;" />
+          </div>
+          <div class="form-row" style="margin-bottom:0;">
+            <input id="newSessionPrompt" placeholder="输入初始任务指令，创建后立即开始执行..." />
+            <button class="primary" style="white-space:nowrap;" onclick="createNewSession()">➕ 新建并执行</button>
+          </div>
+        </div>
+
+        <div id="approvalsBox"></div>
+        <div id="tasksBox"></div>
+      </div>
+
+      <!-- Remote Workspace File Explorer & Code/Image Viewer -->
+      <div class="panel">
+        <div class="panel-title">
+          <span>📂 远程工作区文件浏览器 & 代码预览</span>
+          <button onclick="browseFiles('')">🏠 根目录</button>
+        </div>
+        <p class="panel-sub">
+          完全脱离 dsh.r2049.cn 的远程工作区文件树与安全代码/图片预览（严格限制在工作区目录内，自动脱敏密钥）。
+        </p>
+        <div class="form-row">
+          <input id="fsRootInput" placeholder="工作区根目录 (默认跟随选中任务)" />
+          <button class="primary" style="white-space:nowrap;" onclick="browseFiles('')">读取目录</button>
+        </div>
+        <div id="fsCurrentPath" style="font-size:12px; color:var(--muted); margin-bottom:8px;"></div>
+        <div id="fsEntriesBox" style="max-height:240px; overflow-y:auto; background:#090d16; border:1px solid var(--border); border-radius:8px; padding:6px;">
+          <div style="color:var(--muted); font-size:12.5px; padding:8px;">点击左侧任意任务的「📂 浏览文件」或上方「读取目录」加载远程文件树。</div>
+        </div>
+        <div id="filePreviewBox" style="margin-top:12px;"></div>
+      </div>
     </div>
   </div>
 
-  <div class="toast-container" id="toastContainer"></div>
+  <div id="toast" class="toast"></div>
 
   <script>
-    let hubToken = localStorage.getItem('DSH_HUB_TOKEN') || '';
-    let latestState = { activeHostId: '', hosts: [], snapshots: [], migrations: [] };
+    const urlParams = new URLSearchParams(location.search);
+    if (urlParams.get('pair')) {
+      exchangePairCode(urlParams.get('pair'));
+    }
 
-    function showToast(msg, type = 'info') {
-      const box = document.getElementById('toastContainer');
-      const el = document.createElement('div');
-      el.className = 'toast';
-      el.style.borderLeftColor = type === 'error' ? '#ef4444' : type === 'success' ? '#10b981' : '#3b82f6';
+    let hubToken = localStorage.getItem('dsh_hub_token') || '';
+    let state = { activeHostId: '', hosts: [], snapshots: [], migrations: [], shares: [], stats: {} };
+    let selectedHostId = '';
+    let openTranscripts = new Set();
+    let currentFsAgentId = '';
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
       el.textContent = msg;
-      box.appendChild(el);
-      setTimeout(() => el.remove(), 3800);
+      el.style.display = 'block';
+      clearTimeout(el._timer);
+      el._timer = setTimeout(() => { el.style.display = 'none'; }, 3600);
     }
 
     function promptToken() {
-      const input = window.prompt('请输入总控台访问密钥 (HUB_TOKEN，未设置可留空)：', hubToken);
+      const input = prompt('请输入总控中心访问密钥 (HUB_TOKEN) 或 6位配对码：', hubToken);
       if (input === null) return;
-      hubToken = input.trim();
-      localStorage.setItem('DSH_HUB_TOKEN', hubToken);
+      const trimmed = input.trim();
+      if (/^[A-Z0-9]{6}$/i.test(trimmed) && trimmed !== hubToken) {
+        exchangePairCode(trimmed);
+        return;
+      }
+      hubToken = trimmed;
+      localStorage.setItem('dsh_hub_token', hubToken);
       refreshState();
     }
 
-    async function apiFetch(path, options = {}) {
-      const headers = { 'content-type': 'application/json', ...(options.headers || {}) };
-      if (hubToken) {
-        headers['authorization'] = `Bearer ${hubToken}`;
-        headers['x-hub-token'] = hubToken;
+    async function exchangePairCode(code) {
+      try {
+        const res = await fetch('/api/pairing/exchange', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ code }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          if (data.token) {
+            hubToken = data.token;
+            localStorage.setItem('dsh_hub_token', hubToken);
+          }
+          if (data.hostId) selectedHostId = data.hostId;
+          showToast('✅ 配对成功！已自动授权登录');
+          history.replaceState({}, '', location.pathname);
+          refreshState();
+        } else {
+          showToast('配对失败: ' + (data.error || '未知错误'));
+        }
+      } catch (e) {
+        showToast('配对请求失败: ' + e.message);
       }
-      const res = await fetch(path, { ...options, headers });
-      if (res.status === 401) {
-        document.getElementById('tokenBtn').classList.add('btn-danger');
-        throw new Error('需要有效的访问密钥 (点击右上角「🔐 访问密钥」输入)');
-      }
-      document.getElementById('tokenBtn').classList.remove('btn-danger');
-      return res;
     }
 
-    async function refreshState() {
+    async function openPairingModal() {
       try {
-        const res = await apiFetch('/api/state');
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || '加载失败');
-        latestState = data;
-        renderDashboard();
-      } catch (err) {
-        showToast(err.message, 'error');
+        const data = await api('/api/pairing/create', {
+          method: 'POST',
+          body: JSON.stringify({ hostId: selectedHostId || state.activeHostId }),
+        });
+        const code = data.pairing.code;
+        const pairUrl = location.origin + '/?pair=' + code;
+        const box = document.getElementById('pairingBox');
+        const content = document.getElementById('pairingContent');
+        box.style.display = 'block';
+        content.innerHTML = `
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+            <div>
+              <div>一次性 6 位免密配对码（5 分钟内有效）：<strong style="font-size:20px; color:#34d399; letter-spacing:2px; margin-left:6px;">${esc(code)}</strong></div>
+              <div style="margin-top:6px; color:var(--muted);">手机浏览器直接访问免密链接：<a href="${esc(pairUrl)}" style="color:#60a5fa;" target="_blank">${esc(pairUrl)}</a></div>
+            </div>
+            <button class="primary" onclick="navigator.clipboard.writeText('${esc(pairUrl)}'); showToast('已复制免密配对链接')">📋 复制配对链接</button>
+          </div>
+        `;
+      } catch (e) {
+        showToast('生成配对码失败: ' + e.message);
       }
+    }
+
+    async function api(path, options = {}) {
+      const headers = Object.assign({ 'content-type': 'application/json' }, options.headers || {});
+      if (hubToken) headers['x-hub-token'] = hubToken;
+      const res = await fetch(path, Object.assign({}, options, { headers }));
+      if (res.status === 401) {
+        document.getElementById('connBadge').className = 'badge red';
+        document.getElementById('connBadge').textContent = '需要密钥 (点击右上角访问密钥)';
+        throw new Error('Unauthorized');
+      }
+      const data = await res.json();
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error || '请求失败');
+      }
+      return data;
     }
 
     function formatBytes(bytes) {
       const n = Number(bytes) || 0;
-      if (n < 1024) return `${n} B`;
-      if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-      return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / (1024 * 1024)).toFixed(2) + ' MB';
     }
 
     function formatTime(ts) {
       if (!ts) return '未知';
-      const diff = Math.max(0, Math.round((Date.now() - ts) / 1000));
-      if (diff < 10) return '刚刚';
-      if (diff < 60) return `${diff} 秒前`;
-      if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
-      return new Date(ts).toLocaleString('zh-CN', { hour12: false });
+      const sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+      if (sec < 5) return '刚刚';
+      if (sec < 60) return sec + ' 秒前';
+      if (sec < 3600) return Math.floor(sec / 60) + ' 分钟前';
+      return new Date(ts).toLocaleTimeString();
     }
 
-    function escapeHtml(str) {
+    function esc(str) {
       return String(str ?? '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -603,302 +534,570 @@
         .replace(/"/g, '&quot;');
     }
 
-    function renderDashboard() {
-      const hosts = latestState.hosts || [];
-      const activeHost = hosts.find(h => h.hostId === latestState.activeHostId);
-      const onlineHosts = hosts.filter(h => h.online);
-      const totalRunning = hosts.reduce((acc, h) => acc + (h.runningCount || 0), 0);
-
-      document.getElementById('activeHostBadge').textContent = activeHost
-        ? `🖥 飞书主控：${activeHost.hostName} (${activeHost.online ? '在线' : '离线'})`
-        : '🖥 飞书主控：暂无';
-      document.getElementById('onlineCountBadge').textContent = `在线电脑：${onlineHosts.length} / ${hosts.length}`;
-      document.getElementById('runningTasksBadge').textContent = `运行中任务：${totalRunning}`;
-
-      renderApprovals(hosts);
-      renderHosts(hosts);
-      renderMigrationSelectors(hosts);
-      renderSnapshots(latestState.snapshots || [], hosts);
-      renderTasks();
-    }
-
-    function renderApprovals(hosts) {
-      const allApprovals = [];
-      for (const h of hosts) {
-        for (const a of (h.bridgeState?.approvals || [])) {
-          allApprovals.push({ ...a, hostId: h.hostId, hostName: h.hostName });
+    async function refreshState() {
+      try {
+        const data = await api('/api/state');
+        state = data;
+        document.getElementById('connBadge').className = 'badge green';
+        document.getElementById('connBadge').textContent = '实时同步正常';
+        if (!selectedHostId && state.hosts.length > 0) {
+          selectedHostId = state.activeHostId || state.hosts[0].hostId;
+        }
+        renderAll();
+      } catch (err) {
+        if (err.message !== 'Unauthorized') {
+          document.getElementById('connBadge').className = 'badge amber';
+          document.getElementById('connBadge').textContent = '连接异常';
         }
       }
-      const section = document.getElementById('approvalsSection');
-      const list = document.getElementById('approvalsList');
-      document.getElementById('approvalCount').textContent = String(allApprovals.length);
-      if (allApprovals.length === 0) {
-        section.style.display = 'none';
+    }
+
+    function updateDeepyMascot() {
+      const el = document.getElementById('deepyMascot');
+      const totalRunning = state.hosts.reduce((acc, h) => acc + (h.runningCount || 0), 0);
+      const totalApprovals = state.hosts.reduce((acc, h) => acc + ((h.bridgeState?.approvals || []).length), 0);
+      if (totalApprovals > 0) {
+        el.innerHTML = `🚨 <strong>Deepy 提醒</strong>：有 ${totalApprovals} 个高危操作正在等你审批！`;
+        el.style.borderColor = 'var(--amber)';
+      } else if (totalRunning > 0) {
+        el.innerHTML = `🐋 <strong>Deepy 搬砖中</strong>：${totalRunning} 个任务正在高速执行...`;
+        el.style.borderColor = 'var(--green)';
+      } else {
+        el.innerHTML = `💤 <strong>Deepy 待命中</strong>：所有电脑任务空闲，随时听候调遣`;
+        el.style.borderColor = 'var(--border)';
+      }
+      const statsEl = document.getElementById('fleetStats');
+      if (state.stats) {
+        statsEl.textContent = `在线电脑 ${state.stats.onlineHosts}/${state.stats.totalHosts} · 会话总数 ${state.stats.totalSessionsOnDisk} · 累计执行指令 ${state.stats.totalCommandsExecuted}`;
+      }
+    }
+
+    function renderAll() {
+      updateDeepyMascot();
+      renderHosts();
+      renderMigrationSelectors();
+      renderSnapshots();
+      renderShares();
+      renderSelectedHostConsole();
+    }
+
+    function renderHosts() {
+      const grid = document.getElementById('hostsGrid');
+      if (!state.hosts || state.hosts.length === 0) {
+        grid.innerHTML = `<div style="color: var(--muted); font-size: 13px; padding: 12px;">
+          暂无电脑接入。在任意电脑的 <code>~/.dsh/feishu.env</code> 中设置 <code>FEISHU_HUB_URL=${esc(location.origin)}</code> 后启动 DSH 即可自动出现在这里。
+        </div>`;
         return;
       }
-      section.style.display = 'block';
-      list.innerHTML = allApprovals.map(item => `
-        <div class="approval-box">
-          <div>
-            <div style="font-weight:700; font-size:14px;">
-              [${escapeHtml(item.hostName)}] ${escapeHtml(item.title)} · 工具: <code>${escapeHtml(item.toolName)}</code> (审批码: <code>${escapeHtml(item.code)}</code>)
+      grid.innerHTML = state.hosts.map(h => {
+        const isFeishu = h.hostId === state.activeHostId;
+        const isSelected = h.hostId === selectedHostId;
+        const isRevoked = h.trust?.status === 'revoked';
+        const fp = h.fingerprint || h.identity?.fingerprint || '';
+        return `
+          <div class="host-card ${isFeishu ? 'active-feishu' : ''} ${isSelected ? 'selected' : ''}" onclick="selectHost('${esc(h.hostId)}')">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+              <div>
+                <div style="font-weight: 700; font-size: 15px;">${esc(h.hostName)}</div>
+                <div style="font-size: 11.5px; color: var(--muted);">ID: <code>${esc(h.hostId)}</code> · ${esc(h.platform)}/${esc(h.arch)} · ${formatTime(h.lastSeen)}</div>
+                ${fp ? `<div style="font-size: 11px; color: #93c5fd; margin-top:2px;">🔑 指纹: <code>${esc(fp)}</code></div>` : ''}
+              </div>
+              <div class="badges">
+                ${isRevoked ? '<span class="badge red">🚫 已吊销</span>' : '<span class="badge blue">🛡️ 已锁定指纹</span>'}
+                ${h.online ? '<span class="badge green">在线</span>' : '<span class="badge red">离线</span>'}
+                ${isFeishu ? '<span class="badge green">🟢 飞书主控</span>' : '<span class="badge muted">飞书待机</span>'}
+              </div>
             </div>
-            <div style="font-size:13px; color:#fde68a; margin-top:4px;">原因：${escapeHtml(item.reason)}</div>
+            <div class="metrics">
+              <div>
+                <div class="metric-val">${h.runningCount} / ${h.taskCount}</div>
+                <div class="metric-lbl">运行中 / 活跃任务</div>
+              </div>
+              <div>
+                <div class="metric-val">${h.sessionCount}</div>
+                <div class="metric-lbl">本地会话存档</div>
+              </div>
+              <div>
+                <div class="metric-val">${formatBytes(h.totalBytes)}</div>
+                <div class="metric-lbl">DSH 数据占用</div>
+              </div>
+            </div>
+            <div class="btn-row" onclick="event.stopPropagation()">
+              ${!isFeishu && !isRevoked ? `<button class="green" onclick="activateFeishuHost('${esc(h.hostId)}')">🎯 设为飞书主控</button>` : ''}
+              <button onclick="selectHost('${esc(h.hostId)}')">🎮 控制台</button>
+              <button onclick="exportHostSnapshot('${esc(h.hostId)}')">📦 备份快照</button>
+              <button class="danger" onclick="wipeHost('${esc(h.hostId)}', '${esc(h.hostName)}')">🧹 临时清空</button>
+              ${isRevoked
+                ? `<button class="amber" onclick="manageTrust('${esc(h.hostId)}', 'reset_pin')">🔓 恢复信任</button>`
+                : `<button class="danger" onclick="manageTrust('${esc(h.hostId)}', 'revoke')">🚫 吊销设备</button>`}
+            </div>
           </div>
-          <div style="display:flex; gap:8px;">
-            <button class="btn btn-success btn-sm" onclick="decideApproval('${escapeHtml(item.hostId)}', '${escapeHtml(item.code)}', 'approve')">✅ 批准一次</button>
-            <button class="btn btn-danger btn-sm" onclick="decideApproval('${escapeHtml(item.hostId)}', '${escapeHtml(item.code)}', 'deny')">❌ 拒绝</button>
+        `;
+      }).join('');
+    }
+
+    function renderMigrationSelectors() {
+      const srcEl = document.getElementById('migSource');
+      const dstEl = document.getElementById('migTarget');
+      const prevSrc = srcEl.value;
+      const prevDst = dstEl.value;
+      const opts = state.hosts.map(h => `<option value="${esc(h.hostId)}">${esc(h.hostName)} (${esc(h.hostId)}) - ${h.sessionCount} 会话</option>`).join('');
+      srcEl.innerHTML = opts || '<option value="">无可用电脑</option>';
+      dstEl.innerHTML = opts || '<option value="">无可用电脑</option>';
+      if (prevSrc && state.hosts.some(h => h.hostId === prevSrc)) srcEl.value = prevSrc;
+      if (prevDst && state.hosts.some(h => h.hostId === prevDst)) dstEl.value = prevDst;
+      else if (state.hosts.length > 1) dstEl.value = state.hosts[1].hostId;
+
+      const migBox = document.getElementById('migrationsList');
+      if (!state.migrations || state.migrations.length === 0) {
+        migBox.innerHTML = '';
+        return;
+      }
+      migBox.innerHTML = state.migrations.slice(0, 4).map(m => {
+        const badge = m.status === 'completed' ? 'green' : m.status === 'failed' ? 'red' : 'amber';
+        return `<div style="padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; margin-top: 6px; display:flex; justify-content:space-between;">
+          <span>${esc(m.sourceHostName)} ➔ ${esc(m.targetHostName)} ${m.wipeSource ? '(含清空源机)' : ''}</span>
+          <span class="badge ${badge}">${esc(m.status)} ${m.error ? '· ' + esc(m.error) : ''}</span>
+        </div>`;
+      }).join('');
+    }
+
+    function renderSnapshots() {
+      const box = document.getElementById('snapshotsList');
+      if (!state.snapshots || state.snapshots.length === 0) {
+        box.innerHTML = '<div style="color: var(--muted); font-size: 12px;">暂无快照。</div>';
+        return;
+      }
+      const hostOptions = state.hosts.map(h => `<option value="${esc(h.hostId)}">${esc(h.hostName)}</option>`).join('');
+      box.innerHTML = state.snapshots.map(s => `
+        <div style="border: 1px solid var(--border); background: #0e1525; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; font-size:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <strong>${esc(s.meta?.hostName || s.id)} (${s.meta?.sessionCount || 0} 会话 · ${formatBytes(s.meta?.compressedBytes)})</strong>
+            <span style="color: var(--muted);">${formatTime(s.createdAt)}</span>
+          </div>
+          <div class="btn-row" style="margin-top: 6px;">
+            <select id="restoreTarget_${esc(s.id)}" style="width: auto; padding: 3px 6px; font-size: 11.5px;">${hostOptions}</select>
+            <button class="primary" style="padding:4px 8px; font-size:11.5px;" onclick="restoreSnapshotTo('${esc(s.id)}')">📥 恢复到此电脑</button>
+            <a href="/api/snapshots/${encodeURIComponent(s.id)}/download?token=${encodeURIComponent(hubToken)}" target="_blank" style="text-decoration:none;">
+              <button type="button" style="padding:4px 8px; font-size:11.5px;">⬇️ 下载</button>
+            </a>
+            <button class="danger" style="padding:4px 8px; font-size:11.5px;" onclick="deleteSnapshot('${esc(s.id)}')">🗑️</button>
           </div>
         </div>
       `).join('');
     }
 
-    function renderHosts(hosts) {
-      const grid = document.getElementById('hostsGrid');
-      if (hosts.length === 0) {
-        grid.innerHTML = '<div class="empty-hint">暂无电脑接入，点击右上角「⚙️ 新电脑接入与配置生成」查看接入步骤。</div>';
+    function renderShares() {
+      const box = document.getElementById('sharesList');
+      if (!state.shares || state.shares.length === 0) {
+        box.innerHTML = '<div style="color: var(--muted); font-size: 12px;">暂无加密分享。可在下方任意任务卡片点击「🔗 加密分享」生成。</div>';
         return;
       }
-      grid.innerHTML = hosts.map(h => {
-        const isCurrent = h.hostId === latestState.activeHostId;
-        const feishuTag = isCurrent
-          ? '<span class="pill active">🟢 当前飞书主控</span>'
-          : '<span class="pill">⏸ 飞书待机中</span>';
-        const onlineTag = h.online
-          ? '<span style="color:#34d399; font-size:12px;">● 在线</span>'
-          : '<span style="color:#f87171; font-size:12px;">● 离线</span>';
-        const recentResult = h.recentResults?.[0];
-        return `
-          <div class="host-card ${isCurrent ? 'feishu-active' : ''}" data-host-id="${escapeHtml(h.hostId)}">
-            <div class="host-top">
-              <div>
-                <div class="host-name">
-                  ${escapeHtml(h.hostName)} ${onlineTag}
-                </div>
-                <div class="host-id">ID: ${escapeHtml(h.hostId)} · ${escapeHtml(h.platform || 'os')}/${escapeHtml(h.arch || '')} · 心跳: ${formatTime(h.lastSeen)}</div>
-              </div>
-              ${feishuTag}
-            </div>
-            <div class="host-metrics">
-              <div>
-                <div class="metric-label">实时任务</div>
-                <div class="metric-val">${h.runningCount || 0} 运行 / ${h.taskCount || 0} 总计</div>
-              </div>
-              <div>
-                <div class="metric-label">本地会话与数据</div>
-                <div class="metric-val">${h.sessionCount || 0} 会话 (${formatBytes(h.totalBytes)})</div>
-              </div>
-              <div>
-                <div class="metric-label">飞书通知模式</div>
-                <div class="metric-val">${h.remoteActive ? '🔔 远程推送开启' : '🔕 安静模式'}</div>
-              </div>
-            </div>
-            ${recentResult ? `<div style="font-size:12px; color:${recentResult.ok ? '#34d399' : '#f87171'}; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:6px;">最近操作: ${escapeHtml(recentResult.message || recentResult.error || recentResult.type)} (${formatTime(recentResult.at)})</div>` : ''}
-            <div class="host-actions">
-              ${!isCurrent ? `<button class="btn btn-primary btn-sm" onclick="activateFeishuHost('${escapeHtml(h.hostId)}')">🎯 设为飞书主控</button>` : `<button class="btn btn-sm" disabled>✓ 已绑定飞书</button>`}
-              <button class="btn btn-sm" onclick="toggleRemoteMode('${escapeHtml(h.hostId)}', ${!h.remoteActive})">
-                ${h.remoteActive ? '🔕 关闭飞书推送' : '🔔 开启飞书推送'}
-              </button>
-              <button class="btn btn-sm" onclick="exportHostSnapshot('${escapeHtml(h.hostId)}', '${escapeHtml(h.hostName)}')">📦 导出备份到云端</button>
-              <button class="btn btn-danger btn-sm" onclick="wipeHost('${escapeHtml(h.hostId)}', '${escapeHtml(h.hostName)}')">🧹 临时清空本机</button>
-              ${!h.online ? `<button class="btn btn-sm" onclick="removeOfflineHost('${escapeHtml(h.hostId)}')">🗑️ 移除记录</button>` : ''}
-            </div>
+      box.innerHTML = state.shares.map(sh => `
+        <div style="border: 1px solid var(--border); background: #0e1525; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; font-size:12px; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <strong>🔒 ${esc(sh.title)}</strong>
+            <div style="color:var(--muted); font-size:11px;">${esc(sh.hostName)} · ${sh.messageCount} 条消息 · ${formatBytes(sh.sizeBytes)}</div>
           </div>
-        `;
-      }).join('');
+          <div class="btn-row">
+            <button class="danger" style="padding:4px 8px; font-size:11.5px;" onclick="deleteShare('${esc(sh.id)}')">🗑️ 删除</button>
+          </div>
+        </div>
+      `).join('');
     }
 
-    function renderMigrationSelectors(hosts) {
-      const srcSel = document.getElementById('migSourceHost');
-      const dstSel = document.getElementById('migTargetHost');
-      const filterSel = document.getElementById('taskHostFilter');
-      const prevSrc = srcSel.value;
-      const prevDst = dstSel.value;
-      const prevFilter = filterSel.value || 'ALL';
+    function renderSelectedHostConsole() {
+      const host = state.hosts.find(h => h.hostId === selectedHostId) || state.hosts[0];
+      const titleEl = document.getElementById('consoleTitle');
+      const actionsEl = document.getElementById('consoleActions');
+      const approvalsEl = document.getElementById('approvalsBox');
+      const tasksEl = document.getElementById('tasksBox');
 
-      const optionsHtml = hosts.map(h => `<option value="${escapeHtml(h.hostId)}">${escapeHtml(h.hostName)} (${escapeHtml(h.hostId)})</option>`).join('');
-      srcSel.innerHTML = `<option value="">-- 选择源电脑 --</option>` + optionsHtml;
-      dstSel.innerHTML = `<option value="">-- 选择目标电脑 --</option>` + optionsHtml;
-      filterSel.innerHTML = `<option value="ALL">全部电脑 (${hosts.length})</option>` + optionsHtml;
+      if (!host) {
+        titleEl.textContent = '🎮 电脑远程任务控制台';
+        actionsEl.innerHTML = '';
+        approvalsEl.innerHTML = '';
+        tasksEl.innerHTML = '<div style="color: var(--muted); font-size: 13px;">请先接入至少一台电脑。</div>';
+        return;
+      }
 
-      if (prevSrc) srcSel.value = prevSrc;
-      else if (hosts[0]) srcSel.value = hosts[0].hostId;
+      selectedHostId = host.hostId;
+      titleEl.textContent = `🎮 远程控制台：${host.hostName} (${host.hostId})`;
+      const remoteActive = host.bridgeState?.remoteActive;
+      actionsEl.innerHTML = `
+        <button class="${remoteActive ? 'amber' : 'primary'}" onclick="toggleRemoteMode('${esc(host.hostId)}', ${!remoteActive})">
+          ${remoteActive ? '🔕 关闭飞书完成推送' : '🔔 开启飞书完成推送'}
+        </button>
+      `;
 
-      if (prevDst) dstSel.value = prevDst;
-      else if (hosts[1]) dstSel.value = hosts[1].hostId;
+      // Update workspace input placeholder if empty
+      const cwdInput = document.getElementById('newSessionCwd');
+      const firstCwd = (host.bridgeState?.workspaces || [])[0] || '';
+      if (firstCwd && !cwdInput.placeholder.includes(firstCwd)) {
+        cwdInput.placeholder = `工作区路径 (默认: ${firstCwd})`;
+      }
 
-      filterSel.value = prevFilter;
-
-      const migList = document.getElementById('migrationsStatusList');
-      const migrations = latestState.migrations || [];
-      if (migrations.length === 0) {
-        migList.innerHTML = '';
+      const approvals = host.bridgeState?.approvals || [];
+      if (approvals.length > 0) {
+        approvalsEl.innerHTML = approvals.map(a => `
+          <div class="task-item" style="border-color: var(--amber);">
+            <div style="display:flex; justify-content:space-between;">
+              <strong>⏳ 待审批工具调用：${esc(a.title)} (${esc(a.toolName)})</strong>
+              <span class="badge amber">审批码 ${esc(a.code)}</span>
+            </div>
+            <div style="font-size: 12.5px; color: var(--muted); margin: 6px 0;">原因：${esc(a.reason)}</div>
+            <div class="btn-row">
+              <button class="green" onclick="decideApproval('${esc(host.hostId)}', '${esc(a.code)}', 'approve')">✅ 批准一次</button>
+              <button class="danger" onclick="decideApproval('${esc(host.hostId)}', '${esc(a.code)}', 'deny')">❌ 拒绝</button>
+            </div>
+          </div>
+        `).join('');
       } else {
-        migList.innerHTML = migrations.slice(0, 3).map(m => {
-          const badge = m.status === 'completed'
-            ? '✅ 迁移完成'
-            : m.status === 'failed'
-            ? `❌ 失败: ${escapeHtml(m.error)}`
-            : m.status === 'importing'
-            ? '⏳ 正在恢复到目标电脑…'
-            : '⏳ 正在从源电脑打包导出…';
-          return `<div style="font-size:12px; padding:6px 10px; background:rgba(59,130,246,0.12); border:1px solid rgba(59,130,246,0.3); border-radius:6px; margin-top:6px;">
-            <b>${escapeHtml(m.sourceHostName)} ➔ ${escapeHtml(m.targetHostName)}</b> · ${badge} ${m.wipeSource ? '· (含源电脑清理)' : ''} · ${formatTime(m.updatedAt)}
+        approvalsEl.innerHTML = '';
+      }
+
+      if (host.lastShareResult && host.lastShareResult.shareUrl) {
+        approvalsEl.insertAdjacentHTML('beforeend', `
+          <div class="task-item" style="border-color: var(--green);">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <div>
+                <strong>🔒 最新端到端加密回放链接已生成：${esc(host.lastShareResult.title || '')}</strong>
+                <div style="font-size:12px; color:#34d399; word-break:break-all; margin-top:4px;">
+                  <a href="${esc(host.lastShareResult.shareUrl)}" target="_blank" style="color:#34d399;">${esc(host.lastShareResult.shareUrl)}</a>
+                </div>
+              </div>
+              <button class="primary" onclick="navigator.clipboard.writeText('${esc(host.lastShareResult.shareUrl)}'); showToast('已复制加密回放链接')">📋 复制链接</button>
+            </div>
+          </div>
+        `);
+      }
+
+      const tasks = host.bridgeState?.tasks || [];
+      if (tasks.length === 0) {
+        tasksEl.innerHTML = '<div style="color: var(--muted); font-size: 13px;">该电脑当前没有活跃会话。可在上方直接新建远程会话！</div>';
+      } else {
+        tasksEl.innerHTML = tasks.map(t => {
+          const isOpen = openTranscripts.has(t.id);
+          const transcript = t.transcript || [];
+          const queuedSteers = t.queuedSteers || [];
+          return `
+            <div class="task-item">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px; flex-wrap: wrap;">
+                <div>
+                  <strong>${esc(t.title)}</strong>
+                  <span style="font-size: 12px; color: var(--muted); margin-left: 6px;">${esc(t.project)} · <code>${esc(t.shortId)}</code></span>
+                </div>
+                <div class="btn-row">
+                  <span class="badge ${t.status === 'running' ? 'green' : 'muted'}">${esc(t.statusLabel || t.status)}</span>
+                  <button style="padding:3px 8px; font-size:11.5px;" onclick="toggleTranscript('${esc(t.id)}')">💬 对话记录 (${transcript.length})</button>
+                  <button style="padding:3px 8px; font-size:11.5px;" onclick="openTaskFiles('${esc(t.id)}', '${esc(t.cwd || '')}')">📂 浏览文件</button>
+                  <button style="padding:3px 8px; font-size:11.5px;" onclick="shareTask('${esc(host.hostId)}', '${esc(t.id)}')">🔗 加密分享</button>
+                  <button style="padding:3px 8px; font-size:11.5px;" onclick="renameTask('${esc(host.hostId)}', '${esc(t.id)}', '${esc(t.title)}')">✏️ 重命名</button>
+                  <button class="danger" style="padding:3px 8px; font-size:11.5px;" onclick="deleteTask('${esc(host.hostId)}', '${esc(t.id)}', '${esc(t.title)}')">🗑️</button>
+                </div>
+              </div>
+
+              ${queuedSteers.length > 0 ? `<div style="margin-top:6px; font-size:11.5px; color:#fbbf24;">⚡ 排队中的插话指令 (${queuedSteers.length})：${queuedSteers.map(s => esc(s)).join(' | ')}</div>` : ''}
+
+              ${t.lastOutput ? `<div class="task-output">${esc(t.lastOutput)}</div>` : ''}
+
+              <div id="trans_${esc(t.id)}" class="transcript-box ${isOpen ? 'open' : ''}">
+                ${transcript.length === 0 ? '<div style="font-size:12px; color:var(--muted);">暂无详细消息记录</div>' : transcript.map(m => `
+                  <div class="chat-bubble ${esc(m.role)}">
+                    <div style="font-size:11px; color:var(--muted); font-weight:700; margin-bottom:3px;">
+                      ${m.role === 'user' ? '🧑 用户' : '🤖 Assistant'}
+                      ${(m.tools || []).map(tl => `<span class="badge blue" style="margin-left:4px;">🔧 ${esc(tl.name)}</span>`).join('')}
+                    </div>
+                    <div style="white-space:pre-wrap; word-break:break-word;">${esc(m.text)}</div>
+                    ${m.thinking ? `<div style="margin-top:4px; font-size:11px; color:#94a3b8;">💭 思考: ${esc(m.thinking)}</div>` : ''}
+                  </div>
+                `).join('')}
+              </div>
+
+              <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+                ${t.status === 'running'
+                  ? `
+                    <input id="steer_${esc(t.id)}" placeholder="⚡ 任务运行中：输入插话指令 (Steer) 或打断重发..." style="flex:1; min-width:200px;" onkeydown="if(event.key==='Enter')sendSteer('${esc(host.hostId)}','${esc(t.id)}',false)" />
+                    <button class="primary" onclick="sendSteer('${esc(host.hostId)}', '${esc(t.id)}', false)">⚡ 排队插话 (Steer)</button>
+                    <button class="amber" onclick="sendSteer('${esc(host.hostId)}', '${esc(t.id)}', true)">🔄 打断并重发</button>
+                    <button class="danger" onclick="stopTask('${esc(host.hostId)}', '${esc(t.id)}')">⏹ 停止</button>
+                  `
+                  : `
+                    <input id="prompt_${esc(t.id)}" placeholder="输入继续执行的指令..." style="flex:1;" onkeydown="if(event.key==='Enter')sendPrompt('${esc(host.hostId)}','${esc(t.id)}')" />
+                    <button class="primary" onclick="sendPrompt('${esc(host.hostId)}', '${esc(t.id)}')">发送指令</button>
+                  `
+                }
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // Render Remote File Explorer if host has lastFsListing
+      renderFsPanel(host);
+    }
+
+    function renderFsPanel(host) {
+      const pathEl = document.getElementById('fsCurrentPath');
+      const box = document.getElementById('fsEntriesBox');
+      const previewBox = document.getElementById('filePreviewBox');
+      const listing = host.lastFsListing;
+      if (listing && listing.entries) {
+        pathEl.innerHTML = `当前工作区：<code>${esc(listing.rootCwd)}</code> · 子目录：<code>/${esc(listing.subDir || '')}</code>`;
+        const parentBtn = listing.subDir
+          ? `<div class="file-entry" onclick="browseFiles('${esc(listing.subDir.split('/').slice(0, -1).join('/'))}')"><span>⬆️ .. (返回上级目录)</span><span>目录</span></div>`
+          : '';
+        box.innerHTML = parentBtn + listing.entries.map(item => {
+          if (item.isDirectory) {
+            return `<div class="file-entry" onclick="browseFiles('${esc(item.relPath)}')">
+              <span>📁 <strong>${esc(item.name)}/</strong></span>
+              <span style="color:var(--muted); font-size:11px;">文件夹</span>
+            </div>`;
+          }
+          return `<div class="file-entry" onclick="previewFile('${esc(item.relPath)}')">
+            <span>📄 ${esc(item.name)}</span>
+            <span style="color:var(--muted); font-size:11px;">${formatBytes(item.size)}</span>
           </div>`;
         }).join('');
       }
-    }
 
-    function renderSnapshots(snapshots, hosts) {
-      const tbody = document.getElementById('snapshotsTableBody');
-      if (snapshots.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty-hint" style="padding:16px;">暂无快照，可在电脑卡片点击「📦 导出备份到云端」生成</td></tr>';
-        return;
-      }
-      const hostOptions = hosts.map(h => `<option value="${escapeHtml(h.hostId)}">${escapeHtml(h.hostName)}</option>`).join('');
-      tbody.innerHTML = snapshots.map(s => {
-        const m = s.meta || {};
-        const downloadUrl = `/api/snapshots/${encodeURIComponent(s.id)}/download${hubToken ? `?token=${encodeURIComponent(hubToken)}` : ''}`;
-        return `
-          <tr>
-            <td><code>${escapeHtml(s.id)}</code></td>
-            <td>${escapeHtml(m.hostName || m.hostId || '上传文件')}</td>
-            <td>${m.sessionCount || 0} 个会话 / ${m.fileCount || 0} 个文件</td>
-            <td>${formatBytes(m.compressedBytes)}</td>
-            <td>${formatTime(s.createdAt)}</td>
-            <td>
-              <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                <select id="restoreTarget_${escapeHtml(s.id)}" style="padding:4px 8px; font-size:12px;">
-                  ${hostOptions || '<option value="">无在线电脑</option>'}
-                </select>
-                <button class="btn btn-primary btn-sm" onclick="restoreSnapshotToHost('${escapeHtml(s.id)}')">📥 恢复到该电脑</button>
-                <a class="btn btn-sm" href="${downloadUrl}" download="${escapeHtml(s.id)}.dshsnap.gz">⬇️ 下载</a>
-                <button class="btn btn-danger btn-sm" onclick="deleteSnapshot('${escapeHtml(s.id)}')">🗑️</button>
-              </div>
-            </td>
-          </tr>
-        `;
-      }).join('');
-    }
-
-    function renderTasks() {
-      const filterHost = document.getElementById('taskHostFilter').value || 'ALL';
-      const hosts = latestState.hosts || [];
-      const allTasks = [];
-      for (const h of hosts) {
-        if (filterHost !== 'ALL' && h.hostId !== filterHost) continue;
-        for (const t of (h.bridgeState?.tasks || [])) {
-          allTasks.push({ ...t, hostId: h.hostId, hostName: h.hostName });
+      const prev = host.lastFilePreview;
+      if (prev && prev.relPath) {
+        if (prev.kind === 'image' && prev.dataBase64) {
+          previewBox.innerHTML = `
+            <div style="border:1px solid var(--border); border-radius:8px; padding:10px; background:#070b13;">
+              <div style="font-size:12px; font-weight:700; margin-bottom:8px;">🖼️ ${esc(prev.relPath)} (${formatBytes(prev.size)})</div>
+              <img src="data:${esc(prev.mime)};base64,${esc(prev.dataBase64)}" style="max-width:100%; border-radius:6px;" />
+            </div>
+          `;
+        } else {
+          previewBox.innerHTML = `
+            <div style="border:1px solid var(--border); border-radius:8px; padding:10px; background:#070b13;">
+              <div style="font-size:12px; font-weight:700; margin-bottom:6px;">📄 ${esc(prev.relPath)} (${formatBytes(prev.size)})</div>
+              <pre style="margin:0; font-size:12px; max-height:280px; overflow:auto; white-space:pre-wrap; word-break:break-word; color:#e2e8f0;">${esc(prev.content || '')}</pre>
+            </div>
+          `;
         }
       }
-      const container = document.getElementById('tasksContainer');
-      if (allTasks.length === 0) {
-        container.innerHTML = '<div class="empty-hint">当前没有活跃任务</div>';
-        return;
-      }
-      container.innerHTML = allTasks.map(t => {
-        const isRunning = t.status === 'running';
-        return `
-          <div class="task-item">
-            <div class="task-header">
-              <div>
-                <span class="pill" style="margin-right:6px;">🖥 ${escapeHtml(t.hostName)}</span>
-                <span class="task-title">${escapeHtml(t.title)}</span>
-              </div>
-              <div class="task-meta">
-                ${escapeHtml(t.statusLabel)} · 项目: ${escapeHtml(t.project)} · 活动: ${formatTime(t.lastActivity)}
-              </div>
-            </div>
-            <div class="task-output">${escapeHtml(t.lastOutput || '暂无输出')}</div>
-            ${isRunning ? `
-              <div style="display:flex; justify-content:flex-end;">
-                <button class="btn btn-danger btn-sm" onclick="stopTask('${escapeHtml(t.hostId)}', '${escapeHtml(t.id)}')">⏹ 停止执行</button>
-              </div>
-            ` : `
-              <div style="display:flex; gap:8px;">
-                <input type="text" id="prompt_${escapeHtml(t.hostId)}_${escapeHtml(t.id)}" placeholder="输入后续指令让任务继续执行（与飞书卡片同步）…" style="flex:1;" onkeydown="if(event.key==='Enter') sendPrompt('${escapeHtml(t.hostId)}', '${escapeHtml(t.id)}')" />
-                <button class="btn btn-primary btn-sm" onclick="sendPrompt('${escapeHtml(t.hostId)}', '${escapeHtml(t.id)}')">发送指令</button>
-              </div>
-            `}
-          </div>
-        `;
-      }).join('');
+    }
+
+    function toggleTranscript(taskId) {
+      if (openTranscripts.has(taskId)) openTranscripts.delete(taskId);
+      else openTranscripts.add(taskId);
+      renderSelectedHostConsole();
+    }
+
+    function selectHost(hostId) {
+      selectedHostId = hostId;
+      renderAll();
     }
 
     async function activateFeishuHost(hostId) {
       try {
-        const res = await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/activate`, { method: 'POST', body: '{}' });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error);
-        showToast(`已将飞书主控切换到：${data.hostName}`, 'success');
-        refreshState();
-      } catch (err) {
-        showToast(err.message, 'error');
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/activate`, { method: 'POST', body: '{}' });
+        selectedHostId = hostId;
+        showToast('🎯 已切换飞书主控电脑！');
+        await refreshState();
+      } catch (e) {
+        showToast('切换失败: ' + e.message);
       }
     }
 
-    async function toggleRemoteMode(hostId, active) {
+    async function manageTrust(hostId, action) {
+      if (action === 'revoke' && !confirm(`确定要吊销设备 ${hostId} 的访问权限吗？吊销后该设备将无法同步或接收飞书消息。`)) return;
       try {
-        await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/trust`, {
           method: 'POST',
-          body: JSON.stringify({ type: 'remote_mode', active }),
+          body: JSON.stringify({ action }),
         });
-        showToast(active ? '已发送开启飞书远程推送指令' : '已发送关闭飞书远程推送指令', 'success');
-        setTimeout(refreshState, 800);
-      } catch (err) {
-        showToast(err.message, 'error');
+        showToast(action === 'revoke' ? '🚫 已吊销该设备信任' : '🔓 已重置设备公钥锁');
+        await refreshState();
+      } catch (e) {
+        showToast('操作失败: ' + e.message);
       }
     }
 
-    async function exportHostSnapshot(hostId, hostName) {
+    async function createNewSession() {
+      const hostId = selectedHostId || state.activeHostId;
+      if (!hostId) return showToast('请先选择一台电脑');
+      const cwd = document.getElementById('newSessionCwd').value.trim();
+      const title = document.getElementById('newSessionTitle').value.trim();
+      const prompt = document.getElementById('newSessionPrompt').value.trim();
       try {
-        await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
           method: 'POST',
-          body: JSON.stringify({ type: 'export_snapshot', includeCredentials: false, note: `手动备份 (${hostName})` }),
+          body: JSON.stringify({ type: 'new_session', cwd, title, prompt }),
         });
-        showToast(`已通知「${hostName}」打包上传快照，请稍候…`, 'success');
+        document.getElementById('newSessionPrompt').value = '';
+        document.getElementById('newSessionTitle').value = '';
+        showToast('✨ 已下发新建远程会话指令');
         setTimeout(refreshState, 1200);
-      } catch (err) {
-        showToast(err.message, 'error');
+      } catch (e) {
+        showToast('新建失败: ' + e.message);
+      }
+    }
+
+    async function sendPrompt(hostId, agentId) {
+      const input = document.getElementById('prompt_' + agentId);
+      const text = (input?.value || '').trim();
+      if (!text) return;
+      try {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+          method: 'POST',
+          body: JSON.stringify({ type: 'prompt', agentId, text }),
+        });
+        input.value = '';
+        showToast('🚀 指令已发送');
+        setTimeout(refreshState, 1200);
+      } catch (e) {
+        showToast('发送失败: ' + e.message);
+      }
+    }
+
+    async function sendSteer(hostId, agentId, interrupt) {
+      const input = document.getElementById('steer_' + agentId);
+      const text = (input?.value || '').trim();
+      if (!text) return showToast('请输入插话或打断重发的指令内容');
+      try {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+          method: 'POST',
+          body: JSON.stringify({ type: 'steer', agentId, text, interrupt }),
+        });
+        input.value = '';
+        showToast(interrupt ? '🔄 已请求打断当前步骤并重发新指令' : '⚡ 插话指令已注入队列');
+        setTimeout(refreshState, 1200);
+      } catch (e) {
+        showToast('插话失败: ' + e.message);
+      }
+    }
+
+    async function renameTask(hostId, agentId, oldTitle) {
+      const title = prompt('请输入新的会话标题：', oldTitle);
+      if (!title || !title.trim()) return;
+      try {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+          method: 'POST',
+          body: JSON.stringify({ type: 'rename_session', agentId, title: title.trim() }),
+        });
+        showToast('✏️ 已下发重命名指令');
+        setTimeout(refreshState, 1000);
+      } catch (e) {
+        showToast('重命名失败: ' + e.message);
+      }
+    }
+
+    async function deleteTask(hostId, agentId, title) {
+      if (!confirm(`确定要删除会话「${title}」吗？`)) return;
+      try {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+          method: 'POST',
+          body: JSON.stringify({ type: 'delete_session', agentId }),
+        });
+        showToast('🗑️ 已下发删除会话指令');
+        setTimeout(refreshState, 1000);
+      } catch (e) {
+        showToast('删除失败: ' + e.message);
+      }
+    }
+
+    async function shareTask(hostId, agentId) {
+      try {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+          method: 'POST',
+          body: JSON.stringify({ type: 'share_session', agentId }),
+        });
+        showToast('🔒 正在本机执行 AES-256-GCM 加密并生成回放链接...');
+        setTimeout(refreshState, 1500);
+      } catch (e) {
+        showToast('生成分享失败: ' + e.message);
+      }
+    }
+
+    async function deleteShare(shareId) {
+      try {
+        await api(`/api/shares/${encodeURIComponent(shareId)}`, { method: 'DELETE' });
+        showToast('已删除加密分享');
+        await refreshState();
+      } catch (e) {
+        showToast('删除失败: ' + e.message);
+      }
+    }
+
+    function openTaskFiles(agentId, cwd) {
+      currentFsAgentId = agentId;
+      if (cwd) document.getElementById('fsRootInput').value = cwd;
+      browseFiles('');
+    }
+
+    async function browseFiles(subDir) {
+      const hostId = selectedHostId || state.activeHostId;
+      if (!hostId) return;
+      const cwd = document.getElementById('fsRootInput').value.trim();
+      try {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+          method: 'POST',
+          body: JSON.stringify({ type: 'list_files', agentId: currentFsAgentId, cwd, subDir }),
+        });
+        showToast('📂 正在读取远程目录...');
+        setTimeout(refreshState, 1000);
+      } catch (e) {
+        showToast('读取目录失败: ' + e.message);
+      }
+    }
+
+    async function previewFile(relPath) {
+      const hostId = selectedHostId || state.activeHostId;
+      if (!hostId) return;
+      const cwd = document.getElementById('fsRootInput').value.trim();
+      try {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+          method: 'POST',
+          body: JSON.stringify({ type: 'read_file', agentId: currentFsAgentId, cwd, relPath }),
+        });
+        showToast('📄 正在读取文件预览...');
+        setTimeout(refreshState, 1000);
+      } catch (e) {
+        showToast('读取文件失败: ' + e.message);
+      }
+    }
+
+    async function exportHostSnapshot(hostId) {
+      try {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+          method: 'POST',
+          body: JSON.stringify({ type: 'export_snapshot', includeCredentials: false }),
+        });
+        showToast('📦 已向该电脑下发快照导出指令，稍后将出现在快照列表中');
+        setTimeout(refreshState, 1500);
+      } catch (e) {
+        showToast('导出失败: ' + e.message);
       }
     }
 
     async function wipeHost(hostId, hostName) {
-      const confirmed = window.confirm(`确定要临时清空电脑「${hostName}」上的 DSH 会话与配置吗？\n\n系统会先自动备份一份快照到云端中转站，并保留远控连接以便你随时一键恢复。`);
-      if (!confirmed) return;
+      if (!confirm(`确定要临时清空电脑「${hostName}」上的 DSH 会话和历史数据吗？\n（系统会自动先备份一份快照到总控中心，且默认保留飞书连接配置）`)) return;
       try {
-        await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
           method: 'POST',
           body: JSON.stringify({ type: 'wipe_host', backupFirst: true, keepCredentials: true }),
         });
-        showToast(`已向「${hostName}」下发备份并清理指令`, 'success');
-        setTimeout(refreshState, 1200);
-      } catch (err) {
-        showToast(err.message, 'error');
+        showToast(`🧹 已下发安全清空指令给 ${hostName}`);
+        setTimeout(refreshState, 1500);
+      } catch (e) {
+        showToast('操作失败: ' + e.message);
       }
     }
 
-    async function removeOfflineHost(hostId) {
-      await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}`, { method: 'DELETE' });
-      showToast('已移除离线主机记录', 'success');
-      refreshState();
-    }
-
-    async function startOneClickMigration() {
-      const sourceHostId = document.getElementById('migSourceHost').value;
-      const targetHostId = document.getElementById('migTargetHost').value;
+    async function startMigration() {
+      const sourceHostId = document.getElementById('migSource').value;
+      const targetHostId = document.getElementById('migTarget').value;
       const switchFeishu = document.getElementById('migSwitchFeishu').checked;
       const wipeSource = document.getElementById('migWipeSource').checked;
       const includeCredentials = document.getElementById('migIncludeCreds').checked;
-
-      if (!sourceHostId || !targetHostId) {
-        return showToast('请先选择源电脑和目标电脑', 'error');
-      }
-      if (sourceHostId === targetHostId) {
-        return showToast('源电脑与目标电脑不能是同一台', 'error');
-      }
+      if (!sourceHostId || !targetHostId) return showToast('请先选择源电脑和目标电脑');
+      if (sourceHostId === targetHostId) return showToast('源电脑与目标电脑不能相同');
       try {
-        const res = await apiFetch('/api/migrate', {
+        await api('/api/migrate', {
           method: 'POST',
           body: JSON.stringify({
             sourceHostId,
@@ -909,140 +1108,78 @@
             keepCredentials: true,
           }),
         });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error);
-        showToast('🚀 已启动跨电脑一键迁移任务！', 'success');
-        setTimeout(refreshState, 1000);
-      } catch (err) {
-        showToast(err.message, 'error');
+        showToast('⚡ 跨电脑转移任务已启动！');
+        setTimeout(refreshState, 1500);
+      } catch (e) {
+        showToast('迁移启动失败: ' + e.message);
       }
     }
 
-    async function restoreSnapshotToHost(snapshotId) {
-      const sel = document.getElementById(`restoreTarget_${snapshotId}`);
-      const hostId = sel ? sel.value : '';
-      if (!hostId) return showToast('请先选择要恢复到的目标电脑', 'error');
+    async function restoreSnapshotTo(snapshotId) {
+      const targetHostId = document.getElementById('restoreTarget_' + snapshotId)?.value;
+      if (!targetHostId) return showToast('请选择目标电脑');
       try {
-        await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+        await api(`/api/hosts/${encodeURIComponent(targetHostId)}/command`, {
           method: 'POST',
-          body: JSON.stringify({ type: 'import_snapshot', snapshotId }),
+          body: JSON.stringify({ type: 'import_snapshot', snapshotId, skipCredentials: true }),
         });
-        showToast(`已下发恢复快照 ${snapshotId} 到 ${hostId}`, 'success');
-        setTimeout(refreshState, 1200);
-      } catch (err) {
-        showToast(err.message, 'error');
+        showToast('📥 已下发快照恢复指令到 ' + targetHostId);
+        setTimeout(refreshState, 1500);
+      } catch (e) {
+        showToast('恢复失败: ' + e.message);
       }
     }
 
     async function deleteSnapshot(snapshotId) {
-      await apiFetch(`/api/snapshots/${encodeURIComponent(snapshotId)}`, { method: 'DELETE' });
-      showToast('快照已删除', 'success');
-      refreshState();
-    }
-
-    async function uploadSnapshotFile(event) {
-      const file = event.target.files?.[0];
-      if (!file) return;
       try {
-        const buf = await file.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-        const dataBase64 = btoa(binary);
-        const res = await apiFetch('/api/snapshots', {
-          method: 'POST',
-          body: JSON.stringify({
-            meta: {
-              hostName: `浏览器上传 (${file.name})`,
-              compressedBytes: file.size,
-            },
-            dataBase64,
-          }),
-        });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error);
-        showToast(`快照上传成功: ${data.snapshot.id}`, 'success');
-        refreshState();
-      } catch (err) {
-        showToast(`上传失败: ${err.message}`, 'error');
-      } finally {
-        event.target.value = '';
+        await api(`/api/snapshots/${encodeURIComponent(snapshotId)}`, { method: 'DELETE' });
+        await refreshState();
+      } catch (e) {
+        showToast('删除失败: ' + e.message);
       }
     }
 
-    async function sendPrompt(hostId, agentId) {
-      const input = document.getElementById(`prompt_${hostId}_${agentId}`);
-      const text = (input?.value || '').trim();
-      if (!text) return showToast('请输入指令内容', 'error');
+    async function toggleRemoteMode(hostId, active) {
       try {
-        await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
           method: 'POST',
-          body: JSON.stringify({ type: 'prompt', agentId, text }),
+          body: JSON.stringify({ type: 'remote_mode', active }),
         });
-        input.value = '';
-        showToast('指令已发送给任务', 'success');
-        setTimeout(refreshState, 800);
-      } catch (err) {
-        showToast(err.message, 'error');
+        showToast(active ? '🔔 已开启飞书完成推送' : '🔕 已关闭飞书完成推送');
+        setTimeout(refreshState, 1200);
+      } catch (e) {
+        showToast('设置失败: ' + e.message);
       }
     }
 
     async function stopTask(hostId, agentId) {
       try {
-        await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
           method: 'POST',
           body: JSON.stringify({ type: 'stop', agentId }),
         });
-        showToast('已发送停止请求', 'success');
-        setTimeout(refreshState, 800);
-      } catch (err) {
-        showToast(err.message, 'error');
+        showToast('⏹ 已发送停止指令');
+        setTimeout(refreshState, 1200);
+      } catch (e) {
+        showToast('停止失败: ' + e.message);
       }
     }
 
-    async function decideApproval(hostId, code, decision) {
+    async function decideApproval(hostId, code, action) {
       try {
-        await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
           method: 'POST',
-          body: JSON.stringify({ type: decision, code }),
+          body: JSON.stringify({ type: action, code }),
         });
-        showToast(decision === 'approve' ? `已批准 ${code}` : `已拒绝 ${code}`, 'success');
-        setTimeout(refreshState, 600);
-      } catch (err) {
-        showToast(err.message, 'error');
+        showToast(action === 'approve' ? '✅ 已批准' : '❌ 已拒绝');
+        setTimeout(refreshState, 1200);
+      } catch (e) {
+        showToast('审批处理失败: ' + e.message);
       }
-    }
-
-    function openSetupModal() {
-      updateGeneratedConfig();
-      document.getElementById('setupModal').classList.add('open');
-    }
-
-    function closeSetupModal() {
-      document.getElementById('setupModal').classList.remove('open');
-    }
-
-    function updateGeneratedConfig() {
-      const hostName = document.getElementById('cfgHostName').value.trim() || 'My-Mac';
-      const appId = document.getElementById('cfgAppId').value.trim() || 'cli_xxxxxxxxxxxxxxxx';
-      const appSecret = document.getElementById('cfgAppSecret').value.trim() || 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
-      const openId = document.getElementById('cfgOpenId').value.trim() || 'ou_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
-      const hubUrl = window.location.origin;
-      const tokenLine = hubToken ? `FEISHU_HUB_TOKEN=${hubToken}\n` : '';
-      document.getElementById('generatedEnvCode').textContent =
-`install -m 600 /dev/null ~/.dsh/feishu.env
-cat > ~/.dsh/feishu.env <<'EOF'
-FEISHU_HOST_NAME=${hostName}
-FEISHU_APP_ID=${appId}
-FEISHU_APP_SECRET=${appSecret}
-FEISHU_ALLOWED_OPEN_IDS=${openId}
-FEISHU_HUB_URL=${hubUrl}
-${tokenLine}EOF
-chmod 600 ~/.dsh/feishu.env`;
     }
 
     refreshState();
-    setInterval(refreshState, 2500);
+    setInterval(refreshState, 3000);
   </script>
 </body>
 </html>

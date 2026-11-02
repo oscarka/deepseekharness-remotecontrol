@@ -1,12 +1,14 @@
+import { createCipheriv, randomBytes } from 'node:crypto'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from './migration.js'
 import { safeError } from './redact.js'
+import { extractSessionTranscript, loadOrCreateHostIdentity } from './workspace-ops.js'
 
 /**
  * Outbound agent that synchronizes a local DSH host with the Cloud Run Control Hub
  * (or embedded local Hub). Handles:
- * - Heartbeat state reporting (live tasks, approvals, ~/.dsh storage metrics)
+ * - Heartbeat state reporting (live tasks, approvals, ~/.dsh storage metrics, Ed25519 identity)
  * - Active / Standby Feishu WebSocket coordination across multiple computers
- * - Executing Web UI commands (prompt, stop, approve/deny, snapshot export/import, safe wipe)
+ * - Executing Web UI commands (prompt, steer, new_session, rename/delete_session, list/read_file, share_session, stop, approve/deny, snapshot export/import, safe wipe)
  */
 export class HubAgent {
   constructor({ config, bridge, transport, audit, logger, fetchImpl = globalThis.fetch }) {
@@ -24,6 +26,7 @@ export class HubAgent {
     this.cachedStats = null
     this.lastStatsAt = 0
     this.executedIds = new Set()
+    this.identity = null
   }
 
   getFleetSummary() {
@@ -91,10 +94,25 @@ export class HubAgent {
     return result
   }
 
+  async ensureIdentity() {
+    if (this.identity) return this.identity
+    try {
+      const loaded = await loadOrCreateHostIdentity(this.config.dshHome)
+      this.identity = {
+        publicKey: loaded.publicKey,
+        fingerprint: loaded.fingerprint,
+      }
+    } catch (error) {
+      this.logger?.warn?.(`dsh-feishu: loadOrCreateHostIdentity failed: ${safeError(error)}`)
+    }
+    return this.identity
+  }
+
   async tick() {
     if (this.disposed || this.polling || !this.config.hubUrl) return
     this.polling = true
     try {
+      const identity = await this.ensureIdentity()
       const dshStats = await this.refreshDshStats(false)
       const bridgeState = this.bridge.getSnapshotState()
       const resultsToSend = this.pendingResults.splice(0)
@@ -106,6 +124,7 @@ export class HubAgent {
           hostName: this.config.hostName,
           platform: process.platform,
           arch: process.arch,
+          identity,
           dshStats,
           bridgeState,
           commandResults: resultsToSend,
@@ -143,6 +162,70 @@ export class HubAgent {
       this.logger?.warn?.(`dsh-feishu: hub heartbeat error: ${safeError(error)}`)
     } finally {
       this.polling = false
+    }
+  }
+
+  async createEncryptedShare(agent) {
+    if (!agent) return { ok: false, error: '找不到任务会话' }
+    if (!this.config.hubUrl) return { ok: false, error: '未配置 Hub 地址' }
+    const transcript = extractSessionTranscript(agent, 120)
+    const title = this.bridge.taskTitle(agent)
+    const cwd = agent?.session?.header?.cwd ?? agent?.session?.cwd ?? ''
+    const plainPayload = {
+      version: 1,
+      agentId: agent.id,
+      title,
+      cwd,
+      hostId: this.config.hostId,
+      hostName: this.config.hostName,
+      createdAt: Date.now(),
+      transcript,
+    }
+    const key = randomBytes(32)
+    const iv = randomBytes(12)
+    const cipher = createCipheriv('aes-256-gcm', key, iv)
+    const encrypted = Buffer.concat([
+      cipher.update(JSON.stringify(plainPayload), 'utf8'),
+      cipher.final(),
+    ])
+    const authTag = cipher.getAuthTag()
+    // WebCrypto AES-GCM expects ciphertext + 16-byte tag concatenated
+    const combinedCiphertext = Buffer.concat([encrypted, authTag])
+
+    const res = await this.fetch(`${this.config.hubUrl}/api/shares`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({
+        title,
+        hostId: this.config.hostId,
+        hostName: this.config.hostName,
+        agentId: agent.id,
+        messageCount: transcript.length,
+        ivBase64: iv.toString('base64'),
+        ciphertextBase64: combinedCiphertext.toString('base64'),
+      }),
+    })
+    if (!res.ok) {
+      return { ok: false, error: `上传加密分享失败 (${res.status})` }
+    }
+    const data = await res.json()
+    const shareId = data.share?.id
+    const keyBase64Url = key.toString('base64url')
+    const baseUrl = this.getPublicWebUrl() || this.config.hubUrl
+    const shareUrl = `${baseUrl.replace(/\/+$/, '')}/share/${shareId}#k=${keyBase64Url}`
+    await this.audit?.write('session_shared_e2ee', {
+      agentId: agent.id,
+      shareId,
+      messageCount: transcript.length,
+    })
+    return {
+      ok: true,
+      shareId,
+      keyBase64Url,
+      shareUrl,
+      title,
+      messageCount: transcript.length,
+      message: `已生成端到端加密分享链接：${shareUrl}`,
     }
   }
 
@@ -301,6 +384,11 @@ export class HubAgent {
             message: `已清理本机 DSH 数据 (移除 ${wiped.wipedEntries} 项${backupSnapshotId ? `，已备份快照 ${backupSnapshotId}` : ''})`,
           }
         }
+        case 'share_session': {
+          const agent = this.bridge.agents.get(String(cmd.agentId ?? ''))
+          if (!agent) return { ok: false, error: '找不到该任务会话' }
+          return await this.createEncryptedShare(agent)
+        }
         default:
           return await this.bridge.executeHubCommand(cmd)
       }
@@ -311,3 +399,4 @@ export class HubAgent {
     }
   }
 }
+

@@ -28,3 +28,4 @@ gcloud run deploy "${SERVICE_NAME}" \
 
 echo ""
 echo "✅ 部署完成！请将上方输出的 Service URL 填入各台电脑 ~/.dsh/feishu.env 的 FEISHU_HUB_URL，并填入 FEISHU_HUB_TOKEN=${HUB_TOKEN}"
+

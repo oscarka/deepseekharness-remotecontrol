@@ -12,6 +12,9 @@ const KNOWN = new Set([
   'hosts',
   'host',
   'web',
+  'steer',
+  'files',
+  'share',
 ])
 
 const BARE_EXACT = new Set([
@@ -25,8 +28,10 @@ const BARE_EXACT = new Set([
   'hosts',
   'host',
   'web',
+  'files',
+  'share',
 ])
-const BARE_WITH_ARG = /^(use|approve|deny|host)(?:\s+([\s\S]*))?$/i
+const BARE_WITH_ARG = /^(use|approve|deny|host|new|steer|files|share)(?:\s+([\s\S]*))?$/i
 
 export function parseCommand(text) {
   const trimmed = String(text ?? '').trim()
