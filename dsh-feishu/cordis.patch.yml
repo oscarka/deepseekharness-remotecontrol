@@ -1,0 +1,16 @@
+- insert:
+    - id: dsh-feishu
+      name: '@local/dsh-feishu'
+      config:
+        enabled: true
+        appId: ''
+        tenantKey: ''
+        hostId: ''
+        hostName: ''
+        hubUrl: ''
+        allowGroup: false
+        allowedOpenIds: []
+        approvalTtlSeconds: 120
+        notifyDigestMs: 5000
+        maxReplyChars: 4000
+        appSecretFile: '~/.dsh/feishu.env'

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Feishu Bridge",
+    "description": "Control live DSH agents, check status, and answer approvals from a Feishu self-built app over a long connection."
+  }
+}
