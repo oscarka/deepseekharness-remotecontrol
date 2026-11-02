@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, randomInt } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { generateOrLoadVapidKeys, sendWebPushNotification } from './web-push.js'
 
 const ONLINE_TTL_MS = 15_000
 const MAX_SNAPSHOTS = 15
@@ -8,9 +9,10 @@ const MAX_SHARES = 50
 const PAIRING_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 export class HubCore {
-  constructor({ stateFile = '', now = () => Date.now() } = {}) {
+  constructor({ stateFile = '', now = () => Date.now(), pushFetch = globalThis.fetch } = {}) {
     this.stateFile = stateFile
     this.now = now
+    this.pushFetch = pushFetch
     this.activeHostId = ''
     this.hosts = new Map()
     this.snapshots = new Map()
@@ -20,6 +22,27 @@ export class HubCore {
     this.signalingMailboxes = new Map()
     this.commandResultsById = new Map()
     this.totalCommandsExecuted = 0
+    this.vapidKeys = generateOrLoadVapidKeys()
+    this.pushSubscriptions = new Map()
+    this.pushedApprovalCodes = new Set()
+    this.hostTaskStates = new Map()
+    this.pushHistory = []
+    this.sseListeners = new Set()
+  }
+
+  onStateChange(listener) {
+    this.sseListeners.add(listener)
+    return () => this.sseListeners.delete(listener)
+  }
+
+  emitStateChange(event = 'state') {
+    for (const listener of this.sseListeners) {
+      try {
+        listener(event, this.getFullState())
+      } catch {
+        // ignore listener error
+      }
+    }
   }
 
   async init() {
@@ -28,6 +51,16 @@ export class HubCore {
       const text = await readFile(this.stateFile, 'utf8')
       const data = JSON.parse(text)
       if (typeof data.activeHostId === 'string') this.activeHostId = data.activeHostId
+      if (data.vapidKeys?.publicKey && data.vapidKeys?.privateJwk) {
+        this.vapidKeys = generateOrLoadVapidKeys(data.vapidKeys)
+      }
+      if (Array.isArray(data.pushSubscriptions)) {
+        for (const sub of data.pushSubscriptions) {
+          if (sub?.endpoint && sub?.keys?.p256dh && sub?.keys?.auth) {
+            this.pushSubscriptions.set(sub.endpoint, sub)
+          }
+        }
+      }
       if (Array.isArray(data.hosts)) {
         for (const h of data.hosts) {
           if (h?.hostId) {
@@ -61,6 +94,8 @@ export class HubCore {
       await mkdir(dirname(this.stateFile), { recursive: true })
       const payload = {
         activeHostId: this.activeHostId,
+        vapidKeys: this.vapidKeys,
+        pushSubscriptions: [...this.pushSubscriptions.values()],
         hosts: [...this.hosts.values()].map(h => ({
           ...h,
           commands: h.commands ?? [],
@@ -121,6 +156,7 @@ export class HubCore {
       totalStorageBytes: summaries.reduce((acc, h) => acc + h.totalBytes, 0),
       snapshotsCount: this.snapshots.size,
       sharesCount: this.shares.size,
+      pushSubscriptionsCount: this.pushSubscriptions.size,
       totalCommandsExecuted: this.totalCommandsExecuted,
     }
   }
@@ -156,11 +192,202 @@ export class HubCore {
     return {
       now: this.now(),
       activeHostId: this.activeHostId,
+      vapidPublicKey: this.vapidKeys.publicKey,
+      pushSubscriptions: this.listPushSubscriptions(),
+      pushHistory: this.pushHistory.slice(-10).reverse(),
       stats: this.getUsageStats(),
       hosts,
       snapshots,
       migrations,
       shares,
+    }
+  }
+
+  getVapidPublicKey() {
+    return this.vapidKeys.publicKey
+  }
+
+  addPushSubscription({ subscription, deviceName = 'iPhone / Web App', userAgent = '' } = {}) {
+    if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
+      return { ok: false, error: '无效的 Web Push 订阅数据（缺少 endpoint 或 p256dh/auth 密钥）' }
+    }
+    const endpoint = String(subscription.endpoint).trim()
+    let endpointHost = 'push-service'
+    try {
+      endpointHost = new URL(endpoint).host
+    } catch {
+      // ignore invalid URL parse
+    }
+    const existing = this.pushSubscriptions.get(endpoint)
+    const record = {
+      id: existing?.id || `sub-${randomBytes(4).toString('hex')}`,
+      endpoint,
+      endpointHost,
+      keys: {
+        p256dh: String(subscription.keys.p256dh),
+        auth: String(subscription.keys.auth),
+      },
+      deviceName: String(deviceName || 'iPhone / Web App').slice(0, 64),
+      userAgent: String(userAgent || '').slice(0, 160),
+      createdAt: existing?.createdAt || this.now(),
+      updatedAt: this.now(),
+      lastSentAt: existing?.lastSentAt || 0,
+    }
+    this.pushSubscriptions.set(endpoint, record)
+    void this.persist()
+    this.emitStateChange('push_subscribed')
+    return {
+      ok: true,
+      subscription: {
+        id: record.id,
+        deviceName: record.deviceName,
+        endpointHost: record.endpointHost,
+        createdAt: record.createdAt,
+      },
+    }
+  }
+
+  removePushSubscription(idOrEndpoint) {
+    const target = String(idOrEndpoint ?? '').trim()
+    if (!target) return { ok: false }
+    if (this.pushSubscriptions.has(target)) {
+      this.pushSubscriptions.delete(target)
+      void this.persist()
+      this.emitStateChange('push_unsubscribed')
+      return { ok: true }
+    }
+    for (const [ep, sub] of this.pushSubscriptions) {
+      if (sub.id === target) {
+        this.pushSubscriptions.delete(ep)
+        void this.persist()
+        this.emitStateChange('push_unsubscribed')
+        return { ok: true }
+      }
+    }
+    return { ok: false }
+  }
+
+  listPushSubscriptions() {
+    return [...this.pushSubscriptions.values()].map(sub => ({
+      id: sub.id,
+      deviceName: sub.deviceName,
+      endpointHost: sub.endpointHost,
+      createdAt: sub.createdAt,
+      lastSentAt: sub.lastSentAt || 0,
+    }))
+  }
+
+  async broadcastWebPush(payloadObj = {}) {
+    const subs = [...this.pushSubscriptions.values()]
+    const record = {
+      id: `push-${randomBytes(4).toString('hex')}`,
+      at: this.now(),
+      title: payloadObj.title || 'DSH 通知',
+      body: payloadObj.body || '',
+      tag: payloadObj.tag || 'dsh-notify',
+      data: payloadObj.data || {},
+      sentCount: 0,
+      totalSubscriptions: subs.length,
+    }
+    this.pushHistory.push(record)
+    if (this.pushHistory.length > 30) this.pushHistory.shift()
+
+    if (subs.length === 0) {
+      return { ok: true, sentCount: 0, totalSubscriptions: 0, results: [] }
+    }
+
+    const results = []
+    for (const sub of subs) {
+      try {
+        const res = await sendWebPushNotification(sub, payloadObj, this.vapidKeys, {
+          fetchImpl: this.pushFetch,
+        })
+        if (res.ok) {
+          sub.lastSentAt = this.now()
+          record.sentCount += 1
+        } else if (res.expired) {
+          this.pushSubscriptions.delete(sub.endpoint)
+        }
+        results.push({ id: sub.id, deviceName: sub.deviceName, ...res })
+      } catch (error) {
+        results.push({ id: sub.id, deviceName: sub.deviceName, ok: false, error: error?.message || 'push failed' })
+      }
+    }
+    void this.persist()
+    return {
+      ok: true,
+      sentCount: record.sentCount,
+      totalSubscriptions: subs.length,
+      results,
+    }
+  }
+
+  detectAndTriggerWebPush(hostId, hostName, bridgeState) {
+    if (!bridgeState || typeof bridgeState !== 'object') return
+    const approvals = Array.isArray(bridgeState.approvals) ? bridgeState.approvals : []
+    const tasks = Array.isArray(bridgeState.tasks) ? bridgeState.tasks : []
+
+    // 1. Check for new pending approvals
+    for (const app of approvals) {
+      if (!app?.code || this.pushedApprovalCodes.has(app.code)) continue
+      this.pushedApprovalCodes.add(app.code)
+      while (this.pushedApprovalCodes.size > 300) {
+        this.pushedApprovalCodes.delete(this.pushedApprovalCodes.values().next().value)
+      }
+      void this.broadcastWebPush({
+        title: `⏳ [${hostName}] 待审批：${app.title || app.toolName}`,
+        body: `工具 ${app.toolName}：${app.reason || '请求执行权限'}（点击立即处理）`,
+        tag: `approval-${app.code}`,
+        badgeCount: approvals.length,
+        data: {
+          type: 'approval',
+          hostId,
+          hostName,
+          agentId: app.agentId,
+          code: app.code,
+          url: `/?host=${encodeURIComponent(hostId)}&task=${encodeURIComponent(app.agentId || '')}`,
+        },
+      })
+    }
+
+    // 2. Check for task completion or failure transitions
+    for (const task of tasks) {
+      if (!task?.id) continue
+      const key = `${hostId}:${task.id}`
+      const prevStatus = this.hostTaskStates.get(key)
+      const curStatus = String(task.status || 'unknown')
+      this.hostTaskStates.set(key, curStatus)
+      if (!prevStatus || prevStatus === curStatus) continue
+
+      if (prevStatus === 'running' && curStatus === 'idle') {
+        void this.broadcastWebPush({
+          title: `✅ [${hostName}] 任务完成：${task.title}`,
+          body: task.lastOutput ? String(task.lastOutput).slice(0, 120) : '任务已执行完毕，点击查看结果或继续指令',
+          tag: `done-${task.id}`,
+          badgeCount: approvals.length + 1,
+          data: {
+            type: 'completed',
+            hostId,
+            hostName,
+            agentId: task.id,
+            url: `/?host=${encodeURIComponent(hostId)}&task=${encodeURIComponent(task.id)}`,
+          },
+        })
+      } else if ((curStatus === 'error' || curStatus === 'failed') && prevStatus !== curStatus) {
+        void this.broadcastWebPush({
+          title: `⚠️ [${hostName}] 任务异常：${task.title}`,
+          body: `状态：${task.statusLabel || curStatus}，点击打开控制台排查`,
+          tag: `fail-${task.id}`,
+          badgeCount: approvals.length + 1,
+          data: {
+            type: 'failed',
+            hostId,
+            hostName,
+            agentId: task.id,
+            url: `/?host=${encodeURIComponent(hostId)}&task=${encodeURIComponent(task.id)}`,
+          },
+        })
+      }
     }
   }
 
@@ -260,8 +487,13 @@ export class HubCore {
       }
     }
 
+    if (payload.bridgeState) {
+      this.detectAndTriggerWebPush(hostId, hostName, payload.bridgeState)
+    }
+
     const commands = record.commands.splice(0)
     void this.persist()
+    this.emitStateChange('heartbeat')
 
     return {
       ok: true,

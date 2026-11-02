@@ -2,8 +2,15 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DSH 全功能自托管总控中心 · 飞书多机 + 零第三方服务器</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f19" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="DSH 远控" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <title>DeepSeek Harness 自托管全功能总控台 · 飞书多机总控台</title>
   <style>
     :root {
       --bg: #0b0f19;
@@ -18,68 +25,113 @@
       --amber: #f59e0b;
       --red: #ef4444;
       --purple: #8b5cf6;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.5;
+      padding-bottom: calc(76px + var(--safe-bottom));
     }
     header {
       border-bottom: 1px solid var(--border);
-      background: rgba(19, 27, 46, 0.9);
-      backdrop-filter: blur(10px);
+      background: rgba(15, 22, 38, 0.92);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
       position: sticky;
       top: 0;
-      z-index: 20;
-      padding: 12px 24px;
+      z-index: 30;
+      padding: calc(10px + var(--safe-top)) 18px 10px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 10px;
     }
     .brand {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
     .brand-icon {
-      width: 40px;
-      height: 40px;
+      width: 36px;
+      height: 36px;
       border-radius: 10px;
       background: linear-gradient(135deg, var(--primary), var(--purple));
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 800;
-      font-size: 16px;
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
     }
     .mascot-pill {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       background: #0d1424;
       border: 1px solid var(--border);
       border-radius: 999px;
-      padding: 6px 14px;
+      padding: 5px 12px;
       font-size: 12px;
       color: #cbd5e1;
+    }
+    .host-pills-bar {
+      background: #0e1526;
+      border-bottom: 1px solid var(--border);
+      padding: 8px 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .host-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 600;
+      background: #151f36;
+      border: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .host-pill.active {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: var(--primary);
+      color: #93c5fd;
     }
     .container {
       max-width: 1320px;
       margin: 0 auto;
-      padding: 20px 24px 48px;
+      padding: 16px 18px 32px;
       display: flex;
       flex-direction: column;
-      gap: 22px;
+      gap: 18px;
+    }
+    .ios-banner {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.16), rgba(139, 92, 246, 0.16));
+      border: 1px solid rgba(59, 130, 246, 0.45);
+      border-radius: 12px;
+      padding: 12px 15px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 12.5px;
     }
     .grid-2 {
       display: grid;
       grid-template-columns: 1.15fr 0.85fr;
-      gap: 20px;
+      gap: 18px;
     }
     @media (max-width: 960px) {
       .grid-2 { grid-template-columns: 1fr; }
@@ -88,10 +140,10 @@
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 14px;
-      padding: 18px 20px;
+      padding: 16px 18px;
     }
     .panel-title {
-      font-size: 16px;
+      font-size: 15.5px;
       font-weight: 700;
       margin: 0 0 6px 0;
       display: flex;
@@ -101,20 +153,20 @@
       flex-wrap: wrap;
     }
     .panel-sub {
-      font-size: 12.5px;
+      font-size: 12px;
       color: var(--muted);
-      margin: 0 0 14px 0;
+      margin: 0 0 12px 0;
     }
     .hosts-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-      gap: 14px;
+      grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+      gap: 12px;
     }
     .host-card {
       background: #0e1525;
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 15px;
+      padding: 14px;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -127,11 +179,7 @@
     .host-card.selected {
       border-color: var(--primary);
     }
-    .badges {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
+    .badges { display: flex; flex-wrap: wrap; gap: 6px; }
     .badge {
       font-size: 11px;
       padding: 2px 8px;
@@ -154,11 +202,7 @@
     }
     .metric-val { font-weight: 700; font-size: 14px; color: var(--text); }
     .metric-lbl { color: var(--muted); font-size: 11px; }
-    .btn-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 6px; }
     button {
       cursor: pointer;
       border: 1px solid transparent;
@@ -176,7 +220,6 @@
     button.green { background: var(--green); color: #052e16; }
     button.amber { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border-color: rgba(245, 158, 11, 0.4); }
     button.danger { background: rgba(239, 68, 68, 0.16); color: #f87171; border-color: rgba(239, 68, 68, 0.35); }
-    button.danger:hover { background: rgba(239, 68, 68, 0.28); }
     input, select, textarea {
       background: #090d16;
       border: 1px solid var(--border);
@@ -186,12 +229,7 @@
       font-size: 13px;
       width: 100%;
     }
-    .form-row {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 10px;
-      align-items: center;
-    }
+    .form-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
     .checkbox-row {
       display: flex;
       align-items: center;
@@ -204,7 +242,7 @@
     .task-item {
       border: 1px solid var(--border);
       background: #0d1424;
-      border-radius: 10px;
+      border-radius: 12px;
       padding: 13px;
       margin-bottom: 10px;
     }
@@ -244,26 +282,75 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 6px 10px;
+      padding: 7px 10px;
       border-radius: 6px;
       font-size: 12.5px;
       cursor: pointer;
       border-bottom: 1px solid rgba(35, 48, 79, 0.4);
     }
     .file-entry:hover { background: rgba(59, 130, 246, 0.12); }
+
+    /* Native Mobile Bottom Tab Bar */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(15, 22, 38, 0.96);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-around;
+      padding: 6px 8px calc(6px + var(--safe-bottom));
+      z-index: 40;
+    }
+    .nav-tab {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 4px 0;
+      font-size: 11px;
+      font-weight: 600;
+      position: relative;
+    }
+    .nav-tab.active { color: #60a5fa; }
+    .nav-tab .icon { font-size: 18px; line-height: 1.1; }
+    .nav-badge {
+      position: absolute;
+      top: 0;
+      right: 24%;
+      background: var(--red);
+      color: #fff;
+      font-size: 10px;
+      padding: 0 5px;
+      border-radius: 999px;
+      min-width: 16px;
+      text-align: center;
+    }
+
     .toast {
       position: fixed;
-      bottom: 20px;
-      right: 20px;
+      bottom: calc(74px + var(--safe-bottom));
+      right: 18px;
+      left: 18px;
+      max-width: 420px;
+      margin: 0 auto;
       background: #1e293b;
       border: 1px solid var(--primary);
       color: #fff;
       padding: 11px 16px;
       border-radius: 10px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.45);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
       display: none;
       z-index: 100;
       font-size: 13px;
+      text-align: center;
     }
   </style>
 </head>
@@ -273,112 +360,65 @@
       <div class="brand-icon">DSH</div>
       <div>
         <div style="font-weight: 700; font-size: 15px;">DeepSeek Harness 自托管全功能总控台</div>
-        <div style="font-size: 11.5px; color: var(--muted);">平时用飞书 · 多电脑自由切换与迁移 · 100% 脱离第三方服务器</div>
+        <div style="font-size: 11px; color: var(--muted);">iPhone 桌面 App 锁屏推送 · 飞书多机总控台 · 100% 零第三方服务器</div>
       </div>
     </div>
-    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-      <div id="deepyMascot" class="mascot-pill">🐋 Deepy: 正在同步状态...</div>
-      <span id="connBadge" class="badge green">实时同步中</span>
-      <button onclick="openPairingModal()">📱 手机免密配对码</button>
-      <button onclick="promptToken()">🔑 访问密钥</button>
-      <button onclick="refreshState()">🔄 刷新</button>
+    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+      <div id="deepyMascot" class="mascot-pill">🐋 Deepy: 正在同步...</div>
+      <span id="connBadge" class="badge green">SSE 实时流</span>
+      <button id="headerPushBtn" class="primary" onclick="subscribeWebPush()">🔔 开启锁屏推送</button>
+      <button onclick="openPairingModal()">📱 免密配对</button>
+      <button onclick="promptToken()">🔑 密钥</button>
     </div>
   </header>
 
+  <!-- Quick Host Switcher Bar (Always accessible on Mobile & Desktop) -->
+  <div id="hostPillsBar" class="host-pills-bar"></div>
+
   <div class="container">
-    <!-- Pairing Code Banner (Hidden by default) -->
+    <!-- iOS Add-to-Home-Screen & Push Banner -->
+    <div id="iosGuideBanner" class="ios-banner">
+      <div>
+        <strong>📲 把控制台放到 iPhone 主屏幕，即可享受原生 App 全屏体验与锁屏推送通知！</strong>
+        <div id="iosGuideSub" style="color:#cbd5e1; margin-top:2px;">
+          在 iPhone Safari 点击底部「分享」图标 ➔ 选择「添加到主屏幕」，从桌面打开后点击右上角「🔔 开启锁屏推送」即可接收待审批与任务完成提醒。
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="primary" onclick="subscribeWebPush()">🔔 立即开启本机推送</button>
+        <button onclick="sendTestPush()">📨 发测试通知</button>
+      </div>
+    </div>
+
+    <!-- Pairing Code Modal Banner -->
     <div id="pairingBox" class="panel" style="display:none; border-color:var(--primary);">
       <div class="panel-title">
-        <span>📱 手机扫码 / 6位配对码免密登录（对标并替代官方扫码配对）</span>
+        <span>📱 手机扫码 / 6位配对码免密登录</span>
         <button onclick="document.getElementById('pairingBox').style.display='none'">关闭</button>
       </div>
       <div id="pairingContent" style="font-size:13px; color:#cbd5e1;"></div>
     </div>
 
-    <!-- 1. Multi-Host Fleet & Feishu Switcher -->
-    <div class="panel">
-      <div class="panel-title">
-        <span>🖥 已接入的电脑（点击「设为飞书主控」即可切换飞书控制的电脑）</span>
-        <span id="fleetStats" style="font-size: 12px; color: var(--muted);"></span>
-      </div>
-      <p class="panel-sub">
-        每一台电脑都使用本地 Ed25519 密钥对自动锁定设备指纹（防止设备伪造）。同一时间只有「飞书主控」保持飞书长连接，其余电脑在线待机，随时一键接管。
-      </p>
-      <div id="hostsGrid" class="hosts-grid"></div>
-    </div>
-
-    <!-- 2. Cross-Computer Migration & E2EE Shares -->
-    <div class="grid-2">
-      <div class="panel">
-        <div class="panel-title">🚀 跨电脑一键转移与原机临时清空</div>
-        <p class="panel-sub">
-          将源电脑的 DSH 会话记录与配置打包加密传输到目标电脑恢复，并可自动清空源电脑数据。
-        </p>
-        <div class="form-row">
-          <div style="flex: 1;">
-            <label style="font-size: 12px; color: var(--muted);">源电脑（转出）</label>
-            <select id="migSource"></select>
-          </div>
-          <div style="padding-top: 18px; color: var(--muted);">➔</div>
-          <div style="flex: 1;">
-            <label style="font-size: 12px; color: var(--muted);">目标电脑（转入）</label>
-            <select id="migTarget"></select>
-          </div>
-        </div>
-        <label class="checkbox-row">
-          <input type="checkbox" id="migSwitchFeishu" checked />
-          转移完成后，自动把「飞书主控」切换到目标电脑
-        </label>
-        <label class="checkbox-row">
-          <input type="checkbox" id="migWipeSource" />
-          转移后临时清空源电脑上的会话与历史数据（保留飞书连接配置，方便随时迁回）
-        </label>
-        <label class="checkbox-row">
-          <input type="checkbox" id="migIncludeCreds" />
-          连同源电脑的鉴权密钥（feishu.env / auth）一并迁移覆盖
-        </label>
-        <div style="margin-top: 10px;">
-          <button class="primary" style="width: 100%; padding: 9px;" onclick="startMigration()">
-            ⚡ 立即执行跨电脑转移
-          </button>
-        </div>
-        <div id="migrationsList" style="margin-top: 12px; font-size: 12px;"></div>
-      </div>
-
+    <!-- TAB SECTION 1: SESSIONS & CHAT CONSOLE -->
+    <div id="sec_chat" class="tab-section">
       <div class="panel">
         <div class="panel-title">
-          <span>📦 云端快照 & 🔒 端到端加密对话分享</span>
-        </div>
-        <p class="panel-sub">
-          快照可随时恢复到任意电脑；加密分享采用 AES-256-GCM 浏览器端解密（密钥仅在 #k= 锚点中，完全替代 go.dshtui.com）。
-        </p>
-        <div style="font-size:12px; font-weight:700; margin-bottom:6px; color:#93c5fd;">📦 备份快照列表</div>
-        <div id="snapshotsList" style="max-height:130px; overflow-y:auto; margin-bottom:12px;"></div>
-        <div style="font-size:12px; font-weight:700; margin-bottom:6px; color:#34d399;">🔒 端到端加密会话回放链接</div>
-        <div id="sharesList" style="max-height:130px; overflow-y:auto;"></div>
-      </div>
-    </div>
-
-    <!-- 3. Selected Host Remote Console + Workspace File Explorer -->
-    <div class="grid-2">
-      <div class="panel">
-        <div class="panel-title">
-          <span id="consoleTitle">🎮 电脑远程任务控制台</span>
+          <span id="consoleTitle">💬 电脑远程任务与对话控制台</span>
           <div class="btn-row" id="consoleActions"></div>
         </div>
         <p class="panel-sub">
-          支持远程新建会话、查看完整对话与思考/工具调用步骤、运行中实时插话（Steer / 打断重发）、重命名/删除会话与生成加密回放。
+          支持远程新建会话、查看完整对话/思考/工具步骤、运行中实时插话（Steer / 打断重发）、重命名/删除会话与生成端到端加密回放。
         </p>
 
         <!-- New Session Bar -->
         <div style="background:#0d1424; border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:14px;">
-          <div style="font-size:12.5px; font-weight:700; margin-bottom:8px; color:#60a5fa;">➕ 在此电脑远程新建会话</div>
+          <div style="font-size:12.5px; font-weight:700; margin-bottom:8px; color:#60a5fa;">➕ 在当前选中电脑远程新建会话</div>
           <div class="form-row" style="margin-bottom:8px;">
             <input id="newSessionCwd" placeholder="工作区路径（留空默认使用最近项目路径）" style="flex:1;" />
-            <input id="newSessionTitle" placeholder="会话标题（可选）" style="width:180px;" />
+            <input id="newSessionTitle" placeholder="会话标题（可选）" style="width:160px;" />
           </div>
           <div class="form-row" style="margin-bottom:0;">
-            <input id="newSessionPrompt" placeholder="输入初始任务指令，创建后立即开始执行..." />
+            <input id="newSessionPrompt" placeholder="输入初始任务指令，创建后立即开始执行..." onkeydown="if(event.key==='Enter')createNewSession()" />
             <button class="primary" style="white-space:nowrap;" onclick="createNewSession()">➕ 新建并执行</button>
           </div>
         </div>
@@ -386,28 +426,145 @@
         <div id="approvalsBox"></div>
         <div id="tasksBox"></div>
       </div>
+    </div>
 
-      <!-- Remote Workspace File Explorer & Code/Image Viewer -->
+    <!-- TAB SECTION 2: WORKSPACE FILE EXPLORER -->
+    <div id="sec_files" class="tab-section">
       <div class="panel">
         <div class="panel-title">
-          <span>📂 远程工作区文件浏览器 & 代码预览</span>
-          <button onclick="browseFiles('')">🏠 根目录</button>
+          <span>📂 远程工作区文件树与安全代码/图片预览</span>
+          <button onclick="browseFiles('')">🏠 返回根目录</button>
         </div>
         <p class="panel-sub">
-          完全脱离 dsh.r2049.cn 的远程工作区文件树与安全代码/图片预览（严格限制在工作区目录内，自动脱敏密钥）。
+          完全脱离第三方服务器的远程工作区文件浏览器（严格限制在工作区目录内，自动脱敏密钥）。点击文件即可预览代码或图片。
         </p>
         <div class="form-row">
           <input id="fsRootInput" placeholder="工作区根目录 (默认跟随选中任务)" />
           <button class="primary" style="white-space:nowrap;" onclick="browseFiles('')">读取目录</button>
         </div>
         <div id="fsCurrentPath" style="font-size:12px; color:var(--muted); margin-bottom:8px;"></div>
-        <div id="fsEntriesBox" style="max-height:240px; overflow-y:auto; background:#090d16; border:1px solid var(--border); border-radius:8px; padding:6px;">
-          <div style="color:var(--muted); font-size:12.5px; padding:8px;">点击左侧任意任务的「📂 浏览文件」或上方「读取目录」加载远程文件树。</div>
+        <div id="fsEntriesBox" style="max-height:260px; overflow-y:auto; background:#090d16; border:1px solid var(--border); border-radius:8px; padding:6px;">
+          <div style="color:var(--muted); font-size:12.5px; padding:8px;">点击任务卡片上的「📂 浏览文件」或上方「读取目录」加载远程文件树。</div>
         </div>
         <div id="filePreviewBox" style="margin-top:12px;"></div>
       </div>
     </div>
+
+    <!-- TAB SECTION 3: FLEET & CROSS-COMPUTER MIGRATION -->
+    <div id="sec_fleet" class="tab-section">
+      <div class="panel" style="margin-bottom:18px;">
+        <div class="panel-title">
+          <span>🖥 已接入的电脑（点击「设为飞书主控」切换飞书控制权）</span>
+          <span id="fleetStats" style="font-size: 12px; color: var(--muted);"></span>
+        </div>
+        <p class="panel-sub">
+          每台电脑自动使用 Ed25519 密钥对锁定设备指纹。同一时间只有「飞书主控」连接飞书，其余电脑在线待机，随时一键接管。
+        </p>
+        <div id="hostsGrid" class="hosts-grid"></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-title">🚀 跨电脑一键转移与原机临时清空</div>
+          <p class="panel-sub">
+            将源电脑的 DSH 会话记录与配置打包加密传输到目标电脑恢复，并可自动清空源电脑数据。
+          </p>
+          <div class="form-row">
+            <div style="flex: 1;">
+              <label style="font-size: 12px; color: var(--muted);">源电脑（转出）</label>
+              <select id="migSource"></select>
+            </div>
+            <div style="padding-top: 18px; color: var(--muted);">➔</div>
+            <div style="flex: 1;">
+              <label style="font-size: 12px; color: var(--muted);">目标电脑（转入）</label>
+              <select id="migTarget"></select>
+            </div>
+          </div>
+          <label class="checkbox-row">
+            <input type="checkbox" id="migSwitchFeishu" checked />
+            转移完成后，自动把「飞书主控」切换到目标电脑
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" id="migWipeSource" />
+            转移后临时清空源电脑上的会话与历史数据（保留飞书连接配置，方便随时迁回）
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" id="migIncludeCreds" />
+            连同源电脑的鉴权密钥（feishu.env / auth）一并迁移覆盖
+          </label>
+          <div style="margin-top: 10px;">
+            <button class="primary" style="width: 100%; padding: 9px;" onclick="startMigration()">
+              ⚡ 立即执行跨电脑转移
+            </button>
+          </div>
+          <div id="migrationsList" style="margin-top: 12px; font-size: 12px;"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">📦 云端快照备份与恢复</div>
+          <p class="panel-sub">快照可随时一键恢复到任意在线电脑，或下载到本地保存。</p>
+          <div id="snapshotsList" style="max-height:240px; overflow-y:auto;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB SECTION 4: PUSH NOTIFICATIONS & E2EE SECURITY -->
+    <div id="sec_push" class="tab-section">
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-title">
+            <span>🔔 iPhone / 手机原生锁屏推送管理 (W3C Web Push + VAPID)</span>
+          </div>
+          <p class="panel-sub">
+            自托管 VAPID (ECDSA P-256) 与 RFC 8291 (aes128gcm) 加密推送引擎，直连苹果 <code>web.push.apple.com</code>，无需第三方推送服务。
+          </p>
+          <div class="btn-row" style="margin-bottom:12px;">
+            <button class="primary" onclick="subscribeWebPush()">🔔 订阅 / 更新本机锁屏推送</button>
+            <button class="green" onclick="sendTestPush()">📨 立即发送测试锁屏通知</button>
+          </div>
+          <div style="font-size:12px; font-weight:700; color:#93c5fd; margin-bottom:6px;">📱 已订阅推送的设备</div>
+          <div id="pushSubsList" style="margin-bottom:12px;"></div>
+          <div style="font-size:12px; font-weight:700; color:#34d399; margin-bottom:6px;">📜 最近触发的系统推送记录</div>
+          <div id="pushHistoryList" style="max-height:160px; overflow-y:auto;"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">
+            <span>🔒 端到端加密对话分享 (AES-256-GCM)</span>
+          </div>
+          <p class="panel-sub">
+            解密密钥仅保存在 URL <code>#k=</code> 锚点中，服务端只存密文，打开链接即可在浏览器本地解密播放对话动画回放。
+          </p>
+          <div id="sharesList" style="max-height:260px; overflow-y:auto;"></div>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <!-- Native App Bottom Navigation Bar -->
+  <nav class="bottom-nav">
+    <button id="tab_all" class="nav-tab active" onclick="switchTab('all')">
+      <span class="icon">🧭</span>
+      <span>全览驾驶舱</span>
+    </button>
+    <button id="tab_chat" class="nav-tab" onclick="switchTab('chat')">
+      <span class="icon">💬</span>
+      <span>会话对话</span>
+      <span id="badge_chat" class="nav-badge" style="display:none;">0</span>
+    </button>
+    <button id="tab_files" class="nav-tab" onclick="switchTab('files')">
+      <span class="icon">📂</span>
+      <span>工作区文件</span>
+    </button>
+    <button id="tab_fleet" class="nav-tab" onclick="switchTab('fleet')">
+      <span class="icon">🖥️</span>
+      <span>多机与迁移</span>
+    </button>
+    <button id="tab_push" class="nav-tab" onclick="switchTab('push')">
+      <span class="icon">🔔</span>
+      <span>锁屏推送</span>
+    </button>
+  </nav>
 
   <div id="toast" class="toast"></div>
 
@@ -418,10 +575,13 @@
     }
 
     let hubToken = localStorage.getItem('dsh_hub_token') || '';
-    let state = { activeHostId: '', hosts: [], snapshots: [], migrations: [], shares: [], stats: {} };
-    let selectedHostId = '';
+    let state = { activeHostId: '', hosts: [], snapshots: [], migrations: [], shares: [], pushSubscriptions: [], pushHistory: [], stats: {} };
+    let selectedHostId = urlParams.get('host') || '';
+    let activeTab = window.innerWidth < 768 ? 'chat' : 'all';
     let openTranscripts = new Set();
+    if (urlParams.get('task')) openTranscripts.add(urlParams.get('task'));
     let currentFsAgentId = '';
+    let sseSource = null;
 
     function showToast(msg) {
       const el = document.getElementById('toast');
@@ -429,6 +589,108 @@
       el.style.display = 'block';
       clearTimeout(el._timer);
       el._timer = setTimeout(() => { el.style.display = 'none'; }, 3600);
+    }
+
+    function switchTab(tab) {
+      activeTab = tab;
+      ['all', 'chat', 'files', 'fleet', 'push'].forEach(k => {
+        const btn = document.getElementById('tab_' + k);
+        if (btn) btn.classList.toggle('active', k === tab);
+      });
+      ['chat', 'files', 'fleet', 'push'].forEach(sec => {
+        const el = document.getElementById('sec_' + sec);
+        if (!el) return;
+        el.style.display = (tab === 'all' || tab === sec) ? 'block' : 'none';
+      });
+    }
+
+    // Initialize tab visibility
+    switchTab(activeTab);
+
+    // Register Service Worker & listen for notification click deep-links
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      navigator.serviceWorker.addEventListener('message', event => {
+        if (event.data?.type === 'NOTIFICATION_CLICK') {
+          const d = event.data.data || {};
+          if (d.hostId) selectedHostId = d.hostId;
+          if (d.agentId) openTranscripts.add(d.agentId);
+          switchTab('chat');
+          renderAll();
+        }
+      });
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    }
+
+    async function subscribeWebPush() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        showToast('⚠️ 在 iPhone 上请先点 Safari 底部「分享 ➔ 添加到主屏幕」，从主屏幕打开即可开启锁屏推送！');
+        return;
+      }
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          showToast('请在系统设置中允许通知权限');
+          return;
+        }
+        const reg = await navigator.serviceWorker.ready;
+        const vapidRes = await api('/api/push/vapid-public-key');
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidRes.publicKey),
+        });
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const defaultName = isIOS ? 'iPhone 主屏幕 App' : (navigator.platform || 'Web App');
+        await api('/api/push/subscribe', {
+          method: 'POST',
+          body: JSON.stringify({
+            subscription: sub.toJSON(),
+            deviceName: defaultName,
+          }),
+        });
+        showToast('✅ 已开启系统级锁屏推送！正在发送一条测试通知...');
+        await sendTestPush();
+        await refreshState();
+      } catch (e) {
+        showToast('开启推送失败: ' + e.message);
+      }
+    }
+
+    async function sendTestPush() {
+      try {
+        const res = await api('/api/push/test', { method: 'POST', body: '{}' });
+        if (res.totalSubscriptions === 0) {
+          showToast('尚未有设备订阅推送，请先点击「🔔 开启本机推送」');
+        } else {
+          showToast(`📨 已向 ${res.sentCount}/${res.totalSubscriptions} 台设备发送锁屏测试通知！`);
+        }
+        await refreshState();
+      } catch (e) {
+        showToast('测试推送失败: ' + e.message);
+      }
+    }
+
+    async function removePushSub(id) {
+      try {
+        await api('/api/push/unsubscribe', {
+          method: 'POST',
+          body: JSON.stringify({ id }),
+        });
+        showToast('已移除该推送设备');
+        await refreshState();
+      } catch (e) {
+        showToast('移除失败: ' + e.message);
+      }
     }
 
     function promptToken() {
@@ -441,6 +703,7 @@
       }
       hubToken = trimmed;
       localStorage.setItem('dsh_hub_token', hubToken);
+      connectSse();
       refreshState();
     }
 
@@ -460,6 +723,7 @@
           if (data.hostId) selectedHostId = data.hostId;
           showToast('✅ 配对成功！已自动授权登录');
           history.replaceState({}, '', location.pathname);
+          connectSse();
           refreshState();
         } else {
           showToast('配对失败: ' + (data.error || '未知错误'));
@@ -484,7 +748,7 @@
           <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
             <div>
               <div>一次性 6 位免密配对码（5 分钟内有效）：<strong style="font-size:20px; color:#34d399; letter-spacing:2px; margin-left:6px;">${esc(code)}</strong></div>
-              <div style="margin-top:6px; color:var(--muted);">手机浏览器直接访问免密链接：<a href="${esc(pairUrl)}" style="color:#60a5fa;" target="_blank">${esc(pairUrl)}</a></div>
+              <div style="margin-top:6px; color:var(--muted);">手机 Safari 直接打开免密链接并添加到主屏幕：<a href="${esc(pairUrl)}" style="color:#60a5fa;" target="_blank">${esc(pairUrl)}</a></div>
             </div>
             <button class="primary" onclick="navigator.clipboard.writeText('${esc(pairUrl)}'); showToast('已复制免密配对链接')">📋 复制配对链接</button>
           </div>
@@ -500,7 +764,7 @@
       const res = await fetch(path, Object.assign({}, options, { headers }));
       if (res.status === 401) {
         document.getElementById('connBadge').className = 'badge red';
-        document.getElementById('connBadge').textContent = '需要密钥 (点击右上角访问密钥)';
+        document.getElementById('connBadge').textContent = '需要密钥';
         throw new Error('Unauthorized');
       }
       const data = await res.json();
@@ -534,20 +798,42 @@
         .replace(/"/g, '&quot;');
     }
 
+    function applyIncomingState(data) {
+      state = data;
+      document.getElementById('connBadge').className = 'badge green';
+      document.getElementById('connBadge').textContent = '实时同步正常';
+      if (!selectedHostId && state.hosts.length > 0) {
+        selectedHostId = state.activeHostId || state.hosts[0].hostId;
+      }
+      renderAll();
+    }
+
+    function connectSse() {
+      if (typeof EventSource === 'undefined') return;
+      if (sseSource) {
+        sseSource.close();
+        sseSource = null;
+      }
+      try {
+        const q = hubToken ? `?token=${encodeURIComponent(hubToken)}` : '';
+        sseSource = new EventSource('/api/events' + q);
+        sseSource.addEventListener('state', evt => {
+          try {
+            const parsed = JSON.parse(evt.data);
+            applyIncomingState(parsed);
+          } catch {}
+        });
+      } catch {}
+    }
+
     async function refreshState() {
       try {
         const data = await api('/api/state');
-        state = data;
-        document.getElementById('connBadge').className = 'badge green';
-        document.getElementById('connBadge').textContent = '实时同步正常';
-        if (!selectedHostId && state.hosts.length > 0) {
-          selectedHostId = state.activeHostId || state.hosts[0].hostId;
-        }
-        renderAll();
+        applyIncomingState(data);
       } catch (err) {
         if (err.message !== 'Unauthorized') {
           document.getElementById('connBadge').className = 'badge amber';
-          document.getElementById('connBadge').textContent = '连接异常';
+          document.getElementById('connBadge').textContent = '重连中';
         }
       }
     }
@@ -556,29 +842,92 @@
       const el = document.getElementById('deepyMascot');
       const totalRunning = state.hosts.reduce((acc, h) => acc + (h.runningCount || 0), 0);
       const totalApprovals = state.hosts.reduce((acc, h) => acc + ((h.bridgeState?.approvals || []).length), 0);
+      const badgeEl = document.getElementById('badge_chat');
+      if (badgeEl) {
+        const count = totalApprovals + totalRunning;
+        badgeEl.style.display = count > 0 ? 'inline-block' : 'none';
+        badgeEl.textContent = String(count);
+      }
       if (totalApprovals > 0) {
-        el.innerHTML = `🚨 <strong>Deepy 提醒</strong>：有 ${totalApprovals} 个高危操作正在等你审批！`;
+        el.innerHTML = `🚨 <strong>Deepy 提醒</strong>：${totalApprovals} 个工具等你审批！`;
         el.style.borderColor = 'var(--amber)';
       } else if (totalRunning > 0) {
-        el.innerHTML = `🐋 <strong>Deepy 搬砖中</strong>：${totalRunning} 个任务正在高速执行...`;
+        el.innerHTML = `🐋 <strong>Deepy 搬砖中</strong>：${totalRunning} 个任务高速运行...`;
         el.style.borderColor = 'var(--green)';
       } else {
-        el.innerHTML = `💤 <strong>Deepy 待命中</strong>：所有电脑任务空闲，随时听候调遣`;
+        el.innerHTML = `💤 <strong>Deepy 待命</strong>：所有电脑任务空闲`;
         el.style.borderColor = 'var(--border)';
       }
       const statsEl = document.getElementById('fleetStats');
-      if (state.stats) {
-        statsEl.textContent = `在线电脑 ${state.stats.onlineHosts}/${state.stats.totalHosts} · 会话总数 ${state.stats.totalSessionsOnDisk} · 累计执行指令 ${state.stats.totalCommandsExecuted}`;
+      if (state.stats && statsEl) {
+        statsEl.textContent = `在线电脑 ${state.stats.onlineHosts}/${state.stats.totalHosts} · 会话 ${state.stats.totalSessionsOnDisk} · 推送订阅 ${state.stats.pushSubscriptionsCount || 0} 台`;
       }
+      const headerPushBtn = document.getElementById('headerPushBtn');
+      if (headerPushBtn && (state.pushSubscriptions || []).length > 0) {
+        headerPushBtn.textContent = `🔔 已开启推送 (${state.pushSubscriptions.length})`;
+      }
+    }
+
+    function renderHostPills() {
+      const bar = document.getElementById('hostPillsBar');
+      if (!state.hosts || state.hosts.length === 0) {
+        bar.innerHTML = '<span style="font-size:12px; color:var(--muted);">暂无电脑接入，配置 FEISHU_HUB_URL 后将显示在这里</span>';
+        return;
+      }
+      bar.innerHTML = state.hosts.map(h => {
+        const isSel = h.hostId === selectedHostId;
+        const isFeishu = h.hostId === state.activeHostId;
+        return `<div class="host-pill ${isSel ? 'active' : ''}" onclick="selectHost('${esc(h.hostId)}')">
+          <span>${h.online ? '🟢' : '🔴'} ${esc(h.hostName)}</span>
+          ${isFeishu ? '<span class="badge green" style="font-size:10px; padding:1px 6px;">飞书主控</span>' : ''}
+          <span style="font-size:11px; color:var(--muted);">(${h.runningCount}/${h.taskCount})</span>
+        </div>`;
+      }).join('');
     }
 
     function renderAll() {
       updateDeepyMascot();
+      renderHostPills();
       renderHosts();
       renderMigrationSelectors();
       renderSnapshots();
       renderShares();
+      renderPushSection();
       renderSelectedHostConsole();
+    }
+
+    function renderPushSection() {
+      const subsBox = document.getElementById('pushSubsList');
+      const histBox = document.getElementById('pushHistoryList');
+      const subs = state.pushSubscriptions || [];
+      if (subs.length === 0) {
+        subsBox.innerHTML = '<div style="font-size:12px; color:var(--muted);">当前还没有设备订阅锁屏推送。点击上方「🔔 订阅 / 更新本机锁屏推送」即可开启。</div>';
+      } else {
+        subsBox.innerHTML = subs.map(s => `
+          <div style="border:1px solid var(--border); background:#0e1525; border-radius:8px; padding:8px 10px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; font-size:12px;">
+            <div>
+              <strong>📱 ${esc(s.deviceName)}</strong>
+              <div style="color:var(--muted); font-size:11px;">通道: <code>${esc(s.endpointHost)}</code> · 最近推送: ${s.lastSentAt ? formatTime(s.lastSentAt) : '待触发'}</div>
+            </div>
+            <button class="danger" style="padding:4px 8px; font-size:11px;" onclick="removePushSub('${esc(s.id)}')">移除</button>
+          </div>
+        `).join('');
+      }
+
+      const hist = state.pushHistory || [];
+      if (hist.length === 0) {
+        histBox.innerHTML = '<div style="font-size:12px; color:var(--muted);">暂无推送记录。</div>';
+      } else {
+        histBox.innerHTML = hist.map(item => `
+          <div style="border:1px solid var(--border); background:#090d16; border-radius:8px; padding:7px 10px; margin-bottom:6px; font-size:11.5px;">
+            <div style="display:flex; justify-content:space-between;">
+              <strong>${esc(item.title)}</strong>
+              <span style="color:var(--muted);">${formatTime(item.at)} (${item.sentCount}/${item.totalSubscriptions})</span>
+            </div>
+            <div style="color:#cbd5e1; margin-top:2px;">${esc(item.body)}</div>
+          </div>
+        `).join('');
+      }
     }
 
     function renderHosts() {
@@ -624,7 +973,7 @@
             </div>
             <div class="btn-row" onclick="event.stopPropagation()">
               ${!isFeishu && !isRevoked ? `<button class="green" onclick="activateFeishuHost('${esc(h.hostId)}')">🎯 设为飞书主控</button>` : ''}
-              <button onclick="selectHost('${esc(h.hostId)}')">🎮 控制台</button>
+              <button onclick="selectHost('${esc(h.hostId)}'); switchTab('chat')">💬 进入对话</button>
               <button onclick="exportHostSnapshot('${esc(h.hostId)}')">📦 备份快照</button>
               <button class="danger" onclick="wipeHost('${esc(h.hostId)}', '${esc(h.hostName)}')">🧹 临时清空</button>
               ${isRevoked
@@ -690,7 +1039,7 @@
     function renderShares() {
       const box = document.getElementById('sharesList');
       if (!state.shares || state.shares.length === 0) {
-        box.innerHTML = '<div style="color: var(--muted); font-size: 12px;">暂无加密分享。可在下方任意任务卡片点击「🔗 加密分享」生成。</div>';
+        box.innerHTML = '<div style="color: var(--muted); font-size: 12px;">暂无加密分享。可在任意任务卡片点击「🔗 加密分享」生成。</div>';
         return;
       }
       box.innerHTML = state.shares.map(sh => `
@@ -714,7 +1063,7 @@
       const tasksEl = document.getElementById('tasksBox');
 
       if (!host) {
-        titleEl.textContent = '🎮 电脑远程任务控制台';
+        titleEl.textContent = '💬 电脑远程任务与对话控制台';
         actionsEl.innerHTML = '';
         approvalsEl.innerHTML = '';
         tasksEl.innerHTML = '<div style="color: var(--muted); font-size: 13px;">请先接入至少一台电脑。</div>';
@@ -722,15 +1071,16 @@
       }
 
       selectedHostId = host.hostId;
-      titleEl.textContent = `🎮 远程控制台：${host.hostName} (${host.hostId})`;
+      titleEl.textContent = `💬 远程控制台：${host.hostName} (${host.hostId})`;
       const remoteActive = host.bridgeState?.remoteActive;
+      const isFeishu = host.hostId === state.activeHostId;
       actionsEl.innerHTML = `
+        ${!isFeishu ? `<button class="green" onclick="activateFeishuHost('${esc(host.hostId)}')">🎯 设为飞书主控</button>` : ''}
         <button class="${remoteActive ? 'amber' : 'primary'}" onclick="toggleRemoteMode('${esc(host.hostId)}', ${!remoteActive})">
           ${remoteActive ? '🔕 关闭飞书完成推送' : '🔔 开启飞书完成推送'}
         </button>
       `;
 
-      // Update workspace input placeholder if empty
       const cwdInput = document.getElementById('newSessionCwd');
       const firstCwd = (host.bridgeState?.workspaces || [])[0] || '';
       if (firstCwd && !cwdInput.placeholder.includes(firstCwd)) {
@@ -789,11 +1139,11 @@
                 </div>
                 <div class="btn-row">
                   <span class="badge ${t.status === 'running' ? 'green' : 'muted'}">${esc(t.statusLabel || t.status)}</span>
-                  <button style="padding:3px 8px; font-size:11.5px;" onclick="toggleTranscript('${esc(t.id)}')">💬 对话记录 (${transcript.length})</button>
-                  <button style="padding:3px 8px; font-size:11.5px;" onclick="openTaskFiles('${esc(t.id)}', '${esc(t.cwd || '')}')">📂 浏览文件</button>
-                  <button style="padding:3px 8px; font-size:11.5px;" onclick="shareTask('${esc(host.hostId)}', '${esc(t.id)}')">🔗 加密分享</button>
-                  <button style="padding:3px 8px; font-size:11.5px;" onclick="renameTask('${esc(host.hostId)}', '${esc(t.id)}', '${esc(t.title)}')">✏️ 重命名</button>
-                  <button class="danger" style="padding:3px 8px; font-size:11.5px;" onclick="deleteTask('${esc(host.hostId)}', '${esc(t.id)}', '${esc(t.title)}')">🗑️</button>
+                  <button style="padding:4px 9px; font-size:11.5px;" onclick="toggleTranscript('${esc(t.id)}')">💬 对话 (${transcript.length})</button>
+                  <button style="padding:4px 9px; font-size:11.5px;" onclick="openTaskFiles('${esc(t.id)}', '${esc(t.cwd || '')}')">📂 文件</button>
+                  <button style="padding:4px 9px; font-size:11.5px;" onclick="shareTask('${esc(host.hostId)}', '${esc(t.id)}')">🔗 分享</button>
+                  <button style="padding:4px 9px; font-size:11.5px;" onclick="renameTask('${esc(host.hostId)}', '${esc(t.id)}', '${esc(t.title)}')">✏️</button>
+                  <button class="danger" style="padding:4px 9px; font-size:11.5px;" onclick="deleteTask('${esc(host.hostId)}', '${esc(t.id)}', '${esc(t.title)}')">🗑️</button>
                 </div>
               </div>
 
@@ -817,9 +1167,9 @@
               <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
                 ${t.status === 'running'
                   ? `
-                    <input id="steer_${esc(t.id)}" placeholder="⚡ 任务运行中：输入插话指令 (Steer) 或打断重发..." style="flex:1; min-width:200px;" onkeydown="if(event.key==='Enter')sendSteer('${esc(host.hostId)}','${esc(t.id)}',false)" />
-                    <button class="primary" onclick="sendSteer('${esc(host.hostId)}', '${esc(t.id)}', false)">⚡ 排队插话 (Steer)</button>
-                    <button class="amber" onclick="sendSteer('${esc(host.hostId)}', '${esc(t.id)}', true)">🔄 打断并重发</button>
+                    <input id="steer_${esc(t.id)}" placeholder="⚡ 运行中实时插话 (Steer) 或打断重发..." style="flex:1; min-width:190px;" onkeydown="if(event.key==='Enter')sendSteer('${esc(host.hostId)}','${esc(t.id)}',false)" />
+                    <button class="primary" onclick="sendSteer('${esc(host.hostId)}', '${esc(t.id)}', false)">⚡ 插话 (Steer)</button>
+                    <button class="amber" onclick="sendSteer('${esc(host.hostId)}', '${esc(t.id)}', true)">🔄 打断重发</button>
                     <button class="danger" onclick="stopTask('${esc(host.hostId)}', '${esc(t.id)}')">⏹ 停止</button>
                   `
                   : `
@@ -833,7 +1183,6 @@
         }).join('');
       }
 
-      // Render Remote File Explorer if host has lastFsListing
       renderFsPanel(host);
     }
 
@@ -843,7 +1192,7 @@
       const previewBox = document.getElementById('filePreviewBox');
       const listing = host.lastFsListing;
       if (listing && listing.entries) {
-        pathEl.innerHTML = `当前工作区：<code>${esc(listing.rootCwd)}</code> · 子目录：<code>/${esc(listing.subDir || '')}</code>`;
+        pathEl.innerHTML = `工作区：<code>${esc(listing.rootCwd)}</code> · 子目录：<code>/${esc(listing.subDir || '')}</code>`;
         const parentBtn = listing.subDir
           ? `<div class="file-entry" onclick="browseFiles('${esc(listing.subDir.split('/').slice(0, -1).join('/'))}')"><span>⬆️ .. (返回上级目录)</span><span>目录</span></div>`
           : '';
@@ -904,7 +1253,7 @@
     }
 
     async function manageTrust(hostId, action) {
-      if (action === 'revoke' && !confirm(`确定要吊销设备 ${hostId} 的访问权限吗？吊销后该设备将无法同步或接收飞书消息。`)) return;
+      if (action === 'revoke' && !confirm(`确定要吊销设备 ${hostId} 的访问权限吗？`)) return;
       try {
         await api(`/api/hosts/${encodeURIComponent(hostId)}/trust`, {
           method: 'POST',
@@ -931,7 +1280,7 @@
         document.getElementById('newSessionPrompt').value = '';
         document.getElementById('newSessionTitle').value = '';
         showToast('✨ 已下发新建远程会话指令');
-        setTimeout(refreshState, 1200);
+        setTimeout(refreshState, 1000);
       } catch (e) {
         showToast('新建失败: ' + e.message);
       }
@@ -948,7 +1297,7 @@
         });
         input.value = '';
         showToast('🚀 指令已发送');
-        setTimeout(refreshState, 1200);
+        setTimeout(refreshState, 1000);
       } catch (e) {
         showToast('发送失败: ' + e.message);
       }
@@ -965,7 +1314,7 @@
         });
         input.value = '';
         showToast(interrupt ? '🔄 已请求打断当前步骤并重发新指令' : '⚡ 插话指令已注入队列');
-        setTimeout(refreshState, 1200);
+        setTimeout(refreshState, 1000);
       } catch (e) {
         showToast('插话失败: ' + e.message);
       }
@@ -1007,7 +1356,7 @@
           body: JSON.stringify({ type: 'share_session', agentId }),
         });
         showToast('🔒 正在本机执行 AES-256-GCM 加密并生成回放链接...');
-        setTimeout(refreshState, 1500);
+        setTimeout(refreshState, 1200);
       } catch (e) {
         showToast('生成分享失败: ' + e.message);
       }
@@ -1026,6 +1375,7 @@
     function openTaskFiles(agentId, cwd) {
       currentFsAgentId = agentId;
       if (cwd) document.getElementById('fsRootInput').value = cwd;
+      if (activeTab === 'chat') switchTab('files');
       browseFiles('');
     }
 
@@ -1067,7 +1417,7 @@
           method: 'POST',
           body: JSON.stringify({ type: 'export_snapshot', includeCredentials: false }),
         });
-        showToast('📦 已向该电脑下发快照导出指令，稍后将出现在快照列表中');
+        showToast('📦 已向该电脑下发快照导出指令');
         setTimeout(refreshState, 1500);
       } catch (e) {
         showToast('导出失败: ' + e.message);
@@ -1146,7 +1496,7 @@
           body: JSON.stringify({ type: 'remote_mode', active }),
         });
         showToast(active ? '🔔 已开启飞书完成推送' : '🔕 已关闭飞书完成推送');
-        setTimeout(refreshState, 1200);
+        setTimeout(refreshState, 1000);
       } catch (e) {
         showToast('设置失败: ' + e.message);
       }
@@ -1159,7 +1509,7 @@
           body: JSON.stringify({ type: 'stop', agentId }),
         });
         showToast('⏹ 已发送停止指令');
-        setTimeout(refreshState, 1200);
+        setTimeout(refreshState, 1000);
       } catch (e) {
         showToast('停止失败: ' + e.message);
       }
@@ -1172,14 +1522,15 @@
           body: JSON.stringify({ type: action, code }),
         });
         showToast(action === 'approve' ? '✅ 已批准' : '❌ 已拒绝');
-        setTimeout(refreshState, 1200);
+        setTimeout(refreshState, 1000);
       } catch (e) {
         showToast('审批处理失败: ' + e.message);
       }
     }
 
+    connectSse();
     refreshState();
-    setInterval(refreshState, 3000);
+    setInterval(refreshState, 3500);
   </script>
 </body>
 </html>
