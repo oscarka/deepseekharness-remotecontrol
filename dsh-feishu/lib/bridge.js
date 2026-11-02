@@ -3,6 +3,14 @@ import { chmod, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, resolve, sep } from 'node:path'
 import { parseCommand, splitFirstArg } from './commands.js'
 import { cleanForChat, safeError } from './redact.js'
+import {
+  createNewAgentSession,
+  deleteAgentSession,
+  extractSessionTranscript,
+  listWorkspaceFiles,
+  readWorkspaceFile,
+  renameAgentSession,
+} from './workspace-ops.js'
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 const CODE_LENGTH = 6
@@ -41,6 +49,7 @@ export class FeishuBridge {
     this.remoteTimer = null
     this.hubAgent = null
     this.feishuStandby = false
+    this.steerQueues = new Map()
     this.remote = {
       active: initialRemoteState?.active === true,
       lastActivity: Number(initialRemoteState?.lastActivity) || 0,
@@ -334,6 +343,7 @@ export class FeishuBridge {
           await this.quietUpdateTaskCard(this.controlChatId, agent, this.detailCard(agent))
         }
         if (status === 'idle' && wasRunning) {
+          if (this.drainSteerQueue(agent)) continue
           // A prompt sent through this bridge already returns its own reply.
           if (this.bridgeBusy.has(agent.id)) continue
           if (this.isRemoteActive()) this.queueNotification(agent, 'completed')
@@ -606,9 +616,93 @@ export class FeishuBridge {
       case 'deny':
         await this.resolveApproval({ chatId, openId, code: splitFirstArg(args).toUpperCase(), decision: name === 'approve' ? 'allowed-once' : 'rejected', eventId })
         return
-      case 'new':
-        await this.safeSend(chatId, '请在 Web 里新建会话；飞书只查看和控制已有任务。')
+      case 'new': {
+        const promptText = String(args ?? '').trim()
+        if (!promptText) {
+          await this.safeSend(chatId, '请在 Web 里新建会话；也可以直接发送 !new <任务指令> 在当前电脑新建会话。')
+          return
+        }
+        const { live } = this.collectTasks(true)
+        const defaultCwd = cwdOf(live[0]) || process.cwd()
+        const created = await createNewAgentSession(this.agents, {
+          cwd: defaultCwd,
+          title: promptText.slice(0, 36),
+        })
+        if (!created) {
+          await this.safeSend(chatId, '当前 DSH 环境暂不支持直接创建会话，请在 Web 界面新建。')
+          return
+        }
+        await this.safeSend(chatId, `✨ 已新建会话：${this.taskTitle(created)} (${shortId(created.id)})\n工作区：${defaultCwd}`)
+        void this.enqueuePrompt(chatId, () =>
+          this.runPromptForAgent({
+            chatId,
+            openId,
+            agent: created,
+            text: promptText,
+            messageId: `feishu-new-${Date.now()}`,
+            eventId: eventId || `feishu-new-${Date.now()}`,
+          }),
+        )
         return
+      }
+      case 'steer': {
+        const steerText = String(args ?? '').trim()
+        if (!steerText) {
+          await this.safeSend(chatId, '用法：!steer <插话指令> — 向正在运行（或最近活跃）的任务追加指令。')
+          return
+        }
+        const { live } = this.collectTasks(false)
+        const targetAgent = live.find(a => a.status === 'running') || this.resolveAgent(chatId) || live[0]
+        if (!targetAgent) {
+          await this.safeSend(chatId, '当前没有可插话的任务会话。')
+          return
+        }
+        const res = await this.steerTask(targetAgent, steerText, { interrupt: false, chatId, openId })
+        await this.safeSend(chatId, res.message)
+        return
+      }
+      case 'files': {
+        const subDir = String(args ?? '').trim()
+        const { live } = this.collectTasks(true)
+        const targetAgent = this.resolveAgent(chatId) || live[0]
+        const rootCwd = cwdOf(targetAgent) || process.cwd()
+        const listing = await listWorkspaceFiles(rootCwd, subDir)
+        if (!listing.ok) {
+          await this.safeSend(chatId, `无法读取目录：${listing.error}`)
+          return
+        }
+        const lines = [
+          `📂 工作区文件 (${listing.rootCwd}${listing.subDir ? `/${listing.subDir}` : ''})：`,
+          ...listing.entries.slice(0, 30).map(item =>
+            item.isDirectory ? `📁 ${item.name}/` : `📄 ${item.name} (${item.size} B)`,
+          ),
+        ]
+        if (listing.entries.length === 0) lines.push('（空目录）')
+        await this.safeSend(chatId, lines.join('\n'))
+        return
+      }
+      case 'share': {
+        const { live } = this.collectTasks(true)
+        const targetAgent = this.resolveAgent(chatId) || live[0]
+        if (!targetAgent) {
+          await this.safeSend(chatId, '当前没有可分享的会话。')
+          return
+        }
+        if (!this.hubAgent || typeof this.hubAgent.createEncryptedShare !== 'function') {
+          await this.safeSend(chatId, '请先配置 Web 总控中心（FEISHU_HUB_URL 或 FEISHU_WEB_PORT）以生成端到端加密分享链接。')
+          return
+        }
+        const shared = await this.hubAgent.createEncryptedShare(targetAgent)
+        if (!shared.ok) {
+          await this.safeSend(chatId, `生成加密分享链接失败：${shared.error}`)
+          return
+        }
+        await this.safeSend(
+          chatId,
+          `🔒 已生成端到端加密（AES-256-GCM）会话回放链接：\n${shared.shareUrl}\n（解密密钥仅保存在 URL #k= 锚点中，服务端无法解密）`,
+        )
+        return
+      }
       case 'whoami':
         await this.safeSend(chatId, `你的 open_id：${openId}`)
         return
@@ -641,6 +735,89 @@ export class FeishuBridge {
     }
   }
 
+  drainSteerQueue(agent) {
+    const queue = this.steerQueues.get(agent?.id)
+    if (!Array.isArray(queue) || queue.length === 0) return false
+    const nextText = queue.shift()
+    if (queue.length === 0) this.steerQueues.delete(agent.id)
+    const chatId = this.controlChatId || ''
+    void this.enqueuePrompt(chatId || 'steer-queue', () =>
+      this.runPromptForAgent({
+        chatId,
+        openId: 'steer-queue',
+        agent,
+        text: nextText,
+        messageId: `steer-${Date.now()}`,
+        eventId: `steer-${Date.now()}`,
+      }),
+    )
+    return true
+  }
+
+  async steerTask(agent, text, { interrupt = false, chatId = '', openId = 'web-admin' } = {}) {
+    if (!agent) return { ok: false, error: '找不到该任务会话' }
+    const clean = String(text ?? '').trim()
+    if (!clean) return { ok: false, error: '插话内容不能为空' }
+
+    if (agent.status === 'running') {
+      if (interrupt && typeof agent.cancel === 'function') {
+        try {
+          await agent.cancel({ kind: 'user' })
+        } catch {
+          // ignore cancel error
+        }
+        if (agent.status === 'running') {
+          const list = this.steerQueues.get(agent.id) ?? []
+          list.push(clean)
+          this.steerQueues.set(agent.id, list)
+          return {
+            ok: true,
+            mode: 'interrupt-queued',
+            queuedCount: list.length,
+            message: `⚡ 已请求打断「${this.taskTitle(agent)}」并排入新指令（停止后立即执行）`,
+          }
+        }
+      } else if (typeof agent.steer === 'function') {
+        agent.steer({ content: [{ type: 'text', text: clean }], source: { kind: 'user' } })
+        return {
+          ok: true,
+          mode: 'native-steer',
+          message: `⚡ 已向运行中任务「${this.taskTitle(agent)}」实时注入指令`,
+        }
+      } else {
+        const list = this.steerQueues.get(agent.id) ?? []
+        list.push(clean)
+        this.steerQueues.set(agent.id, list)
+        return {
+          ok: true,
+          mode: 'queued-steer',
+          queuedCount: list.length,
+          message: `⚡ 已将插话指令加入「${this.taskTitle(agent)}」队列（当前步骤完成后自动接续执行，队列 ${list.length} 条）`,
+        }
+      }
+    }
+
+    const targetChat = chatId || this.controlChatId || ''
+    if (targetChat) {
+      await this.sendDetail(targetChat, agent, { phase: 'accepted' })
+    }
+    void this.enqueuePrompt(targetChat || 'web-console', () =>
+      this.runPromptForAgent({
+        chatId: targetChat,
+        openId,
+        agent,
+        text: clean,
+        messageId: `steer-${Date.now()}`,
+        eventId: `steer-${Date.now()}`,
+      }),
+    )
+    return {
+      ok: true,
+      mode: 'immediate',
+      message: `🚀 已向任务「${this.taskTitle(agent)}」发送指令`,
+    }
+  }
+
   enqueuePrompt(chatId, task) {
     const previous = this.promptChains.get(chatId) ?? Promise.resolve()
     const next = previous.then(task, task).finally(() => {
@@ -670,20 +847,27 @@ export class FeishuBridge {
       agent.followup({ content: [{ type: 'text', text }], source: { kind: 'user' } })
       await agent.whenIdle()
       const reply = this.lastAssistantText(agent, before)
-      if (reply) {
-        await this.sendDetail(chatId, agent)
-      } else {
-        await this.safeSend(chatId, '执行结束，但没有可展示的输出。')
-        await this.sendDetail(chatId, agent)
+      if (chatId) {
+        if (reply) {
+          await this.sendDetail(chatId, agent)
+        } else {
+          await this.safeSend(chatId, '执行结束，但没有可展示的输出。')
+          await this.sendDetail(chatId, agent)
+        }
       }
     } catch (error) {
       this.logger?.warn?.(`dsh-feishu: prompt failed: ${safeError(error)}`)
-      await this.safeSend(chatId, `执行失败：${safeError(error)}`)
-      await this.sendDetail(chatId, agent)
+      if (chatId) {
+        await this.safeSend(chatId, `执行失败：${safeError(error)}`)
+        await this.sendDetail(chatId, agent)
+      }
     } finally {
       const remaining = (this.bridgeBusy.get(agent.id) ?? 1) - 1
       if (remaining > 0) this.bridgeBusy.set(agent.id, remaining)
       else this.bridgeBusy.delete(agent.id)
+      if (agent.status === 'idle') {
+        this.drainSteerQueue(agent)
+      }
     }
   }
 
@@ -1776,6 +1960,13 @@ export class FeishuBridge {
   getSnapshotState() {
     const { all, live } = this.collectTasks(true)
     const now = this.now()
+    const workspaceSet = new Set()
+    for (const agent of all) {
+      const c = cwdOf(agent)
+      if (c) workspaceSet.add(c)
+    }
+    if (workspaceSet.size === 0) workspaceSet.add(process.cwd())
+
     return {
       hostId: this.config.hostId || 'local',
       hostName: this.config.hostName || 'Local-Host',
@@ -1786,6 +1977,7 @@ export class FeishuBridge {
       controlChatId: this.controlChatId || '',
       runningCount: live.filter(agent => agent.status === 'running').length,
       taskCount: all.length,
+      workspaces: [...workspaceSet].slice(0, 12),
       tasks: all.slice(0, 30).map(agent => ({
         id: agent.id,
         shortId: shortId(agent.id),
@@ -1796,6 +1988,8 @@ export class FeishuBridge {
         cwd: cwdOf(agent),
         lastActivity: this.lastActivity(agent),
         lastOutput: cleanForChat(this.lastAssistantText(agent), 1500),
+        queuedSteers: (this.steerQueues.get(agent.id) ?? []).slice(),
+        transcript: extractSessionTranscript(agent, 40),
       })),
       approvals: [...this.pending.values()]
         .filter(entry => !entry.settled && now - entry.createdAt <= this.config.approvalTtlSeconds * 1000)
@@ -1823,10 +2017,51 @@ export class FeishuBridge {
         await this.saveRemoteState()
         return { ok: true, remoteActive: this.isRemoteActive() }
       }
+      case 'new_session': {
+        const { live } = this.collectTasks(true)
+        const targetCwd = String(cmd.cwd ?? '').trim() || cwdOf(live[0]) || process.cwd()
+        const promptText = String(cmd.prompt ?? cmd.text ?? '').trim()
+        const title = String(cmd.title ?? '').trim() || (promptText ? promptText.slice(0, 36) : '新远程会话')
+        const created = await createNewAgentSession(this.agents, {
+          cwd: targetCwd,
+          title,
+        })
+        if (!created) {
+          return { ok: false, error: '当前 DSH 实例不支持动态创建会话' }
+        }
+        if (promptText) {
+          const chatId = this.controlChatId || ''
+          void this.enqueuePrompt(chatId || 'web-console', () =>
+            this.runPromptForAgent({
+              chatId,
+              openId: 'web-admin',
+              agent: created,
+              text: promptText,
+              messageId: `web-new-${cmd.id || Date.now()}`,
+              eventId: `web-new-${cmd.id || Date.now()}`,
+            }),
+          )
+        }
+        return {
+          ok: true,
+          agentId: created.id,
+          title: this.taskTitle(created),
+          cwd: targetCwd,
+          message: `已创建新会话「${this.taskTitle(created)}」`,
+        }
+      }
       case 'prompt': {
         const agent = this.agents.get(String(cmd.agentId ?? ''))
         if (!agent) return { ok: false, error: '找不到该任务会话' }
-        if (agent.status === 'running') return { ok: false, error: '任务正在运行中，无法发送新指令' }
+        if (agent.status === 'running') {
+          if (cmd.allowSteer) {
+            return await this.steerTask(agent, cmd.text, {
+              interrupt: Boolean(cmd.interrupt),
+              chatId: this.controlChatId || '',
+            })
+          }
+          return { ok: false, error: '任务正在运行中，无法发送普通指令（可使用插话 Steer 或打断重发）' }
+        }
         const text = String(cmd.text ?? '').trim()
         if (!text) return { ok: false, error: '指令内容不能为空' }
         const chatId = this.controlChatId || 'web-console'
@@ -1845,9 +2080,56 @@ export class FeishuBridge {
         )
         return { ok: true, message: '指令已发送给任务' }
       }
+      case 'steer': {
+        const agent = this.agents.get(String(cmd.agentId ?? ''))
+        if (!agent) return { ok: false, error: '找不到该任务会话' }
+        return await this.steerTask(agent, cmd.text, {
+          interrupt: Boolean(cmd.interrupt),
+          chatId: this.controlChatId || '',
+        })
+      }
+      case 'rename_session': {
+        const agent = this.agents.get(String(cmd.agentId ?? ''))
+        if (!agent) return { ok: false, error: '找不到该任务会话' }
+        const renamed = renameAgentSession(agent, cmd.title)
+        if (!renamed.ok) return renamed
+        return { ok: true, agentId: agent.id, title: renamed.title, message: `已重命名会话为「${renamed.title}」` }
+      }
+      case 'delete_session': {
+        const agentId = String(cmd.agentId ?? '').trim()
+        const deleted = await deleteAgentSession(this.agents, agentId, this.config.dshHome)
+        if (!deleted.ok) return deleted
+        this.steerQueues.delete(agentId)
+        return { ok: true, agentId, message: `已删除会话 ${shortId(agentId)}` }
+      }
+      case 'list_files': {
+        const agent = cmd.agentId ? this.agents.get(String(cmd.agentId)) : null
+        const { live } = this.collectTasks(true)
+        const rootCwd = String(cmd.cwd || cwdOf(agent) || cwdOf(live[0]) || process.cwd()).trim()
+        const subDir = String(cmd.subDir ?? '').trim()
+        const res = await listWorkspaceFiles(rootCwd, subDir)
+        return {
+          ...res,
+          agentId: cmd.agentId || agent?.id || '',
+          message: res.ok ? `已读取目录 ${res.subDir || '/'}` : res.error,
+        }
+      }
+      case 'read_file': {
+        const agent = cmd.agentId ? this.agents.get(String(cmd.agentId)) : null
+        const { live } = this.collectTasks(true)
+        const rootCwd = String(cmd.cwd || cwdOf(agent) || cwdOf(live[0]) || process.cwd()).trim()
+        const relPath = String(cmd.relPath ?? '').trim()
+        const res = await readWorkspaceFile(rootCwd, relPath)
+        return {
+          ...res,
+          agentId: cmd.agentId || agent?.id || '',
+          message: res.ok ? `已读取文件 ${res.relPath}` : res.error,
+        }
+      }
       case 'stop': {
         const agent = this.agents.get(String(cmd.agentId ?? ''))
         if (!agent) return { ok: false, error: '找不到该任务会话' }
+        this.steerQueues.delete(agent.id)
         await agent.cancel({ kind: 'user' })
         if (this.controlChatId) {
           await this.sendDetail(this.controlChatId, agent)
@@ -1897,6 +2179,7 @@ export class FeishuBridge {
     this.notifyQueue = []
     this.recentCompletions.clear()
     this.sentVideos.clear()
+    this.steerQueues.clear()
   }
 }
 

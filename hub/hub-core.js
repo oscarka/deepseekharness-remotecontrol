@@ -1,9 +1,11 @@
-import { randomBytes } from 'node:crypto'
+import { createHmac, randomBytes, randomInt } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 const ONLINE_TTL_MS = 15_000
 const MAX_SNAPSHOTS = 15
+const MAX_SHARES = 50
+const PAIRING_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 export class HubCore {
   constructor({ stateFile = '', now = () => Date.now() } = {}) {
@@ -13,6 +15,11 @@ export class HubCore {
     this.hosts = new Map()
     this.snapshots = new Map()
     this.migrations = new Map()
+    this.shares = new Map()
+    this.pairingCodes = new Map()
+    this.signalingMailboxes = new Map()
+    this.commandResultsById = new Map()
+    this.totalCommandsExecuted = 0
   }
 
   async init() {
@@ -23,12 +30,24 @@ export class HubCore {
       if (typeof data.activeHostId === 'string') this.activeHostId = data.activeHostId
       if (Array.isArray(data.hosts)) {
         for (const h of data.hosts) {
-          if (h?.hostId) this.hosts.set(h.hostId, { ...h, commands: h.commands ?? [], recentResults: h.recentResults ?? [] })
+          if (h?.hostId) {
+            this.hosts.set(h.hostId, {
+              ...h,
+              trust: h.trust ?? { status: 'unpinned', pinnedPublicKey: '', pinnedFingerprint: '' },
+              commands: h.commands ?? [],
+              recentResults: h.recentResults ?? [],
+            })
+          }
         }
       }
       if (Array.isArray(data.snapshots)) {
         for (const s of data.snapshots) {
           if (s?.id) this.snapshots.set(s.id, s)
+        }
+      }
+      if (Array.isArray(data.shares)) {
+        for (const sh of data.shares) {
+          if (sh?.id) this.shares.set(sh.id, sh)
         }
       }
     } catch {
@@ -48,6 +67,7 @@ export class HubCore {
           recentResults: (h.recentResults ?? []).slice(-15),
         })),
         snapshots: [...this.snapshots.values()],
+        shares: [...this.shares.values()],
       }
       await writeFile(this.stateFile, JSON.stringify(payload), 'utf8')
     } catch {
@@ -66,6 +86,7 @@ export class HubCore {
       const online = this.isOnline(host)
       const bridge = host.bridgeState ?? {}
       const dsh = host.dshStats ?? {}
+      const trust = host.trust ?? { status: 'unpinned', pinnedPublicKey: '', pinnedFingerprint: '' }
       list.push({
         hostId: host.hostId,
         hostName: host.hostName || host.hostId,
@@ -82,9 +103,26 @@ export class HubCore {
         sessionCount: Number(dsh.sessionCount) || 0,
         totalBytes: Number(dsh.totalBytes) || 0,
         fileCount: Number(dsh.fileCount) || 0,
+        trustStatus: trust.status || 'unpinned',
+        fingerprint: trust.pinnedFingerprint || host.identity?.fingerprint || '',
       })
     }
     return list
+  }
+
+  getUsageStats() {
+    const summaries = this.getHostsSummary()
+    return {
+      totalHosts: summaries.length,
+      onlineHosts: summaries.filter(h => h.online).length,
+      totalRunningTasks: summaries.reduce((acc, h) => acc + h.runningCount, 0),
+      totalTasks: summaries.reduce((acc, h) => acc + h.taskCount, 0),
+      totalSessionsOnDisk: summaries.reduce((acc, h) => acc + h.sessionCount, 0),
+      totalStorageBytes: summaries.reduce((acc, h) => acc + h.totalBytes, 0),
+      snapshotsCount: this.snapshots.size,
+      sharesCount: this.shares.size,
+      totalCommandsExecuted: this.totalCommandsExecuted,
+    }
   }
 
   getFullState() {
@@ -93,8 +131,13 @@ export class HubCore {
       const summary = summaryById.get(host.hostId) ?? {}
       return {
         ...summary,
+        identity: host.identity ?? null,
+        trust: host.trust ?? { status: 'unpinned', pinnedPublicKey: '', pinnedFingerprint: '' },
         dshStats: host.dshStats ?? {},
-        bridgeState: host.bridgeState ?? { tasks: [], approvals: [] },
+        bridgeState: host.bridgeState ?? { tasks: [], approvals: [], workspaces: [] },
+        lastFsListing: host.lastFsListing ?? null,
+        lastFilePreview: host.lastFilePreview ?? null,
+        lastShareResult: host.lastShareResult ?? null,
         pendingCommandsCount: (host.commands ?? []).length,
         recentResults: (host.recentResults ?? []).slice(-10).reverse(),
       }
@@ -109,12 +152,15 @@ export class HubCore {
     const migrations = [...this.migrations.values()]
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 10)
+    const shares = this.listShares()
     return {
       now: this.now(),
       activeHostId: this.activeHostId,
+      stats: this.getUsageStats(),
       hosts,
       snapshots,
       migrations,
+      shares,
     }
   }
 
@@ -125,15 +171,44 @@ export class HubCore {
     const now = this.now()
 
     let record = this.hosts.get(hostId)
+    if (record?.trust?.status === 'revoked') {
+      return {
+        ok: false,
+        code: 'DEVICE_REVOKED',
+        error: `设备 ${hostId} 已被吊销访问权限`,
+      }
+    }
+
+    const incomingIdentity = payload.identity && typeof payload.identity === 'object' ? payload.identity : null
+    if (record?.trust?.status === 'pinned' && record.trust.pinnedPublicKey && incomingIdentity?.publicKey) {
+      if (record.trust.pinnedPublicKey !== incomingIdentity.publicKey) {
+        return {
+          ok: false,
+          code: 'PEER_IDENTITY_MISMATCH',
+          error: `设备 ${hostId} 公钥指纹异常变更，已拒绝同步（防伪造保护）`,
+        }
+      }
+    }
+
     if (!record) {
+      const trust = incomingIdentity?.publicKey
+        ? {
+            status: 'pinned',
+            pinnedPublicKey: incomingIdentity.publicKey,
+            pinnedFingerprint: incomingIdentity.fingerprint || '',
+            pinnedAt: now,
+          }
+        : { status: 'unpinned', pinnedPublicKey: '', pinnedFingerprint: '' }
       record = {
         hostId,
         hostName,
         platform: payload.platform || '',
         arch: payload.arch || '',
+        identity: incomingIdentity,
+        trust,
         lastSeen: now,
         dshStats: payload.dshStats ?? {},
-        bridgeState: payload.bridgeState ?? { tasks: [], approvals: [] },
+        bridgeState: payload.bridgeState ?? { tasks: [], approvals: [], workspaces: [] },
         commands: [],
         recentResults: [],
       }
@@ -143,6 +218,17 @@ export class HubCore {
       record.platform = payload.platform || record.platform
       record.arch = payload.arch || record.arch
       record.lastSeen = now
+      if (incomingIdentity) {
+        record.identity = incomingIdentity
+        if (!record.trust || record.trust.status === 'unpinned') {
+          record.trust = {
+            status: 'pinned',
+            pinnedPublicKey: incomingIdentity.publicKey || '',
+            pinnedFingerprint: incomingIdentity.fingerprint || '',
+            pinnedAt: now,
+          }
+        }
+      }
       if (payload.dshStats) record.dshStats = payload.dshStats
       if (payload.bridgeState) record.bridgeState = payload.bridgeState
     }
@@ -151,14 +237,22 @@ export class HubCore {
       this.activeHostId = hostId
     } else {
       const currentActive = this.hosts.get(this.activeHostId)
-      if (!currentActive) {
+      if (!currentActive || currentActive.trust?.status === 'revoked') {
         this.activeHostId = hostId
       }
     }
 
     if (Array.isArray(payload.commandResults) && payload.commandResults.length > 0) {
       for (const res of payload.commandResults) {
+        this.totalCommandsExecuted += 1
         record.recentResults.push(res)
+        if (res?.id) {
+          this.commandResultsById.set(res.id, { hostId, ...res })
+          if (this.commandResultsById.size > 300) {
+            const oldest = this.commandResultsById.keys().next().value
+            this.commandResultsById.delete(oldest)
+          }
+        }
         this.onCommandResult(hostId, res)
       }
       if (record.recentResults.length > 25) {
@@ -178,6 +272,218 @@ export class HubCore {
     }
   }
 
+  manageHostTrust(hostId, { action = 'pin' } = {}) {
+    const record = this.hosts.get(hostId)
+    if (!record) return { ok: false, error: `Host not found: ${hostId}` }
+    const now = this.now()
+    if (action === 'revoke') {
+      record.trust = {
+        ...(record.trust ?? {}),
+        status: 'revoked',
+        revokedAt: now,
+      }
+      if (this.activeHostId === hostId) {
+        const nextHost = [...this.hosts.values()].find(h => h.hostId !== hostId && h.trust?.status !== 'revoked')
+        this.activeHostId = nextHost?.hostId || ''
+      }
+      void this.persist()
+      return { ok: true, hostId, trust: record.trust }
+    }
+    if (action === 'reset_pin' || action === 'unrevoke') {
+      record.trust = {
+        status: 'unpinned',
+        pinnedPublicKey: '',
+        pinnedFingerprint: '',
+        resetAt: now,
+      }
+      void this.persist()
+      return { ok: true, hostId, trust: record.trust }
+    }
+    if (action === 'pin') {
+      record.trust = {
+        status: 'pinned',
+        pinnedPublicKey: record.identity?.publicKey || record.trust?.pinnedPublicKey || '',
+        pinnedFingerprint: record.identity?.fingerprint || record.trust?.pinnedFingerprint || '',
+        pinnedAt: now,
+      }
+      void this.persist()
+      return { ok: true, hostId, trust: record.trust }
+    }
+    return { ok: false, error: `Unknown trust action: ${action}` }
+  }
+
+  createPairingCode({ hostId = '', ttlMs = 5 * 60_000 } = {}) {
+    const now = this.now()
+    for (const [k, v] of this.pairingCodes) {
+      if (now > v.expiresAt) this.pairingCodes.delete(k)
+    }
+    let code = ''
+    for (let i = 0; i < 6; i += 1) {
+      code += PAIRING_ALPHABET[randomInt(0, PAIRING_ALPHABET.length)]
+    }
+    const entry = {
+      code,
+      hostId: hostId || this.activeHostId || '',
+      createdAt: now,
+      expiresAt: now + ttlMs,
+    }
+    this.pairingCodes.set(code, entry)
+    return entry
+  }
+
+  exchangePairingCode(code) {
+    const clean = String(code ?? '').trim().toUpperCase()
+    if (!clean) return { ok: false, error: '配对码不能为空' }
+    const entry = this.pairingCodes.get(clean)
+    if (!entry) return { ok: false, error: '配对码无效或已使用' }
+    this.pairingCodes.delete(clean)
+    if (this.now() > entry.expiresAt) {
+      return { ok: false, error: '配对码已过期' }
+    }
+    return {
+      ok: true,
+      hostId: entry.hostId || this.activeHostId,
+      pairedAt: this.now(),
+    }
+  }
+
+  postSignalingMessage({ targetId, fromId = 'client', type = 'signal.offer', payload = {} } = {}) {
+    const target = String(targetId ?? '').trim()
+    if (!target) return { ok: false, error: 'targetId is required' }
+    const list = this.signalingMailboxes.get(target) ?? []
+    const envelope = {
+      id: `sig-${randomBytes(4).toString('hex')}`,
+      targetId: target,
+      fromId,
+      type,
+      payload,
+      at: this.now(),
+    }
+    list.push(envelope)
+    if (list.length > 50) list.shift()
+    this.signalingMailboxes.set(target, list)
+    return { ok: true, envelope }
+  }
+
+  pullSignalingMessages(targetId) {
+    const target = String(targetId ?? '').trim()
+    const messages = this.signalingMailboxes.get(target) ?? []
+    this.signalingMailboxes.delete(target)
+    return { ok: true, targetId: target, messages }
+  }
+
+  getTurnCredentials({
+    turnUrls = process.env.TURN_URLS ? process.env.TURN_URLS.split(',').map(s => s.trim()).filter(Boolean) : [],
+    turnSecret = process.env.TURN_SECRET || 'dsh-selfhosted-turn-secret',
+    ttlSeconds = 3600,
+  } = {}) {
+    const expiry = Math.floor(this.now() / 1000) + ttlSeconds
+    const username = `${expiry}:dsh-peer`
+    const credential = createHmac('sha1', turnSecret).update(username).digest('base64')
+    const iceServers = [
+      { urls: ['stun:stun.l.google.com:19302', 'stun:global.stun.twilio.com:3478'] },
+    ]
+    if (turnUrls.length > 0) {
+      iceServers.push({
+        urls: turnUrls,
+        username,
+        credential,
+      })
+    }
+    return {
+      ok: true,
+      ttlSeconds,
+      username,
+      credential,
+      iceServers,
+    }
+  }
+
+  createShare({
+    title = '加密会话分享',
+    hostId = '',
+    hostName = '',
+    agentId = '',
+    messageCount = 0,
+    ivBase64 = '',
+    ciphertextBase64 = '',
+  } = {}) {
+    if (!ivBase64 || !ciphertextBase64) {
+      throw new Error('ivBase64 and ciphertextBase64 are required for E2EE share')
+    }
+    const id = `shr-${this.now().toString(36)}-${randomBytes(3).toString('hex')}`
+    const sizeBytes = Buffer.from(ciphertextBase64, 'base64').length
+    const entry = {
+      id,
+      title: String(title || '加密会话分享').slice(0, 120),
+      hostId: String(hostId || ''),
+      hostName: String(hostName || hostId || ''),
+      agentId: String(agentId || ''),
+      messageCount: Number(messageCount) || 0,
+      sizeBytes,
+      ivBase64,
+      ciphertextBase64,
+      createdAt: this.now(),
+    }
+    this.shares.set(id, entry)
+    while (this.shares.size > MAX_SHARES) {
+      const oldest = this.shares.keys().next().value
+      this.shares.delete(oldest)
+    }
+    void this.persist()
+    return {
+      id: entry.id,
+      title: entry.title,
+      hostId: entry.hostId,
+      hostName: entry.hostName,
+      agentId: entry.agentId,
+      messageCount: entry.messageCount,
+      sizeBytes: entry.sizeBytes,
+      createdAt: entry.createdAt,
+    }
+  }
+
+  listShares() {
+    return [...this.shares.values()]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map(s => ({
+        id: s.id,
+        title: s.title,
+        hostId: s.hostId,
+        hostName: s.hostName,
+        agentId: s.agentId,
+        messageCount: s.messageCount,
+        sizeBytes: s.sizeBytes,
+        createdAt: s.createdAt,
+      }))
+  }
+
+  getShare(shareId) {
+    return this.shares.get(shareId) || null
+  }
+
+  deleteShare(shareId) {
+    const ok = this.shares.delete(shareId)
+    void this.persist()
+    return { ok }
+  }
+
+  getMarketCatalog() {
+    return {
+      version: 1,
+      selfHosted: true,
+      plugins: [
+        {
+          name: 'dsh-feishu',
+          title: 'DeepSeek Harness 飞书 + 多机自托管总控中心',
+          version: '2.0.0',
+          description: '完全脱离第三方服务器的飞书遥控、多电脑切换、数据迁移、工作区文件浏览与端到端加密回放套件。',
+          installed: true,
+        },
+      ],
+    }
+  }
+
   activateHost(hostId) {
     const targetId = String(hostId ?? '').trim()
     if (!targetId) return { ok: false, error: 'hostId is empty' }
@@ -191,6 +497,9 @@ export class HubCore {
       }
     }
     if (!match) return { ok: false, error: `Host not found: ${targetId}` }
+    if (match.trust?.status === 'revoked') {
+      return { ok: false, error: `Host ${match.hostId} is revoked` }
+    }
     const previousHostId = this.activeHostId
     this.activeHostId = match.hostId
     void this.persist()
@@ -215,6 +524,9 @@ export class HubCore {
   queueCommand(hostId, commandPayload = {}) {
     const host = this.hosts.get(hostId)
     if (!host) return { ok: false, error: `Host not found: ${hostId}` }
+    if (host.trust?.status === 'revoked') {
+      return { ok: false, error: `Host ${hostId} is revoked` }
+    }
     const cmd = {
       id: commandPayload.id || `cmd-${randomBytes(4).toString('hex')}`,
       createdAt: this.now(),
@@ -223,6 +535,10 @@ export class HubCore {
     host.commands.push(cmd)
     void this.persist()
     return { ok: true, command: cmd }
+  }
+
+  getCommandResult(cmdId) {
+    return this.commandResultsById.get(cmdId) || null
   }
 
   addSnapshot({ meta = {}, dataBase64 = '', migrationId = '' } = {}) {
@@ -342,6 +658,39 @@ export class HubCore {
   }
 
   onCommandResult(hostId, res = {}) {
+    const host = this.hosts.get(hostId)
+    if (host) {
+      if (res.type === 'list_files' && res.ok) {
+        host.lastFsListing = {
+          at: this.now(),
+          agentId: res.agentId || '',
+          rootCwd: res.rootCwd,
+          subDir: res.subDir,
+          entries: res.entries,
+        }
+      } else if (res.type === 'read_file' && res.ok) {
+        host.lastFilePreview = {
+          at: this.now(),
+          agentId: res.agentId || '',
+          relPath: res.relPath,
+          name: res.name,
+          ext: res.ext,
+          size: res.size,
+          kind: res.kind,
+          mime: res.mime,
+          content: res.content,
+          dataBase64: res.dataBase64,
+        }
+      } else if (res.type === 'share_session' && res.ok) {
+        host.lastShareResult = {
+          at: this.now(),
+          shareId: res.shareId,
+          shareUrl: res.shareUrl,
+          title: res.title,
+        }
+      }
+    }
+
     for (const job of this.migrations.values()) {
       if (job.status === 'completed' || job.status === 'failed') continue
       if (res.id === job.exportCommandId && !res.ok) {

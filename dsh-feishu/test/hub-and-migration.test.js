@@ -137,7 +137,7 @@ test('hub & multi-host: active/standby Feishu switching, Web control commands, a
     const htmlRes = await fetchAdapter(`${hubUrl}/`)
     assert.equal(htmlRes.status, 200)
     const htmlText = await htmlRes.text()
-    assert.match(htmlText, /飞书多机总控台/)
+    assert.match(htmlText, /DeepSeek Harness 自托管全功能总控台/)
 
     const unauthRes = await fetchAdapter(`${hubUrl}/api/state`)
     assert.equal(unauthRes.status, 401)
@@ -317,3 +317,347 @@ test('hub & multi-host: active/standby Feishu switching, Web control commands, a
     await rm(dirB, { recursive: true, force: true })
   }
 })
+
+test('reverse-engineered server features: Ed25519 identity pinning/revocation, QR pairing, WebRTC/TURN signaling, remote new/steer/rename/delete, workspace file browser, and E2EE encrypted share replay', async () => {
+  const { createDecipheriv } = await import('node:crypto')
+  const dshDir = await mkdtemp(join(tmpdir(), 'dsh-re-home-'))
+  const wsDir = await mkdtemp(join(tmpdir(), 'dsh-re-ws-'))
+  const outsideDir = await mkdtemp(join(tmpdir(), 'dsh-re-outside-'))
+
+  const hub = new HubCore()
+  const { fetchAdapter } = createHubServer({ hub, token: 'super-secret-hub-token' })
+  const hubUrl = 'https://selfhosted-hub.example.com'
+  const authHeaders = {
+    'content-type': 'application/json',
+    authorization: 'Bearer super-secret-hub-token',
+  }
+
+  try {
+    // Prepare workspace files
+    await mkdir(join(wsDir, 'src'), { recursive: true })
+    await writeFile(join(wsDir, 'src', 'app.js'), 'const apiKey = "sk-1234567890abcdef";\nconsole.log("hello world");\n')
+    await writeFile(join(outsideDir, 'secret.txt'), 'TOP_SECRET_OUTSIDE')
+
+    const liveList = []
+    const agent1 = makeAgent('session-re-1001', '初始重构任务')
+    agent1.session.header.cwd = wsDir
+    agent1.session._messages = [
+      { role: 'user', content: [{ type: 'text', text: '帮我重构登录模块' }] },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: '先检查 auth.js 的依赖关系' },
+          { type: 'tool_use', name: 'read_file', input: { path: 'src/app.js' } },
+          { type: 'text', text: '登录模块重构完成，已提取通用鉴权中间件。' },
+        ],
+      },
+    ]
+    liveList.push(agent1)
+
+    const agentsRegistry = {
+      list: () => liveList,
+      get: id => liveList.find(a => a.id === id),
+      create({ cwd, title } = {}) {
+        const created = makeAgent(`session-created-${liveList.length + 1}`, title || '新建会话')
+        created.session.header.cwd = cwd || wsDir
+        liveList.push(created)
+        return created
+      },
+      delete(id) {
+        const idx = liveList.findIndex(a => a.id === id)
+        if (idx >= 0) liveList.splice(idx, 1)
+      },
+    }
+
+    const transport = makeMockTransport()
+    const config = resolveConfig({
+      appId: APP_ID,
+      allowedOpenIds: [USER],
+      hostId: 'studio-workstation',
+      hostName: 'MacStudio工作站',
+      hubUrl,
+      hubToken: 'super-secret-hub-token',
+      dshHome: dshDir,
+      auditFile: '',
+      controlChatFile: '',
+      remoteStateFile: '',
+    })
+    const bridge = new FeishuBridge({ config, agents: agentsRegistry, transport })
+    const hubAgent = new HubAgent({ config, bridge, transport, fetchImpl: fetchAdapter })
+    bridge.setHubAgent(hubAgent)
+
+    // 1. First heartbeat auto-creates Ed25519 identity and pins fingerprint on Hub
+    await hubAgent.tick()
+    const state1 = await (await fetchAdapter(`${hubUrl}/api/state`, { headers: authHeaders })).json()
+    const hostInfo = state1.hosts[0]
+    assert.equal(hostInfo.hostId, 'studio-workstation')
+    assert.equal(hostInfo.trustStatus, 'pinned')
+    assert.match(hostInfo.fingerprint, /^[0-9A-F]{4} [0-9A-F]{4} [0-9A-F]{4}$/)
+    assert.equal(hostInfo.bridgeState.tasks[0].transcript.length, 2)
+    assert.equal(hostInfo.bridgeState.tasks[0].transcript[1].tools[0].name, 'read_file')
+
+    // 2. Spoofed publicKey is rejected with PEER_IDENTITY_MISMATCH (403)
+    const spoofRes = await fetchAdapter(`${hubUrl}/api/heartbeat`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        hostId: 'studio-workstation',
+        hostName: 'SpoofedHost',
+        identity: { publicKey: 'FAKE_PUBLIC_KEY', fingerprint: '0000 0000 0000' },
+      }),
+    })
+    assert.equal(spoofRes.status, 403)
+    const spoofJson = await spoofRes.json()
+    assert.equal(spoofJson.code, 'PEER_IDENTITY_MISMATCH')
+
+    // 3. Revoke device & restore device trust
+    const revokeRes = await fetchAdapter(`${hubUrl}/api/hosts/studio-workstation/trust`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ action: 'revoke' }),
+    })
+    assert.equal(revokeRes.status, 200)
+    const blockedHb = await fetchAdapter(`${hubUrl}/api/heartbeat`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        hostId: 'studio-workstation',
+        identity: hubAgent.identity,
+      }),
+    })
+    assert.equal(blockedHb.status, 403)
+    assert.equal((await blockedHb.json()).code, 'DEVICE_REVOKED')
+
+    // Restore trust and re-pin
+    await fetchAdapter(`${hubUrl}/api/hosts/studio-workstation/trust`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ action: 'reset_pin' }),
+    })
+    await hubAgent.tick()
+    assert.equal(hub.hosts.get('studio-workstation').trust.status, 'pinned')
+
+    // 4. One-Time 6-Digit Pairing Code / QR Sign-in
+    const pairCreateRes = await fetchAdapter(`${hubUrl}/api/pairing/create`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ hostId: 'studio-workstation' }),
+    })
+    const { pairing } = await pairCreateRes.json()
+    assert.equal(pairing.code.length, 6)
+
+    // Exchange without auth header succeeds once and returns token
+    const pairEx1 = await fetchAdapter(`${hubUrl}/api/pairing/exchange`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: pairing.code }),
+    })
+    assert.equal(pairEx1.status, 200)
+    const pairExData = await pairEx1.json()
+    assert.equal(pairExData.ok, true)
+    assert.equal(pairExData.token, 'super-secret-hub-token')
+
+    // Replaying the same one-time code is rejected
+    const pairEx2 = await fetchAdapter(`${hubUrl}/api/pairing/exchange`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: pairing.code }),
+    })
+    assert.equal(pairEx2.status, 401)
+
+    // 5. Self-Hosted WebRTC Signaling & TURN Credentials
+    const turnRes = await fetchAdapter(`${hubUrl}/api/v1/turn/credentials`, {
+      method: 'GET',
+      headers: authHeaders,
+    })
+    const turnData = await turnRes.json()
+    assert.equal(turnData.ok, true)
+    assert.ok(turnData.username.endsWith(':dsh-peer'))
+    assert.ok(turnData.credential.length > 5)
+
+    await fetchAdapter(`${hubUrl}/api/v1/signaling`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        targetId: 'studio-workstation',
+        fromId: 'mobile-web',
+        type: 'signal.offer',
+        payload: { sdp: 'v=0...' },
+      }),
+    })
+    const sigPull = await (
+      await fetchAdapter(`${hubUrl}/api/v1/signaling/studio-workstation`, { headers: authHeaders })
+    ).json()
+    assert.equal(sigPull.messages.length, 1)
+    assert.equal(sigPull.messages[0].type, 'signal.offer')
+
+    // 6. Remote Session Creation (new_session), Mid-Run Steer (steer), Rename & Delete
+    await fetchAdapter(`${hubUrl}/api/hosts/studio-workstation/command`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        type: 'new_session',
+        cwd: wsDir,
+        title: '远程新建的测试会话',
+        prompt: '初始化项目结构',
+      }),
+    })
+    await hubAgent.tick()
+    await new Promise(resolve => setTimeout(resolve, 25))
+    assert.equal(liveList.length, 2)
+    const createdAgent = liveList[1]
+    assert.equal(createdAgent.session._messages[0].content[0].text, '初始化项目结构')
+
+    // Mid-run Steer queueing when agent is running
+    let resolveIdle
+    agent1.status = 'running'
+    agent1.whenIdle = () =>
+      new Promise(r => {
+        resolveIdle = r
+      })
+    await fetchAdapter(`${hubUrl}/api/hosts/studio-workstation/command`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        type: 'steer',
+        agentId: agent1.id,
+        text: '顺便把单元测试也加上',
+        interrupt: false,
+      }),
+    })
+    await hubAgent.tick()
+    assert.deepEqual(bridge.steerQueues.get(agent1.id), ['顺便把单元测试也加上'])
+
+    // When agent1 transitions from running -> idle, queued steer is automatically drained!
+    agent1.whenIdle = async () => {
+      agent1.status = 'idle'
+    }
+    if (resolveIdle) resolveIdle()
+    agent1.status = 'idle'
+    bridge.drainSteerQueue(agent1)
+    await new Promise(resolve => setTimeout(resolve, 25))
+    assert.equal(agent1.session._messages.at(-2).content[0].text, '顺便把单元测试也加上')
+
+    // Rename session
+    await fetchAdapter(`${hubUrl}/api/hosts/studio-workstation/command`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        type: 'rename_session',
+        agentId: agent1.id,
+        title: '已重命名的核心任务',
+      }),
+    })
+    await hubAgent.tick()
+    assert.equal(bridge.taskTitle(agent1), '已重命名的核心任务')
+
+    // 7. Remote Workspace File Explorer + Path Traversal Protection + Secret Redaction
+    await fetchAdapter(`${hubUrl}/api/hosts/studio-workstation/command`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        type: 'list_files',
+        agentId: agent1.id,
+        cwd: wsDir,
+        subDir: 'src',
+      }),
+    })
+    await fetchAdapter(`${hubUrl}/api/hosts/studio-workstation/command`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        type: 'read_file',
+        agentId: agent1.id,
+        cwd: wsDir,
+        relPath: 'src/app.js',
+      }),
+    })
+    // Also attempt path traversal outside workspace root
+    const traversalCmd = await (
+      await fetchAdapter(`${hubUrl}/api/hosts/studio-workstation/command`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          type: 'read_file',
+          agentId: agent1.id,
+          cwd: wsDir,
+          relPath: '../secret.txt',
+        }),
+      })
+    ).json()
+    await hubAgent.tick()
+    await hubAgent.tick() // push commandResults to Hub
+
+    const stateAfterFs = await (await fetchAdapter(`${hubUrl}/api/state`, { headers: authHeaders })).json()
+    const hostAfterFs = stateAfterFs.hosts[0]
+    assert.equal(hostAfterFs.lastFsListing.entries[0].name, 'app.js')
+    // Verify secret sk-... inside src/app.js was automatically redacted!
+    assert.match(hostAfterFs.lastFilePreview.content, /\[REDACTED\]/)
+    assert.ok(!hostAfterFs.lastFilePreview.content.includes('sk-1234567890abcdef'))
+    assert.match(hostAfterFs.lastFilePreview.content, /hello world/)
+
+    // Verify path traversal was blocked
+    const traversalResult = await (
+      await fetchAdapter(`${hubUrl}/api/commands/${traversalCmd.command.id}`, { headers: authHeaders })
+    ).json()
+    assert.equal(traversalResult.result.ok, false)
+    assert.match(traversalResult.result.error, /越界访问/)
+
+    // 8. End-to-End Encrypted (AES-256-GCM) Conversation Share & Replay (replaces go.dshtui.com)
+    await fetchAdapter(`${hubUrl}/api/hosts/studio-workstation/command`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        type: 'share_session',
+        agentId: agent1.id,
+      }),
+    })
+    await hubAgent.tick()
+    await hubAgent.tick()
+
+    const stateAfterShare = await (await fetchAdapter(`${hubUrl}/api/state`, { headers: authHeaders })).json()
+    const shareMeta = stateAfterShare.shares[0]
+    assert.ok(shareMeta.id.startsWith('shr-'))
+    const shareUrl = stateAfterShare.hosts[0].lastShareResult.shareUrl
+    assert.match(shareUrl, /\/share\/shr-.*#k=/)
+
+    // Verify replay HTML page is served publicly without HUB_TOKEN
+    const replayPageRes = await fetchAdapter(`${hubUrl}/share/${shareMeta.id}`)
+    assert.equal(replayPageRes.status, 200)
+    assert.match(await replayPageRes.text(), /AES-256-GCM 端到端加密回放/)
+
+    // Verify public encrypted blob contains ONLY ciphertext + IV, and decrypts cleanly with #k= key
+    const publicBlobRes = await (await fetchAdapter(`${hubUrl}/api/shares/${shareMeta.id}/public`)).json()
+    const keyBase64Url = shareUrl.split('#k=')[1]
+    const keyBuf = Buffer.from(keyBase64Url, 'base64url')
+    const ivBuf = Buffer.from(publicBlobRes.share.ivBase64, 'base64')
+    const combinedBuf = Buffer.from(publicBlobRes.share.ciphertextBase64, 'base64')
+    const ciphertext = combinedBuf.subarray(0, combinedBuf.length - 16)
+    const authTag = combinedBuf.subarray(combinedBuf.length - 16)
+    const decipher = createDecipheriv('aes-256-gcm', keyBuf, ivBuf)
+    decipher.setAuthTag(authTag)
+    const decryptedJson = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8')
+    const decryptedPayload = JSON.parse(decryptedJson)
+    assert.equal(decryptedPayload.title, '已重命名的核心任务')
+    assert.ok(decryptedPayload.transcript.some(m => m.text.includes('登录模块重构完成')))
+
+    // 9. Delete session remotely
+    await fetchAdapter(`${hubUrl}/api/hosts/studio-workstation/command`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        type: 'delete_session',
+        agentId: createdAgent.id,
+      }),
+    })
+    await hubAgent.tick()
+    assert.equal(liveList.length, 1)
+
+    await bridge.dispose()
+  } finally {
+    await rm(dshDir, { recursive: true, force: true })
+    await rm(wsDir, { recursive: true, force: true })
+    await rm(outsideDir, { recursive: true, force: true })
+  }
+})
+

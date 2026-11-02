@@ -296,3 +296,4 @@ async function walkFiles(root, currentDir, { includeCredentials, collectData }) 
 
   return { files, totalBytes, latestMtimeMs }
 }
+

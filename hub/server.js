@@ -46,6 +46,7 @@ export function createHubServer({
           activeHostId: hub.activeHostId,
           hostsCount: hub.hosts.size,
           snapshotsCount: hub.snapshots.size,
+          sharesCount: hub.shares.size,
         },
       }
     }
@@ -56,6 +57,69 @@ export function createHubServer({
         status: 200,
         headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
         body: html,
+      }
+    }
+
+    // Standalone E2EE Encrypted Conversation Share & Replay Page (replaces go.dshtui.com/c/:id)
+    const sharePageMatch = /^\/(?:share|c)\/([^/]+)$/.exec(pathname)
+    if (method === 'GET' && sharePageMatch) {
+      const shareId = decodeURIComponent(sharePageMatch[1])
+      const share = hub.getShare(shareId)
+      if (!share) {
+        return {
+          status: 404,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+          body: '<h1>404 - 加密分享不存在或已删除</h1>',
+        }
+      }
+      return {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+        body: renderShareReplayHtml(share),
+      }
+    }
+
+    // Public encrypted blob endpoint for the browser E2EE replay page (contains only ciphertext + IV, never the key)
+    const publicShareBlobMatch = /^\/api\/shares\/([^/]+)\/public$/.exec(pathname)
+    if (method === 'GET' && publicShareBlobMatch) {
+      const shareId = decodeURIComponent(publicShareBlobMatch[1])
+      const share = hub.getShare(shareId)
+      if (!share) return { status: 404, json: { ok: false, error: 'Share not found' } }
+      return {
+        status: 200,
+        json: {
+          ok: true,
+          share: {
+            id: share.id,
+            title: share.title,
+            hostName: share.hostName,
+            messageCount: share.messageCount,
+            createdAt: share.createdAt,
+            ivBase64: share.ivBase64,
+            ciphertextBase64: share.ciphertextBase64,
+          },
+        },
+      }
+    }
+
+    // Self-hosted Plugin Market Catalog & Telemetry (replaces go.dshtui.com/market/index.json & /api/usage/v1)
+    if (method === 'GET' && pathname === '/market/index.json') {
+      return { status: 200, json: hub.getMarketCatalog() }
+    }
+    if (method === 'POST' && pathname === '/api/usage/v1') {
+      return { status: 200, json: { ok: true, selfHosted: true } }
+    }
+
+    // One-Time Pairing Code Exchange (allows mobile QR scan / 6-digit code login without typing HUB_TOKEN)
+    if (method === 'POST' && pathname === '/api/pairing/exchange') {
+      const outcome = hub.exchangePairingCode(body.code)
+      if (!outcome.ok) return { status: 401, json: outcome }
+      return {
+        status: 200,
+        json: {
+          ...outcome,
+          token: expectedToken,
+        },
       }
     }
 
@@ -90,15 +154,33 @@ export function createHubServer({
         }
       }
 
+      if (method === 'GET' && pathname === '/api/stats') {
+        return {
+          status: 200,
+          json: {
+            ok: true,
+            stats: hub.getUsageStats(),
+          },
+        }
+      }
+
       if (method === 'POST' && pathname === '/api/heartbeat') {
         const outcome = hub.handleHeartbeat(body)
-        return { status: 200, json: outcome }
+        const status = outcome.ok ? 200 : outcome.code === 'DEVICE_REVOKED' || outcome.code === 'PEER_IDENTITY_MISMATCH' ? 403 : 400
+        return { status, json: outcome }
       }
 
       const activateMatch = /^\/api\/hosts\/([^/]+)\/activate$/.exec(pathname)
       if (method === 'POST' && activateMatch) {
         const hostId = decodeURIComponent(activateMatch[1])
         const outcome = hub.activateHost(hostId)
+        return { status: outcome.ok ? 200 : 404, json: outcome }
+      }
+
+      const hostTrustMatch = /^\/api\/hosts\/([^/]+)\/trust$/.exec(pathname)
+      if (method === 'POST' && hostTrustMatch) {
+        const hostId = decodeURIComponent(hostTrustMatch[1])
+        const outcome = hub.manageHostTrust(hostId, body)
         return { status: outcome.ok ? 200 : 404, json: outcome }
       }
 
@@ -109,11 +191,61 @@ export function createHubServer({
         return { status: outcome.ok ? 200 : 404, json: outcome }
       }
 
+      const cmdResultMatch = /^\/api\/commands\/([^/]+)$/.exec(pathname)
+      if (method === 'GET' && cmdResultMatch) {
+        const cmdId = decodeURIComponent(cmdResultMatch[1])
+        const result = hub.getCommandResult(cmdId)
+        return { status: 200, json: { ok: true, ready: Boolean(result), result } }
+      }
+
       const hostDeleteMatch = /^\/api\/hosts\/([^/]+)$/.exec(pathname)
       if (method === 'DELETE' && hostDeleteMatch) {
         const hostId = decodeURIComponent(hostDeleteMatch[1])
         const outcome = hub.removeHost(hostId)
         return { status: 200, json: outcome }
+      }
+
+      if (method === 'POST' && pathname === '/api/pairing/create') {
+        const pairing = hub.createPairingCode(body)
+        return { status: 200, json: { ok: true, pairing } }
+      }
+
+      // Self-hosted WebRTC Signaling & TURN Credentials (replaces dsh.r2049.cn signaling & /api/v1/turn/credentials)
+      if (method === 'POST' && pathname === '/api/v1/signaling') {
+        const outcome = hub.postSignalingMessage(body)
+        return { status: outcome.ok ? 200 : 400, json: outcome }
+      }
+
+      const sigPullMatch = /^\/api\/v1\/signaling\/([^/]+)$/.exec(pathname)
+      if (method === 'GET' && sigPullMatch) {
+        const targetId = decodeURIComponent(sigPullMatch[1])
+        return { status: 200, json: hub.pullSignalingMessages(targetId) }
+      }
+
+      if ((method === 'GET' || method === 'POST') && pathname === '/api/v1/turn/credentials') {
+        return { status: 200, json: hub.getTurnCredentials(body) }
+      }
+
+      // Self-hosted E2EE Conversation Share API (replaces go.dshtui.com/api/shares)
+      if (method === 'POST' && pathname === '/api/shares') {
+        const share = hub.createShare(body)
+        return { status: 200, json: { ok: true, share } }
+      }
+
+      if (method === 'GET' && pathname === '/api/shares') {
+        return { status: 200, json: { ok: true, shares: hub.listShares() } }
+      }
+
+      const shareItemMatch = /^\/api\/shares\/([^/]+)$/.exec(pathname)
+      if (method === 'GET' && shareItemMatch) {
+        const shareId = decodeURIComponent(shareItemMatch[1])
+        const share = hub.getShare(shareId)
+        if (!share) return { status: 404, json: { ok: false, error: 'Share not found' } }
+        return { status: 200, json: { ok: true, share } }
+      }
+      if (method === 'DELETE' && shareItemMatch) {
+        const shareId = decodeURIComponent(shareItemMatch[1])
+        return { status: 200, json: hub.deleteShare(shareId) }
       }
 
       if (method === 'POST' && pathname === '/api/migrate') {
@@ -212,6 +344,139 @@ export function createHubServer({
   }
 
   return { server, hub, dispatchRequest, fetchAdapter }
+}
+
+function renderShareReplayHtml(share) {
+  const safeMeta = JSON.stringify({
+    id: share.id,
+    title: share.title,
+    hostName: share.hostName,
+    messageCount: share.messageCount,
+    createdAt: share.createdAt,
+    ivBase64: share.ivBase64,
+    ciphertextBase64: share.ciphertextBase64,
+  }).replace(/</g, '\\u003c')
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🔒 E2EE 加密会话回放 · ${String(share.title || '').replace(/[<>&"]/g, '')}</title>
+  <style>
+    :root { --bg:#0b0f19; --card:#131b2e; --border:#23304f; --text:#f1f5f9; --muted:#94a3b8; --primary:#3b82f6; --green:#10b981; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; padding:24px; }
+    .wrap { max-width:900px; margin:0 auto; }
+    .header { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px 22px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+    .badge { display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:4px 10px; border-radius:999px; background:rgba(16,185,129,.15); color:#34d399; border:1px solid rgba(16,185,129,.3); }
+    .btn { background:var(--primary); color:#fff; border:none; border-radius:8px; padding:8px 14px; cursor:pointer; font-weight:600; font-size:13px; }
+    .msg { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+    .msg.user { border-left:4px solid var(--primary); }
+    .msg.assistant { border-left:4px solid var(--green); }
+    .role { font-size:12px; font-weight:700; color:var(--muted); margin-bottom:6px; display:flex; justify-content:space-between; }
+    pre { white-space:pre-wrap; word-break:break-word; margin:0; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; line-height:1.55; }
+    .thinking { margin-top:8px; padding:8px 10px; background:#090d16; border-radius:8px; color:#94a3b8; font-size:12px; }
+    .tools { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+    .tool-pill { font-size:11px; padding:2px 8px; border-radius:6px; background:rgba(59,130,246,.15); color:#93c5fd; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div>
+        <div class="badge">🔒 AES-256-GCM 端到端加密回放（自托管，零第三方服务器）</div>
+        <h2 id="title" style="margin:8px 0 4px 0; font-size:18px;">正在浏览器本地解密...</h2>
+        <div id="meta" style="font-size:12px; color:var(--muted);"></div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button class="btn" onclick="startReplay()">▶ 动画回放</button>
+        <button class="btn" style="background:#1e293b;" onclick="renderAll()">展开全部</button>
+      </div>
+    </div>
+    <div id="stream"></div>
+  </div>
+  <script>
+    const SHARE = ${safeMeta};
+    let decryptedTranscript = [];
+    let replayTimer = null;
+
+    function b64ToBytes(b64) {
+      const normalized = b64.replace(/-/g, '+').replace(/_/g, '/');
+      const pad = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
+      const bin = atob(normalized + pad);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return arr;
+    }
+
+    function esc(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function decryptShare() {
+      const hash = location.hash.replace(/^#/, '');
+      const params = new URLSearchParams(hash);
+      const keyStr = params.get('k');
+      if (!keyStr) {
+        document.getElementById('title').textContent = '缺少解密密钥 (#k=...)';
+        document.getElementById('stream').innerHTML = '<div class="msg">URL 锚点中未包含 #k= 密钥，服务端不保存密钥，无法解密。</div>';
+        return;
+      }
+      try {
+        const keyBytes = b64ToBytes(keyStr);
+        const ivBytes = b64ToBytes(SHARE.ivBase64);
+        const cipherBytes = b64ToBytes(SHARE.ciphertextBase64);
+        const cryptoKey = await crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM' }, false, ['decrypt']);
+        const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: ivBytes }, cryptoKey, cipherBytes);
+        const data = JSON.parse(new TextDecoder().decode(plainBuf));
+        document.getElementById('title').textContent = data.title || SHARE.title;
+        document.getElementById('meta').textContent = '来源主机: ' + (data.hostName || SHARE.hostName) + ' · 工作区: ' + (data.cwd || '-') + ' · 消息数: ' + (data.transcript?.length || 0);
+        decryptedTranscript = data.transcript || [];
+        renderAll();
+      } catch (err) {
+        document.getElementById('title').textContent = '解密失败：密钥不匹配或数据已损坏';
+        document.getElementById('stream').innerHTML = '<div class="msg">' + esc(err.message) + '</div>';
+      }
+    }
+
+    function renderStep(m, idx) {
+      const roleLabel = m.role === 'user' ? '🧑 用户指令' : '🤖 DeepSeek Harness';
+      const tools = (m.tools || []).map(t => '<span class="tool-pill">🔧 ' + esc(t.name) + '</span>').join('');
+      const thinking = m.thinking ? '<div class="thinking">💭 思考过程：' + esc(m.thinking) + '</div>' : '';
+      return '<div class="msg ' + esc(m.role) + '">' +
+        '<div class="role"><span>' + roleLabel + '</span><span>#' + (idx + 1) + '</span></div>' +
+        '<pre>' + esc(m.text || '') + '</pre>' +
+        thinking +
+        (tools ? '<div class="tools">' + tools + '</div>' : '') +
+      '</div>';
+    }
+
+    function renderAll() {
+      if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
+      document.getElementById('stream').innerHTML = decryptedTranscript.map((m, i) => renderStep(m, i)).join('');
+    }
+
+    function startReplay() {
+      if (replayTimer) { clearInterval(replayTimer); replayTimer = null; }
+      const box = document.getElementById('stream');
+      box.innerHTML = '';
+      let idx = 0;
+      replayTimer = setInterval(() => {
+        if (idx >= decryptedTranscript.length) {
+          clearInterval(replayTimer);
+          replayTimer = null;
+          return;
+        }
+        box.insertAdjacentHTML('beforeend', renderStep(decryptedTranscript[idx], idx));
+        idx++;
+      }, 450);
+    }
+
+    decryptShare();
+  </script>
+</body>
+</html>`
 }
 
 function sendJson(res, status, data) {
