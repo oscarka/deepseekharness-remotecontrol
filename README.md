@@ -20,6 +20,7 @@
    - **端到端加密（AES-256-GCM）会话分享与动画回放（替代 `go.dshtui.com/c/<id>#k=<key>`）**：在本机用随机 256 位密钥加密对话，服务端只存密文与 IV，解密密钥仅存在于 URL `#k=` 锚点中，打开 `/share/:id#k=...` 即可在浏览器本地解密并播放对话动画回放。
    - **Ed25519 设备公钥指纹锁定（Pinning）与吊销（Revocation）**：每台电脑自动生成 `feishu-host.json` 密钥对与 12 位十六进制指纹（如 `ABCD EF01 2345`），首次连接自动锁定公钥（防伪造顶替），支持在 Web 页面一键吊销或重置设备信任。
    - **手机 6 位配对码 / 免密链接登录 + 自托管 WebRTC 信令与 TURN 临时凭据签发**：完全脱离 `dsh.r2049.cn` 的配对与信令接口（`/api/pairing/*`、`/api/v1/signaling`、`/api/v1/turn/credentials`）。
+   - **iPhone / 安卓主屏幕全屏 PWA + Apple 原生锁屏推送（W3C Web Push + VAPID）**：支持一键添加到 iPhone 主屏幕变身独立全屏 App（底部 5 Tab 原生交互），内置零依赖 `RFC 8292 (VAPID ECDSA P-256)` + `RFC 8291 (aes128gcm)` 加密推送引擎直连苹果 `web.push.apple.com`，当任务需要工具审批、执行完成或异常时直接弹窗到 iPhone 锁屏与 Apple Watch。
 
 ---
 

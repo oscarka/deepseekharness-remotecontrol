@@ -661,3 +661,165 @@ test('reverse-engineered server features: Ed25519 identity pinning/revocation, Q
   }
 })
 
+test('iPhone Home Screen PWA & W3C Web Push (RFC 8292 VAPID + RFC 8291 aes128gcm): manifest, service worker, encrypted push delivery, and automatic approval/completion lock-screen alerts', async () => {
+  const { createECDH, randomBytes } = await import('node:crypto')
+  const {
+    createVapidHeaders,
+    decryptWebPushPayload,
+    generateOrLoadVapidKeys,
+    verifyVapidJwt,
+  } = await import('../../hub/web-push.js')
+
+  // Capture all outgoing Web Push requests sent to Apple APNs (web.push.apple.com)
+  const interceptedPushes = []
+  const mockApplePushFetch = async (url, init) => {
+    interceptedPushes.push({ url, init })
+    return { status: 201, ok: true }
+  }
+
+  const hub = new HubCore({ pushFetch: mockApplePushFetch })
+  const { fetchAdapter } = createHubServer({ hub, token: 'pwa-secret-token' })
+  const hubUrl = 'https://dsh-pwa.example.run.app'
+  const authHeaders = {
+    'content-type': 'application/json',
+    authorization: 'Bearer pwa-secret-token',
+  }
+
+  // 1. Verify PWA Manifest, Icon, and Service Worker endpoints
+  const manifestRes = await fetchAdapter(`${hubUrl}/manifest.json`)
+  assert.equal(manifestRes.status, 200)
+  const manifest = await manifestRes.json()
+  assert.equal(manifest.display, 'standalone')
+  assert.equal(manifest.short_name, 'DSH 远控')
+
+  const iconRes = await fetchAdapter(`${hubUrl}/apple-touch-icon.png`)
+  assert.equal(iconRes.status, 200)
+  assert.match(await iconRes.text(), /<svg/)
+
+  const swRes = await fetchAdapter(`${hubUrl}/sw.js`)
+  assert.equal(swRes.status, 200)
+  const swText = await swRes.text()
+  assert.match(swText, /showNotification/)
+  assert.match(swText, /setAppBadge/)
+  assert.match(swText, /NOTIFICATION_CLICK/)
+
+  // 2. Verify VAPID ES256 JWT generation & cryptographic signature
+  const vapidKeys = generateOrLoadVapidKeys()
+  const { authorization, jwt } = createVapidHeaders('https://web.push.apple.com/Q1abc123', vapidKeys)
+  assert.match(authorization, /^vapid t=.*, k=/)
+  const verifiedPayload = verifyVapidJwt(jwt, vapidKeys)
+  assert.equal(verifiedPayload.aud, 'https://web.push.apple.com')
+
+  // 3. Simulate iPhone Safari subscribing to Web Push via /api/push/subscribe
+  const vapidPubRes = await (await fetchAdapter(`${hubUrl}/api/push/vapid-public-key`, { headers: authHeaders })).json()
+  assert.equal(vapidPubRes.ok, true)
+  assert.equal(vapidPubRes.publicKey, hub.getVapidPublicKey())
+
+  const iphoneEcdh = createECDH('prime256v1')
+  iphoneEcdh.generateKeys()
+  const iphoneAuthSecret = randomBytes(16)
+  const iphoneSubscription = {
+    endpoint: 'https://web.push.apple.com/QDshIphoneLockScreenEndpoint001',
+    keys: {
+      p256dh: iphoneEcdh.getPublicKey().toString('base64url'),
+      auth: iphoneAuthSecret.toString('base64url'),
+    },
+  }
+
+  const subRes = await (
+    await fetchAdapter(`${hubUrl}/api/push/subscribe`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        subscription: iphoneSubscription,
+        deviceName: 'Oscar 的 iPhone 16 Pro',
+      }),
+    })
+  ).json()
+  assert.equal(subRes.ok, true)
+  assert.equal(subRes.subscription.endpointHost, 'web.push.apple.com')
+
+  // 4. Test manual lock-screen push (/api/push/test) & decrypt RFC 8291 aes128gcm binary payload on simulated iPhone
+  const testPushRes = await (
+    await fetchAdapter(`${hubUrl}/api/push/test`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        title: '🔔 iPhone 桌面锁屏测试',
+        body: '这是一条端到端加密的 Web Push 锁屏通知',
+      }),
+    })
+  ).json()
+  assert.equal(testPushRes.ok, true)
+  assert.equal(testPushRes.sentCount, 1)
+  assert.equal(interceptedPushes.length, 1)
+
+  const sentReq = interceptedPushes[0]
+  assert.equal(sentReq.url, iphoneSubscription.endpoint)
+  assert.equal(sentReq.init.headers['content-encoding'], 'aes128gcm')
+  assert.match(sentReq.init.headers.authorization, /^vapid t=/)
+
+  const decryptedTestStr = decryptWebPushPayload(sentReq.init.body, iphoneEcdh, iphoneAuthSecret)
+  const decryptedTestObj = JSON.parse(decryptedTestStr)
+  assert.equal(decryptedTestObj.title, '🔔 iPhone 桌面锁屏测试')
+  assert.equal(decryptedTestObj.body, '这是一条端到端加密的 Web Push 锁屏通知')
+
+  // 5. Verify automatic lock-screen Web Push on Pending Approval & Task Completion
+  // Step 5a: Host reports a running task and a pending tool approval
+  await fetchAdapter(`${hubUrl}/api/heartbeat`, {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({
+      hostId: 'mac-pro',
+      hostName: '办公MacPro',
+      bridgeState: {
+        runningCount: 1,
+        taskCount: 1,
+        tasks: [{ id: 'session-push-1', title: '部署生产环境', status: 'running', lastOutput: '正在构建镜像...' }],
+        approvals: [
+          {
+            code: 'APV999',
+            agentId: 'session-push-1',
+            title: '部署生产环境',
+            toolName: 'bash',
+            reason: '执行 ./deploy-cloudrun.sh',
+          },
+        ],
+      },
+    }),
+  })
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(interceptedPushes.length, 2)
+  const approvalPush = JSON.parse(decryptWebPushPayload(interceptedPushes[1].init.body, iphoneEcdh, iphoneAuthSecret))
+  assert.match(approvalPush.title, /⏳ \[办公MacPro\] 待审批/)
+  assert.match(approvalPush.body, /deploy-cloudrun\.sh/)
+  assert.equal(approvalPush.data.code, 'APV999')
+
+  // Step 5b: Task transitions from running -> idle (completed) -> triggers automatic completion Web Push!
+  await fetchAdapter(`${hubUrl}/api/heartbeat`, {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({
+      hostId: 'mac-pro',
+      hostName: '办公MacPro',
+      bridgeState: {
+        runningCount: 0,
+        taskCount: 1,
+        tasks: [{ id: 'session-push-1', title: '部署生产环境', status: 'idle', lastOutput: '部署成功，服务已上线！' }],
+        approvals: [],
+      },
+    }),
+  })
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(interceptedPushes.length, 3)
+  const donePush = JSON.parse(decryptWebPushPayload(interceptedPushes[2].init.body, iphoneEcdh, iphoneAuthSecret))
+  assert.match(donePush.title, /✅ \[办公MacPro\] 任务完成：部署生产环境/)
+  assert.match(donePush.body, /部署成功，服务已上线/)
+
+  // 6. Verify SSE /api/events endpoint
+  const sseRes = await fetchAdapter(`${hubUrl}/api/events`, { headers: authHeaders })
+  assert.equal(sseRes.status, 200)
+  assert.match(await sseRes.text(), /^event: state\ndata: /)
+})
+
+

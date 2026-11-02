@@ -60,6 +60,65 @@ export function createHubServer({
       }
     }
 
+    // PWA Web App Manifest for iPhone / Android Home Screen installation
+    if (method === 'GET' && pathname === '/manifest.json') {
+      return {
+        status: 200,
+        headers: { 'content-type': 'application/manifest+json; charset=utf-8', 'cache-control': 'no-store' },
+        body: JSON.stringify({
+          name: 'DSH 远控 · 全功能总控中心',
+          short_name: 'DSH 远控',
+          description: 'DeepSeek Harness 飞书多机切换、远程对话、文件浏览与 iPhone 锁屏推送总控 App',
+          start_url: '/',
+          scope: '/',
+          display: 'standalone',
+          orientation: 'portrait',
+          background_color: '#0b0f19',
+          theme_color: '#0b0f19',
+          icons: [
+            {
+              src: '/icon.svg',
+              sizes: 'any',
+              type: 'image/svg+xml',
+              purpose: 'any maskable',
+            },
+          ],
+        }, null, 2),
+      }
+    }
+
+    // Crisp SVG App Icon for Home Screen & Push Notifications
+    if (method === 'GET' && (pathname === '/icon.svg' || pathname === '/apple-touch-icon.png')) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+        <defs>
+          <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#3b82f6"/>
+            <stop offset="100%" stop-color="#8b5cf6"/>
+          </linearGradient>
+        </defs>
+        <rect width="256" height="256" rx="56" fill="url(#g)"/>
+        <rect x="28" y="44" width="200" height="144" rx="20" fill="#0b0f19" opacity="0.9"/>
+        <path d="M64 96 L96 120 L64 144" stroke="#34d399" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <line x1="112" y1="144" x2="164" y2="144" stroke="#60a5fa" stroke-width="14" stroke-linecap="round"/>
+        <circle cx="192" cy="80" r="10" fill="#10b981"/>
+        <text x="128" y="226" text-anchor="middle" fill="#ffffff" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-weight="800" font-size="28">DSH REMOTE</text>
+      </svg>`
+      return {
+        status: 200,
+        headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'public, max-age=3600' },
+        body: svg,
+      }
+    }
+
+    // Service Worker for iOS 16.4+ / Android Web Push lock-screen notifications & deep-link click routing
+    if (method === 'GET' && pathname === '/sw.js') {
+      return {
+        status: 200,
+        headers: { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'no-store' },
+        body: renderServiceWorkerJs(),
+      }
+    }
+
     // Standalone E2EE Encrypted Conversation Share & Replay Page (replaces go.dshtui.com/c/:id)
     const sharePageMatch = /^\/(?:share|c)\/([^/]+)$/.exec(pathname)
     if (method === 'GET' && sharePageMatch) {
@@ -210,6 +269,55 @@ export function createHubServer({
         return { status: 200, json: { ok: true, pairing } }
       }
 
+      // W3C Web Push + VAPID Endpoints for iPhone (iOS 16.4+) / Android Home Screen App
+      if (method === 'GET' && pathname === '/api/push/vapid-public-key') {
+        return {
+          status: 200,
+          json: {
+            ok: true,
+            publicKey: hub.getVapidPublicKey(),
+          },
+        }
+      }
+
+      if (method === 'POST' && pathname === '/api/push/subscribe') {
+        const outcome = hub.addPushSubscription({
+          subscription: body.subscription || body,
+          deviceName: body.deviceName || 'iPhone 主屏幕 App',
+          userAgent: headers['user-agent'] || '',
+        })
+        return { status: outcome.ok ? 200 : 400, json: outcome }
+      }
+
+      if (method === 'POST' && pathname === '/api/push/unsubscribe') {
+        const outcome = hub.removePushSubscription(body.id || body.endpoint)
+        return { status: 200, json: outcome }
+      }
+
+      if (method === 'POST' && pathname === '/api/push/test') {
+        const outcome = await hub.broadcastWebPush({
+          title: body.title || '🔔 DSH iPhone 锁屏推送已激活！',
+          body: body.body || '当任意电脑有工具待审批、任务完成或异常时，你会立即收到这样的系统级锁屏通知。',
+          tag: 'dsh-push-test',
+          badgeCount: 1,
+          data: {
+            type: 'test',
+            hostId: hub.activeHostId || '',
+            url: '/',
+          },
+        })
+        return { status: 200, json: outcome }
+      }
+
+      // SSE fallback for in-memory fetchAdapter testing
+      if (method === 'GET' && pathname === '/api/events') {
+        return {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' },
+          body: `event: state\ndata: ${JSON.stringify({ ok: true, ...hub.getFullState() })}\n\n`,
+        }
+      }
+
       // Self-hosted WebRTC Signaling & TURN Credentials (replaces dsh.r2049.cn signaling & /api/v1/turn/credentials)
       if (method === 'POST' && pathname === '/api/v1/signaling') {
         const outcome = hub.postSignalingMessage(body)
@@ -289,6 +397,36 @@ export function createHubServer({
 
   const server = createServer(async (req, res) => {
     try {
+      const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
+      if (req.method === 'GET' && urlObj.pathname === '/api/events') {
+        if (!checkAuth(req.headers, urlObj)) {
+          sendJson(res, 401, { ok: false, error: 'Unauthorized', authRequired: true })
+          return
+        }
+        res.writeHead(200, {
+          'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-cache, no-transform',
+          connection: 'keep-alive',
+          'access-control-allow-origin': '*',
+        })
+        const sendEvent = stateData => {
+          res.write(`event: state\ndata: ${JSON.stringify({ ok: true, ...stateData })}\n\n`)
+        }
+        sendEvent(hub.getFullState())
+        const unsubscribe = hub.onStateChange((_evt, stateData) => {
+          sendEvent(stateData)
+        })
+        const keepAlive = setInterval(() => {
+          res.write(': ping\n\n')
+        }, 20_000)
+        keepAlive.unref?.()
+        req.on('close', () => {
+          clearInterval(keepAlive)
+          unsubscribe()
+        })
+        return
+      }
+
       const body = req.method === 'POST' ? await readJsonBody(req) : {}
       const result = await dispatchRequest({
         method: req.method,
@@ -344,6 +482,75 @@ export function createHubServer({
   }
 
   return { server, hub, dispatchRequest, fetchAdapter }
+}
+
+function renderServiceWorkerJs() {
+  return `// DSH Self-Hosted PWA & iOS 16.4+ Web Push Service Worker
+self.addEventListener('install', event => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener('push', event => {
+  let payload = {
+    title: 'DSH 远控通知',
+    body: '您的电脑任务有新动态，点击查看',
+    tag: 'dsh-notify',
+    badgeCount: 1,
+    data: { url: '/' },
+  };
+  if (event.data) {
+    try {
+      payload = Object.assign(payload, event.data.json());
+    } catch {
+      payload.body = event.data.text();
+    }
+  }
+
+  const tasks = [
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: '/icon.svg',
+      badge: '/icon.svg',
+      tag: payload.tag || 'dsh-notify',
+      renotify: true,
+      data: payload.data || { url: '/' },
+    }),
+  ];
+
+  if (self.navigator && typeof self.navigator.setAppBadge === 'function') {
+    tasks.push(self.navigator.setAppBadge(Number(payload.badgeCount) || 1).catch(() => {}));
+  }
+
+  event.waitUntil(Promise.all(tasks));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  if (self.navigator && typeof self.navigator.clearAppBadge === 'function') {
+    self.navigator.clearAppBadge().catch(() => {});
+  }
+  const data = event.notification.data || {};
+  const targetUrl = data.url || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+      for (const client of windowClients) {
+        if ('focus' in client) {
+          client.postMessage({ type: 'NOTIFICATION_CLICK', data });
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
+`
 }
 
 function renderShareReplayHtml(share) {
