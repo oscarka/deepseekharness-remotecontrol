@@ -1,0 +1,11 @@
+node_modules/
+**/node_modules/
+.pnpm-store/
+**/.pnpm-store/
+.DS_Store
+**/.DS_Store
+*.log
+*.env
+.env.*
+*.dshsnap.gz
+hub-state.json

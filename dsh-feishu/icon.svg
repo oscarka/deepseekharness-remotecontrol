@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Feishu Bridge">
+  <defs>
+    <linearGradient id="g" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3370ff"/>
+      <stop offset="1" stop-color="#00b4d8"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#g)"/>
+  <path d="M18 22h28a4 4 0 0 1 4 4v14a4 4 0 0 1-4 4H32l-9 7v-7h-5a4 4 0 0 1-4-4V26a4 4 0 0 1 4-4Z" fill="#fff" opacity=".95"/>
+  <circle cx="24" cy="33" r="2.6" fill="#3370ff"/>
+  <circle cx="32" cy="33" r="2.6" fill="#3370ff"/>
+  <circle cx="40" cy="33" r="2.6" fill="#3370ff"/>
+</svg>

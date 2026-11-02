@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+.pnpm-store
+**/.pnpm-store
+.git
+.DS_Store
+**/.DS_Store
+*.log
+*.env
+dsh-feishu/test
