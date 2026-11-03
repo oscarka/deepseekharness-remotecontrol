@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b0f19" />
+  <meta name="theme-color" content="#ffffff" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="DSH 远控" />
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" type="image/svg+xml" href="/icon.svg" />
@@ -13,302 +13,668 @@
   <title>DeepSeek Harness 自托管全功能总控台 · 飞书多机总控台</title>
   <style>
     :root {
-      --bg: #0b0f19;
-      --card: #131b2e;
-      --card-hover: #18233c;
-      --border: #23304f;
-      --text: #f1f5f9;
-      --muted: #94a3b8;
-      --primary: #3b82f6;
-      --primary-hover: #2563eb;
-      --green: #10b981;
-      --amber: #f59e0b;
-      --red: #ef4444;
-      --purple: #8b5cf6;
+      --bg: #f6f8fb;
+      --surface: #ffffff;
+      --surface-subtle: #f8fafc;
+      --surface-muted: #f1f5f9;
+      --border: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text: #0f172a;
+      --text-secondary: #334155;
+      --muted: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-soft: #eff6ff;
+      --primary-border: #bfdbfe;
+      --green: #059669;
+      --green-soft: #ecfdf5;
+      --green-border: #a7f3d0;
+      --amber: #d97706;
+      --amber-soft: #fffbeb;
+      --amber-border: #fde68a;
+      --red: #dc2626;
+      --red-soft: #fef2f2;
+      --red-border: #fecaca;
+      --purple: #4f46e5;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+      --shadow-md: 0 4px 16px -2px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
+      --shadow-lg: 0 16px 40px -8px rgba(15, 23, 42, 0.12);
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      background-image: radial-gradient(1100px 380px at 50% -140px, rgba(37, 99, 235, 0.075), transparent);
       color: var(--text);
-      line-height: 1.5;
-      padding-bottom: calc(76px + var(--safe-bottom));
+      line-height: 1.55;
+      padding-bottom: calc(82px + var(--safe-bottom));
+      -webkit-font-smoothing: antialiased;
     }
+
+    /* Top Glassmorphic Header */
     header {
-      border-bottom: 1px solid var(--border);
-      background: rgba(15, 22, 38, 0.92);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
       position: sticky;
       top: 0;
-      z-index: 30;
-      padding: calc(10px + var(--safe-top)) 18px 10px;
+      z-index: 40;
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: calc(10px + var(--safe-top)) 20px 10px;
+    }
+    .header-inner {
+      max-width: 1400px;
+      margin: 0 auto;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 12px;
       flex-wrap: wrap;
-      gap: 10px;
     }
     .brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
     .brand-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, var(--primary), var(--purple));
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      background: linear-gradient(135deg, #2563eb, #4f46e5);
+      color: #ffffff;
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 800;
-      font-size: 14px;
-      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      font-size: 13.5px;
+      letter-spacing: 0.5px;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.24);
+      flex-shrink: 0;
+    }
+    .brand-title {
+      font-weight: 750;
+      font-size: 15.5px;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .brand-sub {
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+
+    /* Desktop Segmented Navigation */
+    .desktop-tabs {
+      display: inline-flex;
+      background: var(--surface-muted);
+      padding: 4px;
+      border-radius: 11px;
+      border: 1px solid var(--border);
+      gap: 2px;
+    }
+    .seg-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      padding: 6px 13px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .seg-btn:hover {
+      color: var(--text);
+    }
+    .seg-btn.active {
+      background: var(--surface);
+      color: var(--primary);
+      box-shadow: var(--shadow-sm);
+    }
+    @media (max-width: 980px) {
+      .desktop-tabs { display: none; }
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
     }
     .mascot-pill {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      background: #0d1424;
+      background: var(--surface-subtle);
       border: 1px solid var(--border);
       border-radius: 999px;
       padding: 5px 12px;
       font-size: 12px;
-      color: #cbd5e1;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* Quick Host Switcher Bar */
+    .host-bar-wrap {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
     }
     .host-pills-bar {
-      background: #0e1526;
-      border-bottom: 1px solid var(--border);
-      padding: 8px 18px;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 9px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      overflow-x: auto;
+    }
+    .host-pills-left {
       display: flex;
       align-items: center;
       gap: 8px;
       overflow-x: auto;
-      white-space: nowrap;
+      padding-bottom: 2px;
     }
     .host-pill {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
+      gap: 8px;
+      padding: 6px 13px;
       border-radius: 999px;
-      font-size: 12.5px;
+      font-size: 13px;
       font-weight: 600;
-      background: #151f36;
+      background: var(--surface-subtle);
       border: 1px solid var(--border);
-      color: var(--text);
+      color: var(--text-secondary);
       cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .host-pill:hover {
+      border-color: var(--primary-border);
+      background: var(--primary-soft);
     }
     .host-pill.active {
-      background: rgba(59, 130, 246, 0.2);
+      background: var(--primary-soft);
       border-color: var(--primary);
-      color: #93c5fd;
+      color: var(--primary);
+      box-shadow: 0 1px 4px rgba(37, 99, 235, 0.1);
     }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .status-dot.online {
+      background: #10b981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+    }
+    .status-dot.offline {
+      background: #94a3b8;
+    }
+
+    /* Main Container */
     .container {
-      max-width: 1320px;
+      max-width: 1400px;
       margin: 0 auto;
-      padding: 16px 18px 32px;
+      padding: 18px 20px 36px;
       display: flex;
       flex-direction: column;
       gap: 18px;
     }
-    .ios-banner {
-      background: linear-gradient(135deg, rgba(59, 130, 246, 0.16), rgba(139, 92, 246, 0.16));
-      border: 1px solid rgba(59, 130, 246, 0.45);
-      border-radius: 12px;
-      padding: 12px 15px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 10px;
-      font-size: 12.5px;
-    }
-    .grid-2 {
-      display: grid;
-      grid-template-columns: 1.15fr 0.85fr;
-      gap: 18px;
-    }
-    @media (max-width: 960px) {
-      .grid-2 { grid-template-columns: 1fr; }
-    }
-    .panel {
-      background: var(--card);
+
+    /* Buttons & Inputs */
+    button {
+      cursor: pointer;
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 16px 18px;
+      border-radius: var(--radius-sm);
+      padding: 7px 12px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: var(--surface);
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      box-shadow: var(--shadow-sm);
+    }
+    button:hover {
+      background: var(--surface-subtle);
+      border-color: var(--border-strong);
+      color: var(--text);
+    }
+    button.primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.22);
+    }
+    button.primary:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+      color: #ffffff;
+    }
+    button.green {
+      background: var(--green-soft);
+      border-color: var(--green-border);
+      color: var(--green);
+    }
+    button.green:hover {
+      background: #d1fae5;
+    }
+    button.amber {
+      background: var(--amber-soft);
+      border-color: var(--amber-border);
+      color: var(--amber);
+    }
+    button.danger {
+      background: var(--red-soft);
+      border-color: var(--red-border);
+      color: var(--red);
+    }
+    button.danger:hover {
+      background: #fee2e2;
+    }
+    button.sm {
+      padding: 4px 9px;
+      font-size: 11.5px;
+      border-radius: 7px;
+    }
+
+    input, select, textarea {
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 13.5px;
+      width: 100%;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+
+    /* Badges */
+    .badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .badge {
+      font-size: 11.5px;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    .badge.green { background: var(--green-soft); color: var(--green); border: 1px solid var(--green-border); }
+    .badge.blue { background: var(--primary-soft); color: var(--primary); border: 1px solid var(--primary-border); }
+    .badge.amber { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber-border); }
+    .badge.red { background: var(--red-soft); color: var(--red); border: 1px solid var(--red-border); }
+    .badge.muted { background: var(--surface-muted); color: var(--muted); border: 1px solid var(--border); }
+
+    /* Cards & Panels */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      box-shadow: var(--shadow-md);
     }
     .panel-title {
-      font-size: 15.5px;
-      font-weight: 700;
+      font-size: 16px;
+      font-weight: 750;
       margin: 0 0 6px 0;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      gap: 10px;
       flex-wrap: wrap;
+      color: var(--text);
     }
     .panel-sub {
-      font-size: 12px;
+      font-size: 12.5px;
       color: var(--muted);
-      margin: 0 0 12px 0;
+      margin: 0 0 16px 0;
     }
-    .hosts-grid {
+
+    /* Master-Detail Chat Split Layout */
+    .chat-workspace {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
-      gap: 12px;
+      grid-template-columns: 350px 1fr;
+      gap: 18px;
+      align-items: start;
     }
-    .host-card {
-      background: #0e1525;
+    @media (max-width: 960px) {
+      .chat-workspace {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .session-sidebar {
+      background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 14px;
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      box-shadow: var(--shadow-md);
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      transition: border-color 0.15s;
+      gap: 12px;
     }
-    .host-card.active-feishu {
-      border-color: var(--green);
-      box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25);
-    }
-    .host-card.selected {
-      border-color: var(--primary);
-    }
-    .badges { display: flex; flex-wrap: wrap; gap: 6px; }
-    .badge {
-      font-size: 11px;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-weight: 600;
-    }
-    .badge.green { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); }
-    .badge.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); }
-    .badge.amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); }
-    .badge.red { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); }
-    .badge.muted { background: rgba(148, 163, 184, 0.12); color: var(--muted); }
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
+    .session-list {
+      display: flex;
+      flex-direction: column;
       gap: 8px;
-      background: rgba(19, 27, 46, 0.6);
-      padding: 8px 10px;
-      border-radius: 8px;
-      font-size: 12px;
+      max-height: 620px;
+      overflow-y: auto;
     }
-    .metric-val { font-weight: 700; font-size: 14px; color: var(--text); }
-    .metric-lbl { color: var(--muted); font-size: 11px; }
-    .btn-row { display: flex; flex-wrap: wrap; gap: 6px; }
-    button {
-      cursor: pointer;
-      border: 1px solid transparent;
-      border-radius: 8px;
-      padding: 7px 11px;
-      font-size: 12.5px;
-      font-weight: 600;
-      color: var(--text);
-      background: #1e293b;
-      transition: all 0.15s;
-    }
-    button:hover { background: #334155; }
-    button.primary { background: var(--primary); color: #fff; }
-    button.primary:hover { background: var(--primary-hover); }
-    button.green { background: var(--green); color: #052e16; }
-    button.amber { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border-color: rgba(245, 158, 11, 0.4); }
-    button.danger { background: rgba(239, 68, 68, 0.16); color: #f87171; border-color: rgba(239, 68, 68, 0.35); }
-    input, select, textarea {
-      background: #090d16;
+    .session-card {
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
       border: 1px solid var(--border);
-      color: var(--text);
-      padding: 8px 11px;
-      border-radius: 8px;
-      font-size: 13px;
-      width: 100%;
+      background: var(--surface-subtle);
+      cursor: pointer;
+      transition: all 0.15s ease;
     }
-    .form-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
-    .checkbox-row {
+    .session-card:hover {
+      border-color: var(--primary-border);
+      background: #ffffff;
+    }
+    .session-card.active {
+      background: var(--primary-soft);
+      border-color: var(--primary);
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
+    }
+    .session-card-title {
+      font-weight: 700;
+      font-size: 13.5px;
+      color: var(--text);
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 6px;
+    }
+    .session-card-meta {
+      font-size: 11.5px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Right Conversation Stage */
+    .chat-stage {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      display: flex;
+      flex-direction: column;
+      min-height: 620px;
+      overflow: hidden;
+    }
+    .chat-stage-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .chat-stream {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      max-height: 540px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      background: #fcfdff;
+    }
+    .msg-row {
+      display: flex;
+      flex-direction: column;
+      max-width: 88%;
+    }
+    .msg-row.user {
+      align-self: flex-end;
+    }
+    .msg-row.assistant {
+      align-self: flex-start;
+      width: 88%;
+    }
+    .msg-bubble {
+      padding: 12px 16px;
+      border-radius: 14px;
+      font-size: 13.5px;
+      line-height: 1.6;
+      box-shadow: var(--shadow-sm);
+    }
+    .msg-row.user .msg-bubble {
+      background: var(--primary);
+      color: #ffffff;
+      border-bottom-right-radius: 4px;
+    }
+    .msg-row.assistant .msg-bubble {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;
+    }
+    .msg-meta {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      padding: 0 4px;
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 12.5px;
-      color: #cbd5e1;
-      margin-bottom: 6px;
+      gap: 6px;
     }
-    .checkbox-row input { width: auto; }
-    .task-item {
-      border: 1px solid var(--border);
-      background: #0d1424;
-      border-radius: 12px;
-      padding: 13px;
-      margin-bottom: 10px;
+    .msg-row.user .msg-meta {
+      justify-content: flex-end;
     }
-    .task-output {
+    .thinking-details {
       margin-top: 8px;
-      padding: 10px;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
       border-radius: 8px;
-      background: #070b13;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      padding: 6px 10px;
       font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .thinking-details summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--muted);
+      user-select: none;
+    }
+    .terminal-output {
+      margin-top: 10px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      color: #1e293b;
       white-space: pre-wrap;
       word-break: break-word;
-      max-height: 220px;
+      max-height: 200px;
       overflow-y: auto;
-      color: #cbd5e1;
     }
-    .transcript-box {
-      margin-top: 10px;
-      border-top: 1px dashed var(--border);
-      padding-top: 10px;
-      display: none;
+    .chat-composer {
+      padding: 14px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
     }
-    .transcript-box.open { display: block; }
-    .chat-bubble {
-      padding: 8px 11px;
-      border-radius: 8px;
-      margin-bottom: 6px;
-      font-size: 12.5px;
-      background: #111a2e;
-      border-left: 3px solid var(--primary);
+
+    /* File Explorer Split View */
+    .files-grid {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 16px;
+      margin-top: 12px;
     }
-    .chat-bubble.assistant {
-      background: #0b1322;
-      border-left-color: var(--green);
+    @media (max-width: 900px) {
+      .files-grid { grid-template-columns: 1fr; }
+    }
+    .file-tree-box {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface-subtle);
+      overflow: hidden;
     }
     .file-entry {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 7px 10px;
-      border-radius: 6px;
-      font-size: 12.5px;
+      padding: 9px 13px;
+      font-size: 13px;
       cursor: pointer;
-      border-bottom: 1px solid rgba(35, 48, 79, 0.4);
+      border-bottom: 1px solid var(--border);
+      transition: background 0.12s;
+      color: var(--text-secondary);
     }
-    .file-entry:hover { background: rgba(59, 130, 246, 0.12); }
+    .file-entry:last-child { border-bottom: none; }
+    .file-entry:hover {
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+    .file-preview-pane {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      min-height: 360px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
 
-    /* Native Mobile Bottom Tab Bar */
+    /* Fleet Cards */
+    .hosts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+      gap: 16px;
+    }
+    .host-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transition: all 0.15s ease;
+      box-shadow: var(--shadow-sm);
+    }
+    .host-card:hover {
+      box-shadow: var(--shadow-md);
+      border-color: var(--border-strong);
+    }
+    .host-card.active-feishu {
+      border-color: var(--green);
+      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
+    }
+    .host-card.selected {
+      border-color: var(--primary);
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      border-radius: var(--radius-md);
+    }
+    .metric-val { font-weight: 750; font-size: 15px; color: var(--text); }
+    .metric-lbl { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+    }
+    @media (max-width: 960px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .form-row { display: flex; gap: 10px; margin-bottom: 12px; align-items: center; }
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+    .checkbox-row input { width: 16px; height: 16px; accent-color: var(--primary); }
+
+    /* iOS Home Screen Banner (Bright & Welcoming) */
+    .ios-banner {
+      background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%);
+      border: 1px solid #bfdbfe;
+      border-radius: var(--radius-lg);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    /* Native Mobile Bottom Navigation Bar */
     .bottom-nav {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
-      background: rgba(15, 22, 38, 0.96);
+      background: rgba(255, 255, 255, 0.94);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border-top: 1px solid var(--border);
       display: flex;
       justify-content: space-around;
       padding: 6px 8px calc(6px + var(--safe-bottom));
-      z-index: 40;
+      z-index: 45;
+      box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.04);
     }
     .nav-tab {
       flex: 1;
       background: transparent;
       border: none;
+      box-shadow: none;
       color: var(--muted);
       display: flex;
       flex-direction: column;
@@ -319,7 +685,8 @@
       font-weight: 600;
       position: relative;
     }
-    .nav-tab.active { color: #60a5fa; }
+    .nav-tab:hover { background: transparent; color: var(--text); }
+    .nav-tab.active { color: var(--primary); }
     .nav-tab .icon { font-size: 18px; line-height: 1.1; }
     .nav-badge {
       position: absolute;
@@ -334,268 +701,432 @@
       text-align: center;
     }
 
+    /* Smooth Light-Mode Modals */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.35);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      z-index: 90;
+    }
+    .modal-backdrop.open {
+      display: flex;
+    }
+    .modal-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      width: 100%;
+      max-width: 480px;
+      padding: 22px 24px;
+      box-shadow: var(--shadow-lg);
+      animation: modalIn 0.16s ease-out;
+    }
+    @keyframes modalIn {
+      from { opacity: 0; transform: translateY(8px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* Toast */
     .toast {
       position: fixed;
-      bottom: calc(74px + var(--safe-bottom));
+      bottom: calc(78px + var(--safe-bottom));
       right: 18px;
       left: 18px;
       max-width: 420px;
       margin: 0 auto;
-      background: #1e293b;
-      border: 1px solid var(--primary);
-      color: #fff;
-      padding: 11px 16px;
-      border-radius: 10px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      background: #0f172a;
+      color: #ffffff;
+      padding: 11px 18px;
+      border-radius: 999px;
+      box-shadow: var(--shadow-lg);
       display: none;
       z-index: 100;
       font-size: 13px;
+      font-weight: 500;
       text-align: center;
     }
   </style>
 </head>
 <body>
   <header>
-    <div class="brand">
-      <div class="brand-icon">DSH</div>
-      <div>
-        <div style="font-weight: 700; font-size: 15px;">DeepSeek Harness 自托管全功能总控台</div>
-        <div style="font-size: 11px; color: var(--muted);">iPhone 桌面 App 锁屏推送 · 飞书多机总控台 · 100% 零第三方服务器</div>
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-icon">DSH</div>
+        <div>
+          <div class="brand-title">DeepSeek Harness 自托管全功能总控台</div>
+          <div class="brand-sub">飞书多机总控 · iPhone 桌面锁屏推送 · 100% 零第三方服务器</div>
+        </div>
       </div>
-    </div>
-    <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-      <div id="deepyMascot" class="mascot-pill">🐋 Deepy: 正在同步...</div>
-      <span id="connBadge" class="badge green">SSE 实时流</span>
-      <button id="headerPushBtn" class="primary" onclick="subscribeWebPush()">🔔 开启锁屏推送</button>
-      <button onclick="openPairingModal()">📱 免密配对</button>
-      <button onclick="promptToken()">🔑 密钥</button>
+
+      <!-- Desktop Segmented View Switcher -->
+      <div class="desktop-tabs">
+        <button id="dtab_chat" class="seg-btn active" onclick="switchTab('chat')">💬 对话与审批</button>
+        <button id="dtab_fleet" class="seg-btn" onclick="switchTab('fleet')">🖥️ 多机与迁移</button>
+        <button id="dtab_files" class="seg-btn" onclick="switchTab('files')">📂 工作区文件</button>
+        <button id="dtab_push" class="seg-btn" onclick="switchTab('push')">🔔 手机推送与分享</button>
+        <button id="dtab_all" class="seg-btn" onclick="switchTab('all')">🧭 全景模式</button>
+      </div>
+
+      <div class="header-actions">
+        <div id="deepyMascot" class="mascot-pill">🐋 Deepy: 正在连接...</div>
+        <span id="connBadge" class="badge green">实时同步</span>
+        <button id="headerPushBtn" class="primary" onclick="subscribeWebPush()">🔔 开启锁屏推送</button>
+        <button onclick="openPairingModal()">📱 扫码配对</button>
+        <button onclick="openAuthModal()">🔑 密钥</button>
+      </div>
     </div>
   </header>
 
-  <!-- Quick Host Switcher Bar (Always accessible on Mobile & Desktop) -->
-  <div id="hostPillsBar" class="host-pills-bar"></div>
+  <!-- Quick Computer Switcher Bar -->
+  <div class="host-bar-wrap">
+    <div class="host-pills-bar">
+      <div id="hostPillsBar" class="host-pills-left"></div>
+      <div style="display:flex; gap:8px; flex-shrink:0;">
+        <button class="primary sm" onclick="openNewSessionModal()">➕ 新建远程任务</button>
+      </div>
+    </div>
+  </div>
 
   <div class="container">
-    <!-- iOS Add-to-Home-Screen & Push Banner -->
-    <div id="iosGuideBanner" class="ios-banner">
-      <div>
-        <strong>📲 把控制台放到 iPhone 主屏幕，即可享受原生 App 全屏体验与锁屏推送通知！</strong>
-        <div id="iosGuideSub" style="color:#cbd5e1; margin-top:2px;">
-          在 iPhone Safari 点击底部「分享」图标 ➔ 选择「添加到主屏幕」，从桌面打开后点击右上角「🔔 开启锁屏推送」即可接收待审批与任务完成提醒。
-        </div>
-      </div>
-      <div class="btn-row">
-        <button class="primary" onclick="subscribeWebPush()">🔔 立即开启本机推送</button>
-        <button onclick="sendTestPush()">📨 发测试通知</button>
-      </div>
-    </div>
-
-    <!-- Pairing Code Modal Banner -->
-    <div id="pairingBox" class="panel" style="display:none; border-color:var(--primary);">
-      <div class="panel-title">
-        <span>📱 手机扫码 / 6位配对码免密登录</span>
-        <button onclick="document.getElementById('pairingBox').style.display='none'">关闭</button>
-      </div>
-      <div id="pairingContent" style="font-size:13px; color:#cbd5e1;"></div>
-    </div>
-
-    <!-- TAB SECTION 1: SESSIONS & CHAT CONSOLE -->
+    <!-- TAB SECTION 1: SPLIT-PANE SESSIONS & CONVERSATION WORKSPACE -->
     <div id="sec_chat" class="tab-section">
-      <div class="panel">
-        <div class="panel-title">
-          <span id="consoleTitle">💬 电脑远程任务与对话控制台</span>
-          <div class="btn-row" id="consoleActions"></div>
-        </div>
-        <p class="panel-sub">
-          支持远程新建会话、查看完整对话/思考/工具步骤、运行中实时插话（Steer / 打断重发）、重命名/删除会话与生成端到端加密回放。
-        </p>
+      <div id="approvalsBox" style="margin-bottom: 14px;"></div>
 
-        <!-- New Session Bar -->
-        <div style="background:#0d1424; border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:14px;">
-          <div style="font-size:12.5px; font-weight:700; margin-bottom:8px; color:#60a5fa;">➕ 在当前选中电脑远程新建会话</div>
-          <div class="form-row" style="margin-bottom:8px;">
-            <input id="newSessionCwd" placeholder="工作区路径（留空默认使用最近项目路径）" style="flex:1;" />
-            <input id="newSessionTitle" placeholder="会话标题（可选）" style="width:160px;" />
+      <div class="chat-workspace">
+        <!-- Left Sidebar: Sessions on Current Host -->
+        <div class="session-sidebar">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div id="sidebarHostTitle" style="font-weight:750; font-size:14.5px;">💻 当前电脑会话</div>
+              <div id="sidebarHostSub" style="font-size:11.5px; color:var(--muted);">点击会话切换右侧对话视图</div>
+            </div>
+            <button class="primary sm" onclick="openNewSessionModal()">➕ 新建</button>
           </div>
-          <div class="form-row" style="margin-bottom:0;">
-            <input id="newSessionPrompt" placeholder="输入初始任务指令，创建后立即开始执行..." onkeydown="if(event.key==='Enter')createNewSession()" />
-            <button class="primary" style="white-space:nowrap;" onclick="createNewSession()">➕ 新建并执行</button>
-          </div>
+          <div id="hostQuickActions" class="badges"></div>
+          <div id="sessionListBox" class="session-list"></div>
         </div>
 
-        <div id="approvalsBox"></div>
-        <div id="tasksBox"></div>
+        <!-- Right Stage: Full Conversation & Sticky Composer -->
+        <div class="chat-stage">
+          <div id="chatStageHeader" class="chat-stage-header">
+            <div>
+              <div style="font-weight:750; font-size:15px;">请选择或新建一个远程会话</div>
+              <div style="font-size:12px; color:var(--muted);">支持实时查看思考过程、工具调用、顺路插话 (Steer) 与打断重发</div>
+            </div>
+          </div>
+
+          <div id="chatStreamBox" class="chat-stream">
+            <div style="margin:auto; text-align:center; color:var(--muted); padding:40px 20px;">
+              <div style="font-size:32px; margin-bottom:8px;">💬</div>
+              <div style="font-weight:600; color:var(--text-secondary);">在左侧选择一个会话，或点击右上角「➕ 新建远程任务」</div>
+              <div style="font-size:12.5px; margin-top:4px;">所有指令通过自托管加密通道直达你的电脑，不经过任何第三方服务器。</div>
+            </div>
+          </div>
+
+          <div id="chatComposerBox" class="chat-composer">
+            <input id="globalPromptInput" placeholder="输入指令发送给当前选中会话 (Enter 发送)..." style="flex:1;" onkeydown="if(event.key==='Enter')handleComposerSubmit(false)" />
+            <button class="primary" onclick="handleComposerSubmit(false)">🚀 发送指令</button>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- TAB SECTION 2: WORKSPACE FILE EXPLORER -->
-    <div id="sec_files" class="tab-section">
+    <div id="sec_files" class="tab-section" style="display:none;">
       <div class="panel">
         <div class="panel-title">
-          <span>📂 远程工作区文件树与安全代码/图片预览</span>
-          <button onclick="browseFiles('')">🏠 返回根目录</button>
+          <div>
+            <span>📂 远程工作区文件树与安全代码预览</span>
+            <span class="badge blue" style="margin-left:8px;">🛡️ 敏感密钥自动脱敏</span>
+          </div>
+          <div class="badges" id="fsQuickWorkspaces"></div>
         </div>
         <p class="panel-sub">
-          完全脱离第三方服务器的远程工作区文件浏览器（严格限制在工作区目录内，自动脱敏密钥）。点击文件即可预览代码或图片。
+          严格限制在项目工作区目录内，自动拦截越界访问并对 API Key / Token 自动脱敏。
         </p>
+
         <div class="form-row">
-          <input id="fsRootInput" placeholder="工作区根目录 (默认跟随选中任务)" />
-          <button class="primary" style="white-space:nowrap;" onclick="browseFiles('')">读取目录</button>
+          <input id="fsRootInput" placeholder="工作区根目录路径 (默认自动跟随当前会话的工作区)" />
+          <button class="primary" style="white-space:nowrap;" onclick="browseFiles('')">📂 读取目录</button>
+          <button style="white-space:nowrap;" onclick="browseFiles('')">🏠 根目录</button>
         </div>
-        <div id="fsCurrentPath" style="font-size:12px; color:var(--muted); margin-bottom:8px;"></div>
-        <div id="fsEntriesBox" style="max-height:260px; overflow-y:auto; background:#090d16; border:1px solid var(--border); border-radius:8px; padding:6px;">
-          <div style="color:var(--muted); font-size:12.5px; padding:8px;">点击任务卡片上的「📂 浏览文件」或上方「读取目录」加载远程文件树。</div>
+
+        <div id="fsCurrentPath" style="font-size:12.5px; color:var(--muted); margin-bottom:8px;"></div>
+
+        <div class="files-grid">
+          <div id="fsEntriesBox" class="file-tree-box">
+            <div style="color:var(--muted); font-size:13px; padding:16px;">
+              点击会话顶部的「📂 浏览文件」或上方「读取目录」加载远程文件列表。
+            </div>
+          </div>
+          <div id="filePreviewBox" class="file-preview-pane">
+            <div style="margin:auto; text-align:center; color:var(--muted); padding:40px 20px; font-size:13px;">
+              📄 点击左侧任意代码文件或图片即可在此安全预览
+            </div>
+          </div>
         </div>
-        <div id="filePreviewBox" style="margin-top:12px;"></div>
       </div>
     </div>
 
     <!-- TAB SECTION 3: FLEET & CROSS-COMPUTER MIGRATION -->
-    <div id="sec_fleet" class="tab-section">
+    <div id="sec_fleet" class="tab-section" style="display:none;">
       <div class="panel" style="margin-bottom:18px;">
         <div class="panel-title">
-          <span>🖥 已接入的电脑（点击「设为飞书主控」切换飞书控制权）</span>
-          <span id="fleetStats" style="font-size: 12px; color: var(--muted);"></span>
+          <span>🖥️ 已接入的电脑集群（点击「🎯 设为飞书主控」即时切换飞书机器人控制权）</span>
+          <span id="fleetStats" class="badge blue"></span>
         </div>
         <p class="panel-sub">
-          每台电脑自动使用 Ed25519 密钥对锁定设备指纹。同一时间只有「飞书主控」连接飞书，其余电脑在线待机，随时一键接管。
+          每台电脑首次心跳自动锁定 Ed25519 硬件公钥指纹（防伪造顶替）。同一时刻仅「飞书主控」保持飞书长连接，其余电脑在线候命，彻底杜绝多机抢消息。
         </p>
         <div id="hostsGrid" class="hosts-grid"></div>
       </div>
 
       <div class="grid-2">
         <div class="panel">
-          <div class="panel-title">🚀 跨电脑一键转移与原机临时清空</div>
+          <div class="panel-title">🚀 跨电脑一键转移与原机安全清空</div>
           <p class="panel-sub">
-            将源电脑的 DSH 会话记录与配置打包加密传输到目标电脑恢复，并可自动清空源电脑数据。
+            将源电脑的 DSH 会话记录与配置打包压缩传输至目标电脑恢复，并可自动清空源电脑本地会话。
           </p>
           <div class="form-row">
             <div style="flex: 1;">
-              <label style="font-size: 12px; color: var(--muted);">源电脑（转出）</label>
+              <label style="font-size: 12px; font-weight:600; color: var(--text-secondary); display:block; margin-bottom:4px;">源电脑（转出）</label>
               <select id="migSource"></select>
             </div>
-            <div style="padding-top: 18px; color: var(--muted);">➔</div>
+            <div style="padding-top: 20px; color: var(--primary); font-weight:700;">➔</div>
             <div style="flex: 1;">
-              <label style="font-size: 12px; color: var(--muted);">目标电脑（转入）</label>
+              <label style="font-size: 12px; font-weight:600; color: var(--text-secondary); display:block; margin-bottom:4px;">目标电脑（接管）</label>
               <select id="migTarget"></select>
             </div>
           </div>
           <label class="checkbox-row">
             <input type="checkbox" id="migSwitchFeishu" checked />
-            转移完成后，自动把「飞书主控」切换到目标电脑
+            <span>转移完成后，自动把「飞书主控」切换到目标电脑</span>
           </label>
           <label class="checkbox-row">
             <input type="checkbox" id="migWipeSource" />
-            转移后临时清空源电脑上的会话与历史数据（保留飞书连接配置，方便随时迁回）
+            <span>转移后临时清空源电脑上的会话与历史数据（保留飞书连接配置，方便随时迁回）</span>
           </label>
           <label class="checkbox-row">
             <input type="checkbox" id="migIncludeCreds" />
-            连同源电脑的鉴权密钥（feishu.env / auth）一并迁移覆盖
+            <span>连同源电脑的鉴权密钥（feishu.env / auth）一并迁移覆盖</span>
           </label>
-          <div style="margin-top: 10px;">
-            <button class="primary" style="width: 100%; padding: 9px;" onclick="startMigration()">
-              ⚡ 立即执行跨电脑转移
+          <div style="margin-top: 14px;">
+            <button class="primary" style="width: 100%; padding: 10px;" onclick="startMigration()">
+              ⚡ 立即执行跨电脑一键转移
             </button>
           </div>
-          <div id="migrationsList" style="margin-top: 12px; font-size: 12px;"></div>
+          <div id="migrationsList" style="margin-top: 12px; font-size: 12.5px;"></div>
         </div>
 
         <div class="panel">
-          <div class="panel-title">📦 云端快照备份与恢复</div>
-          <p class="panel-sub">快照可随时一键恢复到任意在线电脑，或下载到本地保存。</p>
-          <div id="snapshotsList" style="max-height:240px; overflow-y:auto;"></div>
+          <div class="panel-title">📦 云端快照保险箱</div>
+          <p class="panel-sub">随时将历史快照一键恢复到任意在线电脑，或下载 `.dshsnap.gz` 到本地归档。</p>
+          <div id="snapshotsList" style="max-height:280px; overflow-y:auto;"></div>
         </div>
       </div>
     </div>
 
-    <!-- TAB SECTION 4: PUSH NOTIFICATIONS & E2EE SECURITY -->
-    <div id="sec_push" class="tab-section">
+    <!-- TAB SECTION 4: IPHONE WEB PUSH & E2EE SECURITY -->
+    <div id="sec_push" class="tab-section" style="display:none;">
+      <div class="ios-banner" style="margin-bottom:18px;">
+        <div>
+          <strong style="color:var(--primary); font-size:14px;">📲 把控制台放到 iPhone 主屏幕，即可享受原生 App 全屏体验与锁屏推送通知！</strong>
+          <div style="margin-top:4px; color:var(--text-secondary);">
+            1. 用 iPhone Safari 打开本页 ➔ 点击底部「分享」图标 ➔ 选择「添加到主屏幕」<br/>
+            2. 从手机桌面打开「DSH 远控」图标 ➔ 点击右侧「🔔 立即开启本机推送」，即可在锁屏收到工具待审批与任务完成提醒！
+          </div>
+        </div>
+        <div class="badges">
+          <button class="primary" onclick="subscribeWebPush()">🔔 立即开启本机推送</button>
+          <button onclick="sendTestPush()">📨 发送测试通知</button>
+        </div>
+      </div>
+
       <div class="grid-2">
         <div class="panel">
           <div class="panel-title">
-            <span>🔔 iPhone / 手机原生锁屏推送管理 (W3C Web Push + VAPID)</span>
+            <span>🔔 iOS 16.4+ / Android 原生锁屏推送 (W3C Web Push + VAPID)</span>
           </div>
           <p class="panel-sub">
-            自托管 VAPID (ECDSA P-256) 与 RFC 8291 (aes128gcm) 加密推送引擎，直连苹果 <code>web.push.apple.com</code>，无需第三方推送服务。
+            内置零依赖 VAPID (ECDSA P-256) 与 RFC 8291 (aes128gcm) 加密推送引擎，直连苹果 <code>web.push.apple.com</code>。
           </p>
-          <div class="btn-row" style="margin-bottom:12px;">
-            <button class="primary" onclick="subscribeWebPush()">🔔 订阅 / 更新本机锁屏推送</button>
-            <button class="green" onclick="sendTestPush()">📨 立即发送测试锁屏通知</button>
-          </div>
-          <div style="font-size:12px; font-weight:700; color:#93c5fd; margin-bottom:6px;">📱 已订阅推送的设备</div>
-          <div id="pushSubsList" style="margin-bottom:12px;"></div>
-          <div style="font-size:12px; font-weight:700; color:#34d399; margin-bottom:6px;">📜 最近触发的系统推送记录</div>
-          <div id="pushHistoryList" style="max-height:160px; overflow-y:auto;"></div>
+          <div style="font-size:12.5px; font-weight:700; color:var(--text-secondary); margin-bottom:8px;">📱 已订阅锁屏推送的设备</div>
+          <div id="pushSubsList" style="margin-bottom:16px;"></div>
+          <div style="font-size:12.5px; font-weight:700; color:var(--text-secondary); margin-bottom:8px;">📜 最近触发的系统推送记录</div>
+          <div id="pushHistoryList" style="max-height:180px; overflow-y:auto;"></div>
         </div>
 
         <div class="panel">
           <div class="panel-title">
-            <span>🔒 端到端加密对话分享 (AES-256-GCM)</span>
+            <span>🔒 端到端加密对话分享库 (AES-256-GCM)</span>
           </div>
           <p class="panel-sub">
-            解密密钥仅保存在 URL <code>#k=</code> 锚点中，服务端只存密文，打开链接即可在浏览器本地解密播放对话动画回放。
+            解密密钥仅保存在 URL <code>#k=</code> 锚点中，服务端只存密文。打开链接即可在浏览器本地解密并播放对话回放。
           </p>
-          <div id="sharesList" style="max-height:260px; overflow-y:auto;"></div>
+          <div id="sharesList" style="max-height:300px; overflow-y:auto;"></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Native App Bottom Navigation Bar -->
+  <!-- Native Mobile Bottom Tab Bar -->
   <nav class="bottom-nav">
-    <button id="tab_all" class="nav-tab active" onclick="switchTab('all')">
-      <span class="icon">🧭</span>
-      <span>全览驾驶舱</span>
-    </button>
-    <button id="tab_chat" class="nav-tab" onclick="switchTab('chat')">
+    <button id="tab_chat" class="nav-tab active" onclick="switchTab('chat')">
       <span class="icon">💬</span>
-      <span>会话对话</span>
+      <span>对话与审批</span>
       <span id="badge_chat" class="nav-badge" style="display:none;">0</span>
-    </button>
-    <button id="tab_files" class="nav-tab" onclick="switchTab('files')">
-      <span class="icon">📂</span>
-      <span>工作区文件</span>
     </button>
     <button id="tab_fleet" class="nav-tab" onclick="switchTab('fleet')">
       <span class="icon">🖥️</span>
       <span>多机与迁移</span>
     </button>
+    <button id="tab_files" class="nav-tab" onclick="switchTab('files')">
+      <span class="icon">📂</span>
+      <span>工作区文件</span>
+    </button>
     <button id="tab_push" class="nav-tab" onclick="switchTab('push')">
       <span class="icon">🔔</span>
-      <span>锁屏推送</span>
+      <span>推送与分享</span>
+    </button>
+    <button id="tab_all" class="nav-tab" onclick="switchTab('all')">
+      <span class="icon">🧭</span>
+      <span>全景</span>
     </button>
   </nav>
+
+  <!-- MODAL 1: Auth & 6-Digit Pairing Login -->
+  <div id="authModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="panel-title">
+        <span>🔑 总控台访问授权</span>
+        <button class="sm" onclick="closeModal('authModal')">✕</button>
+      </div>
+      <p class="panel-sub">输入 6 位一次性配对码或总控访问密钥 (HUB_TOKEN) 即可解锁全部控制权限。</p>
+      <div style="margin-bottom:14px;">
+        <label style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:6px;">访问密钥 (HUB_TOKEN) 或 6 位配对码</label>
+        <input id="authTokenInput" placeholder="输入 HUB_TOKEN 或 6 位配对码..." onkeydown="if(event.key==='Enter')submitAuthModal()" />
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button onclick="closeModal('authModal')">取消</button>
+        <button class="primary" onclick="submitAuthModal()">✅ 验证并登录</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: Mobile 6-Digit Pairing Code Generator -->
+  <div id="pairingModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="panel-title">
+        <span>📱 手机免密配对与主屏幕安装</span>
+        <button class="sm" onclick="closeModal('pairingModal')">✕</button>
+      </div>
+      <p class="panel-sub">在手机 Safari 打开下方免密配对链接，即可自动完成授权，无需手动输入长密钥。</p>
+      <div id="pairingModalContent"></div>
+    </div>
+  </div>
+
+  <!-- MODAL 3: Create New Remote Session -->
+  <div id="newSessionModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="panel-title">
+        <span>➕ 新建远程任务会话</span>
+        <button class="sm" onclick="closeModal('newSessionModal')">✕</button>
+      </div>
+      <p class="panel-sub">在当前选中的电脑上启动一个新的 DeepSeek Harness 会话并立即执行。</p>
+      <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px;">
+        <div>
+          <label style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">会话标题（可选）</label>
+          <input id="newSessionTitle" placeholder="例如：重构登录模块并补充测试" />
+        </div>
+        <div>
+          <label style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">工作区目录路径（留空默认使用最近工作区）</label>
+          <input id="newSessionCwd" placeholder="/Users/..." />
+        </div>
+        <div>
+          <label style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">初始任务指令</label>
+          <textarea id="newSessionPrompt" rows="3" placeholder="输入要让 DeepSeek Harness 执行的任务说明..."></textarea>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button onclick="closeModal('newSessionModal')">取消</button>
+        <button class="primary" onclick="createNewSession()">🚀 立即创建并执行</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 4: Rename Session -->
+  <div id="renameModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="panel-title">
+        <span>✏️ 重命名会话</span>
+        <button class="sm" onclick="closeModal('renameModal')">✕</button>
+      </div>
+      <div style="margin: 12px 0 16px;">
+        <input id="renameInput" placeholder="输入新的会话标题..." onkeydown="if(event.key==='Enter')submitRenameModal()" />
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button onclick="closeModal('renameModal')">取消</button>
+        <button class="primary" onclick="submitRenameModal()">保存标题</button>
+      </div>
+    </div>
+  </div>
 
   <div id="toast" class="toast"></div>
 
   <script>
     const urlParams = new URLSearchParams(location.search);
+    if (urlParams.get('token')) {
+      localStorage.setItem('dsh_hub_token', urlParams.get('token').trim());
+    }
+    let hubToken = localStorage.getItem('dsh_hub_token') || '';
+    let state = { activeHostId: '', hosts: [], snapshots: [], migrations: [], shares: [], pushSubscriptions: [], pushHistory: [], stats: {} };
+    let selectedHostId = urlParams.get('host') || '';
+    let selectedTaskId = urlParams.get('task') || '';
+    let activeTab = urlParams.get('tab') || 'chat';
+    let currentFsAgentId = '';
+    let sseSource = null;
+    let renameTarget = null;
+
     if (urlParams.get('pair')) {
       exchangePairCode(urlParams.get('pair'));
     }
 
-    let hubToken = localStorage.getItem('dsh_hub_token') || '';
-    let state = { activeHostId: '', hosts: [], snapshots: [], migrations: [], shares: [], pushSubscriptions: [], pushHistory: [], stats: {} };
-    let selectedHostId = urlParams.get('host') || '';
-    let activeTab = window.innerWidth < 768 ? 'chat' : 'all';
-    let openTranscripts = new Set();
-    if (urlParams.get('task')) openTranscripts.add(urlParams.get('task'));
-    let currentFsAgentId = '';
-    let sseSource = null;
+    function openModal(id) {
+      document.getElementById(id)?.classList.add('open');
+    }
+    function closeModal(id) {
+      document.getElementById(id)?.classList.remove('open');
+    }
+    function openAuthModal() {
+      const input = document.getElementById('authTokenInput');
+      if (input) input.value = hubToken;
+      openModal('authModal');
+      setTimeout(() => input?.focus(), 60);
+    }
+    function openNewSessionModal() {
+      openModal('newSessionModal');
+      setTimeout(() => document.getElementById('newSessionPrompt')?.focus(), 60);
+    }
 
     function showToast(msg) {
       const el = document.getElementById('toast');
       el.textContent = msg;
       el.style.display = 'block';
       clearTimeout(el._timer);
-      el._timer = setTimeout(() => { el.style.display = 'none'; }, 3600);
+      el._timer = setTimeout(() => { el.style.display = 'none'; }, 3400);
     }
 
     function switchTab(tab) {
       activeTab = tab;
-      ['all', 'chat', 'files', 'fleet', 'push'].forEach(k => {
-        const btn = document.getElementById('tab_' + k);
-        if (btn) btn.classList.toggle('active', k === tab);
+      ['chat', 'fleet', 'files', 'push', 'all'].forEach(k => {
+        document.getElementById('tab_' + k)?.classList.toggle('active', k === tab);
+        document.getElementById('dtab_' + k)?.classList.toggle('active', k === tab);
       });
       ['chat', 'files', 'fleet', 'push'].forEach(sec => {
         const el = document.getElementById('sec_' + sec);
@@ -604,17 +1135,15 @@
       });
     }
 
-    // Initialize tab visibility
     switchTab(activeTab);
 
-    // Register Service Worker & listen for notification click deep-links
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
       navigator.serviceWorker.addEventListener('message', event => {
         if (event.data?.type === 'NOTIFICATION_CLICK') {
           const d = event.data.data || {};
           if (d.hostId) selectedHostId = d.hostId;
-          if (d.agentId) openTranscripts.add(d.agentId);
+          if (d.agentId) selectedTaskId = d.agentId;
           switchTab('chat');
           renderAll();
         }
@@ -634,7 +1163,8 @@
 
     async function subscribeWebPush() {
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        showToast('⚠️ 在 iPhone 上请先点 Safari 底部「分享 ➔ 添加到主屏幕」，从主屏幕打开即可开启锁屏推送！');
+        switchTab('push');
+        showToast('📲 在 iPhone 上请先通过 Safari「分享 ➔ 添加到主屏幕」，再从桌面打开开启锁屏推送');
         return;
       }
       try {
@@ -658,7 +1188,7 @@
             deviceName: defaultName,
           }),
         });
-        showToast('✅ 已开启系统级锁屏推送！正在发送一条测试通知...');
+        showToast('✅ 已开启锁屏推送！正在发送测试通知...');
         await sendTestPush();
         await refreshState();
       } catch (e) {
@@ -670,7 +1200,7 @@
       try {
         const res = await api('/api/push/test', { method: 'POST', body: '{}' });
         if (res.totalSubscriptions === 0) {
-          showToast('尚未有设备订阅推送，请先点击「🔔 开启本机推送」');
+          showToast('尚未有设备订阅推送，请先点击「🔔 立即开启本机推送」');
         } else {
           showToast(`📨 已向 ${res.sentCount}/${res.totalSubscriptions} 台设备发送锁屏测试通知！`);
         }
@@ -693,10 +1223,11 @@
       }
     }
 
-    function promptToken() {
-      const input = prompt('请输入总控中心访问密钥 (HUB_TOKEN) 或 6位配对码：', hubToken);
-      if (input === null) return;
-      const trimmed = input.trim();
+    function submitAuthModal() {
+      const input = document.getElementById('authTokenInput');
+      const trimmed = (input?.value || '').trim();
+      closeModal('authModal');
+      if (!trimmed) return;
       if (/^[A-Z0-9]{6}$/i.test(trimmed) && trimmed !== hubToken) {
         exchangePairCode(trimmed);
         return;
@@ -721,12 +1252,15 @@
             localStorage.setItem('dsh_hub_token', hubToken);
           }
           if (data.hostId) selectedHostId = data.hostId;
-          showToast('✅ 配对成功！已自动授权登录');
-          history.replaceState({}, '', location.pathname);
+          showToast('✅ 配对成功！已自动登录总控中心');
+          const cleanParams = new URLSearchParams(location.search);
+          cleanParams.delete('pair');
+          const qs = cleanParams.toString();
+          history.replaceState({}, '', location.pathname + (qs ? '?' + qs : ''));
           connectSse();
           refreshState();
         } else {
-          showToast('配对失败: ' + (data.error || '未知错误'));
+          showToast('配对失败: ' + (data.error || '配对码无效或已过期'));
         }
       } catch (e) {
         showToast('配对请求失败: ' + e.message);
@@ -741,18 +1275,22 @@
         });
         const code = data.pairing.code;
         const pairUrl = location.origin + '/?pair=' + code;
-        const box = document.getElementById('pairingBox');
-        const content = document.getElementById('pairingContent');
-        box.style.display = 'block';
+        const content = document.getElementById('pairingModalContent');
         content.innerHTML = `
-          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
-            <div>
-              <div>一次性 6 位免密配对码（5 分钟内有效）：<strong style="font-size:20px; color:#34d399; letter-spacing:2px; margin-left:6px;">${esc(code)}</strong></div>
-              <div style="margin-top:6px; color:var(--muted);">手机 Safari 直接打开免密链接并添加到主屏幕：<a href="${esc(pairUrl)}" style="color:#60a5fa;" target="_blank">${esc(pairUrl)}</a></div>
-            </div>
-            <button class="primary" onclick="navigator.clipboard.writeText('${esc(pairUrl)}'); showToast('已复制免密配对链接')">📋 复制配对链接</button>
+          <div style="background:var(--primary-soft); border:1px solid var(--primary-border); border-radius:14px; padding:18px; text-align:center; margin-bottom:14px;">
+            <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">一次性 6 位免密配对码（5 分钟内有效）</div>
+            <div style="font-size:30px; font-weight:800; color:var(--primary); letter-spacing:6px;">${esc(code)}</div>
+          </div>
+          <div style="font-size:12.5px; color:var(--text-secondary); word-break:break-all; background:var(--surface-subtle); padding:10px 12px; border-radius:10px; border:1px solid var(--border); margin-bottom:14px;">
+            <strong>免密直连链接：</strong><br/>
+            <a href="${esc(pairUrl)}" target="_blank" style="color:var(--primary);">${esc(pairUrl)}</a>
+          </div>
+          <div style="display:flex; justify-content:flex-end; gap:8px;">
+            <button onclick="closeModal('pairingModal')">关闭</button>
+            <button class="primary" onclick="navigator.clipboard.writeText('${esc(pairUrl)}'); showToast('📋 已复制手机免密配对链接')">📋 复制免密链接</button>
           </div>
         `;
+        openModal('pairingModal');
       } catch (e) {
         showToast('生成配对码失败: ' + e.message);
       }
@@ -764,7 +1302,7 @@
       const res = await fetch(path, Object.assign({}, options, { headers }));
       if (res.status === 401) {
         document.getElementById('connBadge').className = 'badge red';
-        document.getElementById('connBadge').textContent = '需要密钥';
+        document.getElementById('connBadge').textContent = '需要授权密钥';
         throw new Error('Unauthorized');
       }
       const data = await res.json();
@@ -801,15 +1339,23 @@
     function applyIncomingState(data) {
       state = data;
       document.getElementById('connBadge').className = 'badge green';
-      document.getElementById('connBadge').textContent = '实时同步正常';
+      document.getElementById('connBadge').textContent = '🟢 实时同步';
       if (!selectedHostId && state.hosts.length > 0) {
         selectedHostId = state.activeHostId || state.hosts[0].hostId;
+      }
+      const host = state.hosts.find(h => h.hostId === selectedHostId) || state.hosts[0];
+      if (host) {
+        selectedHostId = host.hostId;
+        const tasks = host.bridgeState?.tasks || [];
+        if (!selectedTaskId || !tasks.some(t => t.id === selectedTaskId)) {
+          selectedTaskId = tasks[0]?.id || '';
+        }
       }
       renderAll();
     }
 
     function connectSse() {
-      if (typeof EventSource === 'undefined') return;
+      if (urlParams.get('nosse') === '1' || typeof EventSource === 'undefined') return;
       if (sseSource) {
         sseSource.close();
         sseSource = null;
@@ -831,9 +1377,11 @@
         const data = await api('/api/state');
         applyIncomingState(data);
       } catch (err) {
-        if (err.message !== 'Unauthorized') {
+        if (err.message === 'Unauthorized') {
+          if (!urlParams.get('pair')) openAuthModal();
+        } else {
           document.getElementById('connBadge').className = 'badge amber';
-          document.getElementById('connBadge').textContent = '重连中';
+          document.getElementById('connBadge').textContent = '重连中...';
         }
       }
     }
@@ -849,38 +1397,46 @@
         badgeEl.textContent = String(count);
       }
       if (totalApprovals > 0) {
-        el.innerHTML = `🚨 <strong>Deepy 提醒</strong>：${totalApprovals} 个工具等你审批！`;
-        el.style.borderColor = 'var(--amber)';
+        el.innerHTML = `⏳ <strong>${totalApprovals} 项待审批</strong>`;
+        el.style.background = 'var(--amber-soft)';
+        el.style.borderColor = 'var(--amber-border)';
+        el.style.color = 'var(--amber)';
       } else if (totalRunning > 0) {
-        el.innerHTML = `🐋 <strong>Deepy 搬砖中</strong>：${totalRunning} 个任务高速运行...`;
-        el.style.borderColor = 'var(--green)';
+        el.innerHTML = `🐋 <strong>${totalRunning} 个任务运行中</strong>`;
+        el.style.background = 'var(--green-soft)';
+        el.style.borderColor = 'var(--green-border)';
+        el.style.color = 'var(--green)';
       } else {
-        el.innerHTML = `💤 <strong>Deepy 待命</strong>：所有电脑任务空闲`;
+        el.innerHTML = `🐋 <strong>Deepy 待命</strong> · ${state.stats?.onlineHosts || 0} 台在线`;
+        el.style.background = 'var(--surface-subtle)';
         el.style.borderColor = 'var(--border)';
+        el.style.color = 'var(--text-secondary)';
       }
+
       const statsEl = document.getElementById('fleetStats');
       if (state.stats && statsEl) {
-        statsEl.textContent = `在线电脑 ${state.stats.onlineHosts}/${state.stats.totalHosts} · 会话 ${state.stats.totalSessionsOnDisk} · 推送订阅 ${state.stats.pushSubscriptionsCount || 0} 台`;
+        statsEl.textContent = `在线电脑 ${state.stats.onlineHosts}/${state.stats.totalHosts} · 历史会话 ${state.stats.totalSessionsOnDisk} · 推送设备 ${state.stats.pushSubscriptionsCount || 0}`;
       }
       const headerPushBtn = document.getElementById('headerPushBtn');
       if (headerPushBtn && (state.pushSubscriptions || []).length > 0) {
-        headerPushBtn.textContent = `🔔 已开启推送 (${state.pushSubscriptions.length})`;
+        headerPushBtn.textContent = `🔔 推送已开启 (${state.pushSubscriptions.length})`;
       }
     }
 
     function renderHostPills() {
       const bar = document.getElementById('hostPillsBar');
       if (!state.hosts || state.hosts.length === 0) {
-        bar.innerHTML = '<span style="font-size:12px; color:var(--muted);">暂无电脑接入，配置 FEISHU_HUB_URL 后将显示在这里</span>';
+        bar.innerHTML = '<span style="font-size:12.5px; color:var(--muted);">暂无电脑接入，在电脑配置 FEISHU_HUB_URL 后自动显示</span>';
         return;
       }
       bar.innerHTML = state.hosts.map(h => {
         const isSel = h.hostId === selectedHostId;
         const isFeishu = h.hostId === state.activeHostId;
         return `<div class="host-pill ${isSel ? 'active' : ''}" onclick="selectHost('${esc(h.hostId)}')">
-          <span>${h.online ? '🟢' : '🔴'} ${esc(h.hostName)}</span>
-          ${isFeishu ? '<span class="badge green" style="font-size:10px; padding:1px 6px;">飞书主控</span>' : ''}
-          <span style="font-size:11px; color:var(--muted);">(${h.runningCount}/${h.taskCount})</span>
+          <span class="status-dot ${h.online ? 'online' : 'offline'}"></span>
+          <span>${esc(h.hostName)}</span>
+          ${isFeishu ? '<span class="badge green" style="padding:1px 7px; font-size:10.5px;">飞书主控</span>' : '<span class="badge muted" style="padding:1px 7px; font-size:10.5px;">待机</span>'}
+          <span style="font-size:11.5px; color:var(--muted);">${h.taskCount} 会话</span>
         </div>`;
       }).join('');
     }
@@ -901,30 +1457,30 @@
       const histBox = document.getElementById('pushHistoryList');
       const subs = state.pushSubscriptions || [];
       if (subs.length === 0) {
-        subsBox.innerHTML = '<div style="font-size:12px; color:var(--muted);">当前还没有设备订阅锁屏推送。点击上方「🔔 订阅 / 更新本机锁屏推送」即可开启。</div>';
+        subsBox.innerHTML = '<div style="font-size:12.5px; color:var(--muted); padding:10px; background:var(--surface-subtle); border-radius:10px;">当前还没有设备订阅锁屏推送。点击上方「🔔 立即开启本机推送」即可激活。</div>';
       } else {
         subsBox.innerHTML = subs.map(s => `
-          <div style="border:1px solid var(--border); background:#0e1525; border-radius:8px; padding:8px 10px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; font-size:12px;">
+          <div style="border:1px solid var(--border); background:var(--surface-subtle); border-radius:10px; padding:10px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; font-size:12.5px;">
             <div>
               <strong>📱 ${esc(s.deviceName)}</strong>
-              <div style="color:var(--muted); font-size:11px;">通道: <code>${esc(s.endpointHost)}</code> · 最近推送: ${s.lastSentAt ? formatTime(s.lastSentAt) : '待触发'}</div>
+              <div style="color:var(--muted); font-size:11.5px;">推送网关: <code>${esc(s.endpointHost)}</code> · 最近送达: ${s.lastSentAt ? formatTime(s.lastSentAt) : '待触发'}</div>
             </div>
-            <button class="danger" style="padding:4px 8px; font-size:11px;" onclick="removePushSub('${esc(s.id)}')">移除</button>
+            <button class="danger sm" onclick="removePushSub('${esc(s.id)}')">移除</button>
           </div>
         `).join('');
       }
 
       const hist = state.pushHistory || [];
       if (hist.length === 0) {
-        histBox.innerHTML = '<div style="font-size:12px; color:var(--muted);">暂无推送记录。</div>';
+        histBox.innerHTML = '<div style="font-size:12.5px; color:var(--muted);">暂无推送记录。</div>';
       } else {
         histBox.innerHTML = hist.map(item => `
-          <div style="border:1px solid var(--border); background:#090d16; border-radius:8px; padding:7px 10px; margin-bottom:6px; font-size:11.5px;">
-            <div style="display:flex; justify-content:space-between;">
+          <div style="border:1px solid var(--border); background:var(--surface-subtle); border-radius:10px; padding:9px 12px; margin-bottom:8px; font-size:12px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
               <strong>${esc(item.title)}</strong>
               <span style="color:var(--muted);">${formatTime(item.at)} (${item.sentCount}/${item.totalSubscriptions})</span>
             </div>
-            <div style="color:#cbd5e1; margin-top:2px;">${esc(item.body)}</div>
+            <div style="color:var(--text-secondary);">${esc(item.body)}</div>
           </div>
         `).join('');
       }
@@ -933,7 +1489,7 @@
     function renderHosts() {
       const grid = document.getElementById('hostsGrid');
       if (!state.hosts || state.hosts.length === 0) {
-        grid.innerHTML = `<div style="color: var(--muted); font-size: 13px; padding: 12px;">
+        grid.innerHTML = `<div style="color: var(--muted); font-size: 13px; padding: 16px; background:var(--surface-subtle); border-radius:12px;">
           暂无电脑接入。在任意电脑的 <code>~/.dsh/feishu.env</code> 中设置 <code>FEISHU_HUB_URL=${esc(location.origin)}</code> 后启动 DSH 即可自动出现在这里。
         </div>`;
         return;
@@ -945,22 +1501,24 @@
         const fp = h.fingerprint || h.identity?.fingerprint || '';
         return `
           <div class="host-card ${isFeishu ? 'active-feishu' : ''} ${isSelected ? 'selected' : ''}" onclick="selectHost('${esc(h.hostId)}')">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
               <div>
-                <div style="font-weight: 700; font-size: 15px;">${esc(h.hostName)}</div>
-                <div style="font-size: 11.5px; color: var(--muted);">ID: <code>${esc(h.hostId)}</code> · ${esc(h.platform)}/${esc(h.arch)} · ${formatTime(h.lastSeen)}</div>
-                ${fp ? `<div style="font-size: 11px; color: #93c5fd; margin-top:2px;">🔑 指纹: <code>${esc(fp)}</code></div>` : ''}
+                <div style="font-weight: 750; font-size: 15.5px; display:flex; align-items:center; gap:6px;">
+                  <span class="status-dot ${h.online ? 'online' : 'offline'}"></span>
+                  <span>${esc(h.hostName)}</span>
+                </div>
+                <div style="font-size: 12px; color: var(--muted); margin-top:2px;">ID: <code>${esc(h.hostId)}</code> · ${esc(h.platform)}/${esc(h.arch)} · ${formatTime(h.lastSeen)}</div>
+                ${fp ? `<div style="font-size: 11.5px; color: var(--primary); margin-top:4px; font-weight:600;">🛡️ Ed25519 指纹: <code>${esc(fp)}</code></div>` : ''}
               </div>
               <div class="badges">
-                ${isRevoked ? '<span class="badge red">🚫 已吊销</span>' : '<span class="badge blue">🛡️ 已锁定指纹</span>'}
-                ${h.online ? '<span class="badge green">在线</span>' : '<span class="badge red">离线</span>'}
-                ${isFeishu ? '<span class="badge green">🟢 飞书主控</span>' : '<span class="badge muted">飞书待机</span>'}
+                ${isRevoked ? '<span class="badge red">🚫 已吊销</span>' : '<span class="badge blue">已锁定公钥</span>'}
+                ${isFeishu ? '<span class="badge green">🟢 飞书主控</span>' : '<span class="badge muted">待机候命</span>'}
               </div>
             </div>
             <div class="metrics">
               <div>
                 <div class="metric-val">${h.runningCount} / ${h.taskCount}</div>
-                <div class="metric-lbl">运行中 / 活跃任务</div>
+                <div class="metric-lbl">运行中 / 活跃会话</div>
               </div>
               <div>
                 <div class="metric-val">${h.sessionCount}</div>
@@ -971,14 +1529,14 @@
                 <div class="metric-lbl">DSH 数据占用</div>
               </div>
             </div>
-            <div class="btn-row" onclick="event.stopPropagation()">
-              ${!isFeishu && !isRevoked ? `<button class="green" onclick="activateFeishuHost('${esc(h.hostId)}')">🎯 设为飞书主控</button>` : ''}
-              <button onclick="selectHost('${esc(h.hostId)}'); switchTab('chat')">💬 进入对话</button>
-              <button onclick="exportHostSnapshot('${esc(h.hostId)}')">📦 备份快照</button>
-              <button class="danger" onclick="wipeHost('${esc(h.hostId)}', '${esc(h.hostName)}')">🧹 临时清空</button>
+            <div class="badges" onclick="event.stopPropagation()">
+              ${!isFeishu && !isRevoked ? `<button class="green sm" onclick="activateFeishuHost('${esc(h.hostId)}')">🎯 设为飞书主控</button>` : ''}
+              <button class="sm" onclick="selectHost('${esc(h.hostId)}'); switchTab('chat')">💬 进入对话</button>
+              <button class="sm" onclick="exportHostSnapshot('${esc(h.hostId)}')">📦 备份快照</button>
+              <button class="danger sm" onclick="wipeHost('${esc(h.hostId)}', '${esc(h.hostName)}')">🧹 临时清空</button>
               ${isRevoked
-                ? `<button class="amber" onclick="manageTrust('${esc(h.hostId)}', 'reset_pin')">🔓 恢复信任</button>`
-                : `<button class="danger" onclick="manageTrust('${esc(h.hostId)}', 'revoke')">🚫 吊销设备</button>`}
+                ? `<button class="amber sm" onclick="manageTrust('${esc(h.hostId)}', 'reset_pin')">🔓 恢复信任</button>`
+                : `<button class="danger sm" onclick="manageTrust('${esc(h.hostId)}', 'revoke')">🚫 吊销</button>`}
             </div>
           </div>
         `;
@@ -990,7 +1548,7 @@
       const dstEl = document.getElementById('migTarget');
       const prevSrc = srcEl.value;
       const prevDst = dstEl.value;
-      const opts = state.hosts.map(h => `<option value="${esc(h.hostId)}">${esc(h.hostName)} (${esc(h.hostId)}) - ${h.sessionCount} 会话</option>`).join('');
+      const opts = state.hosts.map(h => `<option value="${esc(h.hostId)}">${esc(h.hostName)} (${esc(h.hostId)}) · ${h.sessionCount} 会话</option>`).join('');
       srcEl.innerHTML = opts || '<option value="">无可用电脑</option>';
       dstEl.innerHTML = opts || '<option value="">无可用电脑</option>';
       if (prevSrc && state.hosts.some(h => h.hostId === prevSrc)) srcEl.value = prevSrc;
@@ -1004,8 +1562,8 @@
       }
       migBox.innerHTML = state.migrations.slice(0, 4).map(m => {
         const badge = m.status === 'completed' ? 'green' : m.status === 'failed' ? 'red' : 'amber';
-        return `<div style="padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; margin-top: 6px; display:flex; justify-content:space-between;">
-          <span>${esc(m.sourceHostName)} ➔ ${esc(m.targetHostName)} ${m.wipeSource ? '(含清空源机)' : ''}</span>
+        return `<div style="padding: 8px 12px; background: var(--surface-subtle); border: 1px solid var(--border); border-radius: 10px; margin-top: 8px; display:flex; justify-content:space-between; align-items:center;">
+          <span><strong>${esc(m.sourceHostName)}</strong> ➔ <strong>${esc(m.targetHostName)}</strong> ${m.wipeSource ? '(已清空源机)' : ''}</span>
           <span class="badge ${badge}">${esc(m.status)} ${m.error ? '· ' + esc(m.error) : ''}</span>
         </div>`;
       }).join('');
@@ -1014,23 +1572,23 @@
     function renderSnapshots() {
       const box = document.getElementById('snapshotsList');
       if (!state.snapshots || state.snapshots.length === 0) {
-        box.innerHTML = '<div style="color: var(--muted); font-size: 12px;">暂无快照。</div>';
+        box.innerHTML = '<div style="color: var(--muted); font-size: 12.5px;">暂无云端快照。可在任意电脑卡片点击「📦 备份快照」创建。</div>';
         return;
       }
       const hostOptions = state.hosts.map(h => `<option value="${esc(h.hostId)}">${esc(h.hostName)}</option>`).join('');
       box.innerHTML = state.snapshots.map(s => `
-        <div style="border: 1px solid var(--border); background: #0e1525; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; font-size:12px;">
+        <div style="border: 1px solid var(--border); background: var(--surface-subtle); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size:12.5px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong>${esc(s.meta?.hostName || s.id)} (${s.meta?.sessionCount || 0} 会话 · ${formatBytes(s.meta?.compressedBytes)})</strong>
-            <span style="color: var(--muted);">${formatTime(s.createdAt)}</span>
+            <strong>📦 ${esc(s.meta?.hostName || s.id)} (${s.meta?.sessionCount || 0} 会话 · ${formatBytes(s.meta?.compressedBytes)})</strong>
+            <span style="color: var(--muted); font-size:11.5px;">${formatTime(s.createdAt)}</span>
           </div>
-          <div class="btn-row" style="margin-top: 6px;">
-            <select id="restoreTarget_${esc(s.id)}" style="width: auto; padding: 3px 6px; font-size: 11.5px;">${hostOptions}</select>
-            <button class="primary" style="padding:4px 8px; font-size:11.5px;" onclick="restoreSnapshotTo('${esc(s.id)}')">📥 恢复到此电脑</button>
+          <div class="badges" style="margin-top: 8px;">
+            <select id="restoreTarget_${esc(s.id)}" style="width: auto; padding: 4px 8px; font-size: 12px;">${hostOptions}</select>
+            <button class="primary sm" onclick="restoreSnapshotTo('${esc(s.id)}')">📥 恢复到此电脑</button>
             <a href="/api/snapshots/${encodeURIComponent(s.id)}/download?token=${encodeURIComponent(hubToken)}" target="_blank" style="text-decoration:none;">
-              <button type="button" style="padding:4px 8px; font-size:11.5px;">⬇️ 下载</button>
+              <button type="button" class="sm">⬇️ 下载</button>
             </a>
-            <button class="danger" style="padding:4px 8px; font-size:11.5px;" onclick="deleteSnapshot('${esc(s.id)}')">🗑️</button>
+            <button class="danger sm" onclick="deleteSnapshot('${esc(s.id)}')">🗑️</button>
           </div>
         </div>
       `).join('');
@@ -1039,148 +1597,216 @@
     function renderShares() {
       const box = document.getElementById('sharesList');
       if (!state.shares || state.shares.length === 0) {
-        box.innerHTML = '<div style="color: var(--muted); font-size: 12px;">暂无加密分享。可在任意任务卡片点击「🔗 加密分享」生成。</div>';
+        box.innerHTML = '<div style="color: var(--muted); font-size: 12.5px;">暂无加密分享。可在对话视图右上角点击「🔗 加密分享」生成。</div>';
         return;
       }
       box.innerHTML = state.shares.map(sh => `
-        <div style="border: 1px solid var(--border); background: #0e1525; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; font-size:12px; display:flex; justify-content:space-between; align-items:center;">
+        <div style="border: 1px solid var(--border); background: var(--surface-subtle); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size:12.5px; display:flex; justify-content:space-between; align-items:center;">
           <div>
             <strong>🔒 ${esc(sh.title)}</strong>
-            <div style="color:var(--muted); font-size:11px;">${esc(sh.hostName)} · ${sh.messageCount} 条消息 · ${formatBytes(sh.sizeBytes)}</div>
+            <div style="color:var(--muted); font-size:11.5px;">${esc(sh.hostName)} · ${sh.messageCount} 条消息 · ${formatBytes(sh.sizeBytes)}</div>
           </div>
-          <div class="btn-row">
-            <button class="danger" style="padding:4px 8px; font-size:11.5px;" onclick="deleteShare('${esc(sh.id)}')">🗑️ 删除</button>
-          </div>
+          <button class="danger sm" onclick="deleteShare('${esc(sh.id)}')">🗑️ 删除</button>
         </div>
       `).join('');
     }
 
     function renderSelectedHostConsole() {
       const host = state.hosts.find(h => h.hostId === selectedHostId) || state.hosts[0];
-      const titleEl = document.getElementById('consoleTitle');
-      const actionsEl = document.getElementById('consoleActions');
+      const sidebarTitle = document.getElementById('sidebarHostTitle');
+      const sidebarSub = document.getElementById('sidebarHostSub');
+      const quickActions = document.getElementById('hostQuickActions');
+      const sessionListBox = document.getElementById('sessionListBox');
       const approvalsEl = document.getElementById('approvalsBox');
-      const tasksEl = document.getElementById('tasksBox');
+      const stageHeader = document.getElementById('chatStageHeader');
+      const streamBox = document.getElementById('chatStreamBox');
+      const composerBox = document.getElementById('chatComposerBox');
 
       if (!host) {
-        titleEl.textContent = '💬 电脑远程任务与对话控制台';
-        actionsEl.innerHTML = '';
+        sidebarTitle.textContent = '💻 暂无在线电脑';
+        sidebarSub.textContent = '请先启动本地 DSH 接入总控台';
+        quickActions.innerHTML = '';
+        sessionListBox.innerHTML = '<div style="color:var(--muted); font-size:12.5px; padding:12px 0;">等待电脑心跳接入...</div>';
         approvalsEl.innerHTML = '';
-        tasksEl.innerHTML = '<div style="color: var(--muted); font-size: 13px;">请先接入至少一台电脑。</div>';
         return;
       }
 
       selectedHostId = host.hostId;
-      titleEl.textContent = `💬 远程控制台：${host.hostName} (${host.hostId})`;
-      const remoteActive = host.bridgeState?.remoteActive;
       const isFeishu = host.hostId === state.activeHostId;
-      actionsEl.innerHTML = `
-        ${!isFeishu ? `<button class="green" onclick="activateFeishuHost('${esc(host.hostId)}')">🎯 设为飞书主控</button>` : ''}
-        <button class="${remoteActive ? 'amber' : 'primary'}" onclick="toggleRemoteMode('${esc(host.hostId)}', ${!remoteActive})">
-          ${remoteActive ? '🔕 关闭飞书完成推送' : '🔔 开启飞书完成推送'}
+      const remoteActive = host.bridgeState?.remoteActive;
+      sidebarTitle.textContent = `💻 ${host.hostName}`;
+      sidebarSub.textContent = `ID: ${host.hostId} · ${isFeishu ? '当前飞书主控' : '飞书待机候命'}`;
+
+      quickActions.innerHTML = `
+        ${!isFeishu ? `<button class="green sm" onclick="activateFeishuHost('${esc(host.hostId)}')">🎯 设为飞书主控</button>` : '<span class="badge green">🟢 飞书主控电脑</span>'}
+        <button class="sm" onclick="toggleRemoteMode('${esc(host.hostId)}', ${!remoteActive})">
+          ${remoteActive ? '🔔 飞书完成推送: 开' : '🔕 飞书完成推送: 关'}
         </button>
       `;
 
       const cwdInput = document.getElementById('newSessionCwd');
-      const firstCwd = (host.bridgeState?.workspaces || [])[0] || '';
-      if (firstCwd && !cwdInput.placeholder.includes(firstCwd)) {
-        cwdInput.placeholder = `工作区路径 (默认: ${firstCwd})`;
+      const workspaces = host.bridgeState?.workspaces || [];
+      if (workspaces[0] && cwdInput && !cwdInput.value) {
+        cwdInput.placeholder = `默认工作区: ${workspaces[0]}`;
       }
 
+      // Render Approvals & Share Banners
       const approvals = host.bridgeState?.approvals || [];
-      if (approvals.length > 0) {
-        approvalsEl.innerHTML = approvals.map(a => `
-          <div class="task-item" style="border-color: var(--amber);">
-            <div style="display:flex; justify-content:space-between;">
-              <strong>⏳ 待审批工具调用：${esc(a.title)} (${esc(a.toolName)})</strong>
-              <span class="badge amber">审批码 ${esc(a.code)}</span>
-            </div>
-            <div style="font-size: 12.5px; color: var(--muted); margin: 6px 0;">原因：${esc(a.reason)}</div>
-            <div class="btn-row">
-              <button class="green" onclick="decideApproval('${esc(host.hostId)}', '${esc(a.code)}', 'approve')">✅ 批准一次</button>
-              <button class="danger" onclick="decideApproval('${esc(host.hostId)}', '${esc(a.code)}', 'deny')">❌ 拒绝</button>
-            </div>
+      let bannerHtml = approvals.map(a => `
+        <div class="panel" style="border-color: var(--amber); background: var(--amber-soft); padding: 14px 18px; margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <div style="font-weight:750; color:var(--amber);">⏳ 待审批工具调用：${esc(a.title)} · <code>${esc(a.toolName)}</code></div>
+            <div style="font-size:12.5px; color:var(--text-secondary); margin-top:2px;">执行原因：${esc(a.reason)}（审批码: <code>${esc(a.code)}</code>）</div>
           </div>
-        `).join('');
-      } else {
-        approvalsEl.innerHTML = '';
-      }
+          <div class="badges">
+            <button class="primary sm" style="background:var(--green); border-color:var(--green);" onclick="decideApproval('${esc(host.hostId)}', '${esc(a.code)}', 'approve')">✅ 批准执行</button>
+            <button class="danger sm" onclick="decideApproval('${esc(host.hostId)}', '${esc(a.code)}', 'deny')">❌ 拒绝</button>
+          </div>
+        </div>
+      `).join('');
 
       if (host.lastShareResult && host.lastShareResult.shareUrl) {
-        approvalsEl.insertAdjacentHTML('beforeend', `
-          <div class="task-item" style="border-color: var(--green);">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-              <div>
-                <strong>🔒 最新端到端加密回放链接已生成：${esc(host.lastShareResult.title || '')}</strong>
-                <div style="font-size:12px; color:#34d399; word-break:break-all; margin-top:4px;">
-                  <a href="${esc(host.lastShareResult.shareUrl)}" target="_blank" style="color:#34d399;">${esc(host.lastShareResult.shareUrl)}</a>
-                </div>
+        bannerHtml += `
+          <div class="panel" style="border-color: var(--green-border); background: var(--green-soft); padding: 12px 18px; margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div>
+              <strong style="color:var(--green); font-size:13px;">🔒 已生成端到端加密回放链接：${esc(host.lastShareResult.title || '')}</strong>
+              <div style="font-size:12px; margin-top:2px; word-break:break-all;">
+                <a href="${esc(host.lastShareResult.shareUrl)}" target="_blank" style="color:var(--primary); font-weight:600;">${esc(host.lastShareResult.shareUrl)}</a>
               </div>
-              <button class="primary" onclick="navigator.clipboard.writeText('${esc(host.lastShareResult.shareUrl)}'); showToast('已复制加密回放链接')">📋 复制链接</button>
+            </div>
+            <div class="badges">
+              <button class="primary sm" onclick="navigator.clipboard.writeText('${esc(host.lastShareResult.shareUrl)}'); showToast('📋 已复制加密回放链接')">📋 复制链接</button>
+              <a href="${esc(host.lastShareResult.shareUrl)}" target="_blank" style="text-decoration:none;"><button type="button" class="sm">↗ 打开回放</button></a>
             </div>
           </div>
-        `);
+        `;
       }
+      approvalsEl.innerHTML = bannerHtml;
 
+      // Render Left Session List
       const tasks = host.bridgeState?.tasks || [];
       if (tasks.length === 0) {
-        tasksEl.innerHTML = '<div style="color: var(--muted); font-size: 13px;">该电脑当前没有活跃会话。可在上方直接新建远程会话！</div>';
+        sessionListBox.innerHTML = `
+          <div style="padding:24px 12px; text-align:center; color:var(--muted); font-size:12.5px;">
+            当前电脑暂无活跃会话。<br/>点击上方「➕ 新建」立即发起远程任务！
+          </div>
+        `;
       } else {
-        tasksEl.innerHTML = tasks.map(t => {
-          const isOpen = openTranscripts.has(t.id);
-          const transcript = t.transcript || [];
-          const queuedSteers = t.queuedSteers || [];
+        sessionListBox.innerHTML = tasks.map(t => {
+          const isSel = t.id === selectedTaskId;
+          const msgCount = (t.transcript || []).length;
           return `
-            <div class="task-item">
-              <div style="display:flex; justify-content:space-between; align-items:center; gap: 8px; flex-wrap: wrap;">
-                <div>
-                  <strong>${esc(t.title)}</strong>
-                  <span style="font-size: 12px; color: var(--muted); margin-left: 6px;">${esc(t.project)} · <code>${esc(t.shortId)}</code></span>
-                </div>
-                <div class="btn-row">
-                  <span class="badge ${t.status === 'running' ? 'green' : 'muted'}">${esc(t.statusLabel || t.status)}</span>
-                  <button style="padding:4px 9px; font-size:11.5px;" onclick="toggleTranscript('${esc(t.id)}')">💬 对话 (${transcript.length})</button>
-                  <button style="padding:4px 9px; font-size:11.5px;" onclick="openTaskFiles('${esc(t.id)}', '${esc(t.cwd || '')}')">📂 文件</button>
-                  <button style="padding:4px 9px; font-size:11.5px;" onclick="shareTask('${esc(host.hostId)}', '${esc(t.id)}')">🔗 分享</button>
-                  <button style="padding:4px 9px; font-size:11.5px;" onclick="renameTask('${esc(host.hostId)}', '${esc(t.id)}', '${esc(t.title)}')">✏️</button>
-                  <button class="danger" style="padding:4px 9px; font-size:11.5px;" onclick="deleteTask('${esc(host.hostId)}', '${esc(t.id)}', '${esc(t.title)}')">🗑️</button>
-                </div>
+            <div class="session-card ${isSel ? 'active' : ''}" onclick="selectTask('${esc(t.id)}')">
+              <div class="session-card-title">
+                <span>${esc(t.title)}</span>
+                <span class="badge ${t.status === 'running' ? 'green' : 'muted'}">${esc(t.statusLabel || t.status)}</span>
               </div>
-
-              ${queuedSteers.length > 0 ? `<div style="margin-top:6px; font-size:11.5px; color:#fbbf24;">⚡ 排队中的插话指令 (${queuedSteers.length})：${queuedSteers.map(s => esc(s)).join(' | ')}</div>` : ''}
-
-              ${t.lastOutput ? `<div class="task-output">${esc(t.lastOutput)}</div>` : ''}
-
-              <div id="trans_${esc(t.id)}" class="transcript-box ${isOpen ? 'open' : ''}">
-                ${transcript.length === 0 ? '<div style="font-size:12px; color:var(--muted);">暂无详细消息记录</div>' : transcript.map(m => `
-                  <div class="chat-bubble ${esc(m.role)}">
-                    <div style="font-size:11px; color:var(--muted); font-weight:700; margin-bottom:3px;">
-                      ${m.role === 'user' ? '🧑 用户' : '🤖 Assistant'}
-                      ${(m.tools || []).map(tl => `<span class="badge blue" style="margin-left:4px;">🔧 ${esc(tl.name)}</span>`).join('')}
-                    </div>
-                    <div style="white-space:pre-wrap; word-break:break-word;">${esc(m.text)}</div>
-                    ${m.thinking ? `<div style="margin-top:4px; font-size:11px; color:#94a3b8;">💭 思考: ${esc(m.thinking)}</div>` : ''}
-                  </div>
-                `).join('')}
-              </div>
-
-              <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
-                ${t.status === 'running'
-                  ? `
-                    <input id="steer_${esc(t.id)}" placeholder="⚡ 运行中实时插话 (Steer) 或打断重发..." style="flex:1; min-width:190px;" onkeydown="if(event.key==='Enter')sendSteer('${esc(host.hostId)}','${esc(t.id)}',false)" />
-                    <button class="primary" onclick="sendSteer('${esc(host.hostId)}', '${esc(t.id)}', false)">⚡ 插话 (Steer)</button>
-                    <button class="amber" onclick="sendSteer('${esc(host.hostId)}', '${esc(t.id)}', true)">🔄 打断重发</button>
-                    <button class="danger" onclick="stopTask('${esc(host.hostId)}', '${esc(t.id)}')">⏹ 停止</button>
-                  `
-                  : `
-                    <input id="prompt_${esc(t.id)}" placeholder="输入继续执行的指令..." style="flex:1;" onkeydown="if(event.key==='Enter')sendPrompt('${esc(host.hostId)}','${esc(t.id)}')" />
-                    <button class="primary" onclick="sendPrompt('${esc(host.hostId)}', '${esc(t.id)}')">发送指令</button>
-                  `
-                }
+              <div class="session-card-meta">
+                <span>📁 ${esc(t.project || '默认工作区')}</span>
+                <span>💬 ${msgCount} 条对话</span>
               </div>
             </div>
           `;
         }).join('');
+      }
+
+      // Render Right Selected Task Conversation Stage
+      const activeTask = tasks.find(t => t.id === selectedTaskId) || tasks[0];
+      if (!activeTask) {
+        stageHeader.innerHTML = `
+          <div>
+            <div style="font-weight:750; font-size:15px;">💬 暂无选中的会话</div>
+            <div style="font-size:12px; color:var(--muted);">点击右上角「➕ 新建远程任务」开始对话</div>
+          </div>
+        `;
+        streamBox.innerHTML = `
+          <div style="margin:auto; text-align:center; color:var(--muted); padding:40px 20px;">
+            <div style="font-size:28px; margin-bottom:8px;">✨</div>
+            <div>当前电脑还没有任务会话，点击「➕ 新建远程任务」即可远程启动 DeepSeek Harness。</div>
+          </div>
+        `;
+        return;
+      }
+
+      selectedTaskId = activeTask.id;
+      const transcript = activeTask.transcript || [];
+      const queuedSteers = activeTask.queuedSteers || [];
+
+      stageHeader.innerHTML = `
+        <div>
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <span style="font-weight:750; font-size:15.5px;">${esc(activeTask.title)}</span>
+            <span class="badge ${activeTask.status === 'running' ? 'green' : 'blue'}">${esc(activeTask.statusLabel || activeTask.status)}</span>
+          </div>
+          <div style="font-size:12px; color:var(--muted); margin-top:2px;">
+            工作区: <code>${esc(activeTask.cwd || activeTask.project || '-')}</code> · 会话 ID: <code>${esc(activeTask.shortId || activeTask.id)}</code>
+          </div>
+        </div>
+        <div class="badges">
+          <button class="sm" onclick="openTaskFiles('${esc(activeTask.id)}', '${esc(activeTask.cwd || '')}')">📂 浏览文件</button>
+          <button class="sm" onclick="shareTask('${esc(host.hostId)}', '${esc(activeTask.id)}')">🔗 加密分享</button>
+          <button class="sm" onclick="openRenameModal('${esc(host.hostId)}', '${esc(activeTask.id)}', '${esc(activeTask.title)}')">✏️ 重命名</button>
+          <button class="danger sm" onclick="deleteTask('${esc(host.hostId)}', '${esc(activeTask.id)}', '${esc(activeTask.title)}')">🗑️ 删除</button>
+        </div>
+      `;
+
+      let streamHtml = '';
+      if (transcript.length === 0) {
+        streamHtml = `<div style="color:var(--muted); font-size:13px; text-align:center; padding:30px;">暂无对话记录，可在下方输入框发送指令。</div>`;
+      } else {
+        streamHtml = transcript.map(m => {
+          const isUser = m.role === 'user';
+          const toolsHtml = (m.tools || []).map(tl => `<span class="badge blue">🔧 ${esc(tl.name)}</span>`).join('');
+          const thinkingHtml = m.thinking
+            ? `<details class="thinking-details" open><summary>💭 DeepSeek 思考过程</summary><div style="margin-top:6px; white-space:pre-wrap;">${esc(m.thinking)}</div></details>`
+            : '';
+          return `
+            <div class="msg-row ${isUser ? 'user' : 'assistant'}">
+              <div class="msg-meta">
+                <span>${isUser ? '🧑 你的指令' : '🤖 DeepSeek Harness'}</span>
+                ${toolsHtml}
+              </div>
+              <div class="msg-bubble">
+                <div style="white-space:pre-wrap; word-break:break-word;">${esc(m.text)}</div>
+                ${thinkingHtml}
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      if (queuedSteers.length > 0) {
+        streamHtml += `
+          <div style="background:var(--amber-soft); border:1px solid var(--amber-border); color:var(--amber); padding:10px 14px; border-radius:10px; font-size:12.5px;">
+            ⚡ <strong>排队中的顺路插话 (${queuedSteers.length})：</strong> ${queuedSteers.map(s => esc(s)).join(' | ')}
+          </div>
+        `;
+      }
+
+      if (activeTask.lastOutput) {
+        streamHtml += `
+          <div>
+            <div style="font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:4px;">🖥️ 最新实时终端输出摘要</div>
+            <div class="terminal-output">${esc(activeTask.lastOutput)}</div>
+          </div>
+        `;
+      }
+
+      streamBox.innerHTML = streamHtml;
+
+      // Update Sticky Bottom Composer based on running vs idle
+      if (activeTask.status === 'running') {
+        composerBox.innerHTML = `
+          <input id="globalPromptInput" placeholder="⚡ 任务运行中：输入补充要求顺路插话 (Steer)，或点击打断重发..." style="flex:1; min-width:200px;" onkeydown="if(event.key==='Enter')handleComposerSubmit(false)" />
+          <button class="primary" onclick="handleComposerSubmit(false)">⚡ 顺路插话 (Steer)</button>
+          <button class="amber" onclick="handleComposerSubmit(true)">🔄 打断重发</button>
+          <button class="danger" onclick="stopTask('${esc(host.hostId)}', '${esc(activeTask.id)}')">⏹ 停止</button>
+        `;
+      } else {
+        composerBox.innerHTML = `
+          <input id="globalPromptInput" placeholder="给「${esc(activeTask.title)}」发送后续指令 (Enter 发送)..." style="flex:1;" onkeydown="if(event.key==='Enter')handleComposerSubmit(false)" />
+          <button class="primary" onclick="handleComposerSubmit(false)">🚀 发送指令</button>
+        `;
       }
 
       renderFsPanel(host);
@@ -1190,22 +1816,39 @@
       const pathEl = document.getElementById('fsCurrentPath');
       const box = document.getElementById('fsEntriesBox');
       const previewBox = document.getElementById('filePreviewBox');
+      const quickWs = document.getElementById('fsQuickWorkspaces');
+
+      const workspaces = host.bridgeState?.workspaces || [];
+      if (quickWs) {
+        quickWs.innerHTML = workspaces.map(w => `
+          <button class="sm" onclick="document.getElementById('fsRootInput').value='${esc(w)}'; browseFiles('')">📁 ${esc(w.split('/').pop() || w)}</button>
+        `).join('');
+      }
+
       const listing = host.lastFsListing;
       if (listing && listing.entries) {
-        pathEl.innerHTML = `工作区：<code>${esc(listing.rootCwd)}</code> · 子目录：<code>/${esc(listing.subDir || '')}</code>`;
+        const parts = (listing.subDir || '').split('/').filter(Boolean);
+        let accum = '';
+        const crumbs = [`<a href="javascript:void(0)" onclick="browseFiles('')" style="color:var(--primary); text-decoration:none; font-weight:600;">🏠 工作区根目录</a>`];
+        for (const p of parts) {
+          accum = accum ? `${accum}/${p}` : p;
+          crumbs.push(`<a href="javascript:void(0)" onclick="browseFiles('${esc(accum)}')" style="color:var(--primary); text-decoration:none; font-weight:600;">${esc(p)}</a>`);
+        }
+        pathEl.innerHTML = `当前位置：${crumbs.join(' / ')} <span style="color:var(--muted); margin-left:8px;">(<code>${esc(listing.rootCwd)}</code>)</span>`;
+
         const parentBtn = listing.subDir
-          ? `<div class="file-entry" onclick="browseFiles('${esc(listing.subDir.split('/').slice(0, -1).join('/'))}')"><span>⬆️ .. (返回上级目录)</span><span>目录</span></div>`
+          ? `<div class="file-entry" onclick="browseFiles('${esc(listing.subDir.split('/').slice(0, -1).join('/'))}')"><span>⬆️ <strong>.. (返回上级目录)</strong></span><span class="badge muted">上级</span></div>`
           : '';
         box.innerHTML = parentBtn + listing.entries.map(item => {
           if (item.isDirectory) {
             return `<div class="file-entry" onclick="browseFiles('${esc(item.relPath)}')">
               <span>📁 <strong>${esc(item.name)}/</strong></span>
-              <span style="color:var(--muted); font-size:11px;">文件夹</span>
+              <span class="badge muted">目录</span>
             </div>`;
           }
           return `<div class="file-entry" onclick="previewFile('${esc(item.relPath)}')">
             <span>📄 ${esc(item.name)}</span>
-            <span style="color:var(--muted); font-size:11px;">${formatBytes(item.size)}</span>
+            <span style="color:var(--muted); font-size:11.5px;">${formatBytes(item.size)}</span>
           </div>`;
         }).join('');
       }
@@ -1214,38 +1857,80 @@
       if (prev && prev.relPath) {
         if (prev.kind === 'image' && prev.dataBase64) {
           previewBox.innerHTML = `
-            <div style="border:1px solid var(--border); border-radius:8px; padding:10px; background:#070b13;">
-              <div style="font-size:12px; font-weight:700; margin-bottom:8px;">🖼️ ${esc(prev.relPath)} (${formatBytes(prev.size)})</div>
-              <img src="data:${esc(prev.mime)};base64,${esc(prev.dataBase64)}" style="max-width:100%; border-radius:6px;" />
+            <div style="padding:12px 16px; border-bottom:1px solid var(--border); background:var(--surface-subtle); display:flex; justify-content:space-between; align-items:center;">
+              <strong style="font-size:13px;">🖼️ ${esc(prev.relPath)}</strong>
+              <span class="badge muted">${formatBytes(prev.size)}</span>
+            </div>
+            <div style="padding:20px; text-align:center;">
+              <img src="data:${esc(prev.mime)};base64,${esc(prev.dataBase64)}" style="max-width:100%; border-radius:8px; box-shadow:var(--shadow-md);" />
             </div>
           `;
         } else {
           previewBox.innerHTML = `
-            <div style="border:1px solid var(--border); border-radius:8px; padding:10px; background:#070b13;">
-              <div style="font-size:12px; font-weight:700; margin-bottom:6px;">📄 ${esc(prev.relPath)} (${formatBytes(prev.size)})</div>
-              <pre style="margin:0; font-size:12px; max-height:280px; overflow:auto; white-space:pre-wrap; word-break:break-word; color:#e2e8f0;">${esc(prev.content || '')}</pre>
+            <div style="padding:12px 16px; border-bottom:1px solid var(--border); background:var(--surface-subtle); display:flex; justify-content:space-between; align-items:center;">
+              <strong style="font-size:13px;">📄 ${esc(prev.relPath)}</strong>
+              <div class="badges">
+                <span class="badge green">🛡️ 已自动脱敏密钥</span>
+                <span class="badge muted">${formatBytes(prev.size)}</span>
+              </div>
             </div>
+            <pre style="margin:0; padding:16px; font-size:12.5px; line-height:1.6; max-height:420px; overflow:auto; white-space:pre-wrap; word-break:break-word; color:var(--text); font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc(prev.content || '')}</pre>
           `;
         }
       }
     }
 
-    function toggleTranscript(taskId) {
-      if (openTranscripts.has(taskId)) openTranscripts.delete(taskId);
-      else openTranscripts.add(taskId);
+    function selectHost(hostId) {
+      selectedHostId = hostId;
+      const host = state.hosts.find(h => h.hostId === hostId);
+      const tasks = host?.bridgeState?.tasks || [];
+      selectedTaskId = tasks[0]?.id || '';
+      renderAll();
+    }
+
+    function selectTask(taskId) {
+      selectedTaskId = taskId;
       renderSelectedHostConsole();
     }
 
-    function selectHost(hostId) {
-      selectedHostId = hostId;
-      renderAll();
+    async function handleComposerSubmit(interrupt = false) {
+      const host = state.hosts.find(h => h.hostId === selectedHostId) || state.hosts[0];
+      if (!host) return showToast('请先选择一台电脑');
+      const tasks = host.bridgeState?.tasks || [];
+      const activeTask = tasks.find(t => t.id === selectedTaskId) || tasks[0];
+      if (!activeTask) return openNewSessionModal();
+
+      const input = document.getElementById('globalPromptInput');
+      const text = (input?.value || '').trim();
+      if (!text) return showToast('请输入指令内容');
+
+      try {
+        if (activeTask.status === 'running') {
+          await api(`/api/hosts/${encodeURIComponent(host.hostId)}/command`, {
+            method: 'POST',
+            body: JSON.stringify({ type: 'steer', agentId: activeTask.id, text, interrupt }),
+          });
+          input.value = '';
+          showToast(interrupt ? '🔄 已请求打断当前步骤并重发新指令' : '⚡ 顺路插话指令已加入执行队列');
+        } else {
+          await api(`/api/hosts/${encodeURIComponent(host.hostId)}/command`, {
+            method: 'POST',
+            body: JSON.stringify({ type: 'prompt', agentId: activeTask.id, text }),
+          });
+          input.value = '';
+          showToast('🚀 指令已发送至电脑执行');
+        }
+        setTimeout(refreshState, 900);
+      } catch (e) {
+        showToast('发送失败: ' + e.message);
+      }
     }
 
     async function activateFeishuHost(hostId) {
       try {
         await api(`/api/hosts/${encodeURIComponent(hostId)}/activate`, { method: 'POST', body: '{}' });
         selectedHostId = hostId;
-        showToast('🎯 已切换飞书主控电脑！');
+        showToast('🎯 已将该电脑设为飞书主控！');
         await refreshState();
       } catch (e) {
         showToast('切换失败: ' + e.message);
@@ -1253,13 +1938,12 @@
     }
 
     async function manageTrust(hostId, action) {
-      if (action === 'revoke' && !confirm(`确定要吊销设备 ${hostId} 的访问权限吗？`)) return;
       try {
         await api(`/api/hosts/${encodeURIComponent(hostId)}/trust`, {
           method: 'POST',
           body: JSON.stringify({ action }),
         });
-        showToast(action === 'revoke' ? '🚫 已吊销该设备信任' : '🔓 已重置设备公钥锁');
+        showToast(action === 'revoke' ? '🚫 已吊销该设备信任' : '🔓 已恢复设备信任');
         await refreshState();
       } catch (e) {
         showToast('操作失败: ' + e.message);
@@ -1272,6 +1956,7 @@
       const cwd = document.getElementById('newSessionCwd').value.trim();
       const title = document.getElementById('newSessionTitle').value.trim();
       const prompt = document.getElementById('newSessionPrompt').value.trim();
+      closeModal('newSessionModal');
       try {
         await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
           method: 'POST',
@@ -1286,64 +1971,39 @@
       }
     }
 
-    async function sendPrompt(hostId, agentId) {
-      const input = document.getElementById('prompt_' + agentId);
-      const text = (input?.value || '').trim();
-      if (!text) return;
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'prompt', agentId, text }),
-        });
-        input.value = '';
-        showToast('🚀 指令已发送');
-        setTimeout(refreshState, 1000);
-      } catch (e) {
-        showToast('发送失败: ' + e.message);
-      }
+    function openRenameModal(hostId, agentId, oldTitle) {
+      renameTarget = { hostId, agentId };
+      const input = document.getElementById('renameInput');
+      if (input) input.value = oldTitle || '';
+      openModal('renameModal');
+      setTimeout(() => input?.focus(), 60);
     }
 
-    async function sendSteer(hostId, agentId, interrupt) {
-      const input = document.getElementById('steer_' + agentId);
-      const text = (input?.value || '').trim();
-      if (!text) return showToast('请输入插话或打断重发的指令内容');
+    async function submitRenameModal() {
+      if (!renameTarget) return;
+      const title = (document.getElementById('renameInput')?.value || '').trim();
+      closeModal('renameModal');
+      if (!title) return;
       try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+        await api(`/api/hosts/${encodeURIComponent(renameTarget.hostId)}/command`, {
           method: 'POST',
-          body: JSON.stringify({ type: 'steer', agentId, text, interrupt }),
+          body: JSON.stringify({ type: 'rename_session', agentId: renameTarget.agentId, title }),
         });
-        input.value = '';
-        showToast(interrupt ? '🔄 已请求打断当前步骤并重发新指令' : '⚡ 插话指令已注入队列');
-        setTimeout(refreshState, 1000);
-      } catch (e) {
-        showToast('插话失败: ' + e.message);
-      }
-    }
-
-    async function renameTask(hostId, agentId, oldTitle) {
-      const title = prompt('请输入新的会话标题：', oldTitle);
-      if (!title || !title.trim()) return;
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'rename_session', agentId, title: title.trim() }),
-        });
-        showToast('✏️ 已下发重命名指令');
-        setTimeout(refreshState, 1000);
+        showToast('✏️ 已更新会话标题');
+        setTimeout(refreshState, 900);
       } catch (e) {
         showToast('重命名失败: ' + e.message);
       }
     }
 
     async function deleteTask(hostId, agentId, title) {
-      if (!confirm(`确定要删除会话「${title}」吗？`)) return;
       try {
         await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
           method: 'POST',
           body: JSON.stringify({ type: 'delete_session', agentId }),
         });
-        showToast('🗑️ 已下发删除会话指令');
-        setTimeout(refreshState, 1000);
+        showToast(`🗑️ 已删除会话「${title}」`);
+        setTimeout(refreshState, 900);
       } catch (e) {
         showToast('删除失败: ' + e.message);
       }
@@ -1356,7 +2016,7 @@
           body: JSON.stringify({ type: 'share_session', agentId }),
         });
         showToast('🔒 正在本机执行 AES-256-GCM 加密并生成回放链接...');
-        setTimeout(refreshState, 1200);
+        setTimeout(refreshState, 1100);
       } catch (e) {
         showToast('生成分享失败: ' + e.message);
       }
@@ -1375,7 +2035,7 @@
     function openTaskFiles(agentId, cwd) {
       currentFsAgentId = agentId;
       if (cwd) document.getElementById('fsRootInput').value = cwd;
-      if (activeTab === 'chat') switchTab('files');
+      switchTab('files');
       browseFiles('');
     }
 
@@ -1386,10 +2046,10 @@
       try {
         await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
           method: 'POST',
-          body: JSON.stringify({ type: 'list_files', agentId: currentFsAgentId, cwd, subDir }),
+          body: JSON.stringify({ type: 'list_files', agentId: currentFsAgentId || selectedTaskId, cwd, subDir }),
         });
         showToast('📂 正在读取远程目录...');
-        setTimeout(refreshState, 1000);
+        setTimeout(refreshState, 900);
       } catch (e) {
         showToast('读取目录失败: ' + e.message);
       }
@@ -1402,10 +2062,10 @@
       try {
         await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
           method: 'POST',
-          body: JSON.stringify({ type: 'read_file', agentId: currentFsAgentId, cwd, relPath }),
+          body: JSON.stringify({ type: 'read_file', agentId: currentFsAgentId || selectedTaskId, cwd, relPath }),
         });
         showToast('📄 正在读取文件预览...');
-        setTimeout(refreshState, 1000);
+        setTimeout(refreshState, 900);
       } catch (e) {
         showToast('读取文件失败: ' + e.message);
       }
@@ -1417,22 +2077,21 @@
           method: 'POST',
           body: JSON.stringify({ type: 'export_snapshot', includeCredentials: false }),
         });
-        showToast('📦 已向该电脑下发快照导出指令');
-        setTimeout(refreshState, 1500);
+        showToast('📦 已向该电脑下发快照备份指令');
+        setTimeout(refreshState, 1400);
       } catch (e) {
-        showToast('导出失败: ' + e.message);
+        showToast('备份失败: ' + e.message);
       }
     }
 
     async function wipeHost(hostId, hostName) {
-      if (!confirm(`确定要临时清空电脑「${hostName}」上的 DSH 会话和历史数据吗？\n（系统会自动先备份一份快照到总控中心，且默认保留飞书连接配置）`)) return;
       try {
         await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
           method: 'POST',
           body: JSON.stringify({ type: 'wipe_host', backupFirst: true, keepCredentials: true }),
         });
-        showToast(`🧹 已下发安全清空指令给 ${hostName}`);
-        setTimeout(refreshState, 1500);
+        showToast(`🧹 已向「${hostName}」下发安全备份并清空指令`);
+        setTimeout(refreshState, 1400);
       } catch (e) {
         showToast('操作失败: ' + e.message);
       }
@@ -1458,8 +2117,8 @@
             keepCredentials: true,
           }),
         });
-        showToast('⚡ 跨电脑转移任务已启动！');
-        setTimeout(refreshState, 1500);
+        showToast('⚡ 跨电脑一键转移任务已启动！');
+        setTimeout(refreshState, 1400);
       } catch (e) {
         showToast('迁移启动失败: ' + e.message);
       }
@@ -1474,7 +2133,7 @@
           body: JSON.stringify({ type: 'import_snapshot', snapshotId, skipCredentials: true }),
         });
         showToast('📥 已下发快照恢复指令到 ' + targetHostId);
-        setTimeout(refreshState, 1500);
+        setTimeout(refreshState, 1400);
       } catch (e) {
         showToast('恢复失败: ' + e.message);
       }
@@ -1495,8 +2154,8 @@
           method: 'POST',
           body: JSON.stringify({ type: 'remote_mode', active }),
         });
-        showToast(active ? '🔔 已开启飞书完成推送' : '🔕 已关闭飞书完成推送');
-        setTimeout(refreshState, 1000);
+        showToast(active ? '🔔 已开启飞书完成通知' : '🔕 已关闭飞书完成通知');
+        setTimeout(refreshState, 900);
       } catch (e) {
         showToast('设置失败: ' + e.message);
       }
@@ -1509,7 +2168,7 @@
           body: JSON.stringify({ type: 'stop', agentId }),
         });
         showToast('⏹ 已发送停止指令');
-        setTimeout(refreshState, 1000);
+        setTimeout(refreshState, 900);
       } catch (e) {
         showToast('停止失败: ' + e.message);
       }
@@ -1521,8 +2180,8 @@
           method: 'POST',
           body: JSON.stringify({ type: action, code }),
         });
-        showToast(action === 'approve' ? '✅ 已批准' : '❌ 已拒绝');
-        setTimeout(refreshState, 1000);
+        showToast(action === 'approve' ? '✅ 已批准执行' : '❌ 已拒绝该工具调用');
+        setTimeout(refreshState, 900);
       } catch (e) {
         showToast('审批处理失败: ' + e.message);
       }
@@ -1530,7 +2189,9 @@
 
     connectSse();
     refreshState();
-    setInterval(refreshState, 3500);
+    if (urlParams.get('nosse') !== '1') {
+      setInterval(refreshState, 3500);
+    }
   </script>
 </body>
 </html>
