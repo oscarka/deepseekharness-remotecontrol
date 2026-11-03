@@ -1,7 +1,7 @@
 import { createCipheriv, randomBytes } from 'node:crypto'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from './migration.js'
 import { safeError } from './redact.js'
-import { extractSessionTranscript, loadOrCreateHostIdentity } from './workspace-ops.js'
+import { extractSessionTranscript, loadDiskSessionsFromDshHome, loadOrCreateHostIdentity } from './workspace-ops.js'
 
 /**
  * Outbound agent that synchronizes a local DSH host with the Cloud Run Control Hub
@@ -24,6 +24,7 @@ export class HubAgent {
     this.fleetSummary = []
     this.pendingResults = []
     this.cachedStats = null
+    this.cachedDiskSessions = []
     this.lastStatsAt = 0
     this.executedIds = new Set()
     this.identity = null
@@ -64,6 +65,7 @@ export class HubAgent {
     }
     try {
       this.cachedStats = await inspectDshHome(this.config.dshHome)
+      this.cachedDiskSessions = await loadDiskSessionsFromDshHome(this.config.dshHome)
       this.lastStatsAt = now
     } catch (error) {
       this.logger?.warn?.(`dsh-feishu: inspectDshHome failed: ${safeError(error)}`)
@@ -115,6 +117,19 @@ export class HubAgent {
       const identity = await this.ensureIdentity()
       const dshStats = await this.refreshDshStats(false)
       const bridgeState = this.bridge.getSnapshotState()
+      if (Array.isArray(this.cachedDiskSessions) && this.cachedDiskSessions.length > 0) {
+        const existingIds = new Set((bridgeState.tasks || []).map(t => t.id))
+        const wsSet = new Set(Array.isArray(bridgeState.workspaces) ? bridgeState.workspaces : [])
+        for (const ds of this.cachedDiskSessions) {
+          if (!existingIds.has(ds.id)) {
+            bridgeState.tasks.push(ds)
+            existingIds.add(ds.id)
+          }
+          if (ds.cwd) wsSet.add(ds.cwd)
+        }
+        bridgeState.taskCount = bridgeState.tasks.length
+        bridgeState.workspaces = [...wsSet]
+      }
       const resultsToSend = this.pendingResults.splice(0)
       const response = await this.fetch(`${this.config.hubUrl}/api/heartbeat`, {
         method: 'POST',
@@ -168,9 +183,11 @@ export class HubAgent {
   async createEncryptedShare(agent) {
     if (!agent) return { ok: false, error: '找不到任务会话' }
     if (!this.config.hubUrl) return { ok: false, error: '未配置 Hub 地址' }
-    const transcript = extractSessionTranscript(agent, 120)
-    const title = this.bridge.taskTitle(agent)
-    const cwd = agent?.session?.header?.cwd ?? agent?.session?.cwd ?? ''
+    const transcript = Array.isArray(agent.transcript) && !agent.session
+      ? agent.transcript
+      : extractSessionTranscript(agent, 120)
+    const title = agent.session ? this.bridge.taskTitle(agent) : (agent.title || agent.id)
+    const cwd = agent?.session?.header?.cwd ?? agent?.session?.cwd ?? agent?.cwd ?? ''
     const plainPayload = {
       version: 1,
       agentId: agent.id,
@@ -385,7 +402,9 @@ export class HubAgent {
           }
         }
         case 'share_session': {
-          const agent = this.bridge.agents.get(String(cmd.agentId ?? ''))
+          const targetId = String(cmd.agentId ?? '')
+          const agent = this.bridge.agents.get(targetId)
+            || (this.cachedDiskSessions || []).find(s => s.id === targetId)
           if (!agent) return { ok: false, error: '找不到该任务会话' }
           return await this.createEncryptedShare(agent)
         }
