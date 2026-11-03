@@ -1,7 +1,19 @@
 import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto'
 import { chmod, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from 'node:path'
+import * as zlib from 'node:zlib'
 import { cleanForChat, redactText } from './redact.js'
+
+const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
+
+function isSystemInjectedUserText(text) {
+  const t = String(text ?? '').trim()
+  if (!t) return true
+  if (t.startsWith('Current runtime context.')) return true
+  if (t.startsWith('<system-reminder>')) return true
+  if (t.startsWith('Time sampled while preparing turn')) return true
+  return false
+}
 
 const MAX_PREVIEW_BYTES = 256 * 1024 // 256 KiB max text/code file preview
 const MAX_IMAGE_PREVIEW_BYTES = 5 * 1024 * 1024 // 5 MiB max image preview
@@ -73,7 +85,8 @@ export function extractSessionTranscript(agent, maxMessages = 60) {
     rawMessages = []
   }
 
-  return rawMessages.slice(-maxMessages).map((msg, idx) => {
+  const mapped = []
+  for (const msg of rawMessages) {
     const role = String(msg?.role ?? 'unknown')
     const blocks = Array.isArray(msg?.content) ? msg.content : []
     const textParts = []
@@ -87,7 +100,7 @@ export function extractSessionTranscript(agent, maxMessages = 60) {
       } else if (block.type === 'thinking' || block.type === 'reasoning') {
         const thought = typeof block.thinking === 'string' ? block.thinking : typeof block.text === 'string' ? block.text : ''
         if (thought) thinkingParts.push(redactText(thought).slice(0, 1000))
-      } else if (block.type === 'tool_use' || block.type === 'tool_call') {
+      } else if (block.type === 'tool_use' || block.type === 'tool_call' || block.type === 'tool-call') {
         tools.push({
           name: String(block.name || block.toolName || 'tool'),
           id: String(block.id || ''),
@@ -99,16 +112,208 @@ export function extractSessionTranscript(agent, maxMessages = 60) {
       textParts.push(redactText(msg.content))
     }
 
-    return {
-      index: idx,
+    const joinedText = cleanForChat(textParts.join('\n').trim(), 4000)
+    if (role === 'user' && isSystemInjectedUserText(joinedText)) {
+      continue
+    }
+    if (!joinedText && !thinkingParts.length && !tools.length) {
+      continue
+    }
+
+    mapped.push({
+      index: mapped.length,
       role,
-      text: cleanForChat(textParts.join('\n').trim(), 4000),
+      text: joinedText,
       thinking: thinkingParts.join('\n').trim(),
       tools,
       toolCalls: tools,
       time: msg?.time || msg?.createdAt || 0,
+    })
+  }
+
+  return mapped.slice(-maxMessages)
+}
+
+function decompressMultiFrameZstd(rawBuf) {
+  if (typeof zlib.zstdDecompressSync !== 'function') return ''
+  const offsets = []
+  let idx = 0
+  while ((idx = rawBuf.indexOf(ZSTD_MAGIC, idx)) !== -1) {
+    offsets.push(idx)
+    idx += 4
+  }
+  if (offsets.length === 0) return ''
+  let out = ''
+  for (let i = 0; i < offsets.length; i += 1) {
+    const slice = rawBuf.subarray(offsets[i], offsets[i + 1] || rawBuf.length)
+    try {
+      out += zlib.zstdDecompressSync(slice).toString('utf8')
+    } catch {
+      // ignore partial frame
     }
-  })
+  }
+  return out
+}
+
+/**
+ * Read real historical DSH v4 sessions (`session.v4.jsonl.zstd`) directly from `~/.dsh/sessions`
+ * so the Web UI displays all of the user's real projects & conversations even when DSH Desktop
+ * hasn't hydrated them into memory yet.
+ */
+export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, maxMessages = 40 } = {}) {
+  if (!dshHome) return []
+  const sessionsRoot = join(resolve(dshHome), 'sessions')
+  let projDirs = []
+  try {
+    projDirs = await readdir(sessionsRoot, { withFileTypes: true })
+  } catch {
+    return []
+  }
+
+  const results = []
+  for (const projEntry of projDirs) {
+    if (!projEntry.isDirectory()) continue
+    const projPath = join(sessionsRoot, projEntry.name)
+    let sessDirs = []
+    try {
+      sessDirs = await readdir(projPath, { withFileTypes: true })
+    } catch {
+      continue
+    }
+
+    for (const sessEntry of sessDirs) {
+      if (!sessEntry.isDirectory()) continue
+      const zstdPath = join(projPath, sessEntry.name, 'session.v4.jsonl.zstd')
+      let fileStat
+      try {
+        fileStat = await stat(zstdPath)
+      } catch {
+        continue
+      }
+      if (!fileStat.isFile() || fileStat.size < 100) continue
+
+      try {
+        const rawBuf = await readFile(zstdPath)
+        const text = decompressMultiFrameZstd(rawBuf)
+        if (!text) continue
+        const lines = text
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map(line => {
+            try {
+              return JSON.parse(line)
+            } catch {
+              return null
+            }
+          })
+          .filter(Boolean)
+
+        const header = lines.find(e => e.type === 'session') || {}
+        const cwd = String(header.cwd || '').trim()
+        const titles = lines.filter(e => e.type === 'session/title' && e.data?.title)
+        const title = String(titles.at(-1)?.data?.title || '').trim()
+
+        // Group tool/call events by turn+step so we can attach them to assistant messages
+        const toolsByStep = new Map()
+        for (const e of lines) {
+          if (e.type === 'tool/call' && e.data?.name) {
+            const key = `${e.data.turn ?? 0}:${e.data.step ?? 0}`
+            const arr = toolsByStep.get(key) || []
+            arr.push({ name: String(e.data.name), id: String(e.data.callId || '') })
+            toolsByStep.set(key, arr)
+          }
+        }
+
+        const transcript = []
+        let lastOutput = ''
+        let lastActivity = Math.round(fileStat.mtimeMs)
+
+        for (const e of lines) {
+          if (e.time && e.time > lastActivity) lastActivity = e.time
+          if (e.type === 'user/message') {
+            if (e.data?.source?.kind && e.data.source.kind !== 'user') continue
+            const blocks = Array.isArray(e.data?.content) ? e.data.content : []
+            const userText = cleanForChat(
+              blocks
+                .filter(b => b?.type === 'text' && typeof b.text === 'string')
+                .map(b => redactText(b.text))
+                .join('\n')
+                .trim(),
+              4000,
+            )
+            if (!userText || isSystemInjectedUserText(userText)) continue
+            transcript.push({
+              index: transcript.length,
+              role: 'user',
+              text: userText,
+              thinking: '',
+              tools: [],
+              toolCalls: [],
+              time: e.time || 0,
+            })
+          } else if (e.type === 'assistant/message') {
+            const blocks = Array.isArray(e.data?.message?.content) ? e.data.message.content : []
+            const asstText = cleanForChat(
+              blocks
+                .filter(b => b?.type === 'text' && typeof b.text === 'string')
+                .map(b => redactText(b.text))
+                .join('\n')
+                .trim(),
+              4000,
+            )
+            const thinkingText = blocks
+              .filter(b => (b?.type === 'reasoning' || b?.type === 'thinking') && typeof (b.text || b.thinking) === 'string')
+              .map(b => redactText(b.text || b.thinking))
+              .join('\n')
+              .trim()
+              .slice(0, 1000)
+            const stepKey = `${e.data?.turn ?? 0}:${e.data?.step ?? 0}`
+            const stepTools = toolsByStep.get(stepKey) || []
+            if (!asstText && !thinkingText && stepTools.length === 0) continue
+            if (asstText) lastOutput = asstText.slice(0, 1200)
+            transcript.push({
+              index: transcript.length,
+              role: 'assistant',
+              text: asstText,
+              thinking: thinkingText,
+              tools: stepTools,
+              toolCalls: stepTools,
+              time: e.time || 0,
+            })
+          }
+        }
+
+        // Skip completely empty sessions with no user messages
+        if (transcript.length === 0) continue
+
+        const id = header.id || sessEntry.name
+        const shortId = id.startsWith('session-') ? id.slice(8, 16) : id.slice(0, 8)
+        const projectParts = cwd.split('/').filter(Boolean)
+        const rawProj = projectParts.at(-1) || '默认项目'
+        const project = rawProj === 'default-workspace' ? '默认工作区' : rawProj
+
+        results.push({
+          id,
+          shortId,
+          title: title || transcript[0]?.text?.slice(0, 36) || '历史会话',
+          status: 'idle',
+          statusLabel: '已完成',
+          project,
+          cwd,
+          lastActivity,
+          lastOutput,
+          queuedSteers: [],
+          transcript: transcript.slice(-maxMessages),
+        })
+      } catch {
+        // ignore unreadable session file
+      }
+    }
+  }
+
+  results.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0))
+  return results.slice(0, maxSessions)
 }
 
 /**
