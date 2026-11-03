@@ -73,8 +73,8 @@ export function createHubServer({
           scope: '/',
           display: 'standalone',
           orientation: 'portrait',
-          background_color: '#0b0f19',
-          theme_color: '#0b0f19',
+          background_color: '#f8fafc',
+          theme_color: '#ffffff',
           icons: [
             {
               src: '/icon.svg',
@@ -87,21 +87,25 @@ export function createHubServer({
       }
     }
 
-    // Crisp SVG App Icon for Home Screen & Push Notifications
+    // Crisp SVG App Icon for Home Screen & Push Notifications (Bright iOS App Style)
     if (method === 'GET' && (pathname === '/icon.svg' || pathname === '/apple-touch-icon.png')) {
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
         <defs>
           <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#3b82f6"/>
-            <stop offset="100%" stop-color="#8b5cf6"/>
+            <stop offset="0%" stop-color="#eff6ff"/>
+            <stop offset="100%" stop-color="#dbeafe"/>
+          </linearGradient>
+          <linearGradient id="brand" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#2563eb"/>
+            <stop offset="100%" stop-color="#4f46e5"/>
           </linearGradient>
         </defs>
         <rect width="256" height="256" rx="56" fill="url(#g)"/>
-        <rect x="28" y="44" width="200" height="144" rx="20" fill="#0b0f19" opacity="0.9"/>
-        <path d="M64 96 L96 120 L64 144" stroke="#34d399" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        <line x1="112" y1="144" x2="164" y2="144" stroke="#60a5fa" stroke-width="14" stroke-linecap="round"/>
-        <circle cx="192" cy="80" r="10" fill="#10b981"/>
-        <text x="128" y="226" text-anchor="middle" fill="#ffffff" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-weight="800" font-size="28">DSH REMOTE</text>
+        <rect x="28" y="40" width="200" height="142" rx="26" fill="#ffffff" stroke="#bfdbfe" stroke-width="4"/>
+        <path d="M66 94 L98 116 L66 138" stroke="url(#brand)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <line x1="114" y1="138" x2="166" y2="138" stroke="#059669" stroke-width="14" stroke-linecap="round"/>
+        <circle cx="192" cy="76" r="10" fill="#10b981"/>
+        <text x="128" y="224" text-anchor="middle" fill="#1e3a8a" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-weight="800" font-size="27" letter-spacing="0.5">DSH REMOTE</text>
       </svg>`
       return {
         status: 200,
@@ -571,21 +575,124 @@ function renderShareReplayHtml(share) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>🔒 E2EE 加密会话回放 · ${String(share.title || '').replace(/[<>&"]/g, '')}</title>
   <style>
-    :root { --bg:#0b0f19; --card:#131b2e; --border:#23304f; --text:#f1f5f9; --muted:#94a3b8; --primary:#3b82f6; --green:#10b981; }
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --subtle: #f1f5f9;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --primary: #2563eb;
+      --green: #059669;
+    }
     * { box-sizing: border-box; }
-    body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; padding:24px; }
-    .wrap { max-width:900px; margin:0 auto; }
-    .header { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px 22px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
-    .badge { display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:4px 10px; border-radius:999px; background:rgba(16,185,129,.15); color:#34d399; border:1px solid rgba(16,185,129,.3); }
-    .btn { background:var(--primary); color:#fff; border:none; border-radius:8px; padding:8px 14px; cursor:pointer; font-weight:600; font-size:13px; }
-    .msg { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
-    .msg.user { border-left:4px solid var(--primary); }
-    .msg.assistant { border-left:4px solid var(--green); }
-    .role { font-size:12px; font-weight:700; color:var(--muted); margin-bottom:6px; display:flex; justify-content:space-between; }
-    pre { white-space:pre-wrap; word-break:break-word; margin:0; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; line-height:1.55; }
-    .thinking { margin-top:8px; padding:8px 10px; background:#090d16; border-radius:8px; color:#94a3b8; font-size:12px; }
-    .tools { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
-    .tool-pill { font-size:11px; padding:2px 8px; border-radius:6px; background:rgba(59,130,246,.15); color:#93c5fd; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      background-image: radial-gradient(960px 340px at 50% -100px, rgba(37, 99, 235, 0.08), transparent);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", Roboto, sans-serif;
+      padding: 28px 18px 60px;
+      line-height: 1.6;
+    }
+    .wrap { max-width: 880px; margin: 0 auto; }
+    .header {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 14px;
+      box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.06);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: #ecfdf5;
+      color: var(--green);
+      border: 1px solid #a7f3d0;
+    }
+    .btn {
+      background: var(--primary);
+      color: #fff;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 9px 16px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      transition: all 0.15s;
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+    }
+    .btn:hover { background: #1d4ed8; }
+    .btn.secondary {
+      background: #ffffff;
+      color: var(--text);
+      border-color: var(--border);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .btn.secondary:hover { background: var(--subtle); }
+    .msg {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px 20px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+    }
+    .msg.user {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+    }
+    .msg.assistant {
+      border-left: 4px solid var(--green);
+    }
+    .role {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+      font-size: 14px;
+      line-height: 1.65;
+      color: var(--text);
+    }
+    .thinking {
+      margin-top: 10px;
+      padding: 10px 14px;
+      background: var(--subtle);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: #475569;
+      font-size: 12.5px;
+    }
+    .tools { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .tool-pill {
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: var(--primary);
+      border: 1px solid #bfdbfe;
+    }
   </style>
 </head>
 <body>
@@ -593,12 +700,12 @@ function renderShareReplayHtml(share) {
     <div class="header">
       <div>
         <div class="badge">🔒 AES-256-GCM 端到端加密回放（自托管，零第三方服务器）</div>
-        <h2 id="title" style="margin:8px 0 4px 0; font-size:18px;">正在浏览器本地解密...</h2>
-        <div id="meta" style="font-size:12px; color:var(--muted);"></div>
+        <h2 id="title" style="margin:10px 0 4px 0; font-size:20px; letter-spacing:-0.01em;">正在浏览器本地解密...</h2>
+        <div id="meta" style="font-size:13px; color:var(--muted);"></div>
       </div>
       <div style="display:flex; gap:8px;">
         <button class="btn" onclick="startReplay()">▶ 动画回放</button>
-        <button class="btn" style="background:#1e293b;" onclick="renderAll()">展开全部</button>
+        <button class="btn secondary" onclick="renderAll()">展开全部</button>
       </div>
     </div>
     <div id="stream"></div>
