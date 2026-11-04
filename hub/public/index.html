@@ -751,6 +751,251 @@
       font-weight: 500;
       text-align: center;
     }
+
+    /* Floating Scroll-to-Bottom Pill inside Chat Stage */
+    .chat-stage {
+      position: relative;
+    }
+    .scroll-bottom-btn {
+      position: absolute;
+      bottom: 76px;
+      right: 18px;
+      z-index: 30;
+      border-radius: 999px;
+      padding: 8px 14px;
+      background: rgba(15, 23, 42, 0.85);
+      color: #ffffff;
+      border: none;
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: var(--shadow-md);
+      display: none;
+    }
+    .scroll-bottom-btn:hover {
+      background: #0f172a;
+      color: #ffffff;
+    }
+
+    .mobile-only {
+      display: none !important;
+    }
+    .action-sheet-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .action-sheet-btn {
+      width: 100%;
+      min-height: 48px;
+      justify-content: flex-start;
+      padding: 12px 16px;
+      font-size: 15px;
+      border-radius: 12px;
+      background: var(--surface-subtle);
+    }
+
+    /* ==========================================================
+       NATIVE MOBILE APP EXPERIENCE (iPhone / Android <= 900px)
+       ========================================================== */
+    @media (max-width: 900px) {
+      .desktop-only {
+        display: none !important;
+      }
+      .mobile-only {
+        display: inline-flex !important;
+      }
+
+      /* 1. Compact 1-Row Top Header on Mobile */
+      header {
+        padding: calc(8px + var(--safe-top)) 14px 8px;
+      }
+      .header-inner {
+        flex-wrap: nowrap;
+        gap: 8px;
+      }
+      .brand-sub,
+      .header-actions,
+      .host-bar-wrap {
+        display: none !important;
+      }
+      .brand-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 11.5px;
+        border-radius: 9px;
+      }
+      .brand-title {
+        font-size: 14.5px;
+      }
+
+      .container {
+        padding: 10px 12px 28px;
+        gap: 12px;
+      }
+
+      /* 2. Generous 44px+ Touch Targets & 16px Inputs (Zero iOS Zoom Jump) */
+      button {
+        min-height: 42px;
+        padding: 9px 14px;
+        font-size: 14px;
+        border-radius: 10px;
+      }
+      button.sm {
+        min-height: 38px;
+        padding: 7px 12px;
+        font-size: 13px;
+        border-radius: 9px;
+      }
+      input, select, textarea {
+        font-size: 16px !important;
+        padding: 11px 13px;
+        border-radius: 10px;
+      }
+
+      /* 3. Two-Level WeChat-Style Session List -> Full-Screen Chat Push */
+      .session-sidebar {
+        padding: 4px 0;
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        gap: 10px;
+      }
+      #projectFilterBar {
+        flex-wrap: nowrap !important;
+        overflow-x: auto;
+        padding-bottom: 6px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      #projectFilterBar::-webkit-scrollbar {
+        display: none;
+      }
+      #projectFilterBar button {
+        flex-shrink: 0;
+      }
+      /* Eliminate nested scroll trap on session list */
+      .session-list {
+        max-height: none !important;
+        overflow: visible !important;
+        gap: 10px;
+      }
+      .session-card {
+        background: #ffffff;
+        padding: 14px 16px;
+        border-radius: 14px;
+        box-shadow: var(--shadow-sm);
+      }
+      .session-card-title {
+        font-size: 15px;
+        margin-bottom: 6px;
+      }
+      .session-card-meta {
+        font-size: 12.5px;
+      }
+
+      /* Hide chat stage when on level-1 list view */
+      body:not(.mobile-chat-open) .chat-stage {
+        display: none !important;
+      }
+      /* Level-2 Full-screen immersive chat view */
+      body.mobile-chat-open {
+        overflow: hidden;
+      }
+      body.mobile-chat-open header,
+      body.mobile-chat-open .bottom-nav {
+        display: none !important;
+      }
+      body.mobile-chat-open .chat-stage {
+        position: fixed;
+        inset: 0;
+        z-index: 75;
+        display: flex !important;
+        flex-direction: column;
+        height: 100dvh;
+        min-height: 0;
+        border-radius: 0;
+        border: none;
+        background: #f8fafc;
+        animation: mobileSlideIn 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      body.mobile-chat-open .chat-stage-header {
+        padding: calc(10px + var(--safe-top)) 12px 10px;
+        background: rgba(255, 255, 255, 0.96);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        flex-wrap: nowrap;
+        gap: 8px;
+      }
+      body.mobile-chat-open .chat-stream {
+        flex: 1;
+        max-height: none !important;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 14px 12px 24px;
+      }
+      body.mobile-chat-open .chat-composer {
+        padding: 10px 12px calc(12px + var(--safe-bottom));
+        background: #ffffff;
+        gap: 8px;
+      }
+      .msg-row,
+      .msg-row.assistant {
+        max-width: 92%;
+        width: auto;
+      }
+      .msg-bubble {
+        font-size: 14.5px;
+        padding: 12px 15px;
+      }
+
+      /* 4. File Explorer Full-Screen Reader Drawer on Mobile */
+      .file-entry {
+        min-height: 48px;
+        padding: 12px 14px;
+        font-size: 14.5px;
+      }
+      body:not(.mobile-file-open) .file-preview-pane {
+        display: none !important;
+      }
+      body.mobile-file-open {
+        overflow: hidden;
+      }
+      body.mobile-file-open .file-preview-pane {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: flex !important;
+        flex-direction: column;
+        height: 100dvh;
+        border-radius: 0;
+        border: none;
+        background: #ffffff;
+        padding-top: var(--safe-top);
+        animation: mobileSlideIn 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      /* 5. Bottom-Sheet Modals on Mobile */
+      .modal-backdrop {
+        align-items: flex-end;
+        padding: 0;
+      }
+      .modal-card {
+        max-width: 100%;
+        border-radius: 22px 22px 0 0;
+        padding: 20px 18px calc(22px + var(--safe-bottom));
+        animation: sheetUp 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+    }
+
+    @keyframes mobileSlideIn {
+      from { opacity: 0.6; transform: translateX(24px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes sheetUp {
+      from { opacity: 0.6; transform: translateY(40px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
   </style>
 </head>
 <body>
@@ -758,10 +1003,22 @@
     <div class="header-inner">
       <div class="brand">
         <div class="brand-icon">DSH</div>
-        <div>
+        <div class="desktop-only">
           <div class="brand-title">我的 DeepSeek 远程控制台</div>
           <div class="brand-sub">本机真实项目与对话同步 · 飞书多电脑切换 · 手机锁屏提醒</div>
         </div>
+        <!-- Mobile Compact Host Pill in Top Bar -->
+        <button id="mobileTopHostBtn" class="mobile-only host-pill active" style="min-height:36px; padding:5px 11px; font-size:13px;" onclick="openModal('hostSwitchSheet')">
+          <span class="status-dot online"></span>
+          <span id="mobileTopHostLabel">cc 的 Mac</span>
+          <span style="font-size:11px; color:var(--muted);">▾</span>
+        </button>
+      </div>
+
+      <!-- Mobile Top-Right Compact Actions (Only 2 buttons: New + Settings) -->
+      <div class="mobile-only" style="gap:6px; align-items:center;">
+        <button class="primary sm" style="min-height:36px; padding:6px 11px;" onclick="openNewSessionModal()">➕ 新建</button>
+        <button class="sm" style="min-height:36px; padding:6px 10px;" onclick="openModal('mobileSettingsSheet')">⚙️ 设置</button>
       </div>
 
       <!-- Desktop Segmented View Switcher -->
@@ -822,13 +1079,15 @@
             </div>
           </div>
 
-          <div id="chatStreamBox" class="chat-stream">
+          <div id="chatStreamBox" class="chat-stream" onscroll="handleChatScroll()">
             <div style="margin:auto; text-align:center; color:var(--muted); padding:40px 20px;">
               <div style="font-size:32px; margin-bottom:8px;">💬</div>
               <div style="font-weight:600; color:var(--text-secondary);">在左侧点击你的任意项目对话，或点击右上角「➕ 发起新对话任务」</div>
               <div style="font-size:12.5px; margin-top:4px;">这里展示的都是你电脑里真实的 DeepSeek 历史对话与项目目录。</div>
             </div>
           </div>
+
+          <button id="scrollBottomBtn" class="scroll-bottom-btn" onclick="scrollToChatBottom()">⬇️ 最新消息</button>
 
           <div id="chatComposerBox" class="chat-composer">
             <input id="globalPromptInput" placeholder="输入内容继续当前对话 (按回车发送)..." style="flex:1;" onkeydown="if(event.key==='Enter')handleComposerSubmit(false)" />
@@ -1065,15 +1324,65 @@
   <div id="renameModal" class="modal-backdrop">
     <div class="modal-card">
       <div class="panel-title">
-        <span>✏️ 重命名会话</span>
+        <span>✏️ 修改对话标题</span>
         <button class="sm" onclick="closeModal('renameModal')">✕</button>
       </div>
       <div style="margin: 12px 0 16px;">
-        <input id="renameInput" placeholder="输入新的会话标题..." onkeydown="if(event.key==='Enter')submitRenameModal()" />
+        <input id="renameInput" placeholder="输入新的对话标题..." onkeydown="if(event.key==='Enter')submitRenameModal()" />
       </div>
       <div style="display:flex; justify-content:flex-end; gap:8px;">
         <button onclick="closeModal('renameModal')">取消</button>
         <button class="primary" onclick="submitRenameModal()">保存标题</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 5: Mobile Conversation Action Sheet (⋯) -->
+  <div id="taskActionSheet" class="modal-backdrop" onclick="if(event.target===this)closeModal('taskActionSheet')">
+    <div class="modal-card">
+      <div class="panel-title">
+        <span id="actionSheetTaskTitle">对话操作</span>
+        <button class="sm" onclick="closeModal('taskActionSheet')">✕</button>
+      </div>
+      <div id="actionSheetTaskBody" class="action-sheet-list"></div>
+    </div>
+  </div>
+
+  <!-- MODAL 6: Mobile Host Switcher Bottom Sheet -->
+  <div id="hostSwitchSheet" class="modal-backdrop" onclick="if(event.target===this)closeModal('hostSwitchSheet')">
+    <div class="modal-card">
+      <div class="panel-title">
+        <span>💻 选择或切换电脑</span>
+        <button class="sm" onclick="closeModal('hostSwitchSheet')">✕</button>
+      </div>
+      <p class="panel-sub">点击即可切换当前查看的电脑，或一键切换飞书连接哪台电脑。</p>
+      <div id="hostSwitchSheetBody" class="action-sheet-list"></div>
+    </div>
+  </div>
+
+  <!-- MODAL 7: Mobile Compact Settings Bottom Sheet -->
+  <div id="mobileSettingsSheet" class="modal-backdrop" onclick="if(event.target===this)closeModal('mobileSettingsSheet')">
+    <div class="modal-card">
+      <div class="panel-title">
+        <span>⚙️ 快捷设置与手机提醒</span>
+        <button class="sm" onclick="closeModal('mobileSettingsSheet')">✕</button>
+      </div>
+      <div class="action-sheet-list">
+        <button class="action-sheet-btn primary" style="color:#fff;" onclick="closeModal('mobileSettingsSheet'); subscribeWebPush()">
+          🔔 开启本手机锁屏提醒通知
+        </button>
+        <button class="action-sheet-btn" onclick="closeModal('mobileSettingsSheet'); sendTestPush()">
+          📨 发送一条测试锁屏通知
+        </button>
+        <button class="action-sheet-btn" onclick="closeModal('mobileSettingsSheet'); openPairingModal()">
+          📱 生成手机免密配对二维码 / 链接
+        </button>
+        <button class="action-sheet-btn" onclick="closeModal('mobileSettingsSheet'); openAuthModal()">
+          🔑 修改或输入访问密码 (HUB_TOKEN)
+        </button>
+        <button class="action-sheet-btn" onclick="closeModal('mobileSettingsSheet')">
+          ✕ 关闭
+        </button>
       </div>
     </div>
   </div>
@@ -1126,6 +1435,7 @@
 
     function switchTab(tab) {
       activeTab = tab;
+      document.body.classList.remove('mobile-chat-open', 'mobile-file-open');
       ['chat', 'fleet', 'files', 'push', 'all'].forEach(k => {
         document.getElementById('tab_' + k)?.classList.toggle('active', k === tab);
         document.getElementById('dtab_' + k)?.classList.toggle('active', k === tab);
@@ -1137,7 +1447,40 @@
       });
     }
 
+    function openMobileChat() {
+      document.body.classList.add('mobile-chat-open');
+    }
+    function closeMobileChat() {
+      document.body.classList.remove('mobile-chat-open');
+    }
+    function openMobileFile() {
+      document.body.classList.add('mobile-file-open');
+    }
+    function closeMobileFile() {
+      document.body.classList.remove('mobile-file-open');
+    }
+    function scrollToChatBottom() {
+      const box = document.getElementById('chatStreamBox');
+      if (!box) return;
+      box.scrollTop = box.scrollHeight;
+      const btn = document.getElementById('scrollBottomBtn');
+      if (btn) btn.style.display = 'none';
+    }
+    function handleChatScroll() {
+      const box = document.getElementById('chatStreamBox');
+      const btn = document.getElementById('scrollBottomBtn');
+      if (!box || !btn) return;
+      const dist = box.scrollHeight - box.scrollTop - box.clientHeight;
+      btn.style.display = dist > 180 ? 'inline-flex' : 'none';
+    }
+
     switchTab(activeTab);
+    if (urlParams.get('mchat') === '1' || urlParams.get('task')) {
+      openMobileChat();
+    }
+    if (urlParams.get('mfile') === '1') {
+      openMobileFile();
+    }
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -1147,6 +1490,7 @@
           if (d.hostId) selectedHostId = d.hostId;
           if (d.agentId) selectedTaskId = d.agentId;
           switchTab('chat');
+          if (d.agentId) openMobileChat();
           renderAll();
         }
       });
@@ -1321,13 +1665,19 @@
       return (n / (1024 * 1024)).toFixed(2) + ' MB';
     }
 
+    let lastRenderedChatKey = '';
+    let lastRenderedComposerKey = '';
+    let lastRenderedFsPreviewKey = '';
+
     function formatTime(ts) {
-      if (!ts) return '未知';
+      if (!ts) return '最近';
       const sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
-      if (sec < 5) return '刚刚';
+      if (sec < 10) return '刚刚';
       if (sec < 60) return sec + ' 秒前';
       if (sec < 3600) return Math.floor(sec / 60) + ' 分钟前';
-      return new Date(ts).toLocaleTimeString();
+      if (sec < 86400) return Math.floor(sec / 3600) + ' 小时前';
+      if (sec < 30 * 86400) return Math.floor(sec / 86400) + ' 天前';
+      return new Date(ts).toISOString().slice(0, 10);
     }
 
     function esc(str) {
@@ -1335,7 +1685,8 @@
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     function applyIncomingState(data) {
@@ -1427,9 +1778,35 @@
 
     function renderHostPills() {
       const bar = document.getElementById('hostPillsBar');
+      const mobileTopLabel = document.getElementById('mobileTopHostLabel');
+      const sheetBody = document.getElementById('hostSwitchSheetBody');
       if (!state.hosts || state.hosts.length === 0) {
         bar.innerHTML = '<span style="font-size:12.5px; color:var(--muted);">暂无电脑接入，在电脑配置 FEISHU_HUB_URL 后自动显示</span>';
+        if (mobileTopLabel) mobileTopLabel.textContent = '暂无连接电脑';
+        if (sheetBody) sheetBody.innerHTML = '<div style="color:var(--muted); font-size:13px;">当前还没有电脑连接。</div>';
         return;
+      }
+      const curHost = state.hosts.find(h => h.hostId === selectedHostId) || state.hosts[0];
+      if (mobileTopLabel && curHost) {
+        mobileTopLabel.textContent = `${curHost.hostName} (${curHost.taskCount})`;
+      }
+      if (sheetBody) {
+        sheetBody.innerHTML = state.hosts.map(h => {
+          const isSel = h.hostId === selectedHostId;
+          const isFeishu = h.hostId === state.activeHostId;
+          return `
+            <div style="border:1px solid ${isSel ? 'var(--primary)' : 'var(--border)'}; background:${isSel ? 'var(--primary-soft)' : 'var(--surface-subtle)'}; border-radius:14px; padding:12px 14px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+              <div style="flex:1; cursor:pointer;" onclick="selectHost('${esc(h.hostId)}'); closeModal('hostSwitchSheet')">
+                <div style="font-weight:750; font-size:15px;">💻 ${esc(h.hostName)}</div>
+                <div style="font-size:12px; color:var(--muted); margin-top:2px;">${h.taskCount} 个项目对话 · ${isFeishu ? '🟢 飞书当前连这台' : '候命中'}</div>
+              </div>
+              <div style="display:flex; gap:6px;">
+                ${!isFeishu ? `<button class="green sm" onclick="activateFeishuHost('${esc(h.hostId)}'); closeModal('hostSwitchSheet')">🎯 让飞书连</button>` : ''}
+                <button class="primary sm" onclick="selectHost('${esc(h.hostId)}'); closeModal('hostSwitchSheet')">查看</button>
+              </div>
+            </div>
+          `;
+        }).join('');
       }
       bar.innerHTML = state.hosts.map(h => {
         const isSel = h.hostId === selectedHostId;
@@ -1733,7 +2110,7 @@
               </div>
               <div class="session-card-meta">
                 <span>📁 ${esc(t.project || '默认工作区')}</span>
-                <span>💬 ${msgCount} 条对话 · ${formatTime(t.updatedAt)}</span>
+                <span>💬 ${msgCount} 条对话 · ${formatTime(t.updatedAt || t.lastActivity)}</span>
               </div>
             </div>
           `;
@@ -1763,83 +2140,138 @@
       const queuedSteers = activeTask.queuedSteers || [];
 
       stageHeader.innerHTML = `
-        <div>
-          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-            <span style="font-weight:750; font-size:15.5px;">${esc(activeTask.title)}</span>
-            <span class="badge ${activeTask.status === 'running' ? 'green' : 'blue'}">${esc(activeTask.statusLabel || activeTask.status)}</span>
-          </div>
-          <div style="font-size:12px; color:var(--muted); margin-top:2px;">
-            所在电脑文件夹: <code>${esc(activeTask.cwd || activeTask.project || '-')}</code> · 最近更新: ${formatTime(activeTask.updatedAt)}
+        <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">
+          <button class="mobile-only sm" style="padding:6px 11px; font-weight:750; flex-shrink:0;" onclick="closeMobileChat()">‹ 返回</button>
+          <div style="min-width:0; flex:1;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span style="font-weight:750; font-size:15.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px;">${esc(activeTask.title)}</span>
+              <span class="badge ${activeTask.status === 'running' ? 'green' : 'blue'}">${esc(activeTask.statusLabel || activeTask.status)}</span>
+            </div>
+            <div style="font-size:11.5px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              📁 <code>${esc(activeTask.project || activeTask.cwd || '-')}</code> · ${formatTime(activeTask.updatedAt || activeTask.lastActivity)}
+            </div>
           </div>
         </div>
-        <div class="badges">
+        <!-- Desktop Full Action Bar -->
+        <div class="badges desktop-only">
           <button class="sm" onclick="openTaskFiles('${esc(activeTask.id)}', '${esc(activeTask.cwd || '')}')">📂 看项目文件</button>
           <button class="sm" onclick="shareTask('${esc(host.hostId)}', '${esc(activeTask.id)}')">🔗 分享对话</button>
           <button class="sm" onclick="openRenameModal('${esc(host.hostId)}', '${esc(activeTask.id)}', '${esc(activeTask.title)}')">✏️ 改标题</button>
           <button class="danger sm" onclick="deleteTask('${esc(host.hostId)}', '${esc(activeTask.id)}', '${esc(activeTask.title)}')">🗑️ 删除</button>
         </div>
+        <!-- Mobile Compact Action Bar (Files + ⋯ Action Sheet) -->
+        <div class="mobile-only" style="gap:6px; flex-shrink:0;">
+          <button class="sm" onclick="openTaskFiles('${esc(activeTask.id)}', '${esc(activeTask.cwd || '')}')">📂 文件</button>
+          <button class="sm" style="font-weight:800; padding:6px 12px;" onclick="openTaskActionSheet('${esc(host.hostId)}', '${esc(activeTask.id)}', '${esc(activeTask.title)}', '${esc(activeTask.cwd || '')}')">⋯</button>
+        </div>
       `;
 
-      let streamHtml = '';
-      if (transcript.length === 0) {
-        streamHtml = `<div style="color:var(--muted); font-size:13px; text-align:center; padding:30px;">这个会话还没有文字对话记录，可在下方输入框直接发指令。</div>`;
-      } else {
-        streamHtml = transcript.map(m => {
-          const isUser = m.role === 'user';
-          const toolsHtml = (m.tools || []).map(tl => `<span class="badge blue">🔧 用了工具: ${esc(tl.name)}</span>`).join('');
-          const thinkingHtml = m.thinking
-            ? `<details class="thinking-details"><summary>💭 点击展开 DeepSeek 的思考过程</summary><div style="margin-top:6px; white-space:pre-wrap;">${esc(m.thinking)}</div></details>`
-            : '';
-          return `
-            <div class="msg-row ${isUser ? 'user' : 'assistant'}">
-              <div class="msg-meta">
-                <span>${isUser ? '🧑 我' : '🤖 DeepSeek'}</span>
-                ${toolsHtml}
+      const chatKey = `${activeTask.id}|${transcript.length}|${(transcript.at(-1)?.text || '').length}|${activeTask.lastOutput || ''}|${queuedSteers.join(',')}`;
+      if (chatKey !== lastRenderedChatKey) {
+        lastRenderedChatKey = chatKey;
+        let streamHtml = '';
+        if (transcript.length === 0) {
+          streamHtml = `<div style="color:var(--muted); font-size:13px; text-align:center; padding:30px;">这个会话还没有文字对话记录，可在下方输入框直接发指令。</div>`;
+        } else {
+          streamHtml = transcript.map(m => {
+            const isUser = m.role === 'user';
+            const toolsHtml = (m.tools || []).map(tl => `<span class="badge blue">🔧 用了工具: ${esc(tl.name)}</span>`).join('');
+            const thinkingHtml = m.thinking
+              ? `<details class="thinking-details"><summary>💭 点击展开 DeepSeek 的思考过程</summary><div style="margin-top:6px; white-space:pre-wrap;">${esc(m.thinking)}</div></details>`
+              : '';
+            return `
+              <div class="msg-row ${isUser ? 'user' : 'assistant'}">
+                <div class="msg-meta">
+                  <span>${isUser ? '🧑 我' : '🤖 DeepSeek'}</span>
+                  ${toolsHtml}
+                </div>
+                <div class="msg-bubble">
+                  <div style="white-space:pre-wrap; word-break:break-word;">${esc(m.text)}</div>
+                  ${thinkingHtml}
+                </div>
               </div>
-              <div class="msg-bubble">
-                <div style="white-space:pre-wrap; word-break:break-word;">${esc(m.text)}</div>
-                ${thinkingHtml}
-              </div>
+            `;
+          }).join('');
+        }
+
+        if (queuedSteers.length > 0) {
+          streamHtml += `
+            <div style="background:var(--amber-soft); border:1px solid var(--amber-border); color:var(--amber); padding:10px 14px; border-radius:10px; font-size:12.5px;">
+              ⚡ <strong>已排队等待执行的补充要求 (${queuedSteers.length})：</strong> ${queuedSteers.map(s => esc(s)).join(' | ')}
             </div>
           `;
-        }).join('');
+        }
+
+        if (activeTask.lastOutput) {
+          streamHtml += `
+            <div>
+              <div style="font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:4px;">🖥️ 最新回复摘要</div>
+              <div class="terminal-output">${esc(activeTask.lastOutput)}</div>
+            </div>
+          `;
+        }
+
+        streamBox.innerHTML = streamHtml;
       }
 
-      if (queuedSteers.length > 0) {
-        streamHtml += `
-          <div style="background:var(--amber-soft); border:1px solid var(--amber-border); color:var(--amber); padding:10px 14px; border-radius:10px; font-size:12.5px;">
-            ⚡ <strong>已排队等待执行的补充要求 (${queuedSteers.length})：</strong> ${queuedSteers.map(s => esc(s)).join(' | ')}
-          </div>
-        `;
-      }
-
-      if (activeTask.lastOutput) {
-        streamHtml += `
-          <div>
-            <div style="font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:4px;">🖥️ 最新回复摘要</div>
-            <div class="terminal-output">${esc(activeTask.lastOutput)}</div>
-          </div>
-        `;
-      }
-
-      streamBox.innerHTML = streamHtml;
-
-      // Update Sticky Bottom Composer based on running vs idle
-      if (activeTask.status === 'running') {
-        composerBox.innerHTML = `
-          <input id="globalPromptInput" placeholder="⚡ 任务正在跑：随时输入补充要求，或点「打断并重做」..." style="flex:1; min-width:200px;" onkeydown="if(event.key==='Enter')handleComposerSubmit(false)" />
-          <button class="primary" onclick="handleComposerSubmit(false)">⚡ 中途补充要求</button>
-          <button class="amber" onclick="handleComposerSubmit(true)">🔄 打断并重做</button>
-          <button class="danger" onclick="stopTask('${esc(host.hostId)}', '${esc(activeTask.id)}')">⏹ 停止任务</button>
-        `;
-      } else {
-        composerBox.innerHTML = `
-          <input id="globalPromptInput" placeholder="继续在「${esc(activeTask.title)}」里发指令 (按回车发送)..." style="flex:1;" onkeydown="if(event.key==='Enter')handleComposerSubmit(false)" />
-          <button class="primary" onclick="handleComposerSubmit(false)">🚀 发送</button>
-        `;
+      // Only re-render Sticky Bottom Composer when task or status changes so typing is NEVER interrupted
+      const composerKey = `${host.hostId}|${activeTask.id}|${activeTask.status}|${activeTask.title}`;
+      if (composerKey !== lastRenderedComposerKey) {
+        lastRenderedComposerKey = composerKey;
+        if (activeTask.status === 'running') {
+          composerBox.innerHTML = `
+            <input id="globalPromptInput" placeholder="⚡ 任务正在跑：随时输入补充要求，或点「打断并重做」..." style="flex:1; min-width:200px;" onkeydown="if(event.key==='Enter')handleComposerSubmit(false)" />
+            <button class="primary" onclick="handleComposerSubmit(false)">⚡ 中途补充要求</button>
+            <button class="amber" onclick="handleComposerSubmit(true)">🔄 打断并重做</button>
+            <button class="danger" onclick="stopTask('${esc(host.hostId)}', '${esc(activeTask.id)}')">⏹ 停止任务</button>
+          `;
+        } else {
+          composerBox.innerHTML = `
+            <input id="globalPromptInput" placeholder="继续在「${esc(activeTask.title)}」里发指令 (按回车发送)..." style="flex:1;" onkeydown="if(event.key==='Enter')handleComposerSubmit(false)" />
+            <button class="primary" onclick="handleComposerSubmit(false)">🚀 发送</button>
+          `;
+        }
       }
 
       renderFsPanel(host);
+    }
+
+    function openTaskActionSheet(hostId, agentId, title, cwd) {
+      const titleEl = document.getElementById('actionSheetTaskTitle');
+      const bodyEl = document.getElementById('actionSheetTaskBody');
+      if (titleEl) titleEl.textContent = `💬 ${title}`;
+      if (bodyEl) {
+        bodyEl.innerHTML = `
+          <button class="action-sheet-btn" onclick="closeModal('taskActionSheet'); openTaskFiles('${esc(agentId)}', '${esc(cwd)}')">
+            📂 查看该项目下的电脑文件 (${esc(cwd.split('/').pop() || '项目目录')})
+          </button>
+          <button class="action-sheet-btn" onclick="closeModal('taskActionSheet'); shareTask('${esc(hostId)}', '${esc(agentId)}')">
+            🔗 生成加密分享链接
+          </button>
+          <button class="action-sheet-btn" onclick="closeModal('taskActionSheet'); openRenameModal('${esc(hostId)}', '${esc(agentId)}', '${esc(title)}')">
+            ✏️ 修改对话标题
+          </button>
+          <button id="sheetDeleteBtn" class="action-sheet-btn danger" onclick="confirmSheetDelete('${esc(hostId)}', '${esc(agentId)}', '${esc(title)}')">
+            🗑️ 删除这条对话
+          </button>
+          <button class="action-sheet-btn" onclick="closeModal('taskActionSheet')">
+            ✕ 取消
+          </button>
+        `;
+      }
+      openModal('taskActionSheet');
+    }
+
+    function confirmSheetDelete(hostId, agentId, title) {
+      const btn = document.getElementById('sheetDeleteBtn');
+      if (btn && !btn.dataset.confirmed) {
+        btn.dataset.confirmed = '1';
+        btn.innerHTML = '⚠️ 确认要删除吗？再点一次立即删除';
+        return;
+      }
+      closeModal('taskActionSheet');
+      closeMobileChat();
+      deleteTask(hostId, agentId, title);
     }
 
     function renderFsPanel(host) {
@@ -1878,7 +2310,7 @@
           }
           return `<div class="file-entry" onclick="previewFile('${esc(item.relPath)}')">
             <span>📄 ${esc(item.name)}</span>
-            <span style="color:var(--muted); font-size:11.5px;">${formatBytes(item.size)}</span>
+            <span style="color:var(--muted); font-size:11.5px;">${formatBytes(item.size)} ›</span>
           </div>`;
         }).join('');
       }
@@ -1887,24 +2319,30 @@
       if (prev && prev.relPath) {
         if (prev.kind === 'image' && prev.dataBase64) {
           previewBox.innerHTML = `
-            <div style="padding:12px 16px; border-bottom:1px solid var(--border); background:var(--surface-subtle); display:flex; justify-content:space-between; align-items:center;">
-              <strong style="font-size:13px;">🖼️ ${esc(prev.relPath)}</strong>
+            <div style="padding:12px 16px; border-bottom:1px solid var(--border); background:var(--surface-subtle); display:flex; justify-content:space-between; align-items:center; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <button class="mobile-only sm" onclick="closeMobileFile()">‹ 返回文件列表</button>
+                <strong style="font-size:13px;">🖼️ ${esc(prev.relPath)}</strong>
+              </div>
               <span class="badge muted">${formatBytes(prev.size)}</span>
             </div>
-            <div style="padding:20px; text-align:center;">
+            <div style="padding:20px; text-align:center; overflow:auto; flex:1;">
               <img src="data:${esc(prev.mime)};base64,${esc(prev.dataBase64)}" style="max-width:100%; border-radius:8px; box-shadow:var(--shadow-md);" />
             </div>
           `;
         } else {
           previewBox.innerHTML = `
-            <div style="padding:12px 16px; border-bottom:1px solid var(--border); background:var(--surface-subtle); display:flex; justify-content:space-between; align-items:center;">
-              <strong style="font-size:13px;">📄 ${esc(prev.relPath)}</strong>
-              <div class="badges">
-                <span class="badge green">🛡️ 已自动脱敏密钥</span>
+            <div style="padding:12px 16px; border-bottom:1px solid var(--border); background:var(--surface-subtle); display:flex; justify-content:space-between; align-items:center; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+                <button class="mobile-only sm" style="flex-shrink:0;" onclick="closeMobileFile()">‹ 返回文件列表</button>
+                <strong style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">📄 ${esc(prev.relPath)}</strong>
+              </div>
+              <div class="badges" style="flex-shrink:0;">
+                <span class="badge green desktop-only">🛡️ 已自动脱敏密钥</span>
                 <span class="badge muted">${formatBytes(prev.size)}</span>
               </div>
             </div>
-            <pre style="margin:0; padding:16px; font-size:12.5px; line-height:1.6; max-height:420px; overflow:auto; white-space:pre-wrap; word-break:break-word; color:var(--text); font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc(prev.content || '')}</pre>
+            <pre style="margin:0; padding:16px; font-size:13px; line-height:1.6; flex:1; overflow:auto; white-space:pre-wrap; word-break:break-word; color:var(--text); font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc(prev.content || '')}</pre>
           `;
         }
       }
@@ -1920,7 +2358,9 @@
 
     function selectTask(taskId) {
       selectedTaskId = taskId;
+      openMobileChat();
       renderSelectedHostConsole();
+      setTimeout(scrollToChatBottom, 30);
     }
 
     async function handleComposerSubmit(interrupt = false) {
@@ -2099,6 +2539,19 @@
     async function previewFile(relPath) {
       const hostId = selectedHostId || state.activeHostId;
       if (!hostId) return;
+      openMobileFile();
+      const previewBox = document.getElementById('filePreviewBox');
+      if (previewBox) {
+        previewBox.innerHTML = `
+          <div style="padding:12px 16px; border-bottom:1px solid var(--border); background:var(--surface-subtle); display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <button class="mobile-only sm" onclick="closeMobileFile()">‹ 返回文件列表</button>
+              <strong style="font-size:13px;">📄 正在打开 ${esc(relPath)}...</strong>
+            </div>
+          </div>
+          <div style="padding:36px 20px; text-align:center; color:var(--muted); font-size:13px;">⏳ 正在从电脑读取文件内容...</div>
+        `;
+      }
       const cwd = document.getElementById('fsRootInput').value.trim();
       try {
         await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {

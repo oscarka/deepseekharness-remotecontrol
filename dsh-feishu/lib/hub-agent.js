@@ -1,7 +1,7 @@
 import { createCipheriv, randomBytes } from 'node:crypto'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from './migration.js'
 import { safeError } from './redact.js'
-import { extractSessionTranscript, loadDiskSessionsFromDshHome, loadOrCreateHostIdentity } from './workspace-ops.js'
+import { extractSessionTranscript, loadDiskSessionsFromDshHome, loadOrCreateHostIdentity, renameDiskSession } from './workspace-ops.js'
 
 /**
  * Outbound agent that synchronizes a local DSH host with the Cloud Run Control Hub
@@ -407,6 +407,40 @@ export class HubAgent {
             || (this.cachedDiskSessions || []).find(s => s.id === targetId)
           if (!agent) return { ok: false, error: '找不到该任务会话' }
           return await this.createEncryptedShare(agent)
+        }
+        case 'rename_session': {
+          const targetId = String(cmd.agentId ?? '')
+          const liveAgent = this.bridge.agents.get(targetId)
+          if (liveAgent) {
+            return await this.bridge.executeHubCommand(cmd)
+          }
+          const diskSession = (this.cachedDiskSessions || []).find(s => s.id === targetId)
+          if (!diskSession) return { ok: false, error: '找不到该任务会话' }
+          const renamed = await renameDiskSession(this.config.dshHome, targetId, cmd.title)
+          if (renamed.ok) {
+            diskSession.title = renamed.title
+          }
+          return {
+            ...renamed,
+            agentId: targetId,
+            message: renamed.ok ? `已重命名会话为「${renamed.title}」` : renamed.error,
+          }
+        }
+        case 'delete_session': {
+          const targetId = String(cmd.agentId ?? '')
+          const res = await this.bridge.executeHubCommand(cmd)
+          this.cachedDiskSessions = (this.cachedDiskSessions || []).filter(s => s.id !== targetId)
+          await this.refreshDshStats(true)
+          return res
+        }
+        case 'list_files':
+        case 'read_file': {
+          const targetId = String(cmd.agentId ?? '')
+          const diskSession = (this.cachedDiskSessions || []).find(s => s.id === targetId)
+          const enrichedCmd = (!cmd.cwd && diskSession?.cwd)
+            ? { ...cmd, cwd: diskSession.cwd }
+            : cmd
+          return await this.bridge.executeHubCommand(enrichedCmd)
         }
         default:
           return await this.bridge.executeHubCommand(cmd)
