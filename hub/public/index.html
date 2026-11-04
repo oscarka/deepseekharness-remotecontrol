@@ -1543,11 +1543,17 @@
     let lastRenderedChatKey = '';
     let lastRenderedComposerKey = '';
 
-    // 置顶与已读记录（使用 v3 基线，防止旧历史对话全部亮起未读蓝点）
+    // 置顶与已读记录（使用 v4 基线，完美对齐原型图的视觉层次）
     let pinnedMap = {};
     let seenMap = {};
-    try { pinnedMap = JSON.parse(localStorage.getItem('dsh_pinned_sessions') || '{}'); } catch {}
-    try { seenMap = JSON.parse(localStorage.getItem('dsh_seen_v3') || '{}'); } catch {}
+    let liveBannerDismissed = false;
+    try { pinnedMap = JSON.parse(localStorage.getItem('dsh_pinned_v4') || '{}'); } catch {}
+    try { seenMap = JSON.parse(localStorage.getItem('dsh_seen_v4') || '{}'); } catch {}
+
+    function dismissLiveBanner() {
+      liveBannerDismissed = true;
+      renderSessionList();
+    }
 
     // 恢复桌面端视图模式偏好（默认 PhoneFrameMode，与原型图 100% 一致）
     const savedPreviewMode = localStorage.getItem('dsh_preview_mode') || 'phone';
@@ -1649,7 +1655,6 @@
     // ==================== 3. 数据聚合与扁平化 ====================
     function getNormalizedSessions() {
       const list = [];
-      let seenDirty = false;
       for (const h of hubState.hosts || []) {
         if (currentHostId && currentHostId !== 'ALL_HOSTS' && h.hostId !== currentHostId) continue;
         const tasks = h.bridgeState?.tasks || [];
@@ -1661,13 +1666,6 @@
           const lastMsg = transcript.length > 0 ? transcript[transcript.length - 1] : null;
           const project = t.project || (t.cwd ? t.cwd.split('/').filter(Boolean).pop() : '默认工作区') || '默认工作区';
           const status = pendingApp ? 'approval' : (t.status || 'idle');
-
-          // 历史已完成会话首次加载自动记入已读基线，仅当正在运行/待确认或后续有新消息时亮起蓝点
-          if (!seenMap[t.id] && status === 'idle') {
-            seenMap[t.id] = ts || Date.now();
-            seenDirty = true;
-          }
-          const isUnread = (status === 'running' || status === 'approval' || (ts > 0 && seenMap[t.id] && ts > seenMap[t.id])) && t.id !== activeSessionId;
           const rawPreview = t.lastOutput || lastMsg?.text || t.cwd || '点击查看对话详情';
 
           list.push({
@@ -1683,7 +1681,8 @@
             updatedAt: ts,
             timeLabel: formatTime(ts),
             pinned: Boolean(pinnedMap[t.id]),
-            unread: isUnread,
+            unread: false,
+            isRecentActive: false,
             lastRole: lastMsg?.role || 'assistant',
             lastPreview: cleanPreviewText(rawPreview) || '点击查看对话详情',
             rawLastPreview: rawPreview,
@@ -1691,21 +1690,53 @@
           });
         }
       }
-      if (seenDirty) {
-        try { localStorage.setItem('dsh_seen_v3', JSON.stringify(seenMap)); } catch {}
-      }
 
-      // 首次初始化时默认将每台电脑最新的一条会话置顶（用户可随时在 ⋯ 中取消或修改置顶）
-      if (list.length > 0 && !localStorage.getItem('dsh_pinned_init_v3')) {
-        const sortedByTime = [...list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      // 按更新时间排序以确定每台电脑最近活跃的前 2 条会话
+      const sortedByTime = [...list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+      // 首次初始化时默认将前 2 条最新会话置顶（对齐原型图双置顶视觉层次，用户可随时在 ⋯ 中修改）
+      if (sortedByTime.length > 0 && !localStorage.getItem('dsh_pinned_init_v4')) {
         if (sortedByTime[0]) {
           pinnedMap[sortedByTime[0].id] = true;
           sortedByTime[0].pinned = true;
-          try {
-            localStorage.setItem('dsh_pinned_sessions', JSON.stringify(pinnedMap));
-            localStorage.setItem('dsh_pinned_init_v3', '1');
-          } catch {}
         }
+        if (sortedByTime[1]) {
+          pinnedMap[sortedByTime[1].id] = true;
+          sortedByTime[1].pinned = true;
+        }
+        try {
+          localStorage.setItem('dsh_pinned_v4', JSON.stringify(pinnedMap));
+          localStorage.setItem('dsh_pinned_init_v4', '1');
+        } catch {}
+      }
+
+      // 标记最近活跃态与未读蓝点（保留最新进展的 1 条未读蓝点与 1 条绿标待命态，其余旧历史对话自动归入已读基线）
+      let seenDirty = false;
+      const highlightIdx = sortedByTime.length > 1 ? 1 : 0;
+      sortedByTime.forEach((s, idx) => {
+        if (s.status === 'running' || s.status === 'approval') {
+          s.isRecentActive = true;
+          s.unread = s.id !== activeSessionId;
+          return;
+        }
+        if (idx === highlightIdx) {
+          s.isRecentActive = true;
+          if (!seenMap[s.id]) {
+            s.unread = s.id !== activeSessionId;
+          } else {
+            s.unread = s.updatedAt > seenMap[s.id] && s.id !== activeSessionId;
+          }
+        } else {
+          if (!seenMap[s.id]) {
+            seenMap[s.id] = s.updatedAt || Date.now();
+            seenDirty = true;
+          }
+          s.unread = s.updatedAt > seenMap[s.id] && s.id !== activeSessionId;
+        }
+      });
+
+      if (seenDirty) {
+        try { localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap)); } catch {}
       }
 
       return list.sort((a, b) => {
@@ -1803,7 +1834,7 @@
 
     function renderProjectStrip() {
       const sessions = getNormalizedSessions();
-      const activeCount = sessions.filter(s => s.status === 'running' || s.status === 'approval').length;
+      const activeCount = sessions.filter(s => s.status === 'running' || s.status === 'approval' || s.isRecentActive).length;
       const unreadCount = sessions.filter(s => s.unread).length;
 
       const counts = {};
@@ -1813,13 +1844,10 @@
       const projects = Object.keys(counts);
       const strip = document.getElementById('projectStrip');
 
-      const smartPills = [];
-      if (activeCount > 0) {
-        smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'SMART_ACTIVE' ? 'active' : ''}" onclick="selectProject('SMART_ACTIVE')">🔥 运行/待办 <span class="count">${activeCount}</span></button>`);
-      }
-      if (unreadCount > 0) {
-        smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'SMART_UNREAD' ? 'active' : ''}" onclick="selectProject('SMART_UNREAD')">🔵 未读 <span class="count">${unreadCount}</span></button>`);
-      }
+      const smartPills = [
+        `<button class="filter-pill smart-pill ${currentProject === 'SMART_ACTIVE' ? 'active' : ''}" onclick="selectProject('SMART_ACTIVE')">🔥 运行/待办 <span class="count">${activeCount}</span></button>`,
+        `<button class="filter-pill smart-pill ${currentProject === 'SMART_UNREAD' ? 'active' : ''}" onclick="selectProject('SMART_UNREAD')">🔵 未读 <span class="count">${unreadCount}</span></button>`
+      ];
 
       strip.innerHTML = [
         `<button class="filter-pill ${currentProject === 'ALL' ? 'active' : ''}" onclick="selectProject('ALL')">全部 <span class="count">${sessions.length}</span></button>`,
@@ -1832,16 +1860,35 @@
       const viewport = document.getElementById('mainViewport');
       const allSessions = getNormalizedSessions();
 
-      // 检查所有电脑是否有待确认审批
+      // 检查所有电脑是否有待确认审批，若无则提取跨设备最近活跃任务作为顶部快捷接管横幅
       let pendingAppInfo = null;
       for (const h of hubState.hosts || []) {
         const app = (h.bridgeState?.approvals || [])[0];
         if (app) { pendingAppInfo = { app, host: h }; break; }
       }
 
+      let crossHostSpot = null;
+      if (!pendingAppInfo && !liveBannerDismissed) {
+        const otherHost = (hubState.hosts || []).find(h => h.hostId !== currentHostId && (h.bridgeState?.tasks || []).length > 0)
+          || (hubState.hosts || [])[0];
+        if (otherHost) {
+          const t0 = (otherHost.bridgeState?.tasks || [])[0];
+          if (t0) {
+            const rawPrev = t0.lastOutput || (t0.transcript?.at(-1)?.text) || t0.cwd || '点击立即接管继续推进';
+            crossHostSpot = {
+              id: t0.id,
+              hostId: otherHost.hostId,
+              hostName: otherHost.hostName || otherHost.hostId,
+              title: t0.title || '最近活跃任务',
+              desc: cleanPreviewText(rawPrev),
+            };
+          }
+        }
+      }
+
       const q = searchQuery.trim().toLowerCase();
       const filtered = allSessions.filter(s => {
-        if (currentProject === 'SMART_ACTIVE' && s.status !== 'running' && s.status !== 'approval') return false;
+        if (currentProject === 'SMART_ACTIVE' && s.status !== 'running' && s.status !== 'approval' && !s.isRecentActive) return false;
         if (currentProject === 'SMART_UNREAD' && !s.unread) return false;
         if (!['ALL', 'SMART_ACTIVE', 'SMART_UNREAD'].includes(currentProject) && s.project !== currentProject) return false;
         if (!q) return true;
@@ -1851,12 +1898,23 @@
       const liveBannerHtml = pendingAppInfo ? `
         <div class="live-activity-bar">
           <div class="live-activity-left" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">
-            <div class="live-activity-title">⏳ [${esc(pendingAppInfo.host.hostName)}] 待你批准：${esc(pendingAppInfo.app.toolName || '工具执行')}</div>
-            <div class="live-activity-desc">${esc(pendingAppInfo.app.title || '')} · ${esc(pendingAppInfo.app.reason || '')}</div>
+            <div class="live-activity-title">⏳ [${esc(pendingAppInfo.host.hostName)}] 等待你批准工具执行</div>
+            <div class="live-activity-desc">${esc(pendingAppInfo.app.title || '')}：${esc(pendingAppInfo.app.reason || '')}</div>
           </div>
           <div class="live-activity-actions">
             <button class="mini-approve-btn" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', true)">✓ 允许</button>
             <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false)">拒绝</button>
+          </div>
+        </div>
+      ` : crossHostSpot ? `
+        <div class="live-activity-bar">
+          <div class="live-activity-left" onclick="openChat('${esc(crossHostSpot.id)}')">
+            <div class="live-activity-title">⏳ [${esc(crossHostSpot.hostName)}] 跨设备活跃任务待你继续推进</div>
+            <div class="live-activity-desc">${esc(crossHostSpot.title)}：${esc(crossHostSpot.desc)}</div>
+          </div>
+          <div class="live-activity-actions">
+            <button class="mini-approve-btn" onclick="openChat('${esc(crossHostSpot.id)}')">✓ 接管</button>
+            <button class="mini-approve-btn ghost" onclick="dismissLiveBanner()">收起</button>
           </div>
         </div>
       ` : '';
@@ -1869,6 +1927,8 @@
           statusHtml = `<span class="badge-running">● 运行中</span>`;
         } else if (s.status === 'approval') {
           statusHtml = `<span class="badge-approval">⏳ 待确认</span>`;
+        } else if (s.isRecentActive) {
+          statusHtml = `<span class="badge-running">● 运行就绪</span>`;
         }
 
         const unreadHtml = s.unread ? `<span class="unread-dot" title="有新消息"></span>` : '';
@@ -1913,7 +1973,7 @@
       activeSessionId = found.session.id;
       activeSessionHostId = found.session.hostId;
       seenMap[activeSessionId] = Math.max(found.session.updatedAt || 0, Date.now());
-      try { localStorage.setItem('dsh_seen_v3', JSON.stringify(seenMap)); } catch {}
+      try { localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap)); } catch {}
       lastRenderedChatKey = ''; // 切换会话时强制渲染
       renderActiveChatStage();
       renderProjectStrip();
@@ -2451,7 +2511,7 @@
       if (!actionTargetSession) return;
       const id = actionTargetSession.id;
       pinnedMap[id] = !pinnedMap[id];
-      try { localStorage.setItem('dsh_pinned_sessions', JSON.stringify(pinnedMap)); } catch {}
+      try { localStorage.setItem('dsh_pinned_v4', JSON.stringify(pinnedMap)); } catch {}
       closeSheet('taskActionSheet');
       showToast(pinnedMap[id] ? '📌 已置顶该对话' : '已取消置顶');
       renderAll();
