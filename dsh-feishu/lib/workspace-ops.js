@@ -155,6 +155,22 @@ function decompressMultiFrameZstd(rawBuf) {
   return out
 }
 
+export async function renameDiskSession(dshHome, sessionId, newTitle) {
+  const id = String(sessionId ?? '').trim()
+  const title = String(newTitle ?? '').trim()
+  if (!dshHome || !id || !title) return { ok: false, error: '会话 ID 或新标题不能为空' }
+  const mapFile = join(resolve(dshHome), 'session-titles.json')
+  let titlesMap = {}
+  try {
+    titlesMap = JSON.parse(await readFile(mapFile, 'utf8'))
+  } catch {
+    titlesMap = {}
+  }
+  titlesMap[id] = title
+  await writeFile(mapFile, JSON.stringify(titlesMap, null, 2), 'utf8')
+  return { ok: true, id, title }
+}
+
 /**
  * Read real historical DSH v4 sessions (`session.v4.jsonl.zstd`) directly from `~/.dsh/sessions`
  * so the Web UI displays all of the user's real projects & conversations even when DSH Desktop
@@ -163,6 +179,12 @@ function decompressMultiFrameZstd(rawBuf) {
 export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, maxMessages = 40 } = {}) {
   if (!dshHome) return []
   const sessionsRoot = join(resolve(dshHome), 'sessions')
+  let customTitles = {}
+  try {
+    customTitles = JSON.parse(await readFile(join(resolve(dshHome), 'session-titles.json'), 'utf8'))
+  } catch {
+    customTitles = {}
+  }
   let projDirs = []
   try {
     projDirs = await readdir(sessionsRoot, { withFileTypes: true })
@@ -296,12 +318,13 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
         results.push({
           id,
           shortId,
-          title: title || transcript[0]?.text?.slice(0, 36) || '历史会话',
+          title: customTitles[id] || title || transcript[0]?.text?.slice(0, 36) || '历史会话',
           status: 'idle',
           statusLabel: '已完成',
           project,
           cwd,
           lastActivity,
+          updatedAt: lastActivity,
           lastOutput,
           queuedSteers: [],
           transcript: transcript.slice(-maxMessages),
@@ -430,10 +453,21 @@ export async function deleteAgentSession(agents, agentId, dshHome = '') {
   let removedDisk = false
   if (dshHome) {
     const safeId = basename(id)
+    const sessionsDir = join(resolve(dshHome), 'sessions')
     const candidates = [
-      join(resolve(dshHome), 'sessions', safeId),
-      join(resolve(dshHome), 'sessions', `${safeId}.json`),
+      join(sessionsDir, safeId),
+      join(sessionsDir, `${safeId}.json`),
     ]
+    try {
+      const subDirs = await readdir(sessionsDir, { withFileTypes: true })
+      for (const d of subDirs) {
+        if (d.isDirectory()) {
+          candidates.push(join(sessionsDir, d.name, safeId))
+        }
+      }
+    } catch {
+      // ignore missing sessionsDir
+    }
     for (const candidate of candidates) {
       try {
         await stat(candidate)

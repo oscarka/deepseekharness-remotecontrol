@@ -127,8 +127,8 @@ export async function loadSettings(config, env = process.env) {
       : fileAllowed
   const tenantKey = String(env.FEISHU_TENANT_KEY || config.tenantKey || fileValues.FEISHU_TENANT_KEY || '').trim()
   const allowGroup = config.allowGroup || String(env.FEISHU_ALLOW_GROUP || fileValues.FEISHU_ALLOW_GROUP || '').toLowerCase() === 'true'
-  const hostName = String(env.FEISHU_HOST_NAME || config.hostName || fileValues.FEISHU_HOST_NAME || hostname() || 'Local-Host').trim()
-  const hostId = String(env.FEISHU_HOST_ID || config.hostId || fileValues.FEISHU_HOST_ID || sanitizeHostId(hostName)).trim()
+  const hostName = String(env.FEISHU_HOST_NAME || fileValues.FEISHU_HOST_NAME || config.hostName || hostname() || 'Local-Host').trim()
+  const hostId = String(env.FEISHU_HOST_ID || fileValues.FEISHU_HOST_ID || config.hostId || sanitizeHostId(hostName)).trim()
   const hubUrl = String(env.FEISHU_HUB_URL || config.hubUrl || fileValues.FEISHU_HUB_URL || '').trim().replace(/\/+$/, '')
   const hubToken = String(env.FEISHU_HUB_TOKEN || config.hubToken || fileValues.FEISHU_HUB_TOKEN || '').trim()
   const localWebPort = clampInt(env.FEISHU_WEB_PORT || config.localWebPort || fileValues.FEISHU_WEB_PORT, 0, 65535, 0)
