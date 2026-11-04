@@ -138,10 +138,10 @@ fi
 # 先执行一次同步验证
 if [ "$USE_ELECTRON_NODE" = "1" ]; then
   ELECTRON_RUN_AS_NODE=1 "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" --once
-  nohup env ELECTRON_RUN_AS_NODE=1 "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" > "$DSH_DIR/hub-daemon.log" 2>&1 &
+  nohup env ELECTRON_RUN_AS_NODE=1 "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" < /dev/null > "$DSH_DIR/hub-daemon.log" 2>&1 &
 else
   "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" --once
-  nohup "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" > "$DSH_DIR/hub-daemon.log" 2>&1 &
+  nohup "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" < /dev/null > "$DSH_DIR/hub-daemon.log" 2>&1 &
 fi
 NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
