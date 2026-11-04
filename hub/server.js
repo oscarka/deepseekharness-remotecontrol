@@ -14,7 +14,7 @@ export function createHubServer({
   token = process.env.HUB_TOKEN || process.env.FEISHU_HUB_TOKEN || '',
   logger = console,
 } = {}) {
-  const expectedToken = String(token ?? '').trim()
+  let expectedToken = String(token ?? '').trim()
 
   function checkAuth(headers = {}, urlObj) {
     if (!expectedToken) return true
@@ -204,6 +204,15 @@ export function createHubServer({
             authRequired: true,
           },
         }
+      }
+
+      if (method === 'POST' && pathname === '/api/auth/change-token') {
+        const nextToken = String(body.newToken ?? '').trim()
+        if (!nextToken || nextToken.length < 6) {
+          return { status: 400, json: { ok: false, error: '新密码长度不能少于 6 位' } }
+        }
+        expectedToken = nextToken
+        return { status: 200, json: { ok: true } }
       }
 
       if (method === 'GET' && pathname === '/api/state') {
