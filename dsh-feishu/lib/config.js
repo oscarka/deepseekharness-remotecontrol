@@ -134,8 +134,8 @@ export async function loadSettings(config, env = process.env) {
   const localWebPort = clampInt(env.FEISHU_WEB_PORT || config.localWebPort || fileValues.FEISHU_WEB_PORT, 0, 65535, 0)
   const dshHome = expandHome(env.FEISHU_DSH_HOME || env.DSH_HOME || fileValues.FEISHU_DSH_HOME || config.dshHome || '~/.dsh')
 
-  if (!appId) throw new Error('Feishu App ID is missing: set it in the profile config, FEISHU_APP_ID, or the secret file')
-  if (!appSecret) throw new Error('Feishu App Secret is missing: set FEISHU_APP_SECRET or add it to the secret file')
+  if (!appId && !hubUrl) throw new Error('Feishu App ID is missing: set it in the profile config, FEISHU_APP_ID, or the secret file')
+  if (appId && !appSecret) throw new Error('Feishu App Secret is missing: set FEISHU_APP_SECRET or add it to the secret file')
   return {
     appId,
     appSecret,
