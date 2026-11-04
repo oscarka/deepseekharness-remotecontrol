@@ -62,21 +62,23 @@ export function apply(ctx, rawConfig) {
           localWebPort: settings.localWebPort,
           dshHome: settings.dshHome,
         }
-        const candidate = new FeishuTransport({
-          appId: settings.appId,
-          appSecret: settings.appSecret,
-          logger,
-          onEvent: data => bridge?.handleEvent(data),
-          onCardAction: data => bridge?.handleCardAction(data),
-          onStatus: (status, detail) => {
-            void audit.write('transport', { status, detail })
-          },
-        })
-        if (stopped) {
-          await candidate.stop()
-          return
+        if (settings.appId && settings.appSecret) {
+          const candidate = new FeishuTransport({
+            appId: settings.appId,
+            appSecret: settings.appSecret,
+            logger,
+            onEvent: data => bridge?.handleEvent(data),
+            onCardAction: data => bridge?.handleCardAction(data),
+            onStatus: (status, detail) => {
+              void audit.write('transport', { status, detail })
+            },
+          })
+          if (stopped) {
+            await candidate.stop()
+            return
+          }
+          transport = candidate
         }
-        transport = candidate
         bridge = new FeishuBridge({
           config: effectiveConfig,
           agents: ctx.agents,
@@ -86,8 +88,10 @@ export function apply(ctx, rawConfig) {
           initialControlChat,
           initialRemoteState,
         })
-        await transport.start()
-        bridge.startNotifier()
+        if (transport) {
+          await transport.start()
+          bridge.startNotifier()
+        }
 
         if (effectiveConfig.hubUrl) {
           hubAgent = new HubAgent({
