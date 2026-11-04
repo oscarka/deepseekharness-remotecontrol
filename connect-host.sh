@@ -130,6 +130,6 @@ NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
 
 echo ""
-echo "🎉 接入成功！后台守护进程已启动 (PID: $NEW_PID，日志: $DSH_DIR/hub-daemon.log)"
+echo "🎉 接入成功！后台守护进程已启动 (PID: ${NEW_PID}，日志: ${DSH_DIR}/hub-daemon.log)"
 echo "👉 现在打开手机/电脑总控台即可看到【$HOST_NAME】并一键切换控制："
 echo "   ${HUB_URL}/?token=${HUB_TOKEN}"
