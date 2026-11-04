@@ -5,7 +5,7 @@ set -euo pipefail
 HUB_URL="${FEISHU_HUB_URL:-https://dsh-remotecontrol-hub-339795034470.us-central1.run.app}"
 HUB_TOKEN="${FEISHU_HUB_TOKEN:-dsh-hub-prod-9f4e2a8c1b7d6e3f5a0c9b8e}"
 
-# 第一参数可传电脑显示名称，例如: ./connect-host.sh "家里的 MacBook"
+# 第一参数可传电脑显示名称，例如: ./connect-host.sh "no2mini"
 DEFAULT_NAME="$(scutil --get ComputerName 2>/dev/null || hostname -s 2>/dev/null || hostname)"
 HOST_NAME="${1:-${FEISHU_HOST_NAME:-$DEFAULT_NAME}}"
 
@@ -49,10 +49,63 @@ echo "   - 总控中心: $HUB_URL"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 如果安装了 dsh CLI，自动挂载 dsh-feishu 插件
-if command -v dsh >/dev/null 2>&1; then
-  echo "🔌 检测到 dsh CLI，正在注册 dsh-feishu 插件..."
-  dsh plugin --profile desktop add "$SCRIPT_DIR/dsh-feishu" >/dev/null 2>&1 || true
+# 自动探测 Node.js 运行时（优先使用系统 node，若无则直接使用 DeepSeek Harness.app 内置的 Node v24 运行时！）
+NODE_BIN=""
+USE_ELECTRON_NODE=0
+
+for candidate in \
+  "$(command -v node 2>/dev/null || true)" \
+  "/opt/homebrew/bin/node" \
+  "/usr/local/bin/node" \
+  "$HOME/.volta/bin/node" \
+  "$HOME/.fnm/current/bin/node"; do
+  if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+    NODE_BIN="$candidate"
+    break
+  fi
+done
+
+if [ -z "$NODE_BIN" ] && [ -d "$HOME/.nvm/versions/node" ]; then
+  NVM_NODE="$(ls -1d "$HOME"/.nvm/versions/node/*/bin/node 2>/dev/null | tail -n 1 || true)"
+  if [ -n "$NVM_NODE" ] && [ -x "$NVM_NODE" ]; then
+    NODE_BIN="$NVM_NODE"
+  fi
+fi
+
+if [ -z "$NODE_BIN" ]; then
+  for dsh_app_bin in \
+    "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
+    "$HOME/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"; do
+    if [ -x "$dsh_app_bin" ]; then
+      NODE_BIN="$dsh_app_bin"
+      USE_ELECTRON_NODE=1
+      echo "🚀 使用 DeepSeek Harness.app 内置 Node.js 运行时: $NODE_BIN"
+      break
+    fi
+  done
+fi
+
+if [ -z "$NODE_BIN" ]; then
+  echo "❌ 未找到 Node.js 或 DeepSeek Harness.app，请确认已安装 DeepSeek Harness 客户端"
+  exit 1
+fi
+
+# 自动探测 dsh CLI（包括 DeepSeek Harness.app 内置的 dsh CLI）并注册插件
+DSH_CLI="$(command -v dsh 2>/dev/null || true)"
+if [ -z "$DSH_CLI" ]; then
+  for dsh_cli_candidate in \
+    "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" \
+    "$HOME/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"; do
+    if [ -x "$dsh_cli_candidate" ]; then
+      DSH_CLI="$dsh_cli_candidate"
+      break
+    fi
+  done
+fi
+
+if [ -n "$DSH_CLI" ]; then
+  echo "🔌 正在向 DeepSeek Harness 注册 dsh-feishu 插件..."
+  "$DSH_CLI" plugin --profile desktop add "$SCRIPT_DIR/dsh-feishu" >/dev/null 2>&1 || true
 fi
 
 # 停止旧的后台同步进程（如果有）
@@ -66,10 +119,13 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 # 先执行一次同步验证
-node "$SCRIPT_DIR/dsh-feishu/daemon.mjs" --once
-
-# 启动后台常驻心跳守护进程
-nohup node "$SCRIPT_DIR/dsh-feishu/daemon.mjs" > "$DSH_DIR/hub-daemon.log" 2>&1 &
+if [ "$USE_ELECTRON_NODE" = "1" ]; then
+  ELECTRON_RUN_AS_NODE=1 "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" --once
+  nohup env ELECTRON_RUN_AS_NODE=1 "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" > "$DSH_DIR/hub-daemon.log" 2>&1 &
+else
+  "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" --once
+  nohup "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" > "$DSH_DIR/hub-daemon.log" 2>&1 &
+fi
 NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
 
