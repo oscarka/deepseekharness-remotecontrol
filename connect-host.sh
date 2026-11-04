@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 默认使用你已部署好的 Google Cloud Run 总控中心地址
+# 默认总控中心地址（可通过环境变量 FEISHU_HUB_URL 覆盖）
 HUB_URL="${FEISHU_HUB_URL:-https://dsh-remotecontrol-hub-339795034470.us-central1.run.app}"
-HUB_TOKEN="${FEISHU_HUB_TOKEN:-dsh-hub-prod-9f4e2a8c1b7d6e3f5a0c9b8e}"
 
-# 第一参数可传电脑显示名称，例如: ./connect-host.sh "no2mini"
+# 第一参数：电脑显示名称，例如 ./connect-host.sh "no2mini" "你的访问密钥"
 DEFAULT_NAME="$(scutil --get ComputerName 2>/dev/null || hostname -s 2>/dev/null || hostname)"
 HOST_NAME="${1:-${FEISHU_HOST_NAME:-$DEFAULT_NAME}}"
 
-# 生成唯一稳定的 Host ID（也可通过第二参数或环境变量指定）
-RAW_HOST_ID="${2:-${FEISHU_HOST_ID:-$(hostname -s 2>/dev/null || hostname)}}"
+# 第二参数（可选）：总控台访问密钥 HUB_TOKEN（绝不硬编码在公开代码库中！）
+ARG_TOKEN="${2:-}"
+
+# 第三参数（可选）：自定义 Host ID
+RAW_HOST_ID="${3:-${FEISHU_HOST_ID:-$(hostname -s 2>/dev/null || hostname)}}"
 HOST_ID="$(echo "$RAW_HOST_ID" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-_')"
 if [ -z "$HOST_ID" ]; then
   HOST_ID="mac-$(date +%s)"
@@ -21,14 +23,30 @@ mkdir -p "$DSH_DIR"
 
 ENV_FILE="$DSH_DIR/feishu.env"
 
-# 如果已有飞书 App 配置则保留
+# 读取本机已有的配置（如果之前已配置过密钥则自动复用）
+EXISTING_TOKEN=""
 EXISTING_APP_ID=""
 EXISTING_APP_SECRET=""
 EXISTING_OPEN_IDS=""
 if [ -f "$ENV_FILE" ]; then
+  EXISTING_TOKEN="$(grep -E '^FEISHU_HUB_TOKEN=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   EXISTING_APP_ID="$(grep -E '^FEISHU_APP_ID=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   EXISTING_APP_SECRET="$(grep -E '^FEISHU_APP_SECRET=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   EXISTING_OPEN_IDS="$(grep -E '^FEISHU_ALLOWED_OPEN_IDS=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+fi
+
+HUB_TOKEN="${ARG_TOKEN:-${FEISHU_HUB_TOKEN:-$EXISTING_TOKEN}}"
+
+if [ -z "$HUB_TOKEN" ]; then
+  echo "🔒 为了保护你的任务隐私，公开仓库不包含总控台密钥。"
+  read -rsp "🔑 请输入总控台访问密码 (HUB_TOKEN): " HUB_TOKEN
+  echo ""
+fi
+
+if [ -z "$HUB_TOKEN" ]; then
+  echo "❌ 未提供访问密码 (HUB_TOKEN)，无法连接总控中心。"
+  echo "   用法: ./connect-host.sh \"电脑名称\" \"你的访问密码\""
+  exit 1
 fi
 
 install -m 600 /dev/null "$ENV_FILE"
@@ -43,13 +61,13 @@ FEISHU_ALLOWED_OPEN_IDS=${FEISHU_ALLOWED_OPEN_IDS:-$EXISTING_OPEN_IDS}
 EOF
 chmod 600 "$ENV_FILE"
 
-echo "✅ 已写入配置文件: $ENV_FILE"
+echo "✅ 已安全写入本机私密配置 (0600): $ENV_FILE"
 echo "   - 电脑名称: $HOST_NAME ($HOST_ID)"
 echo "   - 总控中心: $HUB_URL"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 自动探测 Node.js 运行时（优先使用系统 node，若无则直接使用 DeepSeek Harness.app 内置的 Node v24 运行时！）
+# 自动探测 Node.js 运行时（优先使用系统 node，若无则使用 DeepSeek Harness.app 内置 Node v24 运行时）
 NODE_BIN=""
 USE_ELECTRON_NODE=0
 
@@ -90,7 +108,6 @@ if [ -z "$NODE_BIN" ]; then
   exit 1
 fi
 
-# 自动探测 dsh CLI（包括 DeepSeek Harness.app 内置的 dsh CLI）并注册插件
 DSH_CLI="$(command -v dsh 2>/dev/null || true)"
 if [ -z "$DSH_CLI" ]; then
   for dsh_cli_candidate in \
@@ -131,5 +148,4 @@ echo "$NEW_PID" > "$PID_FILE"
 
 echo ""
 echo "🎉 接入成功！后台守护进程已启动 (PID: ${NEW_PID}，日志: ${DSH_DIR}/hub-daemon.log)"
-echo "👉 现在打开手机/电脑总控台即可看到【$HOST_NAME】并一键切换控制："
-echo "   ${HUB_URL}/?token=${HUB_TOKEN}"
+echo "👉 打开总控台输入你的访问密码即可查看并遥控【${HOST_NAME}】：${HUB_URL}"

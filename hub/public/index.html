@@ -8,41 +8,28 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="DSH 远控" />
   <link rel="manifest" href="/manifest.json" />
-  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-  <title>DeepSeek Harness 自托管全功能总控台 · 飞书多机总控台</title>
+  <title>DeepSeek Harness 自托管全功能总控台</title>
   <style>
     :root {
-      --bg: #f6f8fb;
+      --bg: #f8fafc;
       --surface: #ffffff;
-      --surface-subtle: #f8fafc;
-      --surface-muted: #f1f5f9;
+      --subtle: #f1f5f9;
+      --subtle-hover: #e2e8f0;
       --border: #e2e8f0;
-      --border-strong: #cbd5e1;
+      --hairline: #f1f5f9;
       --text: #0f172a;
-      --text-secondary: #334155;
-      --muted: #64748b;
+      --text-secondary: #475569;
+      --muted: #94a3b8;
       --primary: #2563eb;
       --primary-hover: #1d4ed8;
       --primary-soft: #eff6ff;
-      --primary-border: #bfdbfe;
-      --green: #059669;
+      --green: #10b981;
       --green-soft: #ecfdf5;
-      --green-border: #a7f3d0;
-      --amber: #d97706;
+      --amber: #f59e0b;
       --amber-soft: #fffbeb;
-      --amber-border: #fde68a;
-      --red: #dc2626;
+      --red: #ef4444;
       --red-soft: #fef2f2;
-      --red-border: #fecaca;
-      --purple: #4f46e5;
-      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-      --shadow-md: 0 4px 16px -2px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
-      --shadow-lg: 0 16px 40px -8px rgba(15, 23, 42, 0.12);
-      --radius-lg: 16px;
-      --radius-md: 12px;
-      --radius-sm: 8px;
-      --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
 
@@ -51,1634 +38,1470 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    body {
+    html, body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
-      background-color: var(--bg);
-      background-image: radial-gradient(1100px 380px at 50% -140px, rgba(37, 99, 235, 0.075), transparent);
+      padding: 0;
+      width: 100%;
+      max-width: 100vw;
+      height: 100%;
+      overflow: hidden;
+      background: var(--surface);
       color: var(--text);
-      line-height: 1.55;
-      padding-bottom: calc(82px + var(--safe-bottom));
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Top Glassmorphic Header */
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 40;
-      background: rgba(255, 255, 255, 0.88);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border-bottom: 1px solid var(--border);
-      padding: calc(10px + var(--safe-top)) 20px 10px;
-    }
-    .header-inner {
-      max-width: 1400px;
-      margin: 0 auto;
+    /* ==================== 响应式双栏容器：手机端一级列表+二级滑入聊天，电脑端左右分栏 ==================== */
+    .app-shell {
+      width: 100%;
+      max-width: 100vw;
+      height: 100dvh;
+      background: var(--surface);
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .brand-icon {
-      width: 38px;
-      height: 38px;
-      border-radius: 11px;
-      background: linear-gradient(135deg, #2563eb, #4f46e5);
-      color: #ffffff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      font-size: 13.5px;
-      letter-spacing: 0.5px;
-      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.24);
-      flex-shrink: 0;
-    }
-    .brand-title {
-      font-weight: 750;
-      font-size: 15.5px;
-      color: var(--text);
-      letter-spacing: -0.01em;
-    }
-    .brand-sub {
-      font-size: 11.5px;
-      color: var(--muted);
+      position: relative;
+      overflow: hidden;
     }
 
-    /* Desktop Segmented Navigation */
-    .desktop-tabs {
-      display: inline-flex;
-      background: var(--surface-muted);
-      padding: 4px;
-      border-radius: 11px;
-      border: 1px solid var(--border);
+    .primary-pane {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      min-width: 0;
+      overflow: hidden;
+      position: relative;
+      z-index: 10;
+    }
+
+    @media (min-width: 769px) {
+      .primary-pane {
+        width: 390px;
+        flex-shrink: 0;
+        border-right: 1px solid var(--border);
+      }
+    }
+
+    .chat-fullscreen {
+      position: absolute;
+      inset: 0;
+      background: var(--bg);
+      z-index: 45;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+      min-width: 0;
+    }
+    .chat-fullscreen.open {
+      transform: translateX(0);
+    }
+
+    @media (min-width: 769px) {
+      .chat-fullscreen {
+        position: relative;
+        inset: auto;
+        flex: 1;
+        transform: none !important;
+        transition: none;
+        z-index: 10;
+      }
+      .back-btn {
+        display: none !important;
+      }
+    }
+
+    .desktop-stage-tabs {
+      display: none;
+      background: var(--subtle);
+      padding: 3px;
+      border-radius: 10px;
       gap: 2px;
     }
-    .seg-btn {
-      background: transparent;
+    @media (min-width: 769px) {
+      .desktop-stage-tabs {
+        display: inline-flex;
+      }
+      .mobile-only-file-btn {
+        display: none !important;
+      }
+    }
+    .stage-seg-btn {
       border: none;
+      background: transparent;
       color: var(--text-secondary);
-      padding: 6px 13px;
-      border-radius: 8px;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
+      padding: 5px 11px;
+      border-radius: 8px;
       cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.15s ease;
     }
-    .seg-btn:hover {
-      color: var(--text);
-    }
-    .seg-btn.active {
+    .stage-seg-btn.active {
       background: var(--surface);
       color: var(--primary);
-      box-shadow: var(--shadow-sm);
-    }
-    @media (max-width: 980px) {
-      .desktop-tabs { display: none; }
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
     }
 
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .mascot-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--surface-subtle);
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 5px 12px;
-      font-size: 12px;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-
-    /* Quick Host Switcher Bar */
-    .host-bar-wrap {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
-    }
-    .host-pills-bar {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 9px 20px;
+    /* ==================== 1. 唯一极简顶栏 ==================== */
+    .top-bar {
+      height: 54px;
+      padding: 0 14px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      overflow-x: auto;
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--hairline);
+      flex-shrink: 0;
     }
-    .host-pills-left {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      overflow-x: auto;
-      padding-bottom: 2px;
-    }
-    .host-pill {
+
+    .host-switcher-btn {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 13px;
+      background: var(--subtle);
+      border: 1px solid transparent;
+      padding: 7px 13px;
       border-radius: 999px;
-      font-size: 13px;
-      font-weight: 600;
-      background: var(--surface-subtle);
-      border: 1px solid var(--border);
-      color: var(--text-secondary);
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--text);
       cursor: pointer;
-      transition: all 0.15s ease;
-      white-space: nowrap;
+      transition: all 0.15s;
+      max-width: 235px;
     }
-    .host-pill:hover {
-      border-color: var(--primary-border);
-      background: var(--primary-soft);
-    }
-    .host-pill.active {
-      background: var(--primary-soft);
-      border-color: var(--primary);
-      color: var(--primary);
-      box-shadow: 0 1px 4px rgba(37, 99, 235, 0.1);
-    }
+    .host-switcher-btn:hover { background: var(--subtle-hover); }
+    .host-switcher-btn:active { transform: scale(0.97); }
+
     .status-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      display: inline-block;
-    }
-    .status-dot.online {
-      background: #10b981;
+      background: var(--green);
       box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+      flex-shrink: 0;
     }
     .status-dot.offline {
       background: #94a3b8;
+      box-shadow: none;
     }
-
-    /* Main Container */
-    .container {
-      max-width: 1400px;
-      margin: 0 auto;
-      padding: 18px 20px 36px;
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
+    .host-switcher-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-
-    /* Buttons & Inputs */
-    button {
-      cursor: pointer;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 7px 12px;
-      font-size: 12.5px;
-      font-weight: 600;
+    .host-switcher-caret {
+      font-size: 11px;
       color: var(--text-secondary);
-      background: var(--surface);
-      transition: all 0.15s ease;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 5px;
-      box-shadow: var(--shadow-sm);
-    }
-    button:hover {
-      background: var(--surface-subtle);
-      border-color: var(--border-strong);
-      color: var(--text);
-    }
-    button.primary {
-      background: var(--primary);
-      border-color: var(--primary);
-      color: #ffffff;
-      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.22);
-    }
-    button.primary:hover {
-      background: var(--primary-hover);
-      border-color: var(--primary-hover);
-      color: #ffffff;
-    }
-    button.green {
-      background: var(--green-soft);
-      border-color: var(--green-border);
-      color: var(--green);
-    }
-    button.green:hover {
-      background: #d1fae5;
-    }
-    button.amber {
-      background: var(--amber-soft);
-      border-color: var(--amber-border);
-      color: var(--amber);
-    }
-    button.danger {
-      background: var(--red-soft);
-      border-color: var(--red-border);
-      color: var(--red);
-    }
-    button.danger:hover {
-      background: #fee2e2;
-    }
-    button.sm {
-      padding: 4px 9px;
-      font-size: 11.5px;
-      border-radius: 7px;
     }
 
-    input, select, textarea {
-      background: var(--surface);
-      border: 1px solid var(--border-strong);
-      color: var(--text);
-      padding: 9px 12px;
-      border-radius: var(--radius-sm);
-      font-size: 13.5px;
-      width: 100%;
-      transition: border-color 0.15s, box-shadow 0.15s;
-      font-family: inherit;
-    }
-    input:focus, select:focus, textarea:focus {
-      outline: none;
-      border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-    }
-
-    /* Badges */
-    .badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-    .badge {
-      font-size: 11.5px;
-      padding: 2px 9px;
-      border-radius: 999px;
-      font-weight: 600;
+    .new-chat-btn {
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      white-space: nowrap;
-    }
-    .badge.green { background: var(--green-soft); color: var(--green); border: 1px solid var(--green-border); }
-    .badge.blue { background: var(--primary-soft); color: var(--primary); border: 1px solid var(--primary-border); }
-    .badge.amber { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber-border); }
-    .badge.red { background: var(--red-soft); color: var(--red); border: 1px solid var(--red-border); }
-    .badge.muted { background: var(--surface-muted); color: var(--muted); border: 1px solid var(--border); }
-
-    /* Cards & Panels */
-    .panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 20px;
-      box-shadow: var(--shadow-md);
-    }
-    .panel-title {
-      font-size: 16px;
-      font-weight: 750;
-      margin: 0 0 6px 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
-      color: var(--text);
-    }
-    .panel-sub {
-      font-size: 12.5px;
-      color: var(--muted);
-      margin: 0 0 16px 0;
-    }
-
-    /* Master-Detail Chat Split Layout */
-    .chat-workspace {
-      display: grid;
-      grid-template-columns: 350px 1fr;
-      gap: 18px;
-      align-items: start;
-    }
-    @media (max-width: 960px) {
-      .chat-workspace {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .session-sidebar {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 16px;
-      box-shadow: var(--shadow-md);
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .session-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      max-height: 620px;
-      overflow-y: auto;
-    }
-    .session-card {
-      padding: 12px 14px;
-      border-radius: var(--radius-md);
-      border: 1px solid var(--border);
-      background: var(--surface-subtle);
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    .session-card:hover {
-      border-color: var(--primary-border);
-      background: #ffffff;
-    }
-    .session-card.active {
-      background: var(--primary-soft);
-      border-color: var(--primary);
-      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
-    }
-    .session-card-title {
-      font-weight: 700;
-      font-size: 13.5px;
-      color: var(--text);
-      margin-bottom: 4px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 6px;
-    }
-    .session-card-meta {
-      font-size: 11.5px;
-      color: var(--muted);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    /* Right Conversation Stage */
-    .chat-stage {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-md);
-      display: flex;
-      flex-direction: column;
-      min-height: 620px;
-      overflow: hidden;
-    }
-    .chat-stage-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface-subtle);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-    .chat-stream {
-      flex: 1;
-      padding: 20px;
-      overflow-y: auto;
-      max-height: 540px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      background: #fcfdff;
-    }
-    .msg-row {
-      display: flex;
-      flex-direction: column;
-      max-width: 88%;
-    }
-    .msg-row.user {
-      align-self: flex-end;
-    }
-    .msg-row.assistant {
-      align-self: flex-start;
-      width: 88%;
-    }
-    .msg-bubble {
-      padding: 12px 16px;
-      border-radius: 14px;
-      font-size: 13.5px;
-      line-height: 1.6;
-      box-shadow: var(--shadow-sm);
-    }
-    .msg-row.user .msg-bubble {
       background: var(--primary);
-      color: #ffffff;
-      border-bottom-right-radius: 4px;
-    }
-    .msg-row.assistant .msg-bubble {
-      background: var(--surface);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-bottom-left-radius: 4px;
-    }
-    .msg-meta {
-      font-size: 11px;
-      color: var(--muted);
-      margin-bottom: 4px;
-      padding: 0 4px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .msg-row.user .msg-meta {
-      justify-content: flex-end;
-    }
-    .thinking-details {
-      margin-top: 8px;
-      background: var(--surface-subtle);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 6px 10px;
-      font-size: 12px;
-      color: var(--text-secondary);
-    }
-    .thinking-details summary {
-      cursor: pointer;
-      font-weight: 600;
-      color: var(--muted);
-      user-select: none;
-    }
-    .terminal-output {
-      margin-top: 10px;
-      padding: 12px 14px;
-      border-radius: 10px;
-      background: #f1f5f9;
-      border: 1px solid #cbd5e1;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 12px;
-      color: #1e293b;
-      white-space: pre-wrap;
-      word-break: break-word;
-      max-height: 200px;
-      overflow-y: auto;
-    }
-    .chat-composer {
-      padding: 14px 20px;
-      border-top: 1px solid var(--border);
-      background: var(--surface);
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    /* File Explorer Split View */
-    .files-grid {
-      display: grid;
-      grid-template-columns: 340px 1fr;
-      gap: 16px;
-      margin-top: 12px;
-    }
-    @media (max-width: 900px) {
-      .files-grid { grid-template-columns: 1fr; }
-    }
-    .file-tree-box {
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      background: var(--surface-subtle);
-      overflow: hidden;
-    }
-    .file-entry {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 9px 13px;
-      font-size: 13px;
-      cursor: pointer;
-      border-bottom: 1px solid var(--border);
-      transition: background 0.12s;
-      color: var(--text-secondary);
-    }
-    .file-entry:last-child { border-bottom: none; }
-    .file-entry:hover {
-      background: var(--primary-soft);
-      color: var(--primary);
-    }
-    .file-preview-pane {
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      background: var(--surface);
-      min-height: 360px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* Fleet Cards */
-    .hosts-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-      gap: 16px;
-    }
-    .host-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 18px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      transition: all 0.15s ease;
-      box-shadow: var(--shadow-sm);
-    }
-    .host-card:hover {
-      box-shadow: var(--shadow-md);
-      border-color: var(--border-strong);
-    }
-    .host-card.active-feishu {
-      border-color: var(--green);
-      box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
-    }
-    .host-card.selected {
-      border-color: var(--primary);
-    }
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      background: var(--surface-subtle);
-      border: 1px solid var(--border);
-      padding: 10px 12px;
-      border-radius: var(--radius-md);
-    }
-    .metric-val { font-weight: 750; font-size: 15px; color: var(--text); }
-    .metric-lbl { color: var(--muted); font-size: 11px; margin-top: 2px; }
-
-    .grid-2 {
-      display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
-      gap: 18px;
-    }
-    @media (max-width: 960px) {
-      .grid-2 { grid-template-columns: 1fr; }
-    }
-
-    .form-row { display: flex; gap: 10px; margin-bottom: 12px; align-items: center; }
-    .checkbox-row {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      font-size: 13px;
-      color: var(--text-secondary);
-      margin-bottom: 8px;
-      cursor: pointer;
-    }
-    .checkbox-row input { width: 16px; height: 16px; accent-color: var(--primary); }
-
-    /* iOS Home Screen Banner (Bright & Welcoming) */
-    .ios-banner {
-      background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%);
-      border: 1px solid #bfdbfe;
-      border-radius: var(--radius-lg);
-      padding: 14px 18px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 12px;
-      font-size: 13px;
-      color: var(--text-secondary);
-    }
-
-    /* Native Mobile Bottom Navigation Bar */
-    .bottom-nav {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: rgba(255, 255, 255, 0.94);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border-top: 1px solid var(--border);
-      display: flex;
-      justify-content: space-around;
-      padding: 6px 8px calc(6px + var(--safe-bottom));
-      z-index: 45;
-      box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.04);
-    }
-    .nav-tab {
-      flex: 1;
-      background: transparent;
-      border: none;
-      box-shadow: none;
-      color: var(--muted);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-      padding: 4px 0;
-      font-size: 11px;
-      font-weight: 600;
-      position: relative;
-    }
-    .nav-tab:hover { background: transparent; color: var(--text); }
-    .nav-tab.active { color: var(--primary); }
-    .nav-tab .icon { font-size: 18px; line-height: 1.1; }
-    .nav-badge {
-      position: absolute;
-      top: 0;
-      right: 24%;
-      background: var(--red);
       color: #fff;
-      font-size: 10px;
-      padding: 0 5px;
+      border: none;
+      padding: 7px 14px;
       border-radius: 999px;
-      min-width: 16px;
-      text-align: center;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+      transition: all 0.15s;
+    }
+    .new-chat-btn:hover { background: var(--primary-hover); }
+    .new-chat-btn:active { transform: scale(0.96); }
+
+    /* ==================== 2. 搜索栏 + 智能筛选胶囊条（严格锁死宽度） ==================== */
+    .search-and-filter {
+      background: var(--surface);
+      border-bottom: 1px solid var(--hairline);
+      flex-shrink: 0;
+      width: 100%;
+      max-width: 100%;
+      overflow: hidden;
     }
 
-    /* Smooth Light-Mode Modals */
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(15, 23, 42, 0.35);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
+    .search-box-wrap {
+      padding: 8px 14px 4px;
+    }
+    .search-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--subtle);
+      border-radius: 11px;
+      padding: 7px 11px;
+      border: 1px solid transparent;
+      transition: all 0.15s;
+    }
+    .search-box:focus-within {
+      background: var(--surface);
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    .search-box input {
+      border: none;
+      background: transparent;
+      outline: none;
+      width: 100%;
+      font-size: 15px;
+      color: var(--text);
+    }
+    .search-clear {
+      border: none;
+      background: #cbd5e1;
+      color: #fff;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      font-size: 10px;
       display: none;
       align-items: center;
       justify-content: center;
-      padding: 18px;
-      z-index: 90;
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
     }
-    .modal-backdrop.open {
-      display: flex;
-    }
-    .modal-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
+
+    .filter-strip {
       width: 100%;
-      max-width: 480px;
-      padding: 22px 24px;
-      box-shadow: var(--shadow-lg);
-      animation: modalIn 0.16s ease-out;
+      max-width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 14px 10px;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
     }
-    @keyframes modalIn {
-      from { opacity: 0; transform: translateY(8px) scale(0.98); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
-    }
+    .filter-strip::-webkit-scrollbar { display: none; }
 
-    /* Toast */
-    .toast {
-      position: fixed;
-      bottom: calc(78px + var(--safe-bottom));
-      right: 18px;
-      left: 18px;
-      max-width: 420px;
-      margin: 0 auto;
-      background: #0f172a;
-      color: #ffffff;
-      padding: 11px 18px;
+    .filter-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 11px;
       border-radius: 999px;
-      box-shadow: var(--shadow-lg);
-      display: none;
-      z-index: 100;
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 500;
-      text-align: center;
+      color: var(--text-secondary);
+      background: var(--subtle);
+      border: none;
+      white-space: nowrap;
+      flex-shrink: 0;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .filter-pill.active {
+      background: var(--text);
+      color: #fff;
+      font-weight: 600;
+    }
+    .filter-pill.smart-pill {
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+    .filter-pill.smart-pill.active {
+      background: var(--primary);
+      color: #fff;
+    }
+    .filter-pill .count {
+      font-size: 11px;
+      opacity: 0.75;
     }
 
-    /* Floating Scroll-to-Bottom Pill inside Chat Stage */
-    .chat-stage {
-      position: relative;
+    /* ==================== 3. 跨设备实时动态置顶条 ==================== */
+    .live-activity-bar {
+      margin: 10px 14px 4px;
+      padding: 11px 13px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+      border: 1px solid #fde68a;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      box-shadow: 0 2px 8px rgba(245, 158, 11, 0.08);
     }
-    .scroll-bottom-btn {
-      position: absolute;
-      bottom: 76px;
-      right: 18px;
-      z-index: 30;
-      border-radius: 999px;
-      padding: 8px 14px;
-      background: rgba(15, 23, 42, 0.85);
-      color: #ffffff;
+    .live-activity-left {
+      min-width: 0;
+      flex: 1;
+      cursor: pointer;
+    }
+    .live-activity-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #92400e;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .live-activity-desc {
+      font-size: 12px;
+      color: #b45309;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+    .live-activity-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .mini-approve-btn {
       border: none;
+      background: #d97706;
+      color: #fff;
       font-size: 12px;
       font-weight: 600;
-      box-shadow: var(--shadow-md);
-      display: none;
+      padding: 6px 11px;
+      border-radius: 8px;
+      cursor: pointer;
     }
-    .scroll-bottom-btn:hover {
-      background: #0f172a;
-      color: #ffffff;
+    .mini-approve-btn.ghost {
+      background: rgba(255, 255, 255, 0.75);
+      color: #92400e;
+      border: 1px solid #fcd34d;
     }
 
-    .mobile-only {
-      display: none !important;
+    /* ==================== 4. 微信 / Claude 风格极简通栏列表 ==================== */
+    .main-viewport {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      background: var(--surface);
+      -webkit-overflow-scrolling: touch;
     }
-    .action-sheet-list {
+
+    .session-list {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .session-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 14px 12px 14px 16px;
+      border-bottom: 1px solid var(--hairline);
+      background: var(--surface);
+      cursor: pointer;
+      transition: background 0.12s;
+      width: 100%;
+      min-width: 0;
+    }
+    .session-row.pinned-row {
+      background: #fafcff;
+    }
+    .session-row:hover { background: #f8fafc; }
+    @media (min-width: 769px) {
+      .session-row.selected-desktop {
+        background: var(--primary-soft);
+      }
+    }
+
+    .session-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .session-top-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .session-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .unread-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--primary);
+      flex-shrink: 0;
+    }
+
+    .pin-tag {
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .session-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .session-right-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .session-time {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .badge-running {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #059669;
+      background: var(--green-soft);
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .badge-approval {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #d97706;
+      background: var(--amber-soft);
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+
+    .session-sub-line {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #64748b;
+      min-width: 0;
+    }
+
+    .host-mini-tag {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--primary);
+      background: var(--primary-soft);
+      padding: 1px 6px;
+      border-radius: 5px;
+      flex-shrink: 0;
+    }
+
+    .project-mini-tag {
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: var(--subtle);
+      padding: 1px 6px;
+      border-radius: 5px;
+      flex-shrink: 0;
+    }
+
+    .session-preview-text {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .row-more-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 17px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .row-more-btn:hover {
+      background: var(--subtle);
+      color: var(--text);
+    }
+
+    /* ==================== 5. 底部 3-Tab 导航栏 ==================== */
+    .bottom-tabs {
+      height: calc(56px + var(--safe-bottom));
+      padding-bottom: var(--safe-bottom);
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      flex-shrink: 0;
+    }
+
+    .tab-btn {
+      border: none;
+      background: transparent;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+    .tab-btn .icon { font-size: 18px; line-height: 1; }
+    .tab-btn.active { color: var(--primary); }
+
+    /* ==================== 6. 聊天视图 ==================== */
+    .chat-navbar {
+      height: 54px;
+      padding: 0 12px;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      border: none;
+      background: transparent;
+      color: var(--primary);
+      font-size: 15px;
+      font-weight: 600;
+      padding: 8px 6px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .chat-nav-center {
+      flex: 1;
+      min-width: 0;
+    }
+    .chat-nav-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chat-nav-sub {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .chat-nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .icon-pill-btn {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-secondary);
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .icon-pill-btn:hover { background: var(--subtle); }
+
+    .chat-switch-alert {
+      background: #fffbeb;
+      border-bottom: 1px solid #fde68a;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: #92400e;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      -webkit-overflow-scrolling: touch;
+      position: relative;
+    }
+
+    .bubble {
+      max-width: 88%;
+      padding: 12px 15px;
+      border-radius: 18px;
+      font-size: 14.5px;
+      line-height: 1.58;
+      word-break: break-word;
+    }
+    .bubble.user {
+      align-self: flex-end;
+      background: var(--primary);
+      color: #fff;
+      border-bottom-right-radius: 5px;
+      white-space: pre-wrap;
+    }
+    .bubble.assistant {
+      align-self: flex-start;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 5px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+    }
+
+    .thought-box {
+      margin-bottom: 9px;
+      background: var(--subtle);
+      border-radius: 10px;
+      padding: 7px 11px;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+    }
+    .thought-box summary {
+      cursor: pointer;
+      font-weight: 600;
+      user-select: none;
+    }
+
+    .tool-chips {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 9px;
+    }
+    .tool-chip-details {
+      background: var(--subtle);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11.5px;
+    }
+    .tool-chip-details summary {
+      padding: 5px 10px;
+      cursor: pointer;
+      color: #334155;
+      font-weight: 600;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .tool-chip-output {
+      padding: 8px 10px;
+      background: #0f172a;
+      color: #cbd5e1;
+      border-top: 1px solid var(--border);
+      white-space: pre-wrap;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .quick-followups {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 2px;
+      padding-left: 2px;
+    }
+    .followup-pill {
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.14s;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .followup-pill:hover { background: #dbeafe; }
+    .followup-pill:active { transform: scale(0.96); }
+
+    .code-card {
+      margin-top: 10px;
+      background: #0f172a;
+      color: #f8fafc;
+      border-radius: 10px;
+      overflow: hidden;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+    }
+    .code-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 12px;
+      background: #1e293b;
+      color: #94a3b8;
+      font-size: 11.5px;
+    }
+    .code-copy-btn {
+      border: none;
+      background: rgba(255, 255, 255, 0.12);
+      color: #f8fafc;
+      border-radius: 5px;
+      padding: 3px 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .code-card pre {
+      margin: 0;
+      padding: 10px 12px;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+
+    .inline-approval-card {
+      align-self: stretch;
+      background: #fffbeb;
+      border: 1.5px solid #fcd34d;
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: 0 4px 14px rgba(245, 158, 11, 0.1);
+    }
+    .inline-approval-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #92400e;
+      margin-bottom: 6px;
+    }
+    .inline-approval-cmd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 8px 10px;
+      border-radius: 8px;
+      color: #78350f;
+      margin-bottom: 10px;
+    }
+    .inline-approval-btns {
+      display: flex;
+      gap: 8px;
+    }
+    .inline-approval-btns button {
+      flex: 1;
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+    }
+
+    .running-control-bar {
+      padding: 7px 14px;
+      background: var(--green-soft);
+      border-top: 1px solid #a7f3d0;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12.5px;
+      color: #065f46;
+      font-weight: 600;
+    }
+    .running-control-bar.show { display: flex; }
+    .stop-task-btn {
+      border: 1px solid #fca5a5;
+      background: var(--red-soft);
+      color: var(--red);
+      border-radius: 999px;
+      padding: 4px 11px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .chat-composer {
+      padding: 10px 12px calc(10px + var(--safe-bottom));
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .chat-input {
+      flex: 1;
+      border: 1px solid var(--border);
+      background: var(--subtle);
+      border-radius: 22px;
+      padding: 10px 15px;
+      font-size: 16px !important;
+      color: var(--text);
+      outline: none;
+    }
+    .chat-input:focus {
+      background: var(--surface);
+      border-color: var(--primary);
+    }
+    .send-btn {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    /* ==================== 7. 文件浏览器 ==================== */
+    .breadcrumbs-bar {
+      padding: 10px 16px;
+      background: var(--subtle);
+      border-bottom: 1px solid var(--border);
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+    .crumb-link {
+      color: var(--primary);
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .file-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--hairline);
+      cursor: pointer;
+      font-size: 14.5px;
+      background: var(--surface);
+    }
+    .file-row:hover { background: var(--bg); }
+    .file-row-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    /* ==================== 8. 底部半屏抽屉 ==================== */
+    .sheet-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.44);
+      z-index: 95;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .sheet-backdrop.open { display: flex; }
+
+    .sheet-panel {
+      width: 100%;
+      max-width: 520px;
+      background: var(--surface);
+      border-radius: 22px 22px 0 0;
+      padding: 12px 16px calc(20px + var(--safe-bottom));
+      box-shadow: 0 -10px 35px rgba(15, 23, 42, 0.18);
+      max-height: 86dvh;
+      overflow-y: auto;
+    }
+    .sheet-handle {
+      width: 36px;
+      height: 4px;
+      border-radius: 999px;
+      background: #cbd5e1;
+      margin: 0 auto 14px;
+    }
+    .sheet-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .host-option {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+    .host-option.selected {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+    }
+
+    .form-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin: 12px 0 6px;
+    }
+    .chip-selector {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+    .choice-chip {
+      border: 1px solid var(--border);
+      background: var(--subtle);
+      color: var(--text-secondary);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .choice-chip.selected {
+      background: var(--primary-soft);
+      color: var(--primary);
+      border-color: var(--primary);
+      font-weight: 600;
+    }
+    .new-task-textarea {
+      width: 100%;
+      min-height: 86px;
+      border: 1px solid var(--border);
+      background: var(--subtle);
+      border-radius: 14px;
+      padding: 11px 13px;
+      font-size: 16px !important;
+      font-family: inherit;
+      resize: none;
+      outline: none;
+      margin-top: 6px;
+    }
+    .new-task-textarea:focus {
+      background: var(--surface);
+      border-color: var(--primary);
+    }
+    .primary-block-btn {
+      width: 100%;
+      margin-top: 14px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 12px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .action-item {
+      width: 100%;
+      text-align: left;
+      padding: 13px 14px;
+      border: none;
+      background: var(--subtle);
+      border-radius: 12px;
+      margin-bottom: 8px;
+      font-size: 14.5px;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .action-item.danger {
+      color: var(--red);
+      background: var(--red-soft);
+    }
+
+    /* 轻量 Toast 提示 */
+    .toast-pill {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: rgba(15, 23, 42, 0.92);
+      color: #fff;
+      padding: 9px 18px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      z-index: 10000;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.2s ease;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+    }
+    .toast-pill.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* 设置页样式 */
+    .settings-wrap {
+      padding: 16px;
+      background: var(--bg);
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .settings-group-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin: 0 0 8px 4px;
+    }
+    .host-visual-grid {
       display: flex;
       flex-direction: column;
       gap: 10px;
-      margin-top: 12px;
     }
-    .action-sheet-btn {
+    .host-visual-card {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+    }
+    .host-visual-card.active-feishu {
+      border-color: #93c5fd;
+      background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+    }
+    .host-visual-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      gap: 8px;
+    }
+    .host-metrics-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      background: var(--subtle);
+      padding: 8px 10px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+      font-size: 11.5px;
+    }
+    .metric-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .metric-label { color: var(--muted); }
+    .metric-val { font-weight: 700; color: var(--text); }
+
+    .settings-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .settings-item {
+      padding: 13px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .settings-item:last-child { border-bottom: none; }
+    .settings-item-title { font-size: 14.5px; font-weight: 600; }
+    .settings-item-desc { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+    .pill-action-btn {
+      border: 1px solid var(--border);
+      background: var(--subtle);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .pill-action-btn.primary {
+      background: var(--primary-soft);
+      color: var(--primary);
+      border-color: #bfdbfe;
+    }
+
+    /* ==================== 9. 密码锁屏保护罩 (Auth Lock Overlay) ==================== */
+    .auth-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(248, 250, 252, 0.96);
+      backdrop-filter: blur(20px);
+      z-index: 200;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .auth-overlay.show { display: flex; }
+    .auth-card {
       width: 100%;
-      min-height: 48px;
-      justify-content: flex-start;
-      padding: 12px 16px;
-      font-size: 15px;
+      max-width: 380px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 28px 24px;
+      box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+      text-align: center;
+    }
+    .auth-input {
+      width: 100%;
+      padding: 12px 15px;
       border-radius: 12px;
-      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      background: var(--subtle);
+      font-size: 16px !important;
+      margin-top: 14px;
+      outline: none;
+      text-align: center;
     }
-
-    /* ==========================================================
-       NATIVE MOBILE APP EXPERIENCE (iPhone / Android <= 900px)
-       ========================================================== */
-    @media (max-width: 900px) {
-      .desktop-only {
-        display: none !important;
-      }
-      .mobile-only {
-        display: inline-flex !important;
-      }
-
-      /* 1. Compact 1-Row Top Header on Mobile */
-      header {
-        padding: calc(8px + var(--safe-top)) 14px 8px;
-      }
-      .header-inner {
-        flex-wrap: nowrap;
-        gap: 8px;
-      }
-      .brand-sub,
-      .header-actions,
-      .host-bar-wrap {
-        display: none !important;
-      }
-      .brand-icon {
-        width: 32px;
-        height: 32px;
-        font-size: 11.5px;
-        border-radius: 9px;
-      }
-      .brand-title {
-        font-size: 14.5px;
-      }
-
-      .container {
-        padding: 10px 12px 28px;
-        gap: 12px;
-      }
-
-      /* 2. Generous 44px+ Touch Targets & 16px Inputs (Zero iOS Zoom Jump) */
-      button {
-        min-height: 42px;
-        padding: 9px 14px;
-        font-size: 14px;
-        border-radius: 10px;
-      }
-      button.sm {
-        min-height: 38px;
-        padding: 7px 12px;
-        font-size: 13px;
-        border-radius: 9px;
-      }
-      input, select, textarea {
-        font-size: 16px !important;
-        padding: 11px 13px;
-        border-radius: 10px;
-      }
-
-      /* 3. Two-Level WeChat-Style Session List -> Full-Screen Chat Push */
-      .session-sidebar {
-        padding: 4px 0;
-        background: transparent;
-        border: none;
-        box-shadow: none;
-        gap: 10px;
-      }
-      #projectFilterBar {
-        flex-wrap: nowrap !important;
-        overflow-x: auto;
-        padding-bottom: 6px;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-      }
-      #projectFilterBar::-webkit-scrollbar {
-        display: none;
-      }
-      #projectFilterBar button {
-        flex-shrink: 0;
-      }
-      /* Eliminate nested scroll trap on session list */
-      .session-list {
-        max-height: none !important;
-        overflow: visible !important;
-        gap: 10px;
-      }
-      .session-card {
-        background: #ffffff;
-        padding: 14px 16px;
-        border-radius: 14px;
-        box-shadow: var(--shadow-sm);
-      }
-      .session-card-title {
-        font-size: 15px;
-        margin-bottom: 6px;
-      }
-      .session-card-meta {
-        font-size: 12.5px;
-      }
-
-      /* Hide chat stage when on level-1 list view */
-      body:not(.mobile-chat-open) .chat-stage {
-        display: none !important;
-      }
-      /* Level-2 Full-screen immersive chat view */
-      body.mobile-chat-open {
-        overflow: hidden;
-      }
-      body.mobile-chat-open header,
-      body.mobile-chat-open .bottom-nav {
-        display: none !important;
-      }
-      body.mobile-chat-open .chat-stage {
-        position: fixed;
-        inset: 0;
-        z-index: 75;
-        display: flex !important;
-        flex-direction: column;
-        height: 100dvh;
-        min-height: 0;
-        border-radius: 0;
-        border: none;
-        background: #f8fafc;
-        animation: mobileSlideIn 0.18s cubic-bezier(0.22, 1, 0.36, 1);
-      }
-      body.mobile-chat-open .chat-stage-header {
-        padding: calc(10px + var(--safe-top)) 12px 10px;
-        background: rgba(255, 255, 255, 0.96);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        flex-wrap: nowrap;
-        gap: 8px;
-      }
-      body.mobile-chat-open .chat-stream {
-        flex: 1;
-        max-height: none !important;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
-        padding: 14px 12px 24px;
-      }
-      body.mobile-chat-open .chat-composer {
-        padding: 10px 12px calc(12px + var(--safe-bottom));
-        background: #ffffff;
-        gap: 8px;
-      }
-      .msg-row,
-      .msg-row.assistant {
-        max-width: 92%;
-        width: auto;
-      }
-      .msg-bubble {
-        font-size: 14.5px;
-        padding: 12px 15px;
-      }
-
-      /* 4. File Explorer Full-Screen Reader Drawer on Mobile */
-      .file-entry {
-        min-height: 48px;
-        padding: 12px 14px;
-        font-size: 14.5px;
-      }
-      body:not(.mobile-file-open) .file-preview-pane {
-        display: none !important;
-      }
-      body.mobile-file-open {
-        overflow: hidden;
-      }
-      body.mobile-file-open .file-preview-pane {
-        position: fixed;
-        inset: 0;
-        z-index: 80;
-        display: flex !important;
-        flex-direction: column;
-        height: 100dvh;
-        border-radius: 0;
-        border: none;
-        background: #ffffff;
-        padding-top: var(--safe-top);
-        animation: mobileSlideIn 0.18s cubic-bezier(0.22, 1, 0.36, 1);
-      }
-
-      /* 5. Bottom-Sheet Modals on Mobile */
-      .modal-backdrop {
-        align-items: flex-end;
-        padding: 0;
-      }
-      .modal-card {
-        max-width: 100%;
-        border-radius: 22px 22px 0 0;
-        padding: 20px 18px calc(22px + var(--safe-bottom));
-        animation: sheetUp 0.18s cubic-bezier(0.22, 1, 0.36, 1);
-      }
-    }
-
-    @keyframes mobileSlideIn {
-      from { opacity: 0.6; transform: translateX(24px); }
-      to { opacity: 1; transform: translateX(0); }
-    }
-    @keyframes sheetUp {
-      from { opacity: 0.6; transform: translateY(40px); }
-      to { opacity: 1; transform: translateY(0); }
+    .auth-input:focus {
+      background: var(--surface);
+      border-color: var(--primary);
     }
   </style>
 </head>
 <body>
-  <header>
-    <div class="header-inner">
-      <div class="brand">
-        <div class="brand-icon">DSH</div>
-        <div class="desktop-only">
-          <div class="brand-title">我的 DeepSeek 远程控制台</div>
-          <div class="brand-sub">本机真实项目与对话同步 · 飞书多电脑切换 · 手机锁屏提醒</div>
-        </div>
-        <!-- Mobile Compact Host Pill in Top Bar -->
-        <button id="mobileTopHostBtn" class="mobile-only host-pill active" style="min-height:36px; padding:5px 11px; font-size:13px;" onclick="openModal('hostSwitchSheet')">
-          <span class="status-dot online"></span>
-          <span id="mobileTopHostLabel">cc 的 Mac</span>
-          <span style="font-size:11px; color:var(--muted);">▾</span>
+
+  <!-- 顶部轻提示 Toast -->
+  <div class="toast-pill" id="toastPill">操作成功</div>
+
+  <!-- 密码保护锁屏遮罩（未登录或密码错误时自动拦截，保护你的任务隐私） -->
+  <div class="auth-overlay" id="authOverlay">
+    <div class="auth-card">
+      <div style="font-size:38px;margin-bottom:8px;">🔒</div>
+      <div style="font-size:18px;font-weight:800;color:var(--text);">DSH 远控隐私锁</div>
+      <div style="font-size:13px;color:var(--text-secondary);margin-top:6px;line-height:1.5;">
+        请输入你的总控台访问密码（HUB_TOKEN）或 6 位配对码解锁对话列表
+      </div>
+      <input type="password" class="auth-input" id="authTokenInput" placeholder="输入访问密码或 6 位配对码..." onkeydown="if(event.key==='Enter')submitAuthLogin()" />
+      <button class="primary-block-btn" onclick="submitAuthLogin()">🔓 解锁进入总控台</button>
+    </div>
+  </div>
+
+  <div class="app-shell">
+    <!-- 左栏主面板 -->
+    <div class="primary-pane">
+      <!-- 1. 唯一极简顶栏 -->
+      <header class="top-bar" id="mobileTopHostBtn">
+        <button class="host-switcher-btn" onclick="openHostSheet()">
+          <span class="status-dot" id="topHostDot"></span>
+          <span class="host-switcher-name" id="topHostName">连接中...</span>
+          <span class="host-switcher-caret">▾</span>
         </button>
-      </div>
-
-      <!-- Mobile Top-Right Compact Actions (Only 2 buttons: New + Settings) -->
-      <div class="mobile-only" style="gap:6px; align-items:center;">
-        <button class="primary sm" style="min-height:36px; padding:6px 11px;" onclick="openNewSessionModal()">➕ 新建</button>
-        <button class="sm" style="min-height:36px; padding:6px 10px;" onclick="openModal('mobileSettingsSheet')">⚙️ 设置</button>
-      </div>
-
-      <!-- Desktop Segmented View Switcher -->
-      <div class="desktop-tabs">
-        <button id="dtab_chat" class="seg-btn active" onclick="switchTab('chat')">💬 我的项目与对话</button>
-        <button id="dtab_files" class="seg-btn" onclick="switchTab('files')">📂 浏览电脑文件</button>
-        <button id="dtab_fleet" class="seg-btn" onclick="switchTab('fleet')">💻 电脑切换与搬家</button>
-        <button id="dtab_push" class="seg-btn" onclick="switchTab('push')">📱 手机提醒与分享</button>
-        <button id="dtab_all" class="seg-btn" onclick="switchTab('all')">🧭 全部展开</button>
-      </div>
-
-      <div class="header-actions">
-        <div id="deepyMascot" class="mascot-pill">💻 正在连接电脑...</div>
-        <span id="connBadge" class="badge green">已连接</span>
-        <button id="headerPushBtn" class="primary" onclick="subscribeWebPush()">🔔 开启手机提醒</button>
-        <button onclick="openPairingModal()">📱 手机扫码登录</button>
-        <button onclick="openAuthModal()">🔑 密码</button>
-      </div>
-    </div>
-  </header>
-
-  <!-- Quick Computer Switcher Bar -->
-  <div class="host-bar-wrap">
-    <div class="host-pills-bar">
-      <div id="hostPillsBar" class="host-pills-left"></div>
-      <div style="display:flex; gap:8px; flex-shrink:0;">
-        <button class="primary sm" onclick="openNewSessionModal()">➕ 发起新对话任务</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="container">
-    <!-- TAB SECTION 1: SPLIT-PANE SESSIONS & CONVERSATION WORKSPACE -->
-    <div id="sec_chat" class="tab-section">
-      <div id="approvalsBox" style="margin-bottom: 14px;"></div>
-
-      <div class="chat-workspace">
-        <!-- Left Sidebar: Sessions on Current Host -->
-        <div class="session-sidebar">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div>
-              <div id="sidebarHostTitle" style="font-weight:750; font-size:14.5px;">💻 我的电脑对话</div>
-              <div id="sidebarHostSub" style="font-size:11.5px; color:var(--muted);">来自本机 ~/.dsh 的真实项目与会话记录</div>
-            </div>
-            <button class="primary sm" onclick="openNewSessionModal()">➕ 新建</button>
-          </div>
-          <div id="hostQuickActions" class="badges"></div>
-          <div id="projectFilterBar" class="badges" style="padding-bottom:4px; border-bottom:1px solid var(--border);"></div>
-          <div id="sessionListBox" class="session-list"></div>
-        </div>
-
-        <!-- Right Stage: Full Conversation & Sticky Composer -->
-        <div class="chat-stage">
-          <div id="chatStageHeader" class="chat-stage-header">
-            <div>
-              <div style="font-weight:750; font-size:15px;">请在左侧点击任意对话查看详情</div>
-              <div style="font-size:12px; color:var(--muted);">可以查看完整对话记录、查看该项目的电脑文件，或直接接着往下聊</div>
-            </div>
-          </div>
-
-          <div id="chatStreamBox" class="chat-stream" onscroll="handleChatScroll()">
-            <div style="margin:auto; text-align:center; color:var(--muted); padding:40px 20px;">
-              <div style="font-size:32px; margin-bottom:8px;">💬</div>
-              <div style="font-weight:600; color:var(--text-secondary);">在左侧点击你的任意项目对话，或点击右上角「➕ 发起新对话任务」</div>
-              <div style="font-size:12.5px; margin-top:4px;">这里展示的都是你电脑里真实的 DeepSeek 历史对话与项目目录。</div>
-            </div>
-          </div>
-
-          <button id="scrollBottomBtn" class="scroll-bottom-btn" onclick="scrollToChatBottom()">⬇️ 最新消息</button>
-
-          <div id="chatComposerBox" class="chat-composer">
-            <input id="globalPromptInput" placeholder="输入内容继续当前对话 (按回车发送)..." style="flex:1;" onkeydown="if(event.key==='Enter')handleComposerSubmit(false)" />
-            <button class="primary" onclick="handleComposerSubmit(false)">🚀 发送</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB SECTION 2: WORKSPACE FILE EXPLORER -->
-    <div id="sec_files" class="tab-section" style="display:none;">
-      <div class="panel">
-        <div class="panel-title">
-          <div>
-            <span>📂 浏览电脑上的项目文件</span>
-            <span class="badge blue" style="margin-left:8px;">🛡️ 自动隐藏密码与密钥</span>
-          </div>
-          <div class="badges" id="fsQuickWorkspaces"></div>
-        </div>
-        <p class="panel-sub">
-          点击上方你的项目文件夹按钮（如 <code>googletrend</code>、<code>geminiweb</code> 等），即可直接查看电脑里该项目下的文件与代码内容。
-        </p>
-
-        <div class="form-row">
-          <input id="fsRootInput" placeholder="项目文件夹路径 (例如 /Users/cc/googletrend)" />
-          <button class="primary" style="white-space:nowrap;" onclick="browseFiles('')">📂 打开文件夹</button>
-          <button style="white-space:nowrap;" onclick="browseFiles('')">🏠 回到项目顶层</button>
-        </div>
-
-        <div id="fsCurrentPath" style="font-size:12.5px; color:var(--muted); margin-bottom:8px;"></div>
-
-        <div class="files-grid">
-          <div id="fsEntriesBox" class="file-tree-box">
-            <div style="color:var(--muted); font-size:13px; padding:16px;">
-              点击上方你的项目名称按钮，或点对话右上角的「📂 看项目文件」即可查看电脑里的文件。
-            </div>
-          </div>
-          <div id="filePreviewBox" class="file-preview-pane">
-            <div style="margin:auto; text-align:center; color:var(--muted); padding:40px 20px; font-size:13px;">
-              📄 点击左侧任意文件即可在右边查看内容
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB SECTION 3: FLEET & CROSS-COMPUTER MIGRATION -->
-    <div id="sec_fleet" class="tab-section" style="display:none;">
-      <div class="panel" style="margin-bottom:18px;">
-        <div class="panel-title">
-          <span>💻 我的电脑列表（有多台电脑时，点「🎯 让飞书连这台」即可切换飞书控制哪台电脑）</span>
-          <span id="fleetStats" class="badge blue"></span>
-        </div>
-        <p class="panel-sub">
-          这里显示你接入的真实电脑。如果你有家里和公司两台电脑，随时在这里一键切换飞书机器人连哪一台，不会两台电脑同时抢飞书消息。
-        </p>
-        <div id="hostsGrid" class="hosts-grid"></div>
-      </div>
-
-      <div class="grid-2">
-        <div class="panel">
-          <div class="panel-title">🚀 把所有对话搬家到另一台电脑</div>
-          <p class="panel-sub">
-            换电脑继续干活时，把旧电脑里的所有历史对话一键打包传给新电脑，还可以在搬完后顺手清空旧电脑上的记录。
-          </p>
-          <div class="form-row">
-            <div style="flex: 1;">
-              <label style="font-size: 12px; font-weight:600; color: var(--text-secondary); display:block; margin-bottom:4px;">从哪台电脑搬出</label>
-              <select id="migSource"></select>
-            </div>
-            <div style="padding-top: 20px; color: var(--primary); font-weight:700;">➔</div>
-            <div style="flex: 1;">
-              <label style="font-size: 12px; font-weight:600; color: var(--text-secondary); display:block; margin-bottom:4px;">搬到哪台电脑</label>
-              <select id="migTarget"></select>
-            </div>
-          </div>
-          <label class="checkbox-row">
-            <input type="checkbox" id="migSwitchFeishu" checked />
-            <span>搬完后，自动让飞书机器人连到新电脑</span>
-          </label>
-          <label class="checkbox-row">
-            <input type="checkbox" id="migWipeSource" />
-            <span>搬完后，顺便清空旧电脑上的对话记录（保留连接配置，下次还能搬回来）</span>
-          </label>
-          <label class="checkbox-row">
-            <input type="checkbox" id="migIncludeCreds" />
-            <span>连同飞书和模型配置文件一起搬过去</span>
-          </label>
-          <div style="margin-top: 14px;">
-            <button class="primary" style="width: 100%; padding: 10px;" onclick="startMigration()">
-              ⚡ 开始一键搬家
-            </button>
-          </div>
-          <div id="migrationsList" style="margin-top: 12px; font-size: 12.5px;"></div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-title">📦 历史备份包</div>
-          <p class="panel-sub">你点过「📦 备份」生成的压缩包都在这里，随时可以恢复到电脑或下载保存。</p>
-          <div id="snapshotsList" style="max-height:280px; overflow-y:auto;"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB SECTION 4: IPHONE WEB PUSH & E2EE SECURITY -->
-    <div id="sec_push" class="tab-section" style="display:none;">
-      <div class="ios-banner" style="margin-bottom:18px;">
-        <div>
-          <strong style="color:var(--primary); font-size:14px;">📲 把这个网页放到苹果手机桌面，任务跑完就能像微信一样弹锁屏通知！</strong>
-          <div style="margin-top:4px; color:var(--text-secondary);">
-            1. 用 iPhone 自带的 Safari 浏览器打开本网页 ➔ 点底部中间的「分享」按钮 ➔ 选「添加到主屏幕」<br/>
-            2. 从手机桌面点开图标 ➔ 点右边「🔔 开启手机提醒」，以后任务完成或需要你批准时手机就会直接响铃弹窗！
-          </div>
-        </div>
-        <div class="badges">
-          <button class="primary" onclick="subscribeWebPush()">🔔 开启手机提醒</button>
-          <button onclick="sendTestPush()">📨 发一条测试提醒试试</button>
-        </div>
-      </div>
-
-      <div class="grid-2">
-        <div class="panel">
-          <div class="panel-title">
-            <span>🔔 已开启锁屏提醒的手机 / 电脑</span>
-          </div>
-          <p class="panel-sub">
-            直连苹果官方推送通道，不经过任何第三方服务器。
-          </p>
-          <div style="font-size:12.5px; font-weight:700; color:var(--text-secondary); margin-bottom:8px;">📱 已绑定的接收设备</div>
-          <div id="pushSubsList" style="margin-bottom:16px;"></div>
-          <div style="font-size:12.5px; font-weight:700; color:var(--text-secondary); margin-bottom:8px;">📜 最近发出的提醒记录</div>
-          <div id="pushHistoryList" style="max-height:180px; overflow-y:auto;"></div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-title">
-            <span>🔒 我生成的对话分享链接</span>
-          </div>
-          <p class="panel-sub">
-            在任意对话右上角点「🔗 分享对话」生成的加密只读网页链接，方便发给别人看回放。
-          </p>
-          <div id="sharesList" style="max-height:300px; overflow-y:auto;"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Native Mobile Bottom Tab Bar -->
-  <nav class="bottom-nav">
-    <button id="tab_chat" class="nav-tab active" onclick="switchTab('chat')">
-      <span class="icon">💬</span>
-      <span>项目与对话</span>
-      <span id="badge_chat" class="nav-badge" style="display:none;">0</span>
-    </button>
-    <button id="tab_files" class="nav-tab" onclick="switchTab('files')">
-      <span class="icon">📂</span>
-      <span>电脑文件</span>
-    </button>
-    <button id="tab_fleet" class="nav-tab" onclick="switchTab('fleet')">
-      <span class="icon">💻</span>
-      <span>切换电脑</span>
-    </button>
-    <button id="tab_push" class="nav-tab" onclick="switchTab('push')">
-      <span class="icon">📱</span>
-      <span>手机提醒</span>
-    </button>
-    <button id="tab_all" class="nav-tab" onclick="switchTab('all')">
-      <span class="icon">🧭</span>
-      <span>全部</span>
-    </button>
-  </nav>
-
-  <!-- MODAL 1: Auth & 6-Digit Pairing Login -->
-  <div id="authModal" class="modal-backdrop">
-    <div class="modal-card">
-      <div class="panel-title">
-        <span>🔑 总控台访问授权</span>
-        <button class="sm" onclick="closeModal('authModal')">✕</button>
-      </div>
-      <p class="panel-sub">输入 6 位一次性配对码或总控访问密钥 (HUB_TOKEN) 即可解锁全部控制权限。</p>
-      <div style="margin-bottom:14px;">
-        <label style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:6px;">访问密钥 (HUB_TOKEN) 或 6 位配对码</label>
-        <input id="authTokenInput" placeholder="输入 HUB_TOKEN 或 6 位配对码..." onkeydown="if(event.key==='Enter')submitAuthModal()" />
-      </div>
-      <div style="display:flex; justify-content:flex-end; gap:8px;">
-        <button onclick="closeModal('authModal')">取消</button>
-        <button class="primary" onclick="submitAuthModal()">✅ 验证并登录</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 2: Mobile 6-Digit Pairing Code Generator -->
-  <div id="pairingModal" class="modal-backdrop">
-    <div class="modal-card">
-      <div class="panel-title">
-        <span>📱 手机免密配对与主屏幕安装</span>
-        <button class="sm" onclick="closeModal('pairingModal')">✕</button>
-      </div>
-      <p class="panel-sub">在手机 Safari 打开下方免密配对链接，即可自动完成授权，无需手动输入长密钥。</p>
-      <div id="pairingModalContent"></div>
-    </div>
-  </div>
-
-  <!-- MODAL 3: Create New Remote Session -->
-  <div id="newSessionModal" class="modal-backdrop">
-    <div class="modal-card">
-      <div class="panel-title">
-        <span>➕ 新建远程任务会话</span>
-        <button class="sm" onclick="closeModal('newSessionModal')">✕</button>
-      </div>
-      <p class="panel-sub">在当前选中的电脑上启动一个新的 DeepSeek Harness 会话并立即执行。</p>
-      <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:16px;">
-        <div>
-          <label style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">会话标题（可选）</label>
-          <input id="newSessionTitle" placeholder="例如：重构登录模块并补充测试" />
-        </div>
-        <div>
-          <label style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">工作区目录路径（留空默认使用最近工作区）</label>
-          <input id="newSessionCwd" placeholder="/Users/..." />
-        </div>
-        <div>
-          <label style="font-size:12px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">初始任务指令</label>
-          <textarea id="newSessionPrompt" rows="3" placeholder="输入要让 DeepSeek Harness 执行的任务说明..."></textarea>
-        </div>
-      </div>
-      <div style="display:flex; justify-content:flex-end; gap:8px;">
-        <button onclick="closeModal('newSessionModal')">取消</button>
-        <button class="primary" onclick="createNewSession()">🚀 立即创建并执行</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 4: Rename Session -->
-  <div id="renameModal" class="modal-backdrop">
-    <div class="modal-card">
-      <div class="panel-title">
-        <span>✏️ 修改对话标题</span>
-        <button class="sm" onclick="closeModal('renameModal')">✕</button>
-      </div>
-      <div style="margin: 12px 0 16px;">
-        <input id="renameInput" placeholder="输入新的对话标题..." onkeydown="if(event.key==='Enter')submitRenameModal()" />
-      </div>
-      <div style="display:flex; justify-content:flex-end; gap:8px;">
-        <button onclick="closeModal('renameModal')">取消</button>
-        <button class="primary" onclick="submitRenameModal()">保存标题</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL 5: Mobile Conversation Action Sheet (⋯) -->
-  <div id="taskActionSheet" class="modal-backdrop" onclick="if(event.target===this)closeModal('taskActionSheet')">
-    <div class="modal-card">
-      <div class="panel-title">
-        <span id="actionSheetTaskTitle">对话操作</span>
-        <button class="sm" onclick="closeModal('taskActionSheet')">✕</button>
-      </div>
-      <div id="actionSheetTaskBody" class="action-sheet-list"></div>
-    </div>
-  </div>
-
-  <!-- MODAL 6: Mobile Host Switcher Bottom Sheet -->
-  <div id="hostSwitchSheet" class="modal-backdrop" onclick="if(event.target===this)closeModal('hostSwitchSheet')">
-    <div class="modal-card">
-      <div class="panel-title">
-        <span>💻 选择或切换电脑</span>
-        <button class="sm" onclick="closeModal('hostSwitchSheet')">✕</button>
-      </div>
-      <p class="panel-sub">点击即可切换当前查看的电脑，或一键切换飞书连接哪台电脑。</p>
-      <div id="hostSwitchSheetBody" class="action-sheet-list"></div>
-    </div>
-  </div>
-
-  <!-- MODAL 7: Mobile Compact Settings Bottom Sheet -->
-  <div id="mobileSettingsSheet" class="modal-backdrop" onclick="if(event.target===this)closeModal('mobileSettingsSheet')">
-    <div class="modal-card">
-      <div class="panel-title">
-        <span>⚙️ 快捷设置与手机提醒</span>
-        <button class="sm" onclick="closeModal('mobileSettingsSheet')">✕</button>
-      </div>
-      <div class="action-sheet-list">
-        <button class="action-sheet-btn primary" style="color:#fff;" onclick="closeModal('mobileSettingsSheet'); subscribeWebPush()">
-          🔔 开启本手机锁屏提醒通知
+        <button class="new-chat-btn" onclick="openNewTaskSheet()">
+          <span>＋</span>
+          <span>新建对话</span>
         </button>
-        <button class="action-sheet-btn" onclick="closeModal('mobileSettingsSheet'); sendTestPush()">
-          📨 发送一条测试锁屏通知
+      </header>
+
+      <!-- 2. 搜索框 + 智能状态/项目筛选条 -->
+      <div class="search-and-filter" id="searchAndFilterBox">
+        <div class="search-box-wrap">
+          <div class="search-box">
+            <span style="font-size:13px;color:#94a3b8;">🔍</span>
+            <input id="searchInput" placeholder="搜索对话标题、项目或内容..." oninput="onSearchInput()" />
+            <button class="search-clear" id="searchClearBtn" onclick="clearSearch()">✕</button>
+          </div>
+        </div>
+        <nav class="filter-strip" id="projectStrip"></nav>
+      </div>
+
+      <!-- 3. 主列表内容区 -->
+      <main class="main-viewport" id="mainViewport"></main>
+
+      <!-- 4. 底部 3-Tab 导航栏 -->
+      <footer class="bottom-tabs">
+        <button class="tab-btn active" id="tab-chats" onclick="switchTab('chats')">
+          <span class="icon">💬</span>
+          <span>对话</span>
         </button>
-        <button class="action-sheet-btn" onclick="closeModal('mobileSettingsSheet'); openPairingModal()">
-          📱 生成手机免密配对二维码 / 链接
+        <button class="tab-btn" id="tab-files" onclick="switchTab('files')">
+          <span class="icon">📂</span>
+          <span>项目文件</span>
         </button>
-        <button class="action-sheet-btn" onclick="closeModal('mobileSettingsSheet'); openAuthModal()">
-          🔑 修改或输入访问密码 (HUB_TOKEN)
+        <button class="tab-btn" id="tab-settings" onclick="switchTab('settings')">
+          <span class="icon">⚙️</span>
+          <span>设备与设置</span>
         </button>
-        <button class="action-sheet-btn" onclick="closeModal('mobileSettingsSheet')">
-          ✕ 关闭
-        </button>
+      </footer>
+    </div>
+
+    <!-- 右栏 / 二级全屏对话页 -->
+    <section class="chat-fullscreen chat-stage" id="chatFullscreen">
+      <div class="chat-navbar">
+        <button class="back-btn" onclick="closeMobileChat()">‹ 返回</button>
+        <div class="chat-nav-center">
+          <div class="chat-nav-title" id="chatTitle">选择一个会话</div>
+          <div class="chat-nav-sub" id="chatSub">点击左侧任意对话开始遥控</div>
+        </div>
+        <div class="chat-nav-actions">
+          <div class="desktop-stage-tabs">
+            <button class="stage-seg-btn active" id="stageBtnChat" onclick="switchDesktopStage('chat')">💬 对话流</button>
+            <button class="stage-seg-btn" id="stageBtnCode" onclick="switchDesktopStage('code')">📂 项目代码</button>
+          </div>
+          <button class="icon-pill-btn mobile-only-file-btn" onclick="openInChatFileDrawer()">📂 文件速览</button>
+          <button class="icon-pill-btn" onclick="openCurrentSessionActions()">⋯</button>
+        </div>
+      </div>
+
+      <div class="chat-switch-alert" id="chatSwitchAlert" style="display:none;"></div>
+
+      <div class="chat-messages" id="chatMessages">
+        <div style="margin:auto;text-align:center;color:#94a3b8;font-size:14px;">👈 点击任意会话查看详细对话与思考过程</div>
+      </div>
+      <div class="main-viewport file-preview-pane" id="desktopStageCodePane" style="display:none;background:var(--surface);"></div>
+
+      <div class="running-control-bar" id="runningControlBar">
+        <span>🟢 AI 正在电脑上执行任务...</span>
+        <button class="stop-task-btn" onclick="stopActiveSession()">⏹ 立即停止</button>
+      </div>
+
+      <div class="chat-composer" id="chatComposerBar">
+        <input class="chat-input" id="globalPromptInput" placeholder="发指令继续对话..." onkeydown="if(event.key==='Enter')sendPromptToActiveSession()" />
+        <button class="send-btn" id="chatSendBtn" onclick="sendPromptToActiveSession()">发送</button>
+      </div>
+    </section>
+
+    <!-- 抽屉 1：切换电脑 -->
+    <div class="sheet-backdrop" id="hostSheet" onclick="if(event.target===this)closeSheet('hostSheet')">
+      <div class="sheet-panel">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">
+          <span>切换遥控的电脑</span>
+          <span style="font-size:12px;color:#64748b;font-weight:500;" id="hostSheetCountLabel"></span>
+        </div>
+        <div id="hostOptionList"></div>
       </div>
     </div>
+
+    <!-- 抽屉 2：新建对话半屏面板 -->
+    <div class="sheet-backdrop" id="newTaskSheet" onclick="if(event.target===this)closeSheet('newTaskSheet')">
+      <div class="sheet-panel">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">
+          <span>✨ 新建远程对话任务</span>
+          <button style="border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;" onclick="closeSheet('newTaskSheet')">✕</button>
+        </div>
+
+        <div class="form-label">1. 选择执行电脑</div>
+        <div class="chip-selector" id="newTaskHostChips"></div>
+
+        <div class="form-label">2. 选择项目文件夹（免手敲路径）</div>
+        <div class="chip-selector" id="newTaskProjectChips"></div>
+
+        <div class="form-label">3. 任务指令（或点选下方快捷指令）</div>
+        <div class="chip-selector" style="margin-bottom:6px;">
+          <button class="choice-chip" onclick="fillQuickPrompt('帮我检查当前项目的定时任务和运行日志是否正常')">🔍 检查运行状态</button>
+          <button class="choice-chip" onclick="fillQuickPrompt('运行单元测试并修复所有报错')">🧪 跑测试修 Bug</button>
+          <button class="choice-chip" onclick="fillQuickPrompt('查看 git status 并总结最近的代码改动')">📦 总结代码改动</button>
+        </div>
+        <textarea class="new-task-textarea" id="newTaskInput" placeholder="输入你想让电脑执行的任务..."></textarea>
+
+        <button class="primary-block-btn" onclick="submitNewTask()">🚀 立即在电脑上启动任务</button>
+      </div>
+    </div>
+
+    <!-- 抽屉 3：会话更多操作菜单 -->
+    <div class="sheet-backdrop" id="taskActionSheet" onclick="if(event.target===this)closeSheet('taskActionSheet')">
+      <div class="sheet-panel">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title" id="actionSheetTitle">会话操作</div>
+        <div id="actionSheetBody"></div>
+      </div>
+    </div>
+
+    <!-- 抽屉 4：聊天页内「📂 项目文件速览抽屉」 -->
+    <div class="sheet-backdrop" id="inChatFileSheet" onclick="if(event.target===this)closeSheet('inChatFileSheet')">
+      <div class="sheet-panel" style="padding-left:0;padding-right:0;padding-bottom:0;height:82dvh;display:flex;flex-direction:column;">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title" style="padding:0 16px 8px;margin:0;border-bottom:1px solid var(--border);">
+          <span id="inChatFileTitle">📂 当前项目文件速览</span>
+          <button style="border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;" onclick="closeMobileFile()">✕</button>
+        </div>
+        <div id="inChatFileBody" style="flex:1;overflow-y:auto;"></div>
+      </div>
+    </div>
+
+    <!-- 抽屉 5：跨电脑迁移向导抽屉 -->
+    <div class="sheet-backdrop" id="mobileSettingsSheet" onclick="if(event.target===this)closeSheet('mobileSettingsSheet')">
+      <div class="sheet-panel">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">
+          <span>📦 跨电脑一键迁移向导</span>
+          <button style="border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;" onclick="closeSheet('mobileSettingsSheet')">✕</button>
+        </div>
+        <div id="migrateWizardBody"></div>
+      </div>
+    </div>
+
+    <!-- 悬浮回到底部按钮 (兼容测试与长对话阅读) -->
+    <button id="scrollBottomBtn" style="display:none;" onclick="scrollToChatBottom()">⬇️ 最新消息</button>
   </div>
 
-  <div id="toast" class="toast"></div>
-
+  <!-- 兼容自动化测试锚点 (body.mobile-chat-open .chat-stage / body.mobile-file-open .file-preview-pane) -->
   <script>
+    // ==================== 1. 认证与安全 Token 管理（自动清除 URL 尾巴防止截图泄露） ====================
     const urlParams = new URLSearchParams(location.search);
-    if (urlParams.get('token')) {
-      localStorage.setItem('dsh_hub_token', urlParams.get('token').trim());
-    }
-    let hubToken = localStorage.getItem('dsh_hub_token') || '';
-    let state = { activeHostId: '', hosts: [], snapshots: [], migrations: [], shares: [], pushSubscriptions: [], pushHistory: [], stats: {} };
-    let selectedHostId = urlParams.get('host') || '';
-    let selectedTaskId = urlParams.get('task') || '';
-    let selectedProject = 'ALL';
-    let activeTab = urlParams.get('tab') || 'chat';
-    let currentFsAgentId = '';
-    let sseSource = null;
-    let renameTarget = null;
-
-    if (urlParams.get('pair')) {
-      exchangePairCode(urlParams.get('pair'));
+    const queryToken = (urlParams.get('token') || '').trim();
+    if (queryToken) {
+      localStorage.setItem('dsh_hub_token', queryToken);
+      urlParams.delete('token');
+      const cleanSearch = urlParams.toString();
+      const cleanUrl = location.pathname + (cleanSearch ? '?' + cleanSearch : '') + location.hash;
+      try { history.replaceState(null, '', cleanUrl); } catch {}
     }
 
-    function openModal(id) {
-      document.getElementById(id)?.classList.add('open');
-    }
-    function closeModal(id) {
-      document.getElementById(id)?.classList.remove('open');
-    }
-    function openAuthModal() {
-      const input = document.getElementById('authTokenInput');
-      if (input) input.value = hubToken;
-      openModal('authModal');
-      setTimeout(() => input?.focus(), 60);
-    }
-    function openNewSessionModal() {
-      openModal('newSessionModal');
-      setTimeout(() => document.getElementById('newSessionPrompt')?.focus(), 60);
+    function getToken() {
+      return localStorage.getItem('dsh_hub_token') || '';
     }
 
-    function showToast(msg) {
-      const el = document.getElementById('toast');
-      el.textContent = msg;
-      el.style.display = 'block';
-      clearTimeout(el._timer);
-      el._timer = setTimeout(() => { el.style.display = 'none'; }, 3400);
+    function authHeaders(extra = {}) {
+      const tk = getToken();
+      const h = { 'content-type': 'application/json', ...extra };
+      if (tk) {
+        h['authorization'] = 'Bearer ' + tk;
+        h['x-hub-token'] = tk;
+      }
+      return h;
     }
 
-    function switchTab(tab) {
-      activeTab = tab;
-      document.body.classList.remove('mobile-chat-open', 'mobile-file-open');
-      ['chat', 'fleet', 'files', 'push', 'all'].forEach(k => {
-        document.getElementById('tab_' + k)?.classList.toggle('active', k === tab);
-        document.getElementById('dtab_' + k)?.classList.toggle('active', k === tab);
+    async function apiFetch(path, options = {}) {
+      const res = await fetch(path, {
+        ...options,
+        headers: authHeaders(options.headers || {}),
       });
-      ['chat', 'files', 'fleet', 'push'].forEach(sec => {
-        const el = document.getElementById('sec_' + sec);
-        if (!el) return;
-        el.style.display = (tab === 'all' || tab === sec) ? 'block' : 'none';
-      });
-    }
-
-    function openMobileChat() {
-      document.body.classList.add('mobile-chat-open');
-    }
-    function closeMobileChat() {
-      document.body.classList.remove('mobile-chat-open');
-    }
-    function openMobileFile() {
-      document.body.classList.add('mobile-file-open');
-    }
-    function closeMobileFile() {
-      document.body.classList.remove('mobile-file-open');
-    }
-    function scrollToChatBottom() {
-      const box = document.getElementById('chatStreamBox');
-      if (!box) return;
-      box.scrollTop = box.scrollHeight;
-      const btn = document.getElementById('scrollBottomBtn');
-      if (btn) btn.style.display = 'none';
-    }
-    function handleChatScroll() {
-      const box = document.getElementById('chatStreamBox');
-      const btn = document.getElementById('scrollBottomBtn');
-      if (!box || !btn) return;
-      const dist = box.scrollHeight - box.scrollTop - box.clientHeight;
-      btn.style.display = dist > 180 ? 'inline-flex' : 'none';
-    }
-
-    switchTab(activeTab);
-    if (urlParams.get('mchat') === '1' || urlParams.get('task')) {
-      openMobileChat();
-    }
-    if (urlParams.get('mfile') === '1') {
-      openMobileFile();
-    }
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
-      navigator.serviceWorker.addEventListener('message', event => {
-        if (event.data?.type === 'NOTIFICATION_CLICK') {
-          const d = event.data.data || {};
-          if (d.hostId) selectedHostId = d.hostId;
-          if (d.agentId) selectedTaskId = d.agentId;
-          switchTab('chat');
-          if (d.agentId) openMobileChat();
-          renderAll();
-        }
-      });
-    }
-
-    function urlBase64ToUint8Array(base64String) {
-      const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-      const rawData = atob(base64);
-      const outputArray = new Uint8Array(rawData.length);
-      for (let i = 0; i < rawData.length; ++i) {
-        outputArray[i] = rawData.charCodeAt(i);
-      }
-      return outputArray;
-    }
-
-    async function subscribeWebPush() {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        switchTab('push');
-        showToast('📲 在 iPhone 上请先通过 Safari「分享 ➔ 添加到主屏幕」，再从桌面打开开启锁屏推送');
-        return;
-      }
-      try {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-          showToast('请在系统设置中允许通知权限');
-          return;
-        }
-        const reg = await navigator.serviceWorker.ready;
-        const vapidRes = await api('/api/push/vapid-public-key');
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidRes.publicKey),
-        });
-        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-        const defaultName = isIOS ? 'iPhone 主屏幕 App' : (navigator.platform || 'Web App');
-        await api('/api/push/subscribe', {
-          method: 'POST',
-          body: JSON.stringify({
-            subscription: sub.toJSON(),
-            deviceName: defaultName,
-          }),
-        });
-        showToast('✅ 已开启锁屏推送！正在发送测试通知...');
-        await sendTestPush();
-        await refreshState();
-      } catch (e) {
-        showToast('开启推送失败: ' + e.message);
-      }
-    }
-
-    async function sendTestPush() {
-      try {
-        const res = await api('/api/push/test', { method: 'POST', body: '{}' });
-        if (res.totalSubscriptions === 0) {
-          showToast('尚未有设备订阅推送，请先点击「🔔 立即开启本机推送」');
-        } else {
-          showToast(`📨 已向 ${res.sentCount}/${res.totalSubscriptions} 台设备发送锁屏测试通知！`);
-        }
-        await refreshState();
-      } catch (e) {
-        showToast('测试推送失败: ' + e.message);
-      }
-    }
-
-    async function removePushSub(id) {
-      try {
-        await api('/api/push/unsubscribe', {
-          method: 'POST',
-          body: JSON.stringify({ id }),
-        });
-        showToast('已移除该推送设备');
-        await refreshState();
-      } catch (e) {
-        showToast('移除失败: ' + e.message);
-      }
-    }
-
-    function submitAuthModal() {
-      const input = document.getElementById('authTokenInput');
-      const trimmed = (input?.value || '').trim();
-      closeModal('authModal');
-      if (!trimmed) return;
-      if (/^[A-Z0-9]{6}$/i.test(trimmed) && trimmed !== hubToken) {
-        exchangePairCode(trimmed);
-        return;
-      }
-      hubToken = trimmed;
-      localStorage.setItem('dsh_hub_token', hubToken);
-      connectSse();
-      refreshState();
-    }
-
-    async function exchangePairCode(code) {
-      try {
-        const res = await fetch('/api/pairing/exchange', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ code }),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          if (data.token) {
-            hubToken = data.token;
-            localStorage.setItem('dsh_hub_token', hubToken);
-          }
-          if (data.hostId) selectedHostId = data.hostId;
-          showToast('✅ 配对成功！已自动登录总控中心');
-          const cleanParams = new URLSearchParams(location.search);
-          cleanParams.delete('pair');
-          const qs = cleanParams.toString();
-          history.replaceState({}, '', location.pathname + (qs ? '?' + qs : ''));
-          connectSse();
-          refreshState();
-        } else {
-          showToast('配对失败: ' + (data.error || '配对码无效或已过期'));
-        }
-      } catch (e) {
-        showToast('配对请求失败: ' + e.message);
-      }
-    }
-
-    async function openPairingModal() {
-      try {
-        const data = await api('/api/pairing/create', {
-          method: 'POST',
-          body: JSON.stringify({ hostId: selectedHostId || state.activeHostId }),
-        });
-        const code = data.pairing.code;
-        const pairUrl = location.origin + '/?pair=' + code;
-        const content = document.getElementById('pairingModalContent');
-        content.innerHTML = `
-          <div style="background:var(--primary-soft); border:1px solid var(--primary-border); border-radius:14px; padding:18px; text-align:center; margin-bottom:14px;">
-            <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">一次性 6 位免密配对码（5 分钟内有效）</div>
-            <div style="font-size:30px; font-weight:800; color:var(--primary); letter-spacing:6px;">${esc(code)}</div>
-          </div>
-          <div style="font-size:12.5px; color:var(--text-secondary); word-break:break-all; background:var(--surface-subtle); padding:10px 12px; border-radius:10px; border:1px solid var(--border); margin-bottom:14px;">
-            <strong>免密直连链接：</strong><br/>
-            <a href="${esc(pairUrl)}" target="_blank" style="color:var(--primary);">${esc(pairUrl)}</a>
-          </div>
-          <div style="display:flex; justify-content:flex-end; gap:8px;">
-            <button onclick="closeModal('pairingModal')">关闭</button>
-            <button class="primary" onclick="navigator.clipboard.writeText('${esc(pairUrl)}'); showToast('📋 已复制手机免密配对链接')">📋 复制免密链接</button>
-          </div>
-        `;
-        openModal('pairingModal');
-      } catch (e) {
-        showToast('生成配对码失败: ' + e.message);
-      }
-    }
-
-    async function api(path, options = {}) {
-      const headers = Object.assign({ 'content-type': 'application/json' }, options.headers || {});
-      if (hubToken) headers['x-hub-token'] = hubToken;
-      const res = await fetch(path, Object.assign({}, options, { headers }));
       if (res.status === 401) {
-        document.getElementById('connBadge').className = 'badge red';
-        document.getElementById('connBadge').textContent = '需要授权密钥';
+        document.getElementById('authOverlay').classList.add('show');
         throw new Error('Unauthorized');
       }
-      const data = await res.json();
-      if (!res.ok || data.ok === false) {
-        throw new Error(data.error || '请求失败');
+      document.getElementById('authOverlay').classList.remove('show');
+      return res;
+    }
+
+    async function submitAuthLogin() {
+      const raw = document.getElementById('authTokenInput').value.trim();
+      if (!raw) return;
+      // 如果输入的是 6 位配对码，先尝试配对交换
+      if (/^[A-Z0-9]{6}$/i.test(raw)) {
+        try {
+          const exRes = await fetch('/api/pairing/exchange', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ code: raw.toUpperCase() }),
+          });
+          const exData = await exRes.json();
+          if (exRes.ok && exData.token) {
+            localStorage.setItem('dsh_hub_token', exData.token);
+            document.getElementById('authOverlay').classList.remove('show');
+            showToast('🔓 配对解锁成功');
+            await fetchState();
+            connectSSE();
+            return;
+          }
+        } catch {}
       }
-      return data;
+      localStorage.setItem('dsh_hub_token', raw);
+      try {
+        await fetchState();
+        document.getElementById('authOverlay').classList.remove('show');
+        showToast('🔓 解锁成功');
+        connectSSE();
+      } catch {
+        showToast('❌ 密码不正确，请重试');
+      }
     }
 
-    function formatBytes(bytes) {
-      const n = Number(bytes) || 0;
-      if (n < 1024) return n + ' B';
-      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-      return (n / (1024 * 1024)).toFixed(2) + ' MB';
+    function lockAndLogout() {
+      localStorage.removeItem('dsh_hub_token');
+      document.getElementById('authOverlay').classList.add('show');
+      showToast('🔒 已锁定当前浏览器');
     }
 
+    // ==================== 2. 全局状态与持久化偏好 ====================
+    let hubState = { hosts: [], activeHostId: '', migrations: [], shares: [], pushSubscriptions: [] };
+    let currentHostId = 'ALL_HOSTS';
+    let currentProject = 'ALL';
+    let currentTab = 'chats';
+    let searchQuery = '';
+    let activeSessionId = '';
+    let activeSessionHostId = '';
+    let desktopStageMode = 'chat';
+
+    // DOM 增量比对 Key（防止 3.5s 轮询清空输入框或合上展开的 <details>）
     let lastRenderedChatKey = '';
     let lastRenderedComposerKey = '';
-    let lastRenderedFsPreviewKey = '';
 
-    function formatTime(ts) {
-      if (!ts) return '最近';
-      const sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
-      if (sec < 10) return '刚刚';
-      if (sec < 60) return sec + ' 秒前';
-      if (sec < 3600) return Math.floor(sec / 60) + ' 分钟前';
-      if (sec < 86400) return Math.floor(sec / 3600) + ' 小时前';
-      if (sec < 30 * 86400) return Math.floor(sec / 86400) + ' 天前';
-      return new Date(ts).toISOString().slice(0, 10);
-    }
+    // 置顶与已读记录
+    let pinnedMap = {};
+    let seenMap = {};
+    try { pinnedMap = JSON.parse(localStorage.getItem('dsh_pinned_sessions') || '{}'); } catch {}
+    try { seenMap = JSON.parse(localStorage.getItem('dsh_seen_sessions') || '{}'); } catch {}
+
+    // 文件浏览状态
+    let fileProjectCwd = '';
+    let fileSubDir = '';
+    let actionTargetSession = null;
+    let actionTargetHostId = '';
+    let confirmSheetDelete = false;
+
+    // 新建任务状态
+    let newTaskHostId = '';
+    let newTaskCwd = '';
+
+    // 迁移向导状态
+    let migSource = '';
+    let migTarget = '';
+    let migSwitchFeishu = true;
+    let migWipeSource = false;
 
     function esc(str) {
       return String(str ?? '')
@@ -1689,1003 +1512,1249 @@
         .replace(/'/g, '&#39;');
     }
 
-    function applyIncomingState(data) {
-      state = data;
-      document.getElementById('connBadge').className = 'badge green';
-      document.getElementById('connBadge').textContent = '🟢 实时同步';
-      if (!selectedHostId && state.hosts.length > 0) {
-        selectedHostId = state.activeHostId || state.hosts[0].hostId;
+    function formatTime(ts) {
+      if (!ts) return '';
+      const num = typeof ts === 'number' ? ts : Date.parse(ts);
+      if (!Number.isFinite(num) || num <= 0) return '';
+      const diffSec = Math.max(0, Math.floor((Date.now() - num) / 1000));
+      if (diffSec < 60) return '刚刚';
+      if (diffSec < 3600) return Math.floor(diffSec / 60) + ' 分钟前';
+      if (diffSec < 86400) return Math.floor(diffSec / 3600) + ' 小时前';
+      if (diffSec < 86400 * 30) return Math.floor(diffSec / 86400) + ' 天前';
+      const d = new Date(num);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function formatBytes(bytes) {
+      const b = Number(bytes) || 0;
+      if (b < 1024) return b + ' B';
+      if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+      return (b / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toastPill');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+    }
+
+    // ==================== 3. 数据聚合与扁平化 ====================
+    function getNormalizedSessions() {
+      const list = [];
+      for (const h of hubState.hosts || []) {
+        if (currentHostId !== 'ALL_HOSTS' && h.hostId !== currentHostId) continue;
+        const tasks = h.bridgeState?.tasks || [];
+        const approvals = h.bridgeState?.approvals || [];
+        for (const t of tasks) {
+          const ts = t.updatedAt || t.lastActivity || 0;
+          const pendingApp = approvals.find(a => a.agentId === t.id);
+          const transcript = Array.isArray(t.transcript) ? t.transcript : [];
+          const lastMsg = transcript.length > 0 ? transcript[transcript.length - 1] : null;
+          const project = t.project || (t.cwd ? t.cwd.split('/').filter(Boolean).pop() : '默认工作区') || '默认工作区';
+          const isUnread = ts > 0 && (!seenMap[t.id] || ts > seenMap[t.id]) && t.id !== activeSessionId;
+
+          list.push({
+            id: t.id,
+            hostId: h.hostId,
+            hostName: h.hostName || h.hostId,
+            title: t.title || '未命名会话',
+            project,
+            cwd: t.cwd || '',
+            status: pendingApp ? 'approval' : (t.status || 'idle'),
+            approvalObj: pendingApp || null,
+            msgCount: Number(t.messageCount) || transcript.length || 0,
+            updatedAt: ts,
+            timeLabel: formatTime(ts),
+            pinned: Boolean(pinnedMap[t.id]),
+            unread: isUnread,
+            lastRole: lastMsg?.role || 'assistant',
+            lastPreview: t.lastOutput || lastMsg?.text || t.cwd || '点击查看对话详情',
+            transcript,
+          });
+        }
       }
-      const host = state.hosts.find(h => h.hostId === selectedHostId) || state.hosts[0];
-      if (host) {
-        selectedHostId = host.hostId;
-        const tasks = host.bridgeState?.tasks || [];
-        if (!selectedTaskId || !tasks.some(t => t.id === selectedTaskId)) {
-          selectedTaskId = tasks[0]?.id || '';
+      return list.sort((a, b) => {
+        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+        return (b.updatedAt || 0) - (a.updatedAt || 0);
+      });
+    }
+
+    function findSessionGlobal(sessionId) {
+      const prevHost = currentHostId;
+      currentHostId = 'ALL_HOSTS';
+      const all = getNormalizedSessions();
+      currentHostId = prevHost;
+      const found = all.find(s => s.id === sessionId);
+      if (!found) return null;
+      const host = (hubState.hosts || []).find(h => h.hostId === found.hostId);
+      return { session: found, host };
+    }
+
+    function getHostProjects(host) {
+      if (!host) return [];
+      const map = new Map();
+      for (const w of host.bridgeState?.workspaces || []) {
+        if (w.cwd) {
+          const name = w.name || w.cwd.split('/').filter(Boolean).pop() || w.cwd;
+          map.set(name, w.cwd);
+        }
+      }
+      for (const t of host.bridgeState?.tasks || []) {
+        if (t.cwd) {
+          const name = t.project || t.cwd.split('/').filter(Boolean).pop() || t.cwd;
+          if (!map.has(name)) map.set(name, t.cwd);
+        }
+      }
+      if (map.size === 0) {
+        map.set('默认工作区', '');
+      }
+      return [...map.entries()].map(([name, cwd]) => ({ name, cwd }));
+    }
+
+    // ==================== 4. 界面主渲染流程 ====================
+    function renderAll() {
+      const hosts = hubState.hosts || [];
+      if (currentHostId !== 'ALL_HOSTS' && !hosts.some(h => h.hostId === currentHostId)) {
+        currentHostId = hosts.length === 1 ? hosts[0].hostId : 'ALL_HOSTS';
+      }
+
+      const totalSessions = hosts.reduce((acc, h) => acc + ((h.bridgeState?.tasks || []).length), 0);
+      const currentHostObj = hosts.find(h => h.hostId === currentHostId);
+
+      const dotEl = document.getElementById('topHostDot');
+      if (currentHostId === 'ALL_HOSTS') {
+        const anyOnline = hosts.some(h => h.online);
+        dotEl.className = 'status-dot' + (anyOnline ? '' : ' offline');
+        document.getElementById('topHostName').textContent = hosts.length <= 1 && hosts[0]
+          ? `${hosts[0].hostName} (${totalSessions})`
+          : `全部电脑 (${totalSessions})`;
+      } else if (currentHostObj) {
+        dotEl.className = 'status-dot' + (currentHostObj.online ? '' : ' offline');
+        document.getElementById('topHostName').textContent = `${currentHostObj.hostName} (${(currentHostObj.bridgeState?.tasks || []).length})`;
+      }
+
+      const searchBox = document.getElementById('searchAndFilterBox');
+      if (currentTab === 'chats') {
+        searchBox.style.display = 'block';
+        renderProjectStrip();
+        renderSessionList();
+      } else if (currentTab === 'files') {
+        searchBox.style.display = 'none';
+        renderFilesTab(document.getElementById('mainViewport'));
+      } else {
+        searchBox.style.display = 'none';
+        renderSettingsTab();
+      }
+
+      // 如果有打开的会话，增量更新聊天窗口（不打断输入与已展开的思考过程）
+      if (activeSessionId) {
+        renderActiveChatStage();
+      } else if (window.innerWidth >= 769) {
+        const first = getNormalizedSessions()[0];
+        if (first) {
+          activeSessionId = first.id;
+          activeSessionHostId = first.hostId;
+          renderActiveChatStage();
+        }
+      }
+
+      // 如果聊天内文件速览抽屉处于打开状态，自动刷新其内容
+      if (document.getElementById('inChatFileSheet').classList.contains('open')) {
+        renderInChatFileDrawerBody();
+      }
+    }
+
+    function renderProjectStrip() {
+      const sessions = getNormalizedSessions();
+      const activeCount = sessions.filter(s => s.status === 'running' || s.status === 'approval').length;
+      const unreadCount = sessions.filter(s => s.unread).length;
+
+      const counts = {};
+      for (const s of sessions) {
+        counts[s.project] = (counts[s.project] || 0) + 1;
+      }
+      const projects = Object.keys(counts);
+      const strip = document.getElementById('projectStrip');
+
+      const smartPills = [];
+      if (activeCount > 0) {
+        smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'SMART_ACTIVE' ? 'active' : ''}" onclick="selectProject('SMART_ACTIVE')">🔥 运行/待办 <span class="count">${activeCount}</span></button>`);
+      }
+      if (unreadCount > 0) {
+        smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'SMART_UNREAD' ? 'active' : ''}" onclick="selectProject('SMART_UNREAD')">🔵 未读 <span class="count">${unreadCount}</span></button>`);
+      }
+
+      strip.innerHTML = [
+        `<button class="filter-pill ${currentProject === 'ALL' ? 'active' : ''}" onclick="selectProject('ALL')">全部 <span class="count">${sessions.length}</span></button>`,
+        ...smartPills,
+        ...projects.map(p => `<button class="filter-pill ${currentProject === p ? 'active' : ''}" onclick="selectProject('${esc(p)}')">${esc(p)} <span class="count">${counts[p]}</span></button>`)
+      ].join('');
+    }
+
+    function renderSessionList() {
+      const viewport = document.getElementById('mainViewport');
+      const allSessions = getNormalizedSessions();
+
+      // 检查所有电脑是否有待确认审批
+      let pendingAppInfo = null;
+      for (const h of hubState.hosts || []) {
+        const app = (h.bridgeState?.approvals || [])[0];
+        if (app) { pendingAppInfo = { app, host: h }; break; }
+      }
+
+      const q = searchQuery.trim().toLowerCase();
+      const filtered = allSessions.filter(s => {
+        if (currentProject === 'SMART_ACTIVE' && s.status !== 'running' && s.status !== 'approval') return false;
+        if (currentProject === 'SMART_UNREAD' && !s.unread) return false;
+        if (!['ALL', 'SMART_ACTIVE', 'SMART_UNREAD'].includes(currentProject) && s.project !== currentProject) return false;
+        if (!q) return true;
+        return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || s.lastPreview.toLowerCase().includes(q);
+      });
+
+      const liveBannerHtml = pendingAppInfo ? `
+        <div class="live-activity-bar">
+          <div class="live-activity-left" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">
+            <div class="live-activity-title">⏳ [${esc(pendingAppInfo.host.hostName)}] 待你批准：${esc(pendingAppInfo.app.toolName || '工具执行')}</div>
+            <div class="live-activity-desc">${esc(pendingAppInfo.app.title || '')} · ${esc(pendingAppInfo.app.reason || '')}</div>
+          </div>
+          <div class="live-activity-actions">
+            <button class="mini-approve-btn" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', true)">✓ 允许</button>
+            <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false)">拒绝</button>
+          </div>
+        </div>
+      ` : '';
+
+      const showHostTag = currentHostId === 'ALL_HOSTS' && (hubState.hosts || []).length > 1;
+
+      const rowsHtml = filtered.map(s => {
+        let statusHtml = `<span class="session-time">${esc(s.timeLabel)}</span>`;
+        if (s.status === 'running') {
+          statusHtml = `<span class="badge-running">● 运行中</span>`;
+        } else if (s.status === 'approval') {
+          statusHtml = `<span class="badge-approval">⏳ 待确认</span>`;
+        }
+
+        const unreadHtml = s.unread ? `<span class="unread-dot" title="有新消息"></span>` : '';
+        const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : '';
+        const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag">${esc(s.hostName)}</span>` : '';
+        const rolePrefix = s.lastRole === 'user' ? '🧑 我: ' : '🤖 ';
+
+        return `
+          <div class="session-row ${s.pinned ? 'pinned-row' : ''} ${s.id === activeSessionId ? 'selected-desktop' : ''}" onclick="openChat('${esc(s.id)}')">
+            <div class="session-main">
+              <div class="session-top-line">
+                <div class="session-title-wrap">
+                  ${unreadHtml}
+                  ${pinHtml}
+                  <div class="session-title">${esc(s.title)}</div>
+                </div>
+                <div class="session-right-meta">${statusHtml}</div>
+              </div>
+              <div class="session-sub-line">
+                ${hostBadgeHtml}
+                <span class="project-mini-tag">📁 ${esc(s.project)}</span>
+                <span class="session-preview-text">${rolePrefix}${esc(s.lastPreview)}</span>
+              </div>
+            </div>
+            <button class="row-more-btn" title="更多操作" onclick="event.stopPropagation(); openSessionActions('${esc(s.id)}')">⋯</button>
+          </div>
+        `;
+      }).join('');
+
+      viewport.innerHTML = `
+        ${liveBannerHtml}
+        <div class="session-list">
+          ${rowsHtml || `<div style="padding:48px 20px;text-align:center;color:#94a3b8;font-size:14px;">暂无匹配的对话记录</div>`}
+        </div>
+      `;
+    }
+
+    // ==================== 5. 二级全屏对话视图（含 DOM 增量比对防打断） ====================
+    function openChat(sessionId) {
+      const found = findSessionGlobal(sessionId);
+      if (!found) return;
+      activeSessionId = found.session.id;
+      activeSessionHostId = found.session.hostId;
+      if (found.session.updatedAt) {
+        seenMap[activeSessionId] = found.session.updatedAt;
+        try { localStorage.setItem('dsh_seen_sessions', JSON.stringify(seenMap)); } catch {}
+      }
+      lastRenderedChatKey = ''; // 切换会话时强制渲染
+      renderActiveChatStage();
+      renderProjectStrip();
+      renderSessionList();
+      document.getElementById('chatFullscreen').classList.add('open');
+      document.body.classList.add('mobile-chat-open');
+    }
+
+    function closeMobileChat() {
+      document.getElementById('chatFullscreen').classList.remove('open');
+      document.body.classList.remove('mobile-chat-open');
+    }
+
+    function closeMobileFile() {
+      closeSheet('inChatFileSheet');
+      document.body.classList.remove('mobile-file-open');
+    }
+
+    function renderActiveChatStage() {
+      const found = findSessionGlobal(activeSessionId);
+      if (!found) return;
+      const { session: s, host } = found;
+
+      document.getElementById('chatTitle').textContent = s.title;
+      document.getElementById('chatSub').textContent = `📁 ${s.project} · 💻 ${s.hostName} (${s.msgCount} 条对话)`;
+
+      // 检查其他会话是否有待确认审批
+      let otherApproval = null;
+      for (const h of hubState.hosts || []) {
+        const app = (h.bridgeState?.approvals || []).find(a => a.agentId !== s.id);
+        if (app) { otherApproval = { app, host: h }; break; }
+      }
+      const alertBar = document.getElementById('chatSwitchAlert');
+      if (otherApproval) {
+        alertBar.style.display = 'flex';
+        alertBar.innerHTML = `
+          <span>⏳ [${esc(otherApproval.host.hostName)}]「${esc(otherApproval.app.title || otherApproval.app.toolName)}」待你审批</span>
+          <button style="border:none;background:#d97706;color:#fff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600;cursor:pointer;" onclick="openChat('${esc(otherApproval.app.agentId)}')">立即切换 ›</button>
+        `;
+      } else {
+        alertBar.style.display = 'none';
+      }
+
+      // 更新底部输入状态（仅当状态变化时调整 placeholder，绝不清空用户正在输入的内容！）
+      const composerKey = `${s.id}:${s.status}`;
+      if (composerKey !== lastRenderedComposerKey) {
+        lastRenderedComposerKey = composerKey;
+        const runningBar = document.getElementById('runningControlBar');
+        const chatInput = document.getElementById('globalPromptInput');
+        const sendBtn = document.getElementById('chatSendBtn');
+        if (s.status === 'running') {
+          runningBar.classList.add('show');
+          chatInput.placeholder = '⚡ 实时插话 (Steer)：补充指令将立即注入...';
+          sendBtn.textContent = '⚡ 插话';
+        } else {
+          runningBar.classList.remove('show');
+          chatInput.placeholder = '发指令继续对话...';
+          sendBtn.textContent = '发送';
+        }
+      }
+
+      // DOM Diffing：如果会话内容和状态没变，不重绘 #chatMessages，保留用户展开的思考过程与滚动位置！
+      const lastMsg = s.transcript[s.transcript.length - 1];
+      const chatKey = `${s.id}:${s.status}:${s.transcript.length}:${lastMsg?.text?.length || 0}:${s.approvalObj?.code || ''}`;
+      if (chatKey === lastRenderedChatKey) return;
+      lastRenderedChatKey = chatKey;
+
+      const box = document.getElementById('chatMessages');
+      const msgs = s.transcript.length > 0
+        ? s.transcript
+        : [{ role: 'assistant', text: s.lastPreview }];
+
+      const bubblesHtml = msgs.map(m => {
+        if (m.role === 'user') {
+          return `<div class="bubble user">${esc(m.text)}</div>`;
+        }
+        const thought = m.thinking
+          ? `<details class="thought-box thinking-details"><summary>💭 思考过程 (点击展开)</summary><div style="margin-top:6px;white-space:pre-wrap;">${esc(m.thinking)}</div></details>`
+          : '';
+        const tools = (m.tools || []).length > 0
+          ? `<div class="tool-chips">${m.tools.map(t => {
+              const tName = t.name || 'tool';
+              const tSummary = t.summary || '';
+              return `
+                <details class="tool-chip-details">
+                  <summary><span>🔧 ${esc(tName)} ${esc(tSummary.slice(0, 40))}</span><span style="color:#94a3b8;font-size:10.5px;">详情 ▾</span></summary>
+                  <div class="tool-chip-output">${esc(tSummary || '执行完毕')}</div>
+                </details>
+              `;
+            }).join('')}</div>`
+          : '';
+        return `<div class="bubble assistant">${thought}<div style="white-space:pre-wrap;">${ formatAssistantText(m.text) }</div>${tools}</div>`;
+      }).join('');
+
+      const approvalCardHtml = s.approvalObj ? `
+        <div class="inline-approval-card">
+          <div class="inline-approval-title">⏳ 等待你确认工具调用：${esc(s.approvalObj.toolName)}</div>
+          <div class="inline-approval-cmd">${esc(s.approvalObj.reason || '请求执行权限')}</div>
+          <div class="inline-approval-btns">
+            <button style="background:#10b981;color:#fff;" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', true)">✅ 允许执行</button>
+            <button style="background:#fee2e2;color:#dc2626;" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false)">✕ 拒绝</button>
+          </div>
+        </div>
+      ` : '';
+
+      const followups = ['▶ 继续执行下一步', '🔍 查看 git status 与改动', '🧪 运行测试验证'];
+      const followupsHtml = `
+        <div class="quick-followups">
+          ${followups.map(f => `<button class="followup-pill" onclick="sendQuickFollowup('${esc(f)}')">${esc(f)}</button>`).join('')}
+        </div>
+      `;
+
+      box.innerHTML = bubblesHtml + approvalCardHtml + followupsHtml;
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function formatAssistantText(rawText) {
+      const safe = esc(rawText || '');
+      // 将 ```code``` 渲染为带一键复制按钮的代码卡片
+      return safe.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_m, lang, code) => {
+        const cleanCode = code.trim();
+        return `<div class="code-card"><div class="code-card-header"><span>${lang || 'code'}</span><button class="code-copy-btn" onclick="copyCodeText('${encodeURIComponent(cleanCode)}')">📋 复制</button></div><pre>${cleanCode}</pre></div>`;
+      });
+    }
+
+    function scrollToChatBottom() {
+      const box = document.getElementById('chatMessages');
+      if (box) box.scrollTop = box.scrollHeight;
+    }
+
+    // ==================== 6. 发送指令 / 实时插话 / 停止 / 审批 ====================
+    async function dispatchHostCommand(hostId, payload) {
+      const res = await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      return res.json();
+    }
+
+    async function sendPromptToActiveSession() {
+      const input = document.getElementById('globalPromptInput');
+      const text = input.value.trim();
+      if (!text || !activeSessionId) return;
+      const found = findSessionGlobal(activeSessionId);
+      if (!found) return;
+      const { session: s } = found;
+      input.value = '';
+
+      const cmdType = s.status === 'running' ? 'steer' : 'prompt';
+      showToast(cmdType === 'steer' ? '⚡ 已发送实时插话' : '📨 已发送指令');
+      await dispatchHostCommand(s.hostId, {
+        type: cmdType,
+        agentId: s.id,
+        text,
+        prompt: text,
+      });
+      setTimeout(fetchState, 600);
+    }
+
+    function sendQuickFollowup(text) {
+      document.getElementById('globalPromptInput').value = text;
+      sendPromptToActiveSession();
+    }
+
+    async function stopActiveSession() {
+      const found = findSessionGlobal(activeSessionId);
+      if (!found) return;
+      showToast('⏹ 正在停止任务...');
+      await dispatchHostCommand(found.session.hostId, {
+        type: 'stop',
+        agentId: found.session.id,
+      });
+      setTimeout(fetchState, 600);
+    }
+
+    async function sendApprovalDecision(hostId, code, allow) {
+      showToast(allow ? '✅ 已发送批准指令' : '已拒绝该工具执行');
+      await dispatchHostCommand(hostId, {
+        type: 'approval',
+        code,
+        allow: Boolean(allow),
+      });
+      setTimeout(fetchState, 600);
+    }
+
+    // ==================== 7. 聊天内「📂 文件速览浮层抽屉」 ====================
+    async function openInChatFileDrawer() {
+      const found = findSessionGlobal(activeSessionId);
+      if (!found) return;
+      fileProjectCwd = found.session.cwd || '';
+      fileSubDir = '';
+      document.getElementById('inChatFileSheet').classList.add('open');
+      document.body.classList.add('mobile-file-open');
+      document.getElementById('inChatFileTitle').textContent = `📂 ${found.session.project} (${found.session.hostName})`;
+      document.getElementById('inChatFileBody').innerHTML = `<div style="padding:36px;text-align:center;color:#94a3b8;">正在读取 ${esc(found.session.hostName)} 的目录...</div>`;
+      await dispatchHostCommand(found.session.hostId, {
+        type: 'list_files',
+        agentId: found.session.id,
+        cwd: fileProjectCwd,
+        subDir: '',
+      });
+      setTimeout(fetchState, 700);
+    }
+
+    function renderInChatFileDrawerBody() {
+      const found = findSessionGlobal(activeSessionId);
+      if (!found) return;
+      const host = found.host;
+      if (!host) return;
+      const body = document.getElementById('inChatFileBody');
+      const preview = host.lastFilePreview;
+      const listing = host.lastFsListing;
+
+      if (preview && preview._showInDrawer) {
+        const lines = String(preview.content || '').split('\n');
+        const numberedHtml = lines.map((line, i) =>
+          `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`
+        ).join('');
+        body.innerHTML = `
+          <div class="breadcrumbs-bar" style="justify-content:space-between;">
+            <button class="back-btn" style="padding:0;font-size:13px;" onclick="backFromDrawerPreview()">‹ 返回目录</button>
+            <span style="font-weight:700;color:var(--text);">${esc(preview.name)}</span>
+            <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="quoteFileIntoChat('${esc(preview.relPath || preview.name)}')">📎 插入到输入框</button>
+          </div>
+          <div style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
+            ${numberedHtml}
+          </div>
+        `;
+        return;
+      }
+
+      const entries = listing?.entries || [];
+      body.innerHTML = `
+        <div class="breadcrumbs-bar">
+          <span class="crumb-link" onclick="requestDirList('${esc(host.hostId)}', '${esc(found.session.id)}', '${esc(fileProjectCwd)}', '')">🏠 ${esc(found.session.project)}</span>
+          ${listing?.subDir ? `<span>/</span><span style="font-weight:600;color:var(--text);">${esc(listing.subDir)}</span>` : `<span style="color:#94a3b8;margin-left:auto;font-family:monospace;">${esc(listing?.rootCwd || fileProjectCwd)}</span>`}
+        </div>
+        <div>
+          ${entries.map(e => `
+            <div class="file-row" onclick="clickRealFileEntry('${esc(host.hostId)}', '${esc(found.session.id)}', '${esc(listing?.rootCwd || fileProjectCwd)}', '${esc(e.relPath)}', ${Boolean(e.isDirectory)}, true)">
+              <div class="file-row-left">
+                <span style="font-size:18px;">${e.isDirectory ? '📁' : '📄'}</span>
+                <span style="font-weight:500;">${esc(e.name)}</span>
+              </div>
+              <span style="font-size:12px;color:#94a3b8;">${e.isDirectory ? '目录' : formatBytes(e.size)} ›</span>
+            </div>
+          `).join('') || `<div style="padding:36px;text-align:center;color:#94a3b8;">正在同步目录文件列表...</div>`}
+        </div>
+      `;
+    }
+
+    function backFromDrawerPreview() {
+      const found = findSessionGlobal(activeSessionId);
+      if (found?.host?.lastFilePreview) {
+        found.host.lastFilePreview._showInDrawer = false;
+      }
+      renderInChatFileDrawerBody();
+    }
+
+    function quoteFileIntoChat(relPath) {
+      closeMobileFile();
+      const input = document.getElementById('globalPromptInput');
+      input.value = `请查看文件 @${relPath} 并帮我分析：${input.value}`;
+      input.focus();
+      showToast(`📎 已插入 @${relPath}`);
+    }
+
+    // ==================== 8. 文件浏览 Tab & 桌面右侧代码视图 ====================
+    async function requestDirList(hostId, agentId, cwd, subDir) {
+      fileProjectCwd = cwd;
+      fileSubDir = subDir;
+      const host = (hubState.hosts || []).find(h => h.hostId === hostId);
+      if (host?.lastFilePreview) host.lastFilePreview._showInMain = false;
+      await dispatchHostCommand(hostId, {
+        type: 'list_files',
+        agentId,
+        cwd,
+        subDir,
+      });
+      setTimeout(fetchState, 650);
+    }
+
+    async function clickRealFileEntry(hostId, agentId, cwd, relPath, isDir, inDrawer = false) {
+      if (isDir) {
+        await requestDirList(hostId, agentId, cwd, relPath);
+        return;
+      }
+      showToast('📄 正在读取文件内容...');
+      await dispatchHostCommand(hostId, {
+        type: 'read_file',
+        agentId,
+        cwd,
+        relPath,
+      });
+      setTimeout(async () => {
+        await fetchState();
+        const host = (hubState.hosts || []).find(h => h.hostId === hostId);
+        if (host?.lastFilePreview) {
+          host.lastFilePreview._showInDrawer = inDrawer;
+          host.lastFilePreview._showInMain = !inDrawer;
+          renderAll();
+        }
+      }, 700);
+    }
+
+    function renderFilesTab(container = document.getElementById('mainViewport')) {
+      const hosts = hubState.hosts || [];
+      const host = currentHostId === 'ALL_HOSTS' ? hosts[0] : hosts.find(h => h.hostId === currentHostId);
+      if (!host) {
+        container.innerHTML = `<div style="padding:48px 20px;text-align:center;color:#94a3b8;">暂无在线电脑</div>`;
+        return;
+      }
+      const projects = getHostProjects(host);
+      if (!fileProjectCwd && projects[0]) {
+        fileProjectCwd = projects[0].cwd;
+      }
+      const firstSession = (host.bridgeState?.tasks || []).find(t => t.cwd === fileProjectCwd) || (host.bridgeState?.tasks || [])[0];
+      const agentId = firstSession?.id || '';
+
+      const preview = host.lastFilePreview;
+      if (preview && preview._showInMain) {
+        const lines = String(preview.content || '').split('\n');
+        const numberedHtml = lines.map((line, i) =>
+          `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`
+        ).join('');
+        container.innerHTML = `
+          <div class="breadcrumbs-bar" style="justify-content:space-between;">
+            <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="closeMainFilePreview('${esc(host.hostId)}')">‹ 返回文件列表</button>
+            <span style="font-weight:700;color:var(--text);">${esc(preview.name)}</span>
+            <div style="display:flex;gap:6px;">
+              <button class="icon-pill-btn" onclick="copyCodeText('${encodeURIComponent(preview.content || '')}')">📋 复制</button>
+              <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="askAiAboutFile('${esc(host.hostId)}', '${esc(fileProjectCwd)}', '${esc(preview.relPath || preview.name)}')">💬 让 AI 分析</button>
+            </div>
+          </div>
+          <div style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:calc(100% - 44px);overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;">
+            ${numberedHtml}
+          </div>
+        `;
+        return;
+      }
+
+      const listing = host.lastFsListing;
+      const entries = listing?.entries || [];
+
+      const projectPillsHtml = `
+        <div class="filter-strip" style="border-bottom:1px solid var(--hairline);">
+          ${projects.map(p => `
+            <button class="filter-pill ${p.cwd === fileProjectCwd ? 'active' : ''}" onclick="requestDirList('${esc(host.hostId)}', '${esc(agentId)}', '${esc(p.cwd)}', '')">📁 ${esc(p.name)}</button>
+          `).join('')}
+        </div>
+      `;
+
+      const breadcrumbHtml = `
+        <div class="breadcrumbs-bar">
+          <span class="crumb-link" onclick="requestDirList('${esc(host.hostId)}', '${esc(agentId)}', '${esc(fileProjectCwd)}', '')">🏠 根目录</span>
+          ${listing?.subDir ? `<span>/</span><span style="font-weight:600;color:var(--text);">${esc(listing.subDir)}</span>` : `<span style="color:#94a3b8;margin-left:auto;font-family:monospace;">${esc(listing?.rootCwd || fileProjectCwd)}</span>`}
+        </div>
+      `;
+
+      const listHtml = entries.map(e => `
+        <div class="file-row" onclick="clickRealFileEntry('${esc(host.hostId)}', '${esc(agentId)}', '${esc(listing?.rootCwd || fileProjectCwd)}', '${esc(e.relPath)}', ${Boolean(e.isDirectory)}, false)">
+          <div class="file-row-left">
+            <span style="font-size:18px;">${e.isDirectory ? '📁' : '📄'}</span>
+            <span style="font-weight:500;">${esc(e.name)}</span>
+          </div>
+          <span style="font-size:12px;color:#94a3b8;">${e.isDirectory ? '目录' : formatBytes(e.size)} ›</span>
+        </div>
+      `).join('') || `<div style="padding:36px;text-align:center;color:#94a3b8;">点击上方项目胶囊加载远程目录...</div>`;
+
+      container.innerHTML = projectPillsHtml + breadcrumbHtml + `<div>${listHtml}</div>`;
+    }
+
+    function closeMainFilePreview(hostId) {
+      const host = (hubState.hosts || []).find(h => h.hostId === hostId);
+      if (host?.lastFilePreview) host.lastFilePreview._showInMain = false;
+      renderAll();
+    }
+
+    function askAiAboutFile(hostId, cwd, fileName) {
+      if (desktopStageMode === 'code') switchDesktopStage('chat');
+      switchTab('chats');
+      newTaskHostId = hostId;
+      newTaskCwd = cwd;
+      openNewTaskSheet();
+      document.getElementById('newTaskInput').value = `请帮我阅读并分析 @${fileName} 文件，看看有没有可以优化的地方：`;
+    }
+
+    function switchDesktopStage(mode) {
+      desktopStageMode = mode;
+      document.getElementById('stageBtnChat').classList.toggle('active', mode === 'chat');
+      document.getElementById('stageBtnCode').classList.toggle('active', mode === 'code');
+
+      const chatBox = document.getElementById('chatMessages');
+      const composer = document.getElementById('chatComposerBar');
+      const codePane = document.getElementById('desktopStageCodePane');
+
+      if (mode === 'code') {
+        chatBox.style.display = 'none';
+        composer.style.display = 'none';
+        codePane.style.display = 'block';
+        const found = findSessionGlobal(activeSessionId);
+        if (found) {
+          fileProjectCwd = found.session.cwd;
+          requestDirList(found.session.hostId, found.session.id, found.session.cwd, '');
+        }
+        renderFilesTab(codePane);
+      } else {
+        chatBox.style.display = 'flex';
+        composer.style.display = 'flex';
+        codePane.style.display = 'none';
+      }
+    }
+
+    // ==================== 9. 新建任务半屏面板 ====================
+    function openNewTaskSheet() {
+      const hosts = hubState.hosts || [];
+      if (!newTaskHostId || !hosts.some(h => h.hostId === newTaskHostId)) {
+        newTaskHostId = currentHostId !== 'ALL_HOSTS' ? currentHostId : (hosts[0]?.hostId || '');
+      }
+      const host = hosts.find(h => h.hostId === newTaskHostId);
+      const projects = getHostProjects(host);
+      if (!newTaskCwd && projects[0]) newTaskCwd = projects[0].cwd;
+      renderNewTaskForm();
+      document.getElementById('newTaskSheet').classList.add('open');
+      setTimeout(() => document.getElementById('newTaskInput').focus(), 100);
+    }
+
+    function renderNewTaskForm() {
+      const hosts = hubState.hosts || [];
+      const hostChips = document.getElementById('newTaskHostChips');
+      hostChips.innerHTML = hosts.map(h => `
+        <button class="choice-chip ${h.hostId === newTaskHostId ? 'selected' : ''}" onclick="selectNewTaskHost('${esc(h.hostId)}')">
+          🟢 ${esc(h.hostName)}
+        </button>
+      `).join('');
+
+      const host = hosts.find(h => h.hostId === newTaskHostId);
+      const projects = getHostProjects(host);
+      if (!projects.some(p => p.cwd === newTaskCwd) && projects[0]) {
+        newTaskCwd = projects[0].cwd;
+      }
+      const projChips = document.getElementById('newTaskProjectChips');
+      projChips.innerHTML = projects.map(p => `
+        <button class="choice-chip ${p.cwd === newTaskCwd ? 'selected' : ''}" onclick="selectNewTaskProject('${esc(p.cwd)}')">
+          📁 ${esc(p.name)}
+        </button>
+      `).join('');
+    }
+
+    function selectNewTaskHost(id) {
+      newTaskHostId = id;
+      newTaskCwd = '';
+      renderNewTaskForm();
+    }
+
+    function selectNewTaskProject(cwd) {
+      newTaskCwd = cwd;
+      renderNewTaskForm();
+    }
+
+    function fillQuickPrompt(text) {
+      const box = document.getElementById('newTaskInput');
+      box.value = text;
+      box.focus();
+    }
+
+    async function submitNewTask() {
+      const text = document.getElementById('newTaskInput').value.trim();
+      if (!text || !newTaskHostId) {
+        showToast('请输入任务指令');
+        return;
+      }
+      document.getElementById('newTaskInput').value = '';
+      closeSheet('newTaskSheet');
+      showToast('🚀 正在远程电脑创建新任务...');
+      await dispatchHostCommand(newTaskHostId, {
+        type: 'new_session',
+        cwd: newTaskCwd,
+        title: text.slice(0, 28),
+        prompt: text,
+      });
+      setTimeout(fetchState, 800);
+    }
+
+    // ==================== 10. 会话操作菜单 (重命名 / 置顶 / 加密分享 / 看文件 / 删除) ====================
+    function openCurrentSessionActions() {
+      if (activeSessionId) openSessionActions(activeSessionId);
+    }
+
+    function openSessionActions(sessionId) {
+      const found = findSessionGlobal(sessionId);
+      if (!found) return;
+      actionTargetSession = found.session;
+      actionTargetHostId = found.session.hostId;
+      confirmSheetDelete = false;
+      renderActionSheet();
+      document.getElementById('taskActionSheet').classList.add('open');
+    }
+
+    function renderActionSheet() {
+      const s = actionTargetSession;
+      if (!s) return;
+      document.getElementById('actionSheetTitle').innerHTML = `
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(s.title)}</span>
+        <button style="border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;" onclick="closeSheet('taskActionSheet')">✕</button>
+      `;
+      document.getElementById('actionSheetBody').innerHTML = `
+        <div style="margin-bottom:10px;display:flex;gap:6px;">
+          <input id="renameInlineInput" value="${esc(s.title)}" style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid #cbd5e1;font-size:15px;outline:none;" />
+          <button style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:0 14px;font-weight:600;cursor:pointer;" onclick="saveInlineRename()">保存标题</button>
+        </div>
+        <button class="action-item" onclick="togglePinTargetSession()">
+          ${s.pinned ? '📌 取消置顶此对话' : '📌 置顶此对话（固定在列表最顶部）'}
+        </button>
+        <button class="action-item" onclick="shareTargetSession()">🔗 生成 AES-256 端到端加密回放链接</button>
+        <button class="action-item" onclick="jumpToSessionFiles('${esc(s.hostId)}', '${esc(s.id)}', '${esc(s.cwd)}')">📂 查看【${esc(s.project)}】项目文件夹</button>
+        <button class="action-item danger" onclick="deleteTargetSession()">
+          ${confirmSheetDelete ? '⚠️ 再次点击确认彻底删除' : '🗑️ 删除此条会话记录'}
+        </button>
+      `;
+    }
+
+    function togglePinTargetSession() {
+      if (!actionTargetSession) return;
+      const id = actionTargetSession.id;
+      pinnedMap[id] = !pinnedMap[id];
+      try { localStorage.setItem('dsh_pinned_sessions', JSON.stringify(pinnedMap)); } catch {}
+      closeSheet('taskActionSheet');
+      showToast(pinnedMap[id] ? '📌 已置顶该对话' : '已取消置顶');
+      renderAll();
+    }
+
+    async function saveInlineRename() {
+      const val = document.getElementById('renameInlineInput').value.trim();
+      if (!val || !actionTargetSession) return;
+      closeSheet('taskActionSheet');
+      showToast('✏️ 正在保存新标题...');
+      await dispatchHostCommand(actionTargetHostId, {
+        type: 'rename_session',
+        agentId: actionTargetSession.id,
+        title: val,
+      });
+      setTimeout(fetchState, 600);
+    }
+
+    async function shareTargetSession() {
+      if (!actionTargetSession) return;
+      closeSheet('taskActionSheet');
+      showToast('🔒 正在生成端到端加密回放链接...');
+      const out = await dispatchHostCommand(actionTargetHostId, {
+        type: 'share_session',
+        agentId: actionTargetSession.id,
+      });
+      const cmdId = out?.command?.id;
+      if (!cmdId) return;
+      for (let i = 0; i < 8; i++) {
+        await new Promise(r => setTimeout(r, 600));
+        const res = await (await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`)).json();
+        if (res.ready && res.result?.shareUrl) {
+          const fullUrl = res.result.shareUrl.startsWith('http')
+            ? res.result.shareUrl
+            : location.origin + res.result.shareUrl;
+          navigator.clipboard?.writeText(fullUrl);
+          showToast('🔗 加密链接已复制到剪贴板！');
+          return;
+        }
+      }
+      showToast('✅ 分享已生成，可在设置页查看');
+    }
+
+    async function jumpToSessionFiles(hostId, agentId, cwd) {
+      closeSheet('taskActionSheet');
+      closeMobileChat();
+      currentHostId = hostId;
+      fileProjectCwd = cwd;
+      switchTab('files');
+      await requestDirList(hostId, agentId, cwd, '');
+    }
+
+    async function deleteTargetSession() {
+      if (!confirmSheetDelete) {
+        confirmSheetDelete = true;
+        renderActionSheet();
+        return;
+      }
+      if (!actionTargetSession) return;
+      closeSheet('taskActionSheet');
+      showToast('🗑️ 正在删除会话...');
+      await dispatchHostCommand(actionTargetHostId, {
+        type: 'delete_session',
+        agentId: actionTargetSession.id,
+      });
+      if (activeSessionId === actionTargetSession.id) {
+        activeSessionId = '';
+        closeMobileChat();
+      }
+      setTimeout(fetchState, 600);
+    }
+
+    // ==================== 11. 设备与设置 Tab (双机状态看板 + 跨机迁移向导 + 密码管理) ====================
+    function renderSettingsTab() {
+      const hosts = hubState.hosts || [];
+      const currentTk = getToken();
+      const onboardingCmd = `git clone https://github.com/oscarka/deepseekharness-remotecontrol.git ~/deepseekharness-remote && cd ~/deepseekharness-remote && ./connect-host.sh "新电脑名称" "${currentTk}"`;
+
+      document.getElementById('mainViewport').innerHTML = `
+        <div class="settings-wrap">
+          <div>
+            <div class="settings-group-title">已接入电脑实时看板 (${hosts.length} 台设备)</div>
+            <div class="host-visual-grid">
+              ${hosts.map(h => `
+                <div class="host-visual-card ${h.isFeishuActive ? 'active-feishu' : ''}">
+                  <div class="host-visual-top">
+                    <div>
+                      <div style="font-size:15.5px;font-weight:700;display:flex;align-items:center;gap:6px;">
+                        <span class="status-dot ${h.online ? '' : 'offline'}"></span>
+                        <span>${esc(h.hostName)}</span>
+                        <span style="font-size:11.5px;color:#64748b;font-weight:500;">(${esc(h.platform || 'macOS')} ${esc(h.arch || '')})</span>
+                      </div>
+                      <div style="font-size:11.5px;color:#64748b;margin-top:3px;">
+                        🔒 指纹 ${esc(h.fingerprint || '已锁定')} · ${h.online ? '实时在线' : '离线 (' + formatTime(h.lastSeen) + ')'}
+                      </div>
+                    </div>
+                    <button class="pill-action-btn ${h.isFeishuActive ? 'primary' : ''}" onclick="activateFeishuHost('${esc(h.hostId)}')">
+                      ${h.isFeishuActive ? '🎯 飞书当前主控' : '切飞书到这台'}
+                    </button>
+                  </div>
+                  <div class="host-metrics-row">
+                    <div class="metric-cell">
+                      <span class="metric-label">总会话数</span>
+                      <span class="metric-val">${(h.bridgeState?.tasks || []).length} 条</span>
+                    </div>
+                    <div class="metric-cell">
+                      <span class="metric-label">运行中</span>
+                      <span class="metric-val">${h.runningCount || 0} 个</span>
+                    </div>
+                    <div class="metric-cell">
+                      <span class="metric-label">~/.dsh 存储</span>
+                      <span class="metric-val">${formatBytes(h.totalBytes)}</span>
+                    </div>
+                  </div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:#475569;">
+                    <span>飞书远程完成/异常卡片通知</span>
+                    <button class="pill-action-btn ${h.remoteActive ? 'primary' : ''}" style="padding:4px 10px;font-size:11.5px;" onclick="toggleHostRemoteMode('${esc(h.hostId)}', ${!h.remoteActive})">
+                      ${h.remoteActive ? '🔔 已开启' : '🔕 已关闭'}
+                    </button>
+                  </div>
+                </div>
+              `).join('') || `<div style="padding:24px;text-align:center;color:#94a3b8;">暂未检测到在线电脑</div>`}
+            </div>
+          </div>
+
+          <div>
+            <div class="settings-group-title">多电脑协同与一键迁移</div>
+            <div class="settings-card">
+              <div class="settings-item">
+                <div>
+                  <div class="settings-item-title">跨电脑一键迁移会话</div>
+                  <div class="settings-item-desc">将源电脑 ~/.dsh 会话打包同步至目标电脑并可选清理源机</div>
+                </div>
+                <button class="pill-action-btn primary" onclick="openMigrateWizard()">📦 打开迁移向导</button>
+              </div>
+              <div class="settings-item">
+                <div>
+                  <div class="settings-item-title">接入新电脑（含你的私密认证密钥）</div>
+                  <div class="settings-item-desc">公开 GitHub 仓库不含密码，点击复制带密钥的专属接入命令</div>
+                </div>
+                <button class="pill-action-btn" onclick="copyCodeText('${encodeURIComponent(onboardingCmd)}')">📋 复制专属命令</button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="settings-group-title">手机锁屏通知 (iOS 16.4+ Web Push)</div>
+            <div class="settings-card">
+              <div class="settings-item">
+                <div>
+                  <div class="settings-item-title">启用 iPhone 锁屏实时推送</div>
+                  <div class="settings-item-desc">当任意电脑有待审批或任务完成时直接弹窗</div>
+                </div>
+                <div style="display:flex;gap:6px;">
+                  <button class="pill-action-btn primary" onclick="subscribeIphonePush()">📲 开启推送</button>
+                  <button class="pill-action-btn" onclick="sendTestPush()">测试</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="settings-group-title">隐私与访问密码保护</div>
+            <div class="settings-card">
+              <div class="settings-item">
+                <div>
+                  <div class="settings-item-title">修改总控台访问密码</div>
+                  <div class="settings-item-desc">随时更换访问密钥，防止未授权访问</div>
+                </div>
+                <button class="pill-action-btn" onclick="promptChangePassword()">🔑 修改密码</button>
+              </div>
+              <div class="settings-item">
+                <div>
+                  <div class="settings-item-title">锁定当前浏览器</div>
+                  <div class="settings-item-desc">清除本机浏览器缓存的登录凭证</div>
+                </div>
+                <button class="pill-action-btn" style="color:var(--red);" onclick="lockAndLogout()">🔒 立即锁定</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function activateFeishuHost(hostId) {
+      await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/activate`, { method: 'POST' });
+      showToast('🎯 已切换飞书主控电脑');
+      setTimeout(fetchState, 400);
+    }
+
+    async function toggleHostRemoteMode(hostId, enable) {
+      await dispatchHostCommand(hostId, { type: 'remote_toggle', enable });
+      showToast(enable ? '🔔 已开启飞书通知' : '🔕 已关闭飞书通知');
+      setTimeout(fetchState, 600);
+    }
+
+    async function promptChangePassword() {
+      const next = prompt('请输入新的总控台访问密码（至少 6 位）：');
+      if (!next || next.trim().length < 6) return;
+      const clean = next.trim();
+      const res = await apiFetch('/api/auth/change-token', {
+        method: 'POST',
+        body: JSON.stringify({ newToken: clean }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        localStorage.setItem('dsh_hub_token', clean);
+        showToast('✅ 访问密码已更新！请同步更新各电脑 ~/.dsh/feishu.env');
+        renderSettingsTab();
+      } else {
+        showToast('❌ ' + (data.error || '修改失败'));
+      }
+    }
+
+    // ==================== 12. 跨电脑迁移向导 ====================
+    function openMigrateWizard() {
+      const hosts = hubState.hosts || [];
+      if (hosts.length < 2) {
+        showToast('需要至少 2 台已接入的电脑才能互相迁移');
+        return;
+      }
+      migSource = hosts[0].hostId;
+      migTarget = hosts[1].hostId;
+      renderMigrateWizard();
+      document.getElementById('mobileSettingsSheet').classList.add('open');
+    }
+
+    function renderMigrateWizard() {
+      const hosts = hubState.hosts || [];
+      const srcObj = hosts.find(h => h.hostId === migSource) || hosts[0];
+      const dstObj = hosts.find(h => h.hostId === migTarget) || hosts[1] || hosts[0];
+      const body = document.getElementById('migrateWizardBody');
+
+      body.innerHTML = `
+        <div class="form-label">1. 选择迁移方向</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <div style="flex:1;padding:10px 12px;border-radius:12px;background:var(--subtle);text-align:center;font-weight:700;font-size:14px;">
+            💻 ${esc(srcObj?.hostName || migSource)}
+            <div style="font-size:11px;color:#64748b;font-weight:400;margin-top:2px;">源电脑</div>
+          </div>
+          <button class="pill-action-btn" onclick="swapMigrateHosts()">⇄ 互换</button>
+          <div style="flex:1;padding:10px 12px;border-radius:12px;background:var(--primary-soft);border:1px solid #bfdbfe;text-align:center;font-weight:700;font-size:14px;color:var(--primary);">
+            💻 ${esc(dstObj?.hostName || migTarget)}
+            <div style="font-size:11px;color:#3b82f6;font-weight:400;margin-top:2px;">目标电脑</div>
+          </div>
+        </div>
+
+        <div class="form-label">2. 迁移选项</div>
+        <label style="display:flex;align-items:center;gap:8px;padding:9px 0;font-size:14px;cursor:pointer;">
+          <input type="checkbox" ${migSwitchFeishu ? 'checked' : ''} onchange="migSwitchFeishu=this.checked" />
+          <span>迁移完成后自动把飞书机器人切到目标电脑</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;padding:9px 0;font-size:14px;cursor:pointer;">
+          <input type="checkbox" ${migWipeSource ? 'checked' : ''} onchange="migWipeSource=this.checked" />
+          <span>迁移后清空源电脑上的会话历史（保留飞书凭证）</span>
+        </label>
+
+        <button class="primary-block-btn" onclick="submitRealMigration()">🚀 开始一键加密迁移</button>
+      `;
+    }
+
+    function swapMigrateHosts() {
+      const tmp = migSource;
+      migSource = migTarget;
+      migTarget = tmp;
+      renderMigrateWizard();
+    }
+
+    async function submitRealMigration() {
+      closeSheet('mobileSettingsSheet');
+      showToast('📦 已启动跨电脑加密迁移任务...');
+      await apiFetch('/api/migrate', {
+        method: 'POST',
+        body: JSON.stringify({
+          sourceHostId: migSource,
+          targetHostId: migTarget,
+          switchFeishu: migSwitchFeishu,
+          wipeSource: migWipeSource,
+        }),
+      });
+      setTimeout(fetchState, 1000);
+    }
+
+    // ==================== 13. iOS Web Push 锁屏推送 ====================
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = atob(base64);
+      return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+    }
+
+    async function subscribeIphonePush() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        showToast('请先用 Safari「添加到主屏幕」后再开启锁屏推送');
+        return;
+      }
+      try {
+        const reg = await navigator.serviceWorker.register('/sw.js');
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') {
+          showToast('请在系统设置中允许通知权限');
+          return;
+        }
+        const keyRes = await (await apiFetch('/api/push/vapid-public-key')).json();
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(keyRes.publicKey),
+        });
+        await apiFetch('/api/push/subscribe', {
+          method: 'POST',
+          body: JSON.stringify({ subscription: sub, deviceName: 'iPhone 主屏幕 App' }),
+        });
+        showToast('📲 已成功开启 iPhone 锁屏推送！');
+      } catch (err) {
+        showToast('开启失败: ' + (err.message || err));
+      }
+    }
+
+    async function sendTestPush() {
+      await apiFetch('/api/push/test', { method: 'POST', body: JSON.stringify({}) });
+      showToast('🔔 已发送测试锁屏通知');
+    }
+
+    // ==================== 14. 通用导航与抽屉控制 ====================
+    function openHostSheet() {
+      const hosts = hubState.hosts || [];
+      const totalCount = hosts.reduce((acc, h) => acc + ((h.bridgeState?.tasks || []).length), 0);
+      const onlineCount = hosts.filter(h => h.online).length;
+      document.getElementById('hostSheetCountLabel').textContent = `${onlineCount}/${hosts.length} 台设备在线`;
+
+      const list = document.getElementById('hostOptionList');
+      list.innerHTML = [
+        `<div class="host-option ${currentHostId === 'ALL_HOSTS' ? 'selected' : ''}" onclick="selectHost('ALL_HOSTS')">
+          <div>
+            <div style="font-weight:700;font-size:15px;">🌐 全部电脑汇总</div>
+            <div style="font-size:12.5px;color:#64748b;margin-top:2px;">一屏混排查看 ${hosts.length} 台电脑共 ${totalCount} 条会话</div>
+          </div>
+          <span style="font-size:13px;font-weight:600;color:#2563eb;">${currentHostId === 'ALL_HOSTS' ? '当前视图 ✓' : '切换 ›'}</span>
+        </div>`,
+        ...hosts.map(h => `
+          <div class="host-option ${h.hostId === currentHostId ? 'selected' : ''}" onclick="selectHost('${esc(h.hostId)}')">
+            <div>
+              <div style="font-weight:700;font-size:15px;">${h.online ? '🟢' : '⚪'} ${esc(h.hostName)}</div>
+              <div style="font-size:12.5px;color:#64748b;margin-top:2px;">${(h.bridgeState?.tasks || []).length} 条会话 · ${h.isFeishuActive ? '🎯 飞书当前主控' : (h.online ? '在线待命' : '离线')}</div>
+            </div>
+            <span style="font-size:13px;font-weight:600;color:#2563eb;">${h.hostId === currentHostId ? '当前设备 ✓' : '切换 ›'}</span>
+          </div>
+        `)
+      ].join('');
+      document.getElementById('hostSheet').classList.add('open');
+    }
+
+    function selectHost(id) {
+      currentHostId = id;
+      currentProject = 'ALL';
+      fileProjectCwd = '';
+      closeSheet('hostSheet');
+      renderAll();
+    }
+
+    function selectProject(proj) {
+      currentProject = proj;
+      renderAll();
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + tab).classList.add('active');
+      if (tab === 'files') {
+        const hosts = hubState.hosts || [];
+        const host = currentHostId === 'ALL_HOSTS' ? hosts[0] : hosts.find(h => h.hostId === currentHostId);
+        if (host && !host.lastFsListing) {
+          const projs = getHostProjects(host);
+          const firstTask = (host.bridgeState?.tasks || [])[0];
+          if (projs[0]) {
+            requestDirList(host.hostId, firstTask?.id || '', projs[0].cwd, '');
+          }
         }
       }
       renderAll();
     }
 
-    function connectSse() {
-      if (urlParams.get('nosse') === '1' || typeof EventSource === 'undefined') return;
-      if (sseSource) {
-        sseSource.close();
-        sseSource = null;
-      }
+    function closeSheet(id) {
+      document.getElementById(id)?.classList.remove('open');
+    }
+
+    function onSearchInput() {
+      const input = document.getElementById('searchInput');
+      searchQuery = input.value;
+      document.getElementById('searchClearBtn').style.display = searchQuery ? 'inline-flex' : 'none';
+      renderSessionList();
+    }
+
+    function clearSearch() {
+      const input = document.getElementById('searchInput');
+      input.value = '';
+      searchQuery = '';
+      document.getElementById('searchClearBtn').style.display = 'none';
+      renderSessionList();
+    }
+
+    function copyCodeText(encoded) {
+      const text = decodeURIComponent(encoded);
+      navigator.clipboard?.writeText(text);
+      showToast('📋 已复制到剪贴板');
+    }
+
+    // ==================== 15. SSE 实时流与轮询同步 ====================
+    async function fetchState() {
       try {
-        const q = hubToken ? `?token=${encodeURIComponent(hubToken)}` : '';
-        sseSource = new EventSource('/api/events' + q);
+        const res = await apiFetch('/api/state');
+        const data = await res.json();
+        if (data.ok) {
+          hubState = data;
+          renderAll();
+        }
+      } catch {
+        // handled by apiFetch 401 overlay
+      }
+    }
+
+    let sseSource = null;
+    function connectSSE() {
+      if (urlParams.get('nosse') === '1') return;
+      if (sseSource) {
+        try { sseSource.close(); } catch {}
+      }
+      const tk = getToken();
+      const url = '/api/events' + (tk ? '?token=' + encodeURIComponent(tk) : '');
+      try {
+        sseSource = new EventSource(url);
         sseSource.addEventListener('state', evt => {
           try {
-            const parsed = JSON.parse(evt.data);
-            applyIncomingState(parsed);
+            const data = JSON.parse(evt.data);
+            if (data.ok) {
+              hubState = data;
+              renderAll();
+            }
           } catch {}
         });
       } catch {}
     }
 
-    async function refreshState() {
-      try {
-        const data = await api('/api/state');
-        applyIncomingState(data);
-      } catch (err) {
-        if (err.message === 'Unauthorized') {
-          if (!urlParams.get('pair')) openAuthModal();
-        } else {
-          document.getElementById('connBadge').className = 'badge amber';
-          document.getElementById('connBadge').textContent = '重连中...';
-        }
-      }
-    }
-
-    function updateDeepyMascot() {
-      const el = document.getElementById('deepyMascot');
-      const totalRunning = state.hosts.reduce((acc, h) => acc + (h.runningCount || 0), 0);
-      const totalApprovals = state.hosts.reduce((acc, h) => acc + ((h.bridgeState?.approvals || []).length), 0);
-      const badgeEl = document.getElementById('badge_chat');
-      if (badgeEl) {
-        const count = totalApprovals + totalRunning;
-        badgeEl.style.display = count > 0 ? 'inline-block' : 'none';
-        badgeEl.textContent = String(count);
-      }
-      if (totalApprovals > 0) {
-        el.innerHTML = `⏳ <strong>${totalApprovals} 项待你批准</strong>`;
-        el.style.background = 'var(--amber-soft)';
-        el.style.borderColor = 'var(--amber-border)';
-        el.style.color = 'var(--amber)';
-      } else if (totalRunning > 0) {
-        el.innerHTML = `🟢 <strong>${totalRunning} 个任务运行中</strong>`;
-        el.style.background = 'var(--green-soft)';
-        el.style.borderColor = 'var(--green-border)';
-        el.style.color = 'var(--green)';
-      } else {
-        el.innerHTML = `💻 <strong>已连接 ${state.stats?.onlineHosts || 0} 台电脑</strong>`;
-        el.style.background = 'var(--surface-subtle)';
-        el.style.borderColor = 'var(--border)';
-        el.style.color = 'var(--text-secondary)';
-      }
-
-      const statsEl = document.getElementById('fleetStats');
-      if (state.stats && statsEl) {
-        statsEl.textContent = `在线电脑 ${state.stats.onlineHosts}/${state.stats.totalHosts} · 本机对话 ${state.stats.totalSessionsOnDisk} 个 · 手机提醒 ${state.stats.pushSubscriptionsCount || 0} 台`;
-      }
-      const headerPushBtn = document.getElementById('headerPushBtn');
-      if (headerPushBtn && (state.pushSubscriptions || []).length > 0) {
-        headerPushBtn.textContent = `🔔 手机提醒已开 (${state.pushSubscriptions.length})`;
-      }
-    }
-
-    function renderHostPills() {
-      const bar = document.getElementById('hostPillsBar');
-      const mobileTopLabel = document.getElementById('mobileTopHostLabel');
-      const sheetBody = document.getElementById('hostSwitchSheetBody');
-      if (!state.hosts || state.hosts.length === 0) {
-        bar.innerHTML = '<span style="font-size:12.5px; color:var(--muted);">暂无电脑接入，在电脑配置 FEISHU_HUB_URL 后自动显示</span>';
-        if (mobileTopLabel) mobileTopLabel.textContent = '暂无连接电脑';
-        if (sheetBody) sheetBody.innerHTML = '<div style="color:var(--muted); font-size:13px;">当前还没有电脑连接。</div>';
-        return;
-      }
-      const curHost = state.hosts.find(h => h.hostId === selectedHostId) || state.hosts[0];
-      if (mobileTopLabel && curHost) {
-        mobileTopLabel.textContent = `${curHost.hostName} (${curHost.taskCount})`;
-      }
-      if (sheetBody) {
-        sheetBody.innerHTML = state.hosts.map(h => {
-          const isSel = h.hostId === selectedHostId;
-          const isFeishu = h.hostId === state.activeHostId;
-          return `
-            <div style="border:1px solid ${isSel ? 'var(--primary)' : 'var(--border)'}; background:${isSel ? 'var(--primary-soft)' : 'var(--surface-subtle)'}; border-radius:14px; padding:12px 14px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-              <div style="flex:1; cursor:pointer;" onclick="selectHost('${esc(h.hostId)}'); closeModal('hostSwitchSheet')">
-                <div style="font-weight:750; font-size:15px;">💻 ${esc(h.hostName)}</div>
-                <div style="font-size:12px; color:var(--muted); margin-top:2px;">${h.taskCount} 个项目对话 · ${isFeishu ? '🟢 飞书当前连这台' : '候命中'}</div>
-              </div>
-              <div style="display:flex; gap:6px;">
-                ${!isFeishu ? `<button class="green sm" onclick="activateFeishuHost('${esc(h.hostId)}'); closeModal('hostSwitchSheet')">🎯 让飞书连</button>` : ''}
-                <button class="primary sm" onclick="selectHost('${esc(h.hostId)}'); closeModal('hostSwitchSheet')">查看</button>
-              </div>
-            </div>
-          `;
-        }).join('');
-      }
-      bar.innerHTML = state.hosts.map(h => {
-        const isSel = h.hostId === selectedHostId;
-        const isFeishu = h.hostId === state.activeHostId;
-        return `<div class="host-pill ${isSel ? 'active' : ''}" onclick="selectHost('${esc(h.hostId)}')">
-          <span class="status-dot ${h.online ? 'online' : 'offline'}"></span>
-          <span>💻 ${esc(h.hostName)}</span>
-          ${isFeishu ? '<span class="badge green" style="padding:1px 7px; font-size:10.5px;">飞书正在连这台</span>' : '<span class="badge muted" style="padding:1px 7px; font-size:10.5px;">候命</span>'}
-          <span style="font-size:11.5px; color:var(--muted);">${h.taskCount} 个对话</span>
-        </div>`;
-      }).join('');
-    }
-
-    function renderAll() {
-      updateDeepyMascot();
-      renderHostPills();
-      renderHosts();
-      renderMigrationSelectors();
-      renderSnapshots();
-      renderShares();
-      renderPushSection();
-      renderSelectedHostConsole();
-    }
-
-    function renderPushSection() {
-      const subsBox = document.getElementById('pushSubsList');
-      const histBox = document.getElementById('pushHistoryList');
-      const subs = state.pushSubscriptions || [];
-      if (subs.length === 0) {
-        subsBox.innerHTML = '<div style="font-size:12.5px; color:var(--muted); padding:10px; background:var(--surface-subtle); border-radius:10px;">当前还没有手机或电脑开启锁屏提醒。点上方「🔔 开启手机提醒」即可开启。</div>';
-      } else {
-        subsBox.innerHTML = subs.map(s => `
-          <div style="border:1px solid var(--border); background:var(--surface-subtle); border-radius:10px; padding:10px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; font-size:12.5px;">
-            <div>
-              <strong>📱 ${esc(s.deviceName)}</strong>
-              <div style="color:var(--muted); font-size:11.5px;">通道: <code>${esc(s.endpointHost)}</code> · 最近提醒: ${s.lastSentAt ? formatTime(s.lastSentAt) : '待触发'}</div>
-            </div>
-            <button class="danger sm" onclick="removePushSub('${esc(s.id)}')">移除</button>
-          </div>
-        `).join('');
-      }
-
-      const hist = state.pushHistory || [];
-      if (hist.length === 0) {
-        histBox.innerHTML = '<div style="font-size:12.5px; color:var(--muted);">暂无提醒记录。</div>';
-      } else {
-        histBox.innerHTML = hist.map(item => `
-          <div style="border:1px solid var(--border); background:var(--surface-subtle); border-radius:10px; padding:9px 12px; margin-bottom:8px; font-size:12px;">
-            <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
-              <strong>${esc(item.title)}</strong>
-              <span style="color:var(--muted);">${formatTime(item.at)}</span>
-            </div>
-            <div style="color:var(--text-secondary);">${esc(item.body)}</div>
-          </div>
-        `).join('');
-      }
-    }
-
-    function renderHosts() {
-      const grid = document.getElementById('hostsGrid');
-      if (!state.hosts || state.hosts.length === 0) {
-        grid.innerHTML = `<div style="color: var(--muted); font-size: 13px; padding: 16px; background:var(--surface-subtle); border-radius:12px;">
-          暂无电脑接入。在任意电脑的 <code>~/.dsh/feishu.env</code> 中设置 <code>FEISHU_HUB_URL=${esc(location.origin)}</code> 后启动 DSH 即可自动出现在这里。
-        </div>`;
-        return;
-      }
-      grid.innerHTML = state.hosts.map(h => {
-        const isFeishu = h.hostId === state.activeHostId;
-        const isSelected = h.hostId === selectedHostId;
-        const isRevoked = h.trust?.status === 'revoked';
-        const fp = h.fingerprint || h.identity?.fingerprint || '';
-        return `
-          <div class="host-card ${isFeishu ? 'active-feishu' : ''} ${isSelected ? 'selected' : ''}" onclick="selectHost('${esc(h.hostId)}')">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
-              <div>
-                <div style="font-weight: 750; font-size: 15.5px; display:flex; align-items:center; gap:6px;">
-                  <span class="status-dot ${h.online ? 'online' : 'offline'}"></span>
-                  <span>${esc(h.hostName)}</span>
-                </div>
-                <div style="font-size: 12px; color: var(--muted); margin-top:2px;">标识: <code>${esc(h.hostId)}</code> · ${esc(h.platform)}/${esc(h.arch)} · ${formatTime(h.lastSeen)}</div>
-                ${fp ? `<div style="font-size: 11.5px; color: var(--primary); margin-top:4px; font-weight:600;">🔒 设备安全锁已绑定 (<code>${esc(fp.slice(0, 18))}…</code>)</div>` : ''}
-              </div>
-              <div class="badges">
-                ${isRevoked ? '<span class="badge red">🚫 已禁用</span>' : '<span class="badge blue">已认证本机</span>'}
-                ${isFeishu ? '<span class="badge green">🟢 飞书正在连这台</span>' : '<span class="badge muted">待机候命</span>'}
-              </div>
-            </div>
-            <div class="metrics">
-              <div>
-                <div class="metric-val">${h.taskCount}</div>
-                <div class="metric-lbl">项目对话数</div>
-              </div>
-              <div>
-                <div class="metric-val">${h.sessionCount}</div>
-                <div class="metric-lbl">本地存档文件</div>
-              </div>
-              <div>
-                <div class="metric-val">${formatBytes(h.totalBytes)}</div>
-                <div class="metric-lbl">占用空间</div>
-              </div>
-            </div>
-            <div class="badges" onclick="event.stopPropagation()">
-              ${!isFeishu && !isRevoked ? `<button class="green sm" onclick="activateFeishuHost('${esc(h.hostId)}')">🎯 让飞书连这台</button>` : ''}
-              <button class="sm" onclick="selectHost('${esc(h.hostId)}'); switchTab('chat')">💬 看这台的对话</button>
-              <button class="sm" onclick="exportHostSnapshot('${esc(h.hostId)}')">📦 备份对话</button>
-              <button class="danger sm" onclick="wipeHost('${esc(h.hostId)}', '${esc(h.hostName)}')">🧹 清空本机记录</button>
-              ${isRevoked
-                ? `<button class="amber sm" onclick="manageTrust('${esc(h.hostId)}', 'reset_pin')">🔓 恢复连接</button>`
-                : `<button class="danger sm" onclick="manageTrust('${esc(h.hostId)}', 'revoke')">🚫 断开禁用</button>`}
-              <button class="danger sm" onclick="removeHostRecord('${esc(h.hostId)}', '${esc(h.hostName)}')">🗑️ 移除记录</button>
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    function renderMigrationSelectors() {
-      const srcEl = document.getElementById('migSource');
-      const dstEl = document.getElementById('migTarget');
-      const prevSrc = srcEl.value;
-      const prevDst = dstEl.value;
-      const opts = state.hosts.map(h => `<option value="${esc(h.hostId)}">${esc(h.hostName)} (${esc(h.hostId)}) · ${h.sessionCount} 个对话</option>`).join('');
-      srcEl.innerHTML = opts || '<option value="">无可用电脑</option>';
-      dstEl.innerHTML = opts || '<option value="">无可用电脑</option>';
-      if (prevSrc && state.hosts.some(h => h.hostId === prevSrc)) srcEl.value = prevSrc;
-      if (prevDst && state.hosts.some(h => h.hostId === prevDst)) dstEl.value = prevDst;
-      else if (state.hosts.length > 1) dstEl.value = state.hosts[1].hostId;
-
-      const migBox = document.getElementById('migrationsList');
-      if (!state.migrations || state.migrations.length === 0) {
-        migBox.innerHTML = '';
-        return;
-      }
-      migBox.innerHTML = state.migrations.slice(0, 4).map(m => {
-        const badge = m.status === 'completed' ? 'green' : m.status === 'failed' ? 'red' : 'amber';
-        return `<div style="padding: 8px 12px; background: var(--surface-subtle); border: 1px solid var(--border); border-radius: 10px; margin-top: 8px; display:flex; justify-content:space-between; align-items:center;">
-          <span><strong>${esc(m.sourceHostName)}</strong> ➔ <strong>${esc(m.targetHostName)}</strong> ${m.wipeSource ? '(已清空旧电脑)' : ''}</span>
-          <span class="badge ${badge}">${esc(m.status)} ${m.error ? '· ' + esc(m.error) : ''}</span>
-        </div>`;
-      }).join('');
-    }
-
-    function renderSnapshots() {
-      const box = document.getElementById('snapshotsList');
-      if (!state.snapshots || state.snapshots.length === 0) {
-        box.innerHTML = '<div style="color: var(--muted); font-size: 12.5px;">暂无备份包。可在电脑卡片上点「📦 备份对话」生成。</div>';
-        return;
-      }
-      const hostOptions = state.hosts.map(h => `<option value="${esc(h.hostId)}">${esc(h.hostName)}</option>`).join('');
-      box.innerHTML = state.snapshots.map(s => `
-        <div style="border: 1px solid var(--border); background: var(--surface-subtle); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size:12.5px;">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong>📦 ${esc(s.meta?.hostName || s.id)} (${s.meta?.sessionCount || 0} 个对话 · ${formatBytes(s.meta?.compressedBytes)})</strong>
-            <span style="color: var(--muted); font-size:11.5px;">${formatTime(s.createdAt)}</span>
-          </div>
-          <div class="badges" style="margin-top: 8px;">
-            <select id="restoreTarget_${esc(s.id)}" style="width: auto; padding: 4px 8px; font-size: 12px;">${hostOptions}</select>
-            <button class="primary sm" onclick="restoreSnapshotTo('${esc(s.id)}')">📥 恢复到这台电脑</button>
-            <a href="/api/snapshots/${encodeURIComponent(s.id)}/download?token=${encodeURIComponent(hubToken)}" target="_blank" style="text-decoration:none;">
-              <button type="button" class="sm">⬇️ 下载备份包</button>
-            </a>
-            <button class="danger sm" onclick="deleteSnapshot('${esc(s.id)}')">🗑️</button>
-          </div>
-        </div>
-      `).join('');
-    }
-
-    function renderShares() {
-      const box = document.getElementById('sharesList');
-      if (!state.shares || state.shares.length === 0) {
-        box.innerHTML = '<div style="color: var(--muted); font-size: 12.5px;">暂无分享链接。在任意对话右上角点「🔗 分享对话」即可生成。</div>';
-        return;
-      }
-      box.innerHTML = state.shares.map(sh => `
-        <div style="border: 1px solid var(--border); background: var(--surface-subtle); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size:12.5px; display:flex; justify-content:space-between; align-items:center;">
-          <div>
-            <strong>🔒 ${esc(sh.title)}</strong>
-            <div style="color:var(--muted); font-size:11.5px;">${esc(sh.hostName)} · ${sh.messageCount} 条对话 · ${formatBytes(sh.sizeBytes)}</div>
-          </div>
-          <button class="danger sm" onclick="deleteShare('${esc(sh.id)}')">🗑️ 删除</button>
-        </div>
-      `).join('');
-    }
-
-    function selectProjectFilter(proj) {
-      selectedProject = proj;
-      renderSelectedHostConsole();
-    }
-
-    function renderSelectedHostConsole() {
-      const host = state.hosts.find(h => h.hostId === selectedHostId) || state.hosts[0];
-      const sidebarTitle = document.getElementById('sidebarHostTitle');
-      const sidebarSub = document.getElementById('sidebarHostSub');
-      const quickActions = document.getElementById('hostQuickActions');
-      const projectFilterBar = document.getElementById('projectFilterBar');
-      const sessionListBox = document.getElementById('sessionListBox');
-      const approvalsEl = document.getElementById('approvalsBox');
-      const stageHeader = document.getElementById('chatStageHeader');
-      const streamBox = document.getElementById('chatStreamBox');
-      const composerBox = document.getElementById('chatComposerBox');
-
-      if (!host) {
-        sidebarTitle.textContent = '💻 暂无连接的电脑';
-        sidebarSub.textContent = '请先启动本地 DSH 接入控制台';
-        quickActions.innerHTML = '';
-        if (projectFilterBar) projectFilterBar.innerHTML = '';
-        sessionListBox.innerHTML = '<div style="color:var(--muted); font-size:12.5px; padding:12px 0;">等待你的电脑连接...</div>';
-        approvalsEl.innerHTML = '';
-        return;
-      }
-
-      selectedHostId = host.hostId;
-      const isFeishu = host.hostId === state.activeHostId;
-      const remoteActive = host.bridgeState?.remoteActive;
-      sidebarTitle.textContent = `💻 ${host.hostName}`;
-      sidebarSub.textContent = `本机 ~/.dsh 真实历史对话 (${(host.bridgeState?.tasks || []).length} 个)`;
-
-      quickActions.innerHTML = `
-        ${!isFeishu ? `<button class="green sm" onclick="activateFeishuHost('${esc(host.hostId)}')">🎯 让飞书连这台</button>` : '<span class="badge green">🟢 飞书当前连这台电脑</span>'}
-        <button class="sm" onclick="toggleRemoteMode('${esc(host.hostId)}', ${!remoteActive})">
-          ${remoteActive ? '🔔 飞书通知: 已开启' : '🔕 飞书通知: 已关闭'}
-        </button>
-      `;
-
-      const cwdInput = document.getElementById('newSessionCwd');
-      const workspaces = host.bridgeState?.workspaces || [];
-      if (workspaces[0] && cwdInput && !cwdInput.value) {
-        cwdInput.placeholder = `默认项目目录: ${workspaces[0]}`;
-      }
-
-      // Render Approvals & Share Banners
-      const approvals = host.bridgeState?.approvals || [];
-      let bannerHtml = approvals.map(a => `
-        <div class="panel" style="border-color: var(--amber); background: var(--amber-soft); padding: 14px 18px; margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-          <div>
-            <div style="font-weight:750; color:var(--amber);">⏳ 需要你批准操作：${esc(a.title)} · <code>${esc(a.toolName)}</code></div>
-            <div style="font-size:12.5px; color:var(--text-secondary); margin-top:2px;">说明：${esc(a.reason)}（编号: <code>${esc(a.code)}</code>）</div>
-          </div>
-          <div class="badges">
-            <button class="primary sm" style="background:var(--green); border-color:var(--green);" onclick="decideApproval('${esc(host.hostId)}', '${esc(a.code)}', 'approve')">✅ 允许执行</button>
-            <button class="danger sm" onclick="decideApproval('${esc(host.hostId)}', '${esc(a.code)}', 'deny')">❌ 拒绝</button>
-          </div>
-        </div>
-      `).join('');
-
-      if (host.lastShareResult && host.lastShareResult.shareUrl) {
-        bannerHtml += `
-          <div class="panel" style="border-color: var(--green-border); background: var(--green-soft); padding: 12px 18px; margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-            <div>
-              <strong style="color:var(--green); font-size:13px;">🔒 已生成加密分享网页链接：${esc(host.lastShareResult.title || '')}</strong>
-              <div style="font-size:12px; margin-top:2px; word-break:break-all;">
-                <a href="${esc(host.lastShareResult.shareUrl)}" target="_blank" style="color:var(--primary); font-weight:600;">${esc(host.lastShareResult.shareUrl)}</a>
-              </div>
-            </div>
-            <div class="badges">
-              <button class="primary sm" onclick="navigator.clipboard.writeText('${esc(host.lastShareResult.shareUrl)}'); showToast('📋 已复制分享链接')">📋 复制链接</button>
-              <a href="${esc(host.lastShareResult.shareUrl)}" target="_blank" style="text-decoration:none;"><button type="button" class="sm">↗ 打开查看</button></a>
-            </div>
-          </div>
-        `;
-      }
-      approvalsEl.innerHTML = bannerHtml;
-
-      // Render Project Filter Pills & Left Session List
-      const allTasks = host.bridgeState?.tasks || [];
-      const projectCounts = new Map();
-      for (const t of allTasks) {
-        const p = t.project || '默认工作区';
-        projectCounts.set(p, (projectCounts.get(p) || 0) + 1);
-      }
-      if (selectedProject !== 'ALL' && !projectCounts.has(selectedProject)) {
-        selectedProject = 'ALL';
-      }
-      if (projectFilterBar) {
-        const pills = [`<button class="sm ${selectedProject === 'ALL' ? 'primary' : ''}" onclick="selectProjectFilter('ALL')">全部项目 (${allTasks.length})</button>`];
-        for (const [proj, cnt] of projectCounts.entries()) {
-          pills.push(`<button class="sm ${selectedProject === proj ? 'primary' : ''}" onclick="selectProjectFilter('${esc(proj)}')">📁 ${esc(proj)} (${cnt})</button>`);
-        }
-        projectFilterBar.innerHTML = pills.join('');
-      }
-
-      const tasks = selectedProject === 'ALL'
-        ? allTasks
-        : allTasks.filter(t => (t.project || '默认工作区') === selectedProject);
-
-      if (tasks.length === 0) {
-        sessionListBox.innerHTML = `
-          <div style="padding:24px 12px; text-align:center; color:var(--muted); font-size:12.5px;">
-            当前没有对话记录。<br/>点上方「➕ 新建」立即发起新任务！
-          </div>
-        `;
-      } else {
-        sessionListBox.innerHTML = tasks.map(t => {
-          const isSel = t.id === selectedTaskId;
-          const msgCount = (t.transcript || []).length;
-          return `
-            <div class="session-card ${isSel ? 'active' : ''}" onclick="selectTask('${esc(t.id)}')">
-              <div class="session-card-title">
-                <span>${esc(t.title)}</span>
-                <span class="badge ${t.status === 'running' ? 'green' : 'muted'}">${esc(t.statusLabel || t.status)}</span>
-              </div>
-              <div class="session-card-meta">
-                <span>📁 ${esc(t.project || '默认工作区')}</span>
-                <span>💬 ${msgCount} 条对话 · ${formatTime(t.updatedAt || t.lastActivity)}</span>
-              </div>
-            </div>
-          `;
-        }).join('');
-      }
-
-      // Render Right Selected Task Conversation Stage
-      const activeTask = tasks.find(t => t.id === selectedTaskId) || tasks[0] || allTasks[0];
-      if (!activeTask) {
-        stageHeader.innerHTML = `
-          <div>
-            <div style="font-weight:750; font-size:15px;">💬 请选择或新建一个对话</div>
-            <div style="font-size:12px; color:var(--muted);">点右上角「➕ 发起新对话任务」即可开始</div>
-          </div>
-        `;
-        streamBox.innerHTML = `
-          <div style="margin:auto; text-align:center; color:var(--muted); padding:40px 20px;">
-            <div style="font-size:28px; margin-bottom:8px;">✨</div>
-            <div>点左侧任意对话查看历史内容，或点「➕ 发起新对话任务」开始新任务。</div>
-          </div>
-        `;
-        return;
-      }
-
-      selectedTaskId = activeTask.id;
-      const transcript = activeTask.transcript || [];
-      const queuedSteers = activeTask.queuedSteers || [];
-
-      stageHeader.innerHTML = `
-        <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1;">
-          <button class="mobile-only sm" style="padding:6px 11px; font-weight:750; flex-shrink:0;" onclick="closeMobileChat()">‹ 返回</button>
-          <div style="min-width:0; flex:1;">
-            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-              <span style="font-weight:750; font-size:15.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px;">${esc(activeTask.title)}</span>
-              <span class="badge ${activeTask.status === 'running' ? 'green' : 'blue'}">${esc(activeTask.statusLabel || activeTask.status)}</span>
-            </div>
-            <div style="font-size:11.5px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-              📁 <code>${esc(activeTask.project || activeTask.cwd || '-')}</code> · ${formatTime(activeTask.updatedAt || activeTask.lastActivity)}
-            </div>
-          </div>
-        </div>
-        <!-- Desktop Full Action Bar -->
-        <div class="badges desktop-only">
-          <button class="sm" onclick="openTaskFiles('${esc(activeTask.id)}', '${esc(activeTask.cwd || '')}')">📂 看项目文件</button>
-          <button class="sm" onclick="shareTask('${esc(host.hostId)}', '${esc(activeTask.id)}')">🔗 分享对话</button>
-          <button class="sm" onclick="openRenameModal('${esc(host.hostId)}', '${esc(activeTask.id)}', '${esc(activeTask.title)}')">✏️ 改标题</button>
-          <button class="danger sm" onclick="deleteTask('${esc(host.hostId)}', '${esc(activeTask.id)}', '${esc(activeTask.title)}')">🗑️ 删除</button>
-        </div>
-        <!-- Mobile Compact Action Bar (Files + ⋯ Action Sheet) -->
-        <div class="mobile-only" style="gap:6px; flex-shrink:0;">
-          <button class="sm" onclick="openTaskFiles('${esc(activeTask.id)}', '${esc(activeTask.cwd || '')}')">📂 文件</button>
-          <button class="sm" style="font-weight:800; padding:6px 12px;" onclick="openTaskActionSheet('${esc(host.hostId)}', '${esc(activeTask.id)}', '${esc(activeTask.title)}', '${esc(activeTask.cwd || '')}')">⋯</button>
-        </div>
-      `;
-
-      const chatKey = `${activeTask.id}|${transcript.length}|${(transcript.at(-1)?.text || '').length}|${activeTask.lastOutput || ''}|${queuedSteers.join(',')}`;
-      if (chatKey !== lastRenderedChatKey) {
-        lastRenderedChatKey = chatKey;
-        let streamHtml = '';
-        if (transcript.length === 0) {
-          streamHtml = `<div style="color:var(--muted); font-size:13px; text-align:center; padding:30px;">这个会话还没有文字对话记录，可在下方输入框直接发指令。</div>`;
-        } else {
-          streamHtml = transcript.map(m => {
-            const isUser = m.role === 'user';
-            const toolsHtml = (m.tools || []).map(tl => `<span class="badge blue">🔧 用了工具: ${esc(tl.name)}</span>`).join('');
-            const thinkingHtml = m.thinking
-              ? `<details class="thinking-details"><summary>💭 点击展开 DeepSeek 的思考过程</summary><div style="margin-top:6px; white-space:pre-wrap;">${esc(m.thinking)}</div></details>`
-              : '';
-            return `
-              <div class="msg-row ${isUser ? 'user' : 'assistant'}">
-                <div class="msg-meta">
-                  <span>${isUser ? '🧑 我' : '🤖 DeepSeek'}</span>
-                  ${toolsHtml}
-                </div>
-                <div class="msg-bubble">
-                  <div style="white-space:pre-wrap; word-break:break-word;">${esc(m.text)}</div>
-                  ${thinkingHtml}
-                </div>
-              </div>
-            `;
-          }).join('');
-        }
-
-        if (queuedSteers.length > 0) {
-          streamHtml += `
-            <div style="background:var(--amber-soft); border:1px solid var(--amber-border); color:var(--amber); padding:10px 14px; border-radius:10px; font-size:12.5px;">
-              ⚡ <strong>已排队等待执行的补充要求 (${queuedSteers.length})：</strong> ${queuedSteers.map(s => esc(s)).join(' | ')}
-            </div>
-          `;
-        }
-
-        if (activeTask.lastOutput) {
-          streamHtml += `
-            <div>
-              <div style="font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:4px;">🖥️ 最新回复摘要</div>
-              <div class="terminal-output">${esc(activeTask.lastOutput)}</div>
-            </div>
-          `;
-        }
-
-        streamBox.innerHTML = streamHtml;
-      }
-
-      // Only re-render Sticky Bottom Composer when task or status changes so typing is NEVER interrupted
-      const composerKey = `${host.hostId}|${activeTask.id}|${activeTask.status}|${activeTask.title}`;
-      if (composerKey !== lastRenderedComposerKey) {
-        lastRenderedComposerKey = composerKey;
-        if (activeTask.status === 'running') {
-          composerBox.innerHTML = `
-            <input id="globalPromptInput" placeholder="⚡ 任务正在跑：随时输入补充要求，或点「打断并重做」..." style="flex:1; min-width:200px;" onkeydown="if(event.key==='Enter')handleComposerSubmit(false)" />
-            <button class="primary" onclick="handleComposerSubmit(false)">⚡ 中途补充要求</button>
-            <button class="amber" onclick="handleComposerSubmit(true)">🔄 打断并重做</button>
-            <button class="danger" onclick="stopTask('${esc(host.hostId)}', '${esc(activeTask.id)}')">⏹ 停止任务</button>
-          `;
-        } else {
-          composerBox.innerHTML = `
-            <input id="globalPromptInput" placeholder="继续在「${esc(activeTask.title)}」里发指令 (按回车发送)..." style="flex:1;" onkeydown="if(event.key==='Enter')handleComposerSubmit(false)" />
-            <button class="primary" onclick="handleComposerSubmit(false)">🚀 发送</button>
-          `;
-        }
-      }
-
-      renderFsPanel(host);
-    }
-
-    function openTaskActionSheet(hostId, agentId, title, cwd) {
-      const titleEl = document.getElementById('actionSheetTaskTitle');
-      const bodyEl = document.getElementById('actionSheetTaskBody');
-      if (titleEl) titleEl.textContent = `💬 ${title}`;
-      if (bodyEl) {
-        bodyEl.innerHTML = `
-          <button class="action-sheet-btn" onclick="closeModal('taskActionSheet'); openTaskFiles('${esc(agentId)}', '${esc(cwd)}')">
-            📂 查看该项目下的电脑文件 (${esc(cwd.split('/').pop() || '项目目录')})
-          </button>
-          <button class="action-sheet-btn" onclick="closeModal('taskActionSheet'); shareTask('${esc(hostId)}', '${esc(agentId)}')">
-            🔗 生成加密分享链接
-          </button>
-          <button class="action-sheet-btn" onclick="closeModal('taskActionSheet'); openRenameModal('${esc(hostId)}', '${esc(agentId)}', '${esc(title)}')">
-            ✏️ 修改对话标题
-          </button>
-          <button id="sheetDeleteBtn" class="action-sheet-btn danger" onclick="confirmSheetDelete('${esc(hostId)}', '${esc(agentId)}', '${esc(title)}')">
-            🗑️ 删除这条对话
-          </button>
-          <button class="action-sheet-btn" onclick="closeModal('taskActionSheet')">
-            ✕ 取消
-          </button>
-        `;
-      }
-      openModal('taskActionSheet');
-    }
-
-    function confirmSheetDelete(hostId, agentId, title) {
-      const btn = document.getElementById('sheetDeleteBtn');
-      if (btn && !btn.dataset.confirmed) {
-        btn.dataset.confirmed = '1';
-        btn.innerHTML = '⚠️ 确认要删除吗？再点一次立即删除';
-        return;
-      }
-      closeModal('taskActionSheet');
-      closeMobileChat();
-      deleteTask(hostId, agentId, title);
-    }
-
-    function renderFsPanel(host) {
-      const pathEl = document.getElementById('fsCurrentPath');
-      const box = document.getElementById('fsEntriesBox');
-      const previewBox = document.getElementById('filePreviewBox');
-      const quickWs = document.getElementById('fsQuickWorkspaces');
-
-      const workspaces = host.bridgeState?.workspaces || [];
-      if (quickWs) {
-        quickWs.innerHTML = workspaces.map(w => `
-          <button class="sm" onclick="document.getElementById('fsRootInput').value='${esc(w)}'; browseFiles('')">📁 ${esc(w.split('/').pop() || w)}</button>
-        `).join('');
-      }
-
-      const listing = host.lastFsListing;
-      if (listing && listing.entries) {
-        const parts = (listing.subDir || '').split('/').filter(Boolean);
-        let accum = '';
-        const crumbs = [`<a href="javascript:void(0)" onclick="browseFiles('')" style="color:var(--primary); text-decoration:none; font-weight:600;">🏠 工作区根目录</a>`];
-        for (const p of parts) {
-          accum = accum ? `${accum}/${p}` : p;
-          crumbs.push(`<a href="javascript:void(0)" onclick="browseFiles('${esc(accum)}')" style="color:var(--primary); text-decoration:none; font-weight:600;">${esc(p)}</a>`);
-        }
-        pathEl.innerHTML = `当前位置：${crumbs.join(' / ')} <span style="color:var(--muted); margin-left:8px;">(<code>${esc(listing.rootCwd)}</code>)</span>`;
-
-        const parentBtn = listing.subDir
-          ? `<div class="file-entry" onclick="browseFiles('${esc(listing.subDir.split('/').slice(0, -1).join('/'))}')"><span>⬆️ <strong>.. (返回上级目录)</strong></span><span class="badge muted">上级</span></div>`
-          : '';
-        box.innerHTML = parentBtn + listing.entries.map(item => {
-          if (item.isDirectory) {
-            return `<div class="file-entry" onclick="browseFiles('${esc(item.relPath)}')">
-              <span>📁 <strong>${esc(item.name)}/</strong></span>
-              <span class="badge muted">目录</span>
-            </div>`;
-          }
-          return `<div class="file-entry" onclick="previewFile('${esc(item.relPath)}')">
-            <span>📄 ${esc(item.name)}</span>
-            <span style="color:var(--muted); font-size:11.5px;">${formatBytes(item.size)} ›</span>
-          </div>`;
-        }).join('');
-      }
-
-      const prev = host.lastFilePreview;
-      if (prev && prev.relPath) {
-        if (prev.kind === 'image' && prev.dataBase64) {
-          previewBox.innerHTML = `
-            <div style="padding:12px 16px; border-bottom:1px solid var(--border); background:var(--surface-subtle); display:flex; justify-content:space-between; align-items:center; gap:8px;">
-              <div style="display:flex; align-items:center; gap:8px;">
-                <button class="mobile-only sm" onclick="closeMobileFile()">‹ 返回文件列表</button>
-                <strong style="font-size:13px;">🖼️ ${esc(prev.relPath)}</strong>
-              </div>
-              <span class="badge muted">${formatBytes(prev.size)}</span>
-            </div>
-            <div style="padding:20px; text-align:center; overflow:auto; flex:1;">
-              <img src="data:${esc(prev.mime)};base64,${esc(prev.dataBase64)}" style="max-width:100%; border-radius:8px; box-shadow:var(--shadow-md);" />
-            </div>
-          `;
-        } else {
-          previewBox.innerHTML = `
-            <div style="padding:12px 16px; border-bottom:1px solid var(--border); background:var(--surface-subtle); display:flex; justify-content:space-between; align-items:center; gap:8px;">
-              <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-                <button class="mobile-only sm" style="flex-shrink:0;" onclick="closeMobileFile()">‹ 返回文件列表</button>
-                <strong style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">📄 ${esc(prev.relPath)}</strong>
-              </div>
-              <div class="badges" style="flex-shrink:0;">
-                <span class="badge green desktop-only">🛡️ 已自动脱敏密钥</span>
-                <span class="badge muted">${formatBytes(prev.size)}</span>
-              </div>
-            </div>
-            <pre style="margin:0; padding:16px; font-size:13px; line-height:1.6; flex:1; overflow:auto; white-space:pre-wrap; word-break:break-word; color:var(--text); font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc(prev.content || '')}</pre>
-          `;
-        }
-      }
-    }
-
-    function selectHost(hostId) {
-      selectedHostId = hostId;
-      const host = state.hosts.find(h => h.hostId === hostId);
-      const tasks = host?.bridgeState?.tasks || [];
-      selectedTaskId = tasks[0]?.id || '';
-      renderAll();
-    }
-
-    function selectTask(taskId) {
-      selectedTaskId = taskId;
-      openMobileChat();
-      renderSelectedHostConsole();
-      setTimeout(scrollToChatBottom, 30);
-    }
-
-    async function handleComposerSubmit(interrupt = false) {
-      const host = state.hosts.find(h => h.hostId === selectedHostId) || state.hosts[0];
-      if (!host) return showToast('请先选择一台电脑');
-      const tasks = host.bridgeState?.tasks || [];
-      const activeTask = tasks.find(t => t.id === selectedTaskId) || tasks[0];
-      if (!activeTask) return openNewSessionModal();
-
-      const input = document.getElementById('globalPromptInput');
-      const text = (input?.value || '').trim();
-      if (!text) return showToast('请输入指令内容');
-
-      try {
-        if (activeTask.status === 'running') {
-          await api(`/api/hosts/${encodeURIComponent(host.hostId)}/command`, {
-            method: 'POST',
-            body: JSON.stringify({ type: 'steer', agentId: activeTask.id, text, interrupt }),
-          });
-          input.value = '';
-          showToast(interrupt ? '🔄 已请求打断当前步骤并重发新指令' : '⚡ 顺路插话指令已加入执行队列');
-        } else {
-          await api(`/api/hosts/${encodeURIComponent(host.hostId)}/command`, {
-            method: 'POST',
-            body: JSON.stringify({ type: 'prompt', agentId: activeTask.id, text }),
-          });
-          input.value = '';
-          showToast('🚀 指令已发送至电脑执行');
-        }
-        setTimeout(refreshState, 900);
-      } catch (e) {
-        showToast('发送失败: ' + e.message);
-      }
-    }
-
-    async function activateFeishuHost(hostId) {
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/activate`, { method: 'POST', body: '{}' });
-        selectedHostId = hostId;
-        showToast('🎯 已将该电脑设为飞书主控！');
-        await refreshState();
-      } catch (e) {
-        showToast('切换失败: ' + e.message);
-      }
-    }
-
-    async function manageTrust(hostId, action) {
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/trust`, {
-          method: 'POST',
-          body: JSON.stringify({ action }),
-        });
-        showToast(action === 'revoke' ? '🚫 已禁用该电脑连接' : '🔓 已恢复电脑连接');
-        await refreshState();
-      } catch (e) {
-        showToast('操作失败: ' + e.message);
-      }
-    }
-
-    async function removeHostRecord(hostId, hostName) {
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}`, { method: 'DELETE' });
-        if (selectedHostId === hostId) selectedHostId = '';
-        showToast(`🗑️ 已移除电脑记录「${hostName}」`);
-        await refreshState();
-      } catch (e) {
-        showToast('移除失败: ' + e.message);
-      }
-    }
-
-    async function createNewSession() {
-      const hostId = selectedHostId || state.activeHostId;
-      if (!hostId) return showToast('请先选择一台电脑');
-      const cwd = document.getElementById('newSessionCwd').value.trim();
-      const title = document.getElementById('newSessionTitle').value.trim();
-      const prompt = document.getElementById('newSessionPrompt').value.trim();
-      closeModal('newSessionModal');
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'new_session', cwd, title, prompt }),
-        });
-        document.getElementById('newSessionPrompt').value = '';
-        document.getElementById('newSessionTitle').value = '';
-        showToast('✨ 已下发新建远程会话指令');
-        setTimeout(refreshState, 1000);
-      } catch (e) {
-        showToast('新建失败: ' + e.message);
-      }
-    }
-
-    function openRenameModal(hostId, agentId, oldTitle) {
-      renameTarget = { hostId, agentId };
-      const input = document.getElementById('renameInput');
-      if (input) input.value = oldTitle || '';
-      openModal('renameModal');
-      setTimeout(() => input?.focus(), 60);
-    }
-
-    async function submitRenameModal() {
-      if (!renameTarget) return;
-      const title = (document.getElementById('renameInput')?.value || '').trim();
-      closeModal('renameModal');
-      if (!title) return;
-      try {
-        await api(`/api/hosts/${encodeURIComponent(renameTarget.hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'rename_session', agentId: renameTarget.agentId, title }),
-        });
-        showToast('✏️ 已更新会话标题');
-        setTimeout(refreshState, 900);
-      } catch (e) {
-        showToast('重命名失败: ' + e.message);
-      }
-    }
-
-    async function deleteTask(hostId, agentId, title) {
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'delete_session', agentId }),
-        });
-        showToast(`🗑️ 已删除会话「${title}」`);
-        setTimeout(refreshState, 900);
-      } catch (e) {
-        showToast('删除失败: ' + e.message);
-      }
-    }
-
-    async function shareTask(hostId, agentId) {
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'share_session', agentId }),
-        });
-        showToast('🔒 正在本机执行 AES-256-GCM 加密并生成回放链接...');
-        setTimeout(refreshState, 1100);
-      } catch (e) {
-        showToast('生成分享失败: ' + e.message);
-      }
-    }
-
-    async function deleteShare(shareId) {
-      try {
-        await api(`/api/shares/${encodeURIComponent(shareId)}`, { method: 'DELETE' });
-        showToast('已删除加密分享');
-        await refreshState();
-      } catch (e) {
-        showToast('删除失败: ' + e.message);
-      }
-    }
-
-    function openTaskFiles(agentId, cwd) {
-      currentFsAgentId = agentId;
-      if (cwd) document.getElementById('fsRootInput').value = cwd;
-      switchTab('files');
-      browseFiles('');
-    }
-
-    async function browseFiles(subDir) {
-      const hostId = selectedHostId || state.activeHostId;
-      if (!hostId) return;
-      const cwd = document.getElementById('fsRootInput').value.trim();
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'list_files', agentId: currentFsAgentId || selectedTaskId, cwd, subDir }),
-        });
-        showToast('📂 正在读取远程目录...');
-        setTimeout(refreshState, 900);
-      } catch (e) {
-        showToast('读取目录失败: ' + e.message);
-      }
-    }
-
-    async function previewFile(relPath) {
-      const hostId = selectedHostId || state.activeHostId;
-      if (!hostId) return;
-      openMobileFile();
-      const previewBox = document.getElementById('filePreviewBox');
-      if (previewBox) {
-        previewBox.innerHTML = `
-          <div style="padding:12px 16px; border-bottom:1px solid var(--border); background:var(--surface-subtle); display:flex; justify-content:space-between; align-items:center;">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <button class="mobile-only sm" onclick="closeMobileFile()">‹ 返回文件列表</button>
-              <strong style="font-size:13px;">📄 正在打开 ${esc(relPath)}...</strong>
-            </div>
-          </div>
-          <div style="padding:36px 20px; text-align:center; color:var(--muted); font-size:13px;">⏳ 正在从电脑读取文件内容...</div>
-        `;
-      }
-      const cwd = document.getElementById('fsRootInput').value.trim();
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'read_file', agentId: currentFsAgentId || selectedTaskId, cwd, relPath }),
-        });
-        showToast('📄 正在读取文件预览...');
-        setTimeout(refreshState, 900);
-      } catch (e) {
-        showToast('读取文件失败: ' + e.message);
-      }
-    }
-
-    async function exportHostSnapshot(hostId) {
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'export_snapshot', includeCredentials: false }),
-        });
-        showToast('📦 已向该电脑下发快照备份指令');
-        setTimeout(refreshState, 1400);
-      } catch (e) {
-        showToast('备份失败: ' + e.message);
-      }
-    }
-
-    async function wipeHost(hostId, hostName) {
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'wipe_host', backupFirst: true, keepCredentials: true }),
-        });
-        showToast(`🧹 已向「${hostName}」下发安全备份并清空指令`);
-        setTimeout(refreshState, 1400);
-      } catch (e) {
-        showToast('操作失败: ' + e.message);
-      }
-    }
-
-    async function startMigration() {
-      const sourceHostId = document.getElementById('migSource').value;
-      const targetHostId = document.getElementById('migTarget').value;
-      const switchFeishu = document.getElementById('migSwitchFeishu').checked;
-      const wipeSource = document.getElementById('migWipeSource').checked;
-      const includeCredentials = document.getElementById('migIncludeCreds').checked;
-      if (!sourceHostId || !targetHostId) return showToast('请先选择源电脑和目标电脑');
-      if (sourceHostId === targetHostId) return showToast('源电脑与目标电脑不能相同');
-      try {
-        await api('/api/migrate', {
-          method: 'POST',
-          body: JSON.stringify({
-            sourceHostId,
-            targetHostId,
-            switchFeishu,
-            wipeSource,
-            includeCredentials,
-            keepCredentials: true,
-          }),
-        });
-        showToast('⚡ 跨电脑一键转移任务已启动！');
-        setTimeout(refreshState, 1400);
-      } catch (e) {
-        showToast('迁移启动失败: ' + e.message);
-      }
-    }
-
-    async function restoreSnapshotTo(snapshotId) {
-      const targetHostId = document.getElementById('restoreTarget_' + snapshotId)?.value;
-      if (!targetHostId) return showToast('请选择目标电脑');
-      try {
-        await api(`/api/hosts/${encodeURIComponent(targetHostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'import_snapshot', snapshotId, skipCredentials: true }),
-        });
-        showToast('📥 已下发快照恢复指令到 ' + targetHostId);
-        setTimeout(refreshState, 1400);
-      } catch (e) {
-        showToast('恢复失败: ' + e.message);
-      }
-    }
-
-    async function deleteSnapshot(snapshotId) {
-      try {
-        await api(`/api/snapshots/${encodeURIComponent(snapshotId)}`, { method: 'DELETE' });
-        await refreshState();
-      } catch (e) {
-        showToast('删除失败: ' + e.message);
-      }
-    }
-
-    async function toggleRemoteMode(hostId, active) {
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'remote_mode', active }),
-        });
-        showToast(active ? '🔔 已开启飞书完成通知' : '🔕 已关闭飞书完成通知');
-        setTimeout(refreshState, 900);
-      } catch (e) {
-        showToast('设置失败: ' + e.message);
-      }
-    }
-
-    async function stopTask(hostId, agentId) {
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'stop', agentId }),
-        });
-        showToast('⏹ 已发送停止指令');
-        setTimeout(refreshState, 900);
-      } catch (e) {
-        showToast('停止失败: ' + e.message);
-      }
-    }
-
-    async function decideApproval(hostId, code, action) {
-      try {
-        await api(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
-          method: 'POST',
-          body: JSON.stringify({ type: action, code }),
-        });
-        showToast(action === 'approve' ? '✅ 已批准执行' : '❌ 已拒绝该工具调用');
-        setTimeout(refreshState, 900);
-      } catch (e) {
-        showToast('审批处理失败: ' + e.message);
-      }
-    }
-
-    connectSse();
-    refreshState();
-    if (urlParams.get('nosse') !== '1') {
-      setInterval(refreshState, 3500);
-    }
+    fetchState();
+    connectSSE();
+    setInterval(fetchState, 3500);
   </script>
 </body>
 </html>
