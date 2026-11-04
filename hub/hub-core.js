@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { generateOrLoadVapidKeys, sendWebPushNotification } from './web-push.js'
 
-const ONLINE_TTL_MS = 15_000
+const ONLINE_TTL_MS = 30 * 60_000
 const MAX_SNAPSHOTS = 15
 const MAX_SHARES = 50
 const PAIRING_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
