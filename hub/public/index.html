@@ -905,6 +905,213 @@
       border: none;
     }
 
+    /* ==================== Antigravity IDE 1:1 变更文件卡片与四选项审批卡片 ==================== */
+    .agy-files-changed-card {
+      align-self: stretch;
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 12px;
+      overflow: hidden;
+      color: #e4e4e7;
+      font-size: 12.5px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+    }
+    .agy-file-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-bottom: 1px solid #27272a;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .agy-file-dot {
+      color: #f97316;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+    .agy-file-diff {
+      display: inline-flex;
+      gap: 4px;
+      font-size: 11.5px;
+      font-weight: 600;
+      flex-shrink: 0;
+      min-width: 48px;
+    }
+    .agy-file-diff .add { color: #4ade80; }
+    .agy-file-diff .del { color: #f87171; }
+    .agy-file-name {
+      color: #f4f4f5;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .agy-file-path {
+      color: #71717a;
+      font-size: 11.5px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .agy-files-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 12px;
+      background: #141417;
+      font-size: 12px;
+      color: #a1a1aa;
+    }
+    .agy-files-footer-btns {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .agy-files-reject {
+      background: transparent;
+      border: none;
+      color: #a1a1aa;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 3px 6px;
+    }
+    .agy-files-accept {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .agy-approval-card {
+      align-self: stretch;
+      background: #18181b;
+      border: 1px solid #2e2e34;
+      border-radius: 12px;
+      padding: 14px;
+      color: #f4f4f5;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    }
+    .agy-approval-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #fafafa;
+      margin-bottom: 4px;
+    }
+    .agy-approval-term-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      background: #27272a;
+      color: #60a5fa;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .agy-approval-subtitle {
+      font-size: 12px;
+      color: #a1a1aa;
+      margin-bottom: 10px;
+    }
+    .agy-approval-cmd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      background: #09090b;
+      border: 1px solid #27272a;
+      color: #e4e4e7;
+      padding: 10px 12px;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      word-break: break-all;
+      white-space: pre-wrap;
+      max-height: 210px;
+      overflow-y: auto;
+    }
+    .agy-approval-options {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .agy-approval-opt {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.02);
+      color: #d4d4d8;
+      font-size: 12.5px;
+      line-height: 1.4;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.12s;
+    }
+    .agy-approval-opt.selected {
+      background: #27272a;
+      border-color: #3f3f46;
+      color: #ffffff;
+    }
+    .agy-opt-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 19px;
+      height: 19px;
+      border-radius: 5px;
+      background: #27272a;
+      border: 1px solid #3f3f46;
+      color: #a1a1aa;
+      font-size: 11px;
+      font-weight: 600;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .agy-approval-opt.selected .agy-opt-num {
+      background: #3f3f46;
+      color: #fafafa;
+    }
+    .agy-approval-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 4px;
+    }
+    .agy-btn-skip {
+      background: transparent;
+      border: none;
+      color: #a1a1aa;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .agy-btn-submit {
+      background: #2563eb;
+      color: #ffffff;
+      border: none;
+      border-radius: 7px;
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
     .running-control-bar {
       padding: 7px 14px;
       background: var(--green-soft);
@@ -1692,6 +1899,10 @@
           const harness = t.harness || (String(t.id || '').startsWith('agy-ide:') ? 'antigravity-ide' : 'dsh');
           const harnessLabel = t.harnessLabel || (harness === 'antigravity-ide' ? 'Antigravity IDE' : 'DeepSeek Harness');
 
+          const changedFiles = Array.isArray(t.changedFiles)
+            ? t.changedFiles
+            : (Array.isArray(pendingApp?.changedFiles) ? pendingApp.changedFiles : []);
+
           list.push({
             id: t.id,
             hostId: h.hostId,
@@ -1703,6 +1914,7 @@
             cwd: t.cwd || '',
             status,
             approvalObj: pendingApp || null,
+            changedFiles,
             msgCount: Number(t.messageCount) || transcript.length || 0,
             updatedAt: ts,
             timeLabel: formatTime(ts),
@@ -1934,12 +2146,12 @@
       const liveBannerHtml = pendingAppInfo ? `
         <div class="live-activity-bar">
           <div class="live-activity-left" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">
-            <div class="live-activity-title">⏳ [${esc(pendingAppInfo.host.hostName)}] 等待你批准工具执行</div>
-            <div class="live-activity-desc">${esc(pendingAppInfo.app.title || '')}：${esc(pendingAppInfo.app.reason || '')}</div>
+            <div class="live-activity-title">⏳ [${esc(pendingAppInfo.host.hostName)}] ${esc(pendingAppInfo.app.project ? `${pendingAppInfo.app.project} / ` : '')}${esc(pendingAppInfo.app.title || '等待你批准工具执行')}</div>
+            <div class="live-activity-desc">${esc(pendingAppInfo.app.promptTitle || pendingAppInfo.app.reason || '')}</div>
           </div>
           <div class="live-activity-actions">
-            <button class="mini-approve-btn" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', true)">✓ 允许</button>
-            <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false)">拒绝</button>
+            <button class="mini-approve-btn" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', true, 1)">✓ 允许</button>
+            <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false, 4)">拒绝</button>
           </div>
         </div>
       ` : crossHostSpot ? `
@@ -1972,6 +2184,9 @@
         const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag">${esc(s.hostName)}</span>` : '';
         const harnessTagHtml = s.harness === 'antigravity-ide' ? `<span class="harness-mini-tag agy">⚡ IDE</span>` : '';
         const rolePrefix = s.lastRole === 'user' ? '🧑 我: ' : '🤖 ';
+        const displayTitle = s.harness === 'antigravity-ide' && s.project && !s.title.startsWith(s.project)
+          ? `${s.project} / ${s.title}`
+          : s.title;
 
         return `
           <div class="session-row ${s.pinned ? 'pinned-row' : ''} ${s.id === activeSessionId ? 'selected-desktop' : ''}" onclick="openChat('${esc(s.id)}')">
@@ -1980,7 +2195,7 @@
                 <div class="session-title-wrap">
                   ${unreadHtml}
                   ${pinHtml}
-                  <div class="session-title">${esc(s.title)}</div>
+                  <div class="session-title">${esc(displayTitle)}</div>
                 </div>
                 <div class="session-right-meta">${statusHtml}</div>
               </div>
@@ -2030,12 +2245,30 @@
       document.body.classList.remove('mobile-file-open');
     }
 
+    let selectedAgyOptionIndex = 1;
+
+    function selectAgyApprovalOption(idx) {
+      selectedAgyOptionIndex = Number(idx) || 1;
+      document.querySelectorAll('.agy-approval-opt').forEach(el => {
+        el.classList.toggle('selected', Number(el.dataset.optIdx) === selectedAgyOptionIndex);
+      });
+    }
+
+    function submitAgyApproval(hostId, code) {
+      const idx = selectedAgyOptionIndex || 1;
+      const allow = idx !== 4;
+      sendApprovalDecision(hostId, code, allow, idx);
+    }
+
     function renderActiveChatStage() {
       const found = findSessionGlobal(activeSessionId);
       if (!found) return;
       const { session: s } = found;
 
-      document.getElementById('chatTitle').textContent = s.title;
+      const chatHeaderTitle = s.harness === 'antigravity-ide' && s.project && !s.title.startsWith(s.project)
+        ? `${s.project} / ${s.title}`
+        : s.title;
+      document.getElementById('chatTitle').textContent = chatHeaderTitle;
       const harnessPrefix = s.harness === 'antigravity-ide' ? '⚡ Antigravity IDE · ' : '';
       document.getElementById('chatSub').textContent = `${harnessPrefix}📁 ${s.project} · 💻 ${s.hostName} (${s.msgCount} 条对话)`;
 
@@ -2049,7 +2282,7 @@
       if (otherApproval) {
         alertBar.style.display = 'flex';
         alertBar.innerHTML = `
-          <span>⏳ [${esc(otherApproval.host.hostName)}]「${esc(otherApproval.app.title || otherApproval.app.toolName)}」待你审批</span>
+          <span>⏳ [${esc(otherApproval.host.hostName)}]「${esc(otherApproval.app.project ? `${otherApproval.app.project} / ` : '')}${esc(otherApproval.app.title || otherApproval.app.toolName)}」待你审批</span>
           <button style="border:none;background:#d97706;color:#fff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600;cursor:pointer;" onclick="openChat('${esc(otherApproval.app.agentId)}')">立即切换 ›</button>
         `;
       } else {
@@ -2076,9 +2309,10 @@
 
       // DOM Diffing：如果会话内容和状态没变，不重绘 #chatMessages，保留用户展开的思考过程与滚动位置！
       const lastMsg = s.transcript[s.transcript.length - 1];
-      const chatKey = `${s.id}:${s.status}:${s.transcript.length}:${lastMsg?.text?.length || 0}:${s.approvalObj?.code || ''}`;
+      const chatKey = `${s.id}:${s.status}:${s.transcript.length}:${lastMsg?.text?.length || 0}:${s.approvalObj?.code || ''}:${(s.changedFiles || []).length}`;
       if (chatKey === lastRenderedChatKey) return;
       lastRenderedChatKey = chatKey;
+      selectedAgyOptionIndex = 1;
 
       const box = document.getElementById('chatMessages');
       const msgs = s.transcript.length > 0
@@ -2092,14 +2326,34 @@
         const thought = m.thinking
           ? `<details class="thought-box thinking-details"><summary>💭 思考过程 (点击展开)</summary><div style="margin-top:6px;white-space:pre-wrap;">${esc(m.thinking)}</div></details>`
           : '';
+        if (m.isToolStepOnly) {
+          const toolOut = (m.tools || []).map(t => t.commandLine || t.summary || '').filter(Boolean).join('\n');
+          const waitText = m.waitingForInput
+            ? `<div style="margin-top:6px;font-size:12.5px;color:#64748b;">Waiting for user input.</div>`
+            : '';
+          return `
+            <div class="bubble assistant" style="padding:10px 14px;">
+              ${thought}
+              <details class="tool-chip-details" style="border:none;background:transparent;">
+                <summary style="padding:2px 0;font-size:13px;color:#334155;">
+                  <span>${esc(m.text)}</span>
+                  <span style="color:#94a3b8;font-size:11px;">›</span>
+                </summary>
+                ${toolOut ? `<div class="tool-chip-output" style="margin-top:6px;border-radius:6px;">${esc(toolOut)}</div>` : ''}
+              </details>
+              ${waitText}
+            </div>
+          `;
+        }
         const tools = (m.tools || []).length > 0
           ? `<div class="tool-chips">${m.tools.map(t => {
               const tName = t.name || 'tool';
               const tSummary = t.summary || '';
+              const tDetail = t.commandLine || tSummary || '执行完毕';
               return `
                 <details class="tool-chip-details">
-                  <summary><span>🔧 ${esc(tName)} ${esc(tSummary.slice(0, 40))}</span><span style="color:#94a3b8;font-size:10.5px;">点击查看输出 ▾</span></summary>
-                  <div class="tool-chip-output">${esc(tSummary || '执行完毕')}</div>
+                  <summary><span>🔧 ${esc(tName)} ${esc(tSummary.slice(0, 48))}</span><span style="color:#94a3b8;font-size:10.5px;">点击查看输出 ▾</span></summary>
+                  <div class="tool-chip-output">${esc(tDetail)}</div>
                 </details>
               `;
             }).join('')}</div>`
@@ -2107,16 +2361,63 @@
         return `<div class="bubble assistant">${thought}<div style="white-space:pre-wrap;">${formatAssistantText(m.text)}</div>${tools}</div>`;
       }).join('');
 
-      const approvalCardHtml = s.approvalObj ? `
+      const filesChangedHtml = (s.harness === 'antigravity-ide' && Array.isArray(s.changedFiles) && s.changedFiles.length > 0) ? `
+        <div class="agy-files-changed-card">
+          ${s.changedFiles.slice(-8).map(fc => `
+            <div class="agy-file-row">
+              <span class="agy-file-dot">◉</span>
+              <span class="agy-file-diff"><span class="add">+${Number(fc.added || 0)}</span><span class="del">-${Number(fc.removed || 0)}</span></span>
+              <span class="agy-file-name">${esc(fc.name || '')}</span>
+              <span class="agy-file-path">${esc(fc.displayPath || fc.path || '')}</span>
+            </div>
+          `).join('')}
+          <div class="agy-files-footer">
+            <span>📄 ${s.changedFiles.length} Files With Changes ⌃</span>
+            <div class="agy-files-footer-btns">
+              <button class="agy-files-reject" onclick="openInChatFileDrawer()">查看改动</button>
+              <button class="agy-files-accept" onclick="openInChatFileDrawer()">Accept all</button>
+            </div>
+          </div>
+        </div>
+      ` : '';
+
+      const isAgyApproval = s.approvalObj && (s.approvalObj.harness === 'antigravity-ide' || Array.isArray(s.approvalObj.options));
+      const approvalCardHtml = s.approvalObj ? (isAgyApproval ? `
+        <div class="agy-approval-card">
+          <div class="agy-approval-header">
+            <span class="agy-approval-term-icon">&gt;_</span>
+            <span>${esc(s.approvalObj.promptTitle || `Allow ${s.approvalObj.toolName}?`)}</span>
+          </div>
+          <div class="agy-approval-subtitle">${esc(s.approvalObj.subtitle || 'the auto-run safety check did not reach a decision')}</div>
+          ${s.approvalObj.commandLine ? `<div class="agy-approval-cmd">${esc(s.approvalObj.commandLine)}</div>` : `<div class="agy-approval-cmd">${esc(s.approvalObj.reason || '')}</div>`}
+          <div class="agy-approval-options">
+            ${(s.approvalObj.options && s.approvalObj.options.length > 0 ? s.approvalObj.options : [
+              { index: 1, label: 'Yes, allow this time' },
+              { index: 2, label: 'Yes, and always allow in this conversation' },
+              { index: 3, label: 'Yes, and always allow' },
+              { index: 4, label: 'No (tell the agent what to do instead)' }
+            ]).map(opt => `
+              <button type="button" class="agy-approval-opt ${opt.index === 1 ? 'selected' : ''}" data-opt-idx="${opt.index}" onclick="selectAgyApprovalOption(${opt.index})" ondblclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', ${opt.index !== 4}, ${opt.index})">
+                <span class="agy-opt-num">${opt.index}</span>
+                <span>${esc(opt.label)}</span>
+              </button>
+            `).join('')}
+          </div>
+          <div class="agy-approval-footer">
+            <button type="button" class="agy-btn-skip" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false, 4)">Skip</button>
+            <button type="button" class="agy-btn-submit" onclick="submitAgyApproval('${esc(s.hostId)}', '${esc(s.approvalObj.code)}')">Submit <span>↵</span></button>
+          </div>
+        </div>
+      ` : `
         <div class="inline-approval-card">
           <div class="inline-approval-title">⏳ 等待你确认工具调用：${esc(s.approvalObj.toolName)}</div>
           <div class="inline-approval-cmd">${esc(s.approvalObj.reason || '请求执行权限')}</div>
           <div class="inline-approval-btns">
-            <button style="background:#10b981;color:#fff;" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', true)">✅ 允许执行</button>
-            <button style="background:#fee2e2;color:#dc2626;" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false)">✕ 拒绝</button>
+            <button style="background:#10b981;color:#fff;" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', true, 1)">✅ 允许执行</button>
+            <button style="background:#fee2e2;color:#dc2626;" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false, 4)">✕ 拒绝</button>
           </div>
         </div>
-      ` : '';
+      `) : '';
 
       const followups = ['▶ 继续执行下一步', '🔍 查看 git status 与改动', '🧪 运行测试验证'];
       const followupsHtml = `
@@ -2125,7 +2426,7 @@
         </div>
       `;
 
-      box.innerHTML = bubblesHtml + approvalCardHtml + followupsHtml;
+      box.innerHTML = bubblesHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
       box.scrollTop = box.scrollHeight;
     }
 
@@ -2199,12 +2500,20 @@
       setTimeout(fetchState, 600);
     }
 
-    async function sendApprovalDecision(hostId, code, allow) {
-      showToast(allow ? '✅ 已发送批准指令' : '已拒绝该工具执行');
+    async function sendApprovalDecision(hostId, code, allow, optionIndex = 1) {
+      const optLabel = optionIndex === 2
+        ? '✅ 已批准并在当前会话始终允许'
+        : optionIndex === 3
+          ? '✅ 已批准并始终允许该命令'
+          : allow
+            ? '✅ 已发送批准指令 (Option 1)'
+            : '已拒绝/跳过该工具执行';
+      showToast(optLabel);
       await dispatchHostCommand(hostId, {
         type: 'approval',
         code,
         allow: Boolean(allow),
+        optionIndex: Number(optionIndex) || (allow ? 1 : 4),
       });
       setTimeout(fetchState, 600);
     }

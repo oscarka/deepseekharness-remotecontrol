@@ -513,8 +513,10 @@ export class HubAgent {
           return await this.bridge.executeHubCommand(enrichedCmd)
         }
         case 'approve':
-        case 'deny': {
+        case 'deny':
+        case 'approval': {
           const code = String(cmd.code ?? '').trim().toUpperCase()
+          const effectiveType = type === 'approval' ? (cmd.allow !== false ? 'approve' : 'deny') : type
           if (code.startsWith('AGY-')) {
             this.settledAgyApprovals.add(code)
             for (const s of this.cachedAgySessions || []) {
@@ -524,14 +526,17 @@ export class HubAgent {
                 s.statusLabel = '已完成'
               }
             }
-            const res = await executeAntigravityIdeAction({ type, code }, { execImpl: this.execImpl })
+            const res = await executeAntigravityIdeAction(
+              { type: effectiveType, code, optionIndex: cmd.optionIndex },
+              { execImpl: this.execImpl },
+            )
             return {
               ...res,
               code,
-              decision: type === 'approve' ? 'allowed-once' : 'rejected',
+              decision: effectiveType === 'approve' ? 'allowed-once' : 'rejected',
             }
           }
-          return await this.bridge.executeHubCommand(cmd)
+          return await this.bridge.executeHubCommand({ ...cmd, type: effectiveType })
         }
         case 'prompt':
         case 'steer':

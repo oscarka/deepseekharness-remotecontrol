@@ -95,17 +95,27 @@ export function parseAntigravityUserInput(content) {
   }
 
   // Check Active Workspaces / Command Working Directory / Active Document in metadata
-  const wsMatch = raw.match(/Command Working Directory:\s*([^\r\n]+)/i)
+  let boundWs = null
+  const boundMatch = raw.match(/Command Working Directory:\s*([^\r\n]+)/i)
     || raw.match(/Active Workspaces:\s*\n-\s*([^\r\n]+)/i)
-    || raw.match(/Active Document:\s*([^\r\n(]+)/i)
-  if (wsMatch) {
-    const candidate = inferWorkspaceFromPath(wsMatch[1].trim())
-    if (candidate) inferredWs = candidate
+  if (boundMatch) {
+    const candidate = inferWorkspaceFromPath(boundMatch[1].trim())
+    if (candidate) {
+      boundWs = candidate
+      inferredWs = candidate
+    }
+  } else {
+    const docMatch = raw.match(/Active Document:\s*([^\r\n(]+)/i)
+    if (docMatch) {
+      const candidate = inferWorkspaceFromPath(docMatch[1].trim())
+      if (candidate) inferredWs = candidate
+    }
   }
 
   return {
     userText: cleanForChat(redactText(userText), 4000),
     inferredWs,
+    boundWs,
   }
 }
 
@@ -113,8 +123,9 @@ export function parseAntigravityUserInput(content) {
  * Parse tool_calls array from an Antigravity PLANNER_RESPONSE step.
  */
 export function parseAntigravityToolCalls(rawToolCalls) {
-  if (!Array.isArray(rawToolCalls)) return { tools: [], inferredWs: null, approvalRequest: null }
+  if (!Array.isArray(rawToolCalls)) return { tools: [], inferredWs: null, approvalRequest: null, fileChanges: [] }
   const tools = []
+  const fileChanges = []
   let inferredWs = null
   let approvalRequest = null
 
@@ -132,12 +143,26 @@ export function parseAntigravityToolCalls(rawToolCalls) {
     }
     const unquote = val => {
       if (typeof val !== 'string') return val
-      return val.replace(/^"(.*)"$/s, '$1').replace(/\\"/g, '"')
+      return val.replace(/^"(.*)"$/s, '$1').replace(/\\"/g, '"').replace(/\\n/g, '\n')
     }
 
     const pathArg = unquote(args.Path || args.TargetFile || args.Cwd || args.SearchPath || args.AbsolutePath || '')
     if (pathArg && !inferredWs) {
       inferredWs = inferWorkspaceFromPath(pathArg)
+    }
+
+    if ((name === 'edit_file' || name === 'write_file' || name === 'replace_file_content' || name === 'multi_replace_file_content') && pathArg && !pathArg.includes('/.gemini/antigravity')) {
+      const targetStr = String(unquote(args.Target || args.TargetContent || '') || '')
+      const replacementStr = String(unquote(args.Replacement || args.ReplacementContent || args.Content || '') || '')
+      const removed = targetStr ? targetStr.split('\n').length : 0
+      const added = replacementStr ? replacementStr.split('\n').length : 0
+      fileChanges.push({
+        path: pathArg,
+        name: basename(pathArg),
+        displayPath: pathArg.replace(/^\/Users\/[^/]+/, '~'),
+        added: Math.max(1, added),
+        removed,
+      })
     }
 
     const cmdLine = unquote(args.CommandLine || '')
@@ -148,24 +173,42 @@ export function parseAntigravityToolCalls(rawToolCalls) {
     tools.push({
       name,
       id: String(tc.id || ''),
-      summary: toolSummary || (cmdLine ? `执行: ${cmdLine.slice(0, 60)}` : name),
+      summary: toolSummary || (cmdLine ? `执行: ${cmdLine.slice(0, 80)}` : name),
+      commandLine: cmdLine ? cmdLine.slice(0, 2000) : '',
       bypassSandbox,
     })
 
     if (name === 'run_command' && bypassSandbox) {
+      const cleanSummary = toolSummary || 'command execution'
+      const lowerSummary = cleanSummary.charAt(0).toLowerCase() + cleanSummary.slice(1)
+      const firstSubcmd = (cmdLine.split(/\s*(?:&&|\|\||;|\n)\s*/)[0] || cmdLine).trim()
       approvalRequest = {
         toolName: 'run_command (BypassSandbox)',
-        reason: `${toolSummary ? `${toolSummary}: ` : ''}${cmdLine || '请求宿主机终端执行权限'}`.slice(0, 300),
+        promptTitle: `Allow ${lowerSummary}?`,
+        subtitle: 'the auto-run safety check did not reach a decision',
+        commandLine: cmdLine || '请求宿主机终端执行权限',
+        firstSubcommand: firstSubcmd,
+        options: [
+          { index: 1, label: 'Yes, allow this time' },
+          { index: 2, label: `Yes, and always allow '${firstSubcmd}' in this conversation` },
+          { index: 3, label: `Yes, and always allow '${firstSubcmd}'` },
+          { index: 4, label: 'No (tell the agent what to do instead)' },
+        ],
+        reason: `${toolSummary ? `${toolSummary}: ` : ''}${cmdLine || '请求宿主机终端执行权限'}`.slice(0, 2000),
       }
     } else if (name === 'ask_question') {
       approvalRequest = {
         toolName: 'ask_question',
+        promptTitle: 'Allow agent question?',
+        subtitle: 'Waiting for user input.',
+        commandLine: '',
+        options: [],
         reason: '等待你在对话框中确认选项或回答澄清问题',
       }
     }
   }
 
-  return { tools, inferredWs, approvalRequest }
+  return { tools, inferredWs, approvalRequest, fileChanges }
 }
 
 /**
@@ -175,6 +218,8 @@ export function parseAntigravityTranscript(jsonlText, {
   conversationId,
   mtimeMs = Date.now(),
   customTitles = {},
+  nativeTitle = '',
+  nativeWorkspace = null,
   settledApprovals = new Set(),
   maxMessages = 40,
   now = Date.now(),
@@ -195,12 +240,14 @@ export function parseAntigravityTranscript(jsonlText, {
   if (lines.length === 0) return null
 
   const transcript = []
-  let cwd = ''
-  let project = 'Antigravity IDE'
+  let boundWs = nativeWorkspace || null
+  let cwd = boundWs?.cwd || ''
+  let project = boundWs?.project || 'Antigravity IDE'
   let checkpointTitle = ''
   let lastOutput = ''
   let lastActivity = mtimeMs
   let pendingApproval = null
+  const changedFilesMap = new Map()
 
   for (let i = 0; i < lines.length; i += 1) {
     const step = lines[i]
@@ -218,13 +265,29 @@ export function parseAntigravityTranscript(jsonlText, {
         if (objMatch && objMatch[1].trim()) {
           checkpointTitle = objMatch[1].trim()
         }
+        if (!boundWs) {
+          const wsCkptMatch = step.content.match(/\*\*Workspace\*\*:\s*`([^`]+)`/i)
+            || step.content.match(/Workspace:\s*`?(\/Users\/[^\s`)\r\n]+)/i)
+          if (wsCkptMatch) {
+            const candidate = inferWorkspaceFromPath(wsCkptMatch[1].trim())
+            if (candidate) {
+              boundWs = candidate
+              cwd = candidate.cwd
+              project = candidate.project
+            }
+          }
+        }
       }
       continue
     }
 
     if (stepType === 'USER_INPUT') {
-      const { userText, inferredWs } = parseAntigravityUserInput(step.content)
-      if (inferredWs) {
+      const { userText, inferredWs, boundWs: stepBoundWs } = parseAntigravityUserInput(step.content)
+      if (stepBoundWs && !boundWs) {
+        boundWs = stepBoundWs
+        cwd = stepBoundWs.cwd
+        project = stepBoundWs.project
+      } else if (inferredWs && !boundWs) {
         cwd = inferredWs.cwd
         project = inferredWs.project
       }
@@ -245,10 +308,22 @@ export function parseAntigravityTranscript(jsonlText, {
     if (stepType === 'PLANNER_RESPONSE') {
       const rawContent = String(step.content ?? '').trim()
       const rawThinking = String(step.thinking ?? '').trim()
-      const { tools, inferredWs, approvalRequest } = parseAntigravityToolCalls(step.tool_calls)
-      if (inferredWs && (!cwd || project === 'Antigravity IDE')) {
+      const { tools, inferredWs, approvalRequest, fileChanges } = parseAntigravityToolCalls(step.tool_calls)
+      if (inferredWs && !boundWs && (!cwd || project === 'Antigravity IDE')) {
         cwd = inferredWs.cwd
         project = inferredWs.project
+      }
+
+      if (Array.isArray(fileChanges) && fileChanges.length > 0) {
+        for (const fc of fileChanges) {
+          const prev = changedFilesMap.get(fc.path)
+          if (prev) {
+            prev.added += fc.added
+            prev.removed += fc.removed
+          } else {
+            changedFilesMap.set(fc.path, { ...fc })
+          }
+        }
       }
 
       // Filter silent read-only steps that have no user-facing content, unless it's the very last step
@@ -268,10 +343,25 @@ export function parseAntigravityTranscript(jsonlText, {
         lastOutput = tools.map(t => t.summary || t.name).join(' · ').slice(0, 400)
       }
 
+      const isWaitingApproval = Boolean(approvalRequest && i === lines.length - 1)
+      const toolDisplayLine = tools.length > 0
+        ? tools
+            .map(t => {
+              const s = t.summary || t.name
+              if (t.name === 'run_command' && !isWaitingApproval) {
+                return `Ran ${s.charAt(0).toLowerCase() + s.slice(1)}`
+              }
+              return s
+            })
+            .join(' · ')
+        : ''
+
       transcript.push({
         index: transcript.length,
         role: 'assistant',
-        text: asstText || (tools.length > 0 ? `🔧 ${tools.map(t => t.summary || t.name).join('，')}` : ''),
+        text: asstText || toolDisplayLine,
+        isToolStepOnly: !asstText && tools.length > 0,
+        waitingForInput: isWaitingApproval,
         thinking: thinkingText,
         tools,
         toolCalls: tools,
@@ -279,13 +369,19 @@ export function parseAntigravityTranscript(jsonlText, {
       })
 
       // Check if this step is currently waiting for user approval (no subsequent completion step yet)
-      if (approvalRequest && i === lines.length - 1) {
+      if (isWaitingApproval) {
         const code = `AGY-${String(conversationId).slice(0, 6).toUpperCase()}-${step.step_index ?? i}`
         if (!settledApprovals.has(code) && now - lastActivity < 2 * 3600 * 1000) {
           pendingApproval = {
             code,
             stepIndex: step.step_index ?? i,
+            harness: 'antigravity-ide',
             toolName: approvalRequest.toolName,
+            promptTitle: approvalRequest.promptTitle || '',
+            subtitle: approvalRequest.subtitle || '',
+            commandLine: approvalRequest.commandLine || '',
+            firstSubcommand: approvalRequest.firstSubcommand || '',
+            options: approvalRequest.options || [],
             reason: approvalRequest.reason,
             createdAt: stepTime || lastActivity,
             expiresAt: (stepTime || lastActivity) + 2 * 3600 * 1000,
@@ -309,9 +405,12 @@ export function parseAntigravityTranscript(jsonlText, {
 
   const title = customTitles[sessionId]
     || customTitles[conversationId]
+    || nativeTitle
     || checkpointTitle
     || cleanFirstLine
     || `Antigravity 会话 ${String(conversationId).slice(0, 8)}`
+
+  const changedFiles = [...changedFilesMap.values()].slice(-8)
 
   const lastStep = lines.at(-1) || {}
   const isRecentlyActive = (now - lastActivity < 45_000) && (
@@ -346,12 +445,15 @@ export function parseAntigravityTranscript(jsonlText, {
     updatedAt: lastActivity,
     lastOutput,
     queuedSteers: [],
+    changedFiles,
     transcript: transcript.slice(-maxMessages),
     pendingApproval: pendingApproval
       ? {
           ...pendingApproval,
           agentId: sessionId,
           title,
+          project,
+          changedFiles,
         }
       : null,
   }
@@ -367,6 +469,57 @@ export function getDefaultAntigravityBrainDirs(home = homedir()) {
     join(home, '.gemini', 'antigravity', 'brain'),
     join(home, '.gemini', 'antigravity-ide', 'brain'),
   ]
+}
+
+/**
+ * Extract native Antigravity IDE conversation titles and bound workspaces from:
+ * 1. `<agyRoot>/annotations/<convId>.pbtxt` (`title:"..."`)
+ * 2. `<agyRoot>/agyhub_summaries_proto.pb` (contains convId, summary title, and `file:///Users/...` workspace URI)
+ */
+async function loadAntigravityMetadataForCandidates(brainDirs, candidates) {
+  const metaMap = new Map()
+  const agyRoots = [...new Set(brainDirs.filter(Boolean).map(d => dirname(resolve(d))))]
+
+  for (const agyRoot of agyRoots) {
+    try {
+      const pbBuf = await readFile(join(agyRoot, 'agyhub_summaries_proto.pb'))
+      const pbStr = pbBuf.toString('utf8')
+      for (const item of candidates) {
+        const idx = pbStr.indexOf(item.convId)
+        if (idx === -1) continue
+        const slice = pbStr.slice(idx, idx + 600)
+        const existing = metaMap.get(item.convId) || { title: '', workspace: null }
+        const wsMatch = slice.match(/file:\/\/(\/Users\/[^"\r\n\x00-\x1f]+|\/home\/[^"\r\n\x00-\x1f]+)/)
+        if (wsMatch && !existing.workspace) {
+          const ws = inferWorkspaceFromPath(wsMatch[1])
+          if (ws) existing.workspace = ws
+        }
+        const titleMatch = slice.match(/\n\$([^\x00-\x1f\r\n]{2,90})/)
+        if (titleMatch && !existing.title) {
+          existing.title = titleMatch[1].trim()
+        }
+        metaMap.set(item.convId, existing)
+      }
+    } catch {
+      // summary proto optional
+    }
+
+    for (const item of candidates) {
+      try {
+        const pbtxt = await readFile(join(agyRoot, 'annotations', `${item.convId}.pbtxt`), 'utf8')
+        const m = pbtxt.match(/title:\s*"((?:[^"\\]|\\.)*)"/)
+        if (m && m[1].trim()) {
+          const existing = metaMap.get(item.convId) || { title: '', workspace: null }
+          existing.title = m[1].replace(/\\"/g, '"').trim()
+          metaMap.set(item.convId, existing)
+        }
+      } catch {
+        // annotation file optional
+      }
+    }
+  }
+
+  return metaMap
 }
 
 /**
@@ -440,15 +593,19 @@ export async function loadAntigravityIdeSessions({
   // Sort by mtime descending and only parse top (maxSessions * 2) candidates for fast I/O
   candidateFiles.sort((a, b) => b.mtimeMs - a.mtimeMs)
   const topCandidates = candidateFiles.slice(0, Math.max(maxSessions * 2, 30))
+  const nativeMetaMap = await loadAntigravityMetadataForCandidates(brainDirs, topCandidates)
 
   const sessions = []
   for (const item of topCandidates) {
     try {
       const rawText = await readFile(item.path, 'utf8')
+      const nativeMeta = nativeMetaMap.get(item.convId)
       const parsed = parseAntigravityTranscript(rawText, {
         conversationId: item.convId,
         mtimeMs: item.mtimeMs,
         customTitles,
+        nativeTitle: nativeMeta?.title || '',
+        nativeWorkspace: nativeMeta?.workspace || null,
         settledApprovals,
         maxMessages,
         now,
@@ -467,8 +624,8 @@ export async function loadAntigravityIdeSessions({
 
 /**
  * Execute remote control actions targeting Antigravity IDE:
- * - `approve`: Trigger Antigravity IDE's acceptAgentStep (`Option + Enter` / `Enter`)
- * - `deny`: Trigger Antigravity IDE's rejectAgentStep (`Option + Shift + Enter` / `Escape`)
+ * - `approve`: Trigger Antigravity IDE's acceptAgentStep (`Option + Enter` / `Enter` or numbered option `1`/`2`/`3` + `Enter`)
+ * - `deny`: Trigger Antigravity IDE's rejectAgentStep (`Option + Shift + Enter` / `Escape` or option `4`)
  * - `stop`: Trigger Antigravity IDE's interruptAgent (`Escape`)
  * - `prompt` / `steer`: Send message via official `agentapi send-message <id> <text>` with UI focus fallback (`Cmd + L` + paste)
  * - `new_session`: Create a new Antigravity IDE conversation via `agentapi new-conversation` or `Cmd + Shift + L`
@@ -479,6 +636,7 @@ export async function executeAntigravityIdeAction(action, {
 } = {}) {
   const type = String(action?.type ?? '').trim()
   const rawConvId = toRawConversationId(action?.agentId || action?.conversationId || '')
+  const optionIndex = Number(action?.optionIndex) || 1
 
   const runAppleScript = async script => {
     try {
@@ -490,15 +648,15 @@ export async function executeAntigravityIdeAction(action, {
   }
 
   if (type === 'approve') {
-    // Antigravity IDE extension defines `alt+enter` (`Option+Enter`) for `antigravity.dynamic.acceptAgentStep`
+    const keyChar = optionIndex === 2 ? '2' : optionIndex === 3 ? '3' : ''
+    const selectOptionLine = keyChar ? `keystroke "${keyChar}"\n          delay 0.1` : `key code 36 using {option down}\n          delay 0.1`
     const script = `
       tell application "System Events"
         set procList to every process whose name contains "Antigravity IDE" or name contains "Electron" or name contains "Antigravity"
         if (count of procList) > 0 then
           set frontmost of item 1 of procList to true
           delay 0.15
-          key code 36 using {option down}
-          delay 0.1
+          ${selectOptionLine}
           key code 36
           return true
         end if
@@ -507,7 +665,7 @@ export async function executeAntigravityIdeAction(action, {
     const res = await runAppleScript(script)
     return {
       ok: res.ok,
-      message: res.ok ? '✅ 已在 Antigravity IDE 执行远程【批准】' : `批准执行失败: ${res.error}`,
+      message: res.ok ? `✅ 已在 Antigravity IDE 提交选项 ${optionIndex}【允许执行】` : `批准执行失败: ${res.error}`,
     }
   }
 
