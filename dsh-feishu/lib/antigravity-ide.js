@@ -247,7 +247,11 @@ export function parseAntigravityTranscript(jsonlText, {
   let project = boundWs?.project || 'Antigravity IDE'
   let checkpointTitle = ''
   let lastOutput = ''
+  let lastConclusionText = ''
+  let runningSummary = ''
   let lastActivity = mtimeMs
+  let lastUserInputAt = 0
+  let lastConclusionAt = 0
   let pendingApproval = null
   const changedFilesMap = new Map()
 
@@ -295,6 +299,8 @@ export function parseAntigravityTranscript(jsonlText, {
       }
       if (!userText) continue
       pendingApproval = null // Previous approval is resolved once user inputs
+      lastUserInputAt = stepTime || lastActivity
+      runningSummary = '💭 正在思考与分析...'
       transcript.push({
         index: transcript.length,
         role: 'user',
@@ -345,6 +351,15 @@ export function parseAntigravityTranscript(jsonlText, {
         lastOutput = tools.map(t => t.summary || t.name).join(' · ').slice(0, 400)
       }
 
+      if (tools.length > 0) {
+        runningSummary = `🔧 正在执行: ${tools.map(t => t.summary || t.name).join(' · ')}`.slice(0, 240)
+      } else if (asstText && step.status !== 'RUNNING') {
+        lastConclusionAt = stepTime || lastActivity
+        lastConclusionText = asstText.slice(0, 1200)
+      } else if (thinkingText) {
+        runningSummary = `💭 正在思考: ${thinkingText.replace(/\s+/g, ' ').slice(0, 120)}`
+      }
+
       const isWaitingApproval = Boolean(approvalRequest && i === lines.length - 1)
       const toolDisplayLine = tools.length > 0
         ? tools
@@ -373,7 +388,7 @@ export function parseAntigravityTranscript(jsonlText, {
       // Check if this step is currently waiting for user approval (no subsequent completion step yet)
       if (isWaitingApproval) {
         const code = `AGY-${String(conversationId).slice(0, 6).toUpperCase()}-${step.step_index ?? i}`
-        if (!settledApprovals.has(code) && now - lastActivity < 2 * 3600 * 1000) {
+        if (!settledApprovals.has(code) && now - lastActivity < 10 * 60 * 1000) {
           pendingApproval = {
             code,
             stepIndex: step.step_index ?? i,
@@ -386,11 +401,11 @@ export function parseAntigravityTranscript(jsonlText, {
             options: approvalRequest.options || [],
             reason: approvalRequest.reason,
             createdAt: stepTime || lastActivity,
-            expiresAt: (stepTime || lastActivity) + 2 * 3600 * 1000,
+            expiresAt: (stepTime || lastActivity) + 10 * 60 * 1000,
           }
         }
       }
-    } else if (stepType === 'RUN_COMMAND' || stepType === 'CODE_ACTION') {
+    } else if (stepType === 'RUN_COMMAND' || stepType === 'CODE_ACTION' || stepType === 'GENERIC') {
       pendingApproval = null
     }
   }
@@ -415,10 +430,17 @@ export function parseAntigravityTranscript(jsonlText, {
   const changedFiles = [...changedFilesMap.values()].slice(-8)
 
   const lastStep = lines.at(-1) || {}
-  const isRecentlyActive = (now - lastActivity < 45_000) && (
-    lastStep.status === 'RUNNING'
-    || (lastStep.type === 'PLANNER_RESPONSE' && Array.isArray(lastStep.tool_calls) && lastStep.tool_calls.length > 0 && !lastStep.content)
-  )
+  const lastStepType = String(lastStep.type || '')
+  const lastStepTools = Array.isArray(lastStep.tool_calls) ? lastStep.tool_calls : []
+  const isConcludedStep = lastStepType === 'PLANNER_RESPONSE'
+    && lastStep.status !== 'RUNNING'
+    && lastStepTools.length === 0
+    && Boolean(String(lastStep.content || '').trim())
+  const isErrorStep = lastStepType === 'ERROR_MESSAGE' || lastStep.status === 'ERROR'
+  const isMidTurn = !isConcludedStep && !isErrorStep
+
+  const isRecentlyActive = (isMidTurn && (now - lastActivity < 90_000))
+    || (isErrorStep && (now - lastActivity < 15_000))
 
   const status = pendingApproval
     ? 'approval'
@@ -426,11 +448,26 @@ export function parseAntigravityTranscript(jsonlText, {
       ? 'running'
       : 'idle'
 
+  const hasConcludedCurrentTurn = isConcludedStep || (lastConclusionAt > 0 && lastConclusionAt >= lastUserInputAt)
+  const turnState = pendingApproval
+    ? 'approval'
+    : status === 'running'
+      ? 'running'
+      : isErrorStep
+        ? 'interrupted'
+        : hasConcludedCurrentTurn
+          ? 'conclusion'
+          : 'idle'
+
   const statusLabel = pendingApproval
     ? '⏳ 待审批'
     : status === 'running'
       ? '🟢 运行中'
-      : '已完成'
+      : turnState === 'interrupted'
+        ? '⚠️ 中断待继续'
+        : turnState === 'conclusion'
+          ? '🔵 已出结论'
+          : '已完成'
 
   return {
     id: sessionId,
@@ -440,12 +477,17 @@ export function parseAntigravityTranscript(jsonlText, {
     harnessLabel: 'Antigravity IDE',
     title,
     status,
+    turnState,
+    isMidTurn,
     statusLabel,
     project,
     cwd: cwd || process.cwd(),
     lastActivity,
     updatedAt: lastActivity,
-    lastOutput,
+    lastConclusionAt,
+    lastInterruptedAt: isErrorStep ? lastActivity : 0,
+    lastOutput: lastConclusionText || lastOutput,
+    runningSummary: runningSummary || lastOutput,
     queuedSteers: [],
     changedFiles,
     transcript: transcript.slice(-maxMessages),
@@ -636,16 +678,33 @@ export async function loadAntigravityIdeSessions({
       const cached = sessionParseCache.get(item.convId)
       if (cached && cached.cacheKey === cacheKey && cached.session) {
         // Recompute dynamic running/idle status against current `now` while skipping disk read & JSONL parse
-        const isRecentlyActive = now - cached.session.lastActivity <= 25_000
+        const isRecentlyActive = Boolean(cached.session.isMidTurn) && (now - cached.session.lastActivity <= 90_000)
         const status = cached.session.pendingApproval
           ? 'approval'
           : isRecentlyActive
             ? 'running'
             : 'idle'
+        const turnState = cached.session.pendingApproval
+          ? 'approval'
+          : status === 'running'
+            ? 'running'
+            : cached.session.turnState === 'running'
+              ? 'idle'
+              : (cached.session.turnState || 'idle')
+        const statusLabel = cached.session.pendingApproval
+          ? '⏳ 待审批'
+          : status === 'running'
+            ? '🟢 运行中'
+            : turnState === 'interrupted'
+              ? '⚠️ 中断待继续'
+              : turnState === 'conclusion'
+                ? '🔵 已出结论'
+                : '已完成'
         sessions.push({
           ...cached.session,
           status,
-          statusLabel: cached.session.pendingApproval ? '⏳ 待审批' : status === 'running' ? '🟢 运行中' : '已完成',
+          turnState,
+          statusLabel,
         })
         continue
       }
@@ -671,6 +730,50 @@ export async function loadAntigravityIdeSessions({
       }
     } catch {
       // ignore unreadable transcript
+    }
+  }
+
+  // If any session has a pendingApproval, check if the command is ALREADY approved and running on the computer
+  const pendingSessions = sessions.filter(s => s.pendingApproval?.commandLine)
+  if (pendingSessions.length > 0) {
+    let psNorm = ''
+    try {
+      const { stdout } = await execFileAsync('ps', ['-ax', '-o', 'command='], { timeout: 1200 })
+      psNorm = String(stdout || '')
+        .split('\n')
+        .filter(line => !line.includes('ps -ax -o command='))
+        .map(line => line.replace(/\s+/g, ' ').trim())
+        .join('\n')
+    } catch {
+      psNorm = ''
+    }
+
+    if (psNorm) {
+      for (const s of pendingSessions) {
+        const cmdNorm = String(s.pendingApproval.commandLine || '').replace(/\s+/g, ' ').trim()
+        const subNorm = String(s.pendingApproval.firstSubcommand || '').replace(/\s+/g, ' ').trim()
+        const needle = cmdNorm.slice(0, 42)
+        const subNeedle = subNorm.slice(0, 42)
+        const alreadyRunning = (needle.length >= 6 && psNorm.includes(needle))
+          || (subNeedle.length >= 10 && psNorm.includes(subNeedle))
+
+        if (alreadyRunning) {
+          if (settledApprovals && typeof settledApprovals.add === 'function') {
+            settledApprovals.add(s.pendingApproval.code)
+          }
+          s.pendingApproval = null
+          s.status = 'running'
+          s.turnState = 'running'
+          s.statusLabel = '🟢 运行中'
+          if (Array.isArray(s.transcript) && s.transcript.length > 0) {
+            s.transcript[s.transcript.length - 1] = {
+              ...s.transcript[s.transcript.length - 1],
+              waitingForInput: false,
+            }
+          }
+          sessionParseCache.delete(s.rawId)
+        }
+      }
     }
   }
 

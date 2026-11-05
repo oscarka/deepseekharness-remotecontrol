@@ -259,7 +259,11 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
 
         const transcript = []
         let lastOutput = ''
+        let lastConclusionText = ''
+        let runningSummary = ''
         let lastActivity = Math.round(fileStat.mtimeMs)
+        let lastUserInputAt = 0
+        let lastConclusionAt = 0
 
         for (const e of lines) {
           if (e.time && e.time > lastActivity) lastActivity = e.time
@@ -275,6 +279,8 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
               4000,
             )
             if (!userText || isSystemInjectedUserText(userText)) continue
+            lastUserInputAt = e.time || lastActivity
+            runningSummary = '💭 正在思考与分析...'
             transcript.push({
               index: transcript.length,
               role: 'user',
@@ -304,6 +310,14 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
             const stepTools = toolsByStep.get(stepKey) || []
             if (!asstText && !thinkingText && stepTools.length === 0) continue
             if (asstText) lastOutput = asstText.slice(0, 1200)
+            if (stepTools.length > 0) {
+              runningSummary = `🔧 正在执行: ${stepTools.map(t => t.name).join(' · ')}`.slice(0, 240)
+            } else if (asstText) {
+              lastConclusionAt = e.time || lastActivity
+              lastConclusionText = asstText.slice(0, 1200)
+            } else if (thinkingText) {
+              runningSummary = `💭 正在思考: ${thinkingText.replace(/\s+/g, ' ').slice(0, 120)}`
+            }
             transcript.push({
               index: transcript.length,
               role: 'assistant',
@@ -324,6 +338,7 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
         const projectParts = cwd.split('/').filter(Boolean)
         const rawProj = projectParts.at(-1) || '默认项目'
         const project = rawProj === 'default-workspace' ? '默认工作区' : rawProj
+        const hasConcluded = lastConclusionAt > 0 && lastConclusionAt >= lastUserInputAt
 
         const sessionObj = {
           id,
@@ -332,12 +347,15 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
           harnessLabel: 'DeepSeek Harness',
           title: customTitles[id] || title || transcript[0]?.text?.slice(0, 36) || '历史会话',
           status: 'idle',
-          statusLabel: '已完成',
+          turnState: hasConcluded ? 'conclusion' : 'idle',
+          statusLabel: hasConcluded ? '🔵 已出结论' : '已完成',
           project,
           cwd,
           lastActivity,
           updatedAt: lastActivity,
-          lastOutput,
+          lastConclusionAt,
+          lastOutput: lastConclusionText || lastOutput,
+          runningSummary: runningSummary || lastOutput,
           queuedSteers: [],
           transcript: transcript.slice(-maxMessages),
         }
