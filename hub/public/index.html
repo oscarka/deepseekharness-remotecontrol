@@ -1784,6 +1784,10 @@
     let activeSessionHostId = '';
     let desktopStageMode = 'chat';
 
+    // 浮层历史栈：打开二级页面/抽屉时压入一条 history，返回键与手势都能逐层退出
+    const overlayStack = [];
+    let suppressPopstateCount = 0;
+
     // DOM 增量比对 Key（防止 3.5s 轮询清空输入框或合上展开的 <details>）
     let lastRenderedChatKey = '';
     let lastRenderedComposerKey = '';
@@ -2272,11 +2276,19 @@
       renderSessionList();
       document.getElementById('chatFullscreen').classList.add('open');
       document.body.classList.add('mobile-chat-open');
+      if (!document.body.classList.contains('DesktopSplitMode')) {
+        trackOverlay('chat', rawCloseChat);
+        maybeShowSwipeHint();
+      }
+    }
+
+    function rawCloseChat() {
+      document.getElementById('chatFullscreen').classList.remove('open');
+      document.body.classList.remove('mobile-chat-open');
     }
 
     function closeMobileChat() {
-      document.getElementById('chatFullscreen').classList.remove('open');
-      document.body.classList.remove('mobile-chat-open');
+      dismissOverlay('chat', rawCloseChat);
     }
 
     function closeMobileFile() {
@@ -2566,7 +2578,7 @@
       if (!found) return;
       fileProjectCwd = found.session.cwd || '';
       fileSubDir = '';
-      document.getElementById('inChatFileSheet').classList.add('open');
+      openSheet('inChatFileSheet');
       document.body.classList.add('mobile-file-open');
       document.getElementById('inChatFileTitle').textContent = `📂 ${found.session.project} (${found.session.hostName})`;
       document.getElementById('inChatFileBody').innerHTML = `<div style="padding:36px;text-align:center;color:#94a3b8;">正在读取 ${esc(found.session.hostName)} 的目录...</div>`;
@@ -2798,7 +2810,7 @@
       const projects = getHostProjects(host);
       if (!newTaskCwd && projects[0]) newTaskCwd = projects[0].cwd;
       renderNewTaskForm();
-      document.getElementById('newTaskSheet').classList.add('open');
+      openSheet('newTaskSheet');
       setTimeout(() => document.getElementById('newTaskInput').focus(), 100);
     }
 
@@ -2891,7 +2903,7 @@
       actionTargetHostId = found.session.hostId;
       confirmSheetDelete = false;
       renderActionSheet();
-      document.getElementById('taskActionSheet').classList.add('open');
+      openSheet('taskActionSheet');
     }
 
     function renderActionSheet() {
@@ -3152,7 +3164,7 @@
       migSource = hosts[0].hostId;
       migTarget = hosts[1].hostId;
       renderMigrateWizard();
-      document.getElementById('mobileSettingsSheet').classList.add('open');
+      openSheet('mobileSettingsSheet');
     }
 
     function renderMigrateWizard() {
@@ -3277,7 +3289,7 @@
           </div>
         `)
       ].join('');
-      document.getElementById('hostSheet').classList.add('open');
+      openSheet('hostSheet');
     }
 
     function selectHost(id) {
@@ -3312,7 +3324,7 @@
     }
 
     function closeSheet(id) {
-      document.getElementById(id)?.classList.remove('open');
+      dismissOverlay('sheet:' + id, () => rawCloseSheet(id));
     }
 
     function onSearchInput() {
@@ -3395,7 +3407,7 @@
           </div>
         </div>
       `;
-      document.getElementById('turboGuideSheet').classList.add('open');
+      openSheet('turboGuideSheet');
     }
 
     async function requestHostAxPermission(hostId) {
@@ -3416,7 +3428,289 @@
       }, 1200);
     }
 
-    // ==================== 15. SSE 实时流与轮询同步 ====================
+    // ==================== 15. 手势返回 / 浮层历史栈（体验增强） ====================
+    // 打开二级页面或抽屉时写入一条 history，使系统返回键、Safari 侧滑、
+    // 手势右滑都能「退回上一层」，而不是直接退出整个网页。
+    function rawCloseSheet(id) {
+      document.getElementById(id)?.classList.remove('open');
+      if (id === 'inChatFileSheet') document.body.classList.remove('mobile-file-open');
+    }
+
+    // 同一种浮层只登记一次：重复打开（例如刷新抽屉内容）不应多压一条历史
+    function trackOverlay(kind, closeFn) {
+      if (overlayStack.some(item => item.kind === kind)) return;
+      overlayStack.push({ kind, closeFn });
+      try {
+        // 记录层级，返回时按层级逐层关闭（同时兼容浏览器前进/后退）
+        history.pushState({ __dshOverlay: kind, __dshDepth: overlayStack.length }, '');
+      } catch {
+        // 某些 WebView 禁止 pushState，降级为纯手势关闭
+      }
+    }
+
+    function openSheet(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.add('open');
+      trackOverlay('sheet:' + id, () => rawCloseSheet(id));
+    }
+
+    function dismissOverlay(kind, fallbackClose) {
+      const index = overlayStack.map(item => item.kind).lastIndexOf(kind);
+      const entry = index >= 0 ? overlayStack.splice(index, 1)[0] : null;
+      if (entry) entry.closeFn();
+      else if (typeof fallbackClose === 'function') fallbackClose();
+      // 关闭时同步回退历史，避免用户下次按返回键时出现「空按一次」
+      if (entry && history.state && history.state.__dshOverlay) {
+        suppressPopstateCount += 1;
+        try { history.back(); } catch { suppressPopstateCount = Math.max(0, suppressPopstateCount - 1); }
+      }
+    }
+
+    window.addEventListener('popstate', () => {
+      if (suppressPopstateCount > 0) {
+        suppressPopstateCount -= 1;
+        return;
+      }
+      // 以历史状态里的层级为准：后退一层就关一层，前进（层级变深）时保持现状
+      const state = history.state || null;
+      const targetDepth = state && typeof state.__dshDepth === 'number' ? state.__dshDepth : 0;
+      while (overlayStack.length > targetDepth) {
+        const entry = overlayStack.pop();
+        if (entry) entry.closeFn();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || overlayStack.length === 0) return;
+      const tag = (document.activeElement && document.activeElement.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      event.preventDefault();
+      const top = overlayStack[overlayStack.length - 1];
+      dismissOverlay(top.kind, top.closeFn);
+    });
+
+    // 纯函数，便于单测：横向滑动是否足以触发返回
+    function shouldDismissHorizontalSwipe({ dx, dy, width, durationMs, minVelocity = 0.5 } = {}) {
+      if (!(dx > 0)) return false;
+      if (Math.abs(dy) > dx) return false;
+      const threshold = Math.min(Math.max(90, (width || 375) * 0.28), 160);
+      if (dx >= threshold) return true;
+      return dx / Math.max(1, durationMs || 1) >= minVelocity;
+    }
+
+    // 纯函数，便于单测：纵向拖动是否足以关闭抽屉
+    function shouldDismissVerticalSwipe({ dy, dx, height, durationMs, minVelocity = 0.5 } = {}) {
+      if (!(dy > 0)) return false;
+      if (Math.abs(dx) > dy) return false;
+      const threshold = Math.min(Math.max(80, (height || 480) * 0.2), 150);
+      if (dy >= threshold) return true;
+      return dy / Math.max(1, durationMs || 1) >= minVelocity;
+    }
+
+    function setupChatSwipeBack() {
+      const chat = document.getElementById('chatFullscreen');
+      if (!chat) return;
+      const EDGE = 30;
+      let tracking = false;
+      let decided = null;
+      let startX = 0;
+      let startY = 0;
+      let lastX = 0;
+      let lastY = 0;
+      let startedAt = 0;
+      let width = 0;
+
+      const resetChatStyle = () => {
+        chat.style.transition = '';
+        chat.style.transform = '';
+        chat.style.willChange = '';
+        chat.style.boxShadow = '';
+      };
+
+      // 代码块等横向可滚动的元素上，不抢手势
+      const isHorizontallyScrollable = (target) => {
+        let node = target;
+        while (node && node !== chat && node.nodeType === 1) {
+          const overflowX = window.getComputedStyle(node).overflowX;
+          if (/(auto|scroll)/.test(overflowX) && node.scrollWidth > node.clientWidth + 4) return true;
+          node = node.parentElement;
+        }
+        return false;
+      };
+
+      chat.addEventListener('touchstart', (event) => {
+        if (event.touches.length !== 1) return;
+        if (!document.body.classList.contains('mobile-chat-open')) return;
+        if (document.body.classList.contains('DesktopSplitMode')) return;
+        const touch = event.touches[0];
+        const rect = chat.getBoundingClientRect();
+        // 只响应左边缘起手，避免和消息区横向滚动/长按冲突
+        if (touch.clientX - rect.left > EDGE) return;
+        if (isHorizontallyScrollable(event.target)) return;
+        tracking = true;
+        decided = null;
+        startX = touch.clientX;
+        startY = touch.clientY;
+        lastX = startX;
+        lastY = startY;
+        startedAt = Date.now();
+        width = rect.width || window.innerWidth;
+      }, { passive: true });
+
+      chat.addEventListener('touchmove', (event) => {
+        if (!tracking) return;
+        const touch = event.touches[0];
+        const dx = touch.clientX - startX;
+        const dy = touch.clientY - startY;
+        lastX = touch.clientX;
+        lastY = touch.clientY;
+        if (decided === null) {
+          if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+          decided = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.2;
+          if (!decided) {
+            tracking = false;
+            return;
+          }
+          chat.style.transition = 'none';
+          chat.style.willChange = 'transform';
+        }
+        if (dx <= 0) return;
+        if (event.cancelable) event.preventDefault();
+        chat.style.transform = `translateX(${Math.min(dx, width)}px)`;
+        chat.style.boxShadow = '-10px 0 30px rgba(15, 23, 42, 0.16)';
+      }, { passive: false });
+
+      const finishSwipe = () => {
+        if (!tracking) return;
+        tracking = false;
+        const dx = Math.max(0, lastX - startX);
+        const dy = Math.abs(lastY - startY);
+        const dismiss = shouldDismissHorizontalSwipe({
+          dx,
+          dy,
+          width,
+          durationMs: Date.now() - startedAt,
+        });
+        chat.style.transition = 'transform 0.24s cubic-bezier(0.22, 1, 0.36, 1)';
+        if (dismiss) {
+          chat.style.transform = `translateX(${width}px)`;
+          closeMobileChat();
+          setTimeout(resetChatStyle, 260);
+        } else {
+          chat.style.transform = 'translateX(0px)';
+          setTimeout(resetChatStyle, 280);
+        }
+      };
+
+      chat.addEventListener('touchend', finishSwipe);
+      chat.addEventListener('touchcancel', finishSwipe);
+    }
+
+    function setupSheetSwipeDismiss() {
+      document.querySelectorAll('.sheet-backdrop').forEach(backdrop => {
+        const panel = backdrop.querySelector('.sheet-panel');
+        if (!panel) return;
+        let tracking = false;
+        let startX = 0;
+        let startY = 0;
+        let lastX = 0;
+        let lastY = 0;
+        let startedAt = 0;
+
+        const resetPanelStyle = () => {
+          panel.style.transition = '';
+          panel.style.transform = '';
+          panel.style.willChange = '';
+        };
+
+        // 抽屉内部若有自己滚动的列表（如文件速览），列表已滚过时不要误触发下拉关闭
+        const hasScrolledInner = (target) => {
+          let node = target;
+          while (node && node !== panel && node.nodeType === 1) {
+            const overflowY = window.getComputedStyle(node).overflowY;
+            if (/(auto|scroll)/.test(overflowY) && node.scrollTop > 0) return true;
+            node = node.parentElement;
+          }
+          return false;
+        };
+
+        panel.addEventListener('touchstart', (event) => {
+          if (event.touches.length !== 1) return;
+          if (panel.scrollTop > 0 || hasScrolledInner(event.target)) return;
+          const touch = event.touches[0];
+          tracking = true;
+          startX = touch.clientX;
+          startY = touch.clientY;
+          lastX = startX;
+          lastY = startY;
+          startedAt = Date.now();
+        }, { passive: true });
+
+        panel.addEventListener('touchmove', (event) => {
+          if (!tracking) return;
+          const touch = event.touches[0];
+          const dy = touch.clientY - startY;
+          const dx = touch.clientX - startX;
+          lastX = touch.clientX;
+          lastY = touch.clientY;
+          if (dy <= 0) return;
+          if (Math.abs(dx) > dy * 1.2) {
+            tracking = false;
+            return;
+          }
+          if (event.cancelable) event.preventDefault();
+          panel.style.transition = 'none';
+          panel.style.willChange = 'transform';
+          panel.style.transform = `translateY(${dy}px)`;
+        }, { passive: false });
+
+        const finishSwipe = () => {
+          if (!tracking) return;
+          tracking = false;
+          const dy = Math.max(0, lastY - startY);
+          const dx = lastX - startX;
+          const dismiss = shouldDismissVerticalSwipe({
+            dy,
+            dx,
+            height: panel.offsetHeight,
+            durationMs: Date.now() - startedAt,
+          });
+          panel.style.transition = 'transform 0.2s cubic-bezier(0.22, 1, 0.36, 1)';
+          if (dismiss) {
+            panel.style.transform = `translateY(${panel.offsetHeight || 600}px)`;
+            setTimeout(() => {
+              closeSheet(backdrop.id);
+              resetPanelStyle();
+            }, 190);
+          } else {
+            panel.style.transform = 'translateY(0)';
+            setTimeout(resetPanelStyle, 220);
+          }
+        };
+
+        panel.addEventListener('touchend', finishSwipe);
+        panel.addEventListener('touchcancel', finishSwipe);
+      });
+    }
+
+    function maybeShowSwipeHint() {
+      if (!('ontouchstart' in window)) return;
+      try {
+        if (localStorage.getItem('dsh_swipe_hint_v1')) return;
+        localStorage.setItem('dsh_swipe_hint_v1', '1');
+      } catch {
+        return;
+      }
+      setTimeout(() => showToast('💡 提示：从左边缘向右滑，即可返回会话列表'), 600);
+    }
+
+    function setupOverlayGestures() {
+      setupChatSwipeBack();
+      setupSheetSwipeDismiss();
+    }
+
+    // ==================== 16. SSE 实时流与轮询同步 ====================
     async function fetchState() {
       try {
         const res = await apiFetch('/api/state');
@@ -3452,6 +3746,7 @@
       } catch {}
     }
 
+    setupOverlayGestures();
     fetchState();
     connectSSE();
     setInterval(fetchState, 2000);
