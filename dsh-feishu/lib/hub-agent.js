@@ -51,6 +51,7 @@ export class HubAgent {
     this.turbo = null
     this.pendingRetick = false
     this.followUpTimer = null
+    this.inflightTick = null
   }
 
   getFleetSummary() {
@@ -178,9 +179,13 @@ export class HubAgent {
     if (this.disposed || !this.config.hubUrl) return
     if (this.polling) {
       if (this.timer) this.pendingRetick = true
+      // 等待正在进行的这一轮结束，避免调用方被告知「已刷新」却拿到旧状态
+      if (this.inflightTick) await this.inflightTick
       return
     }
     this.polling = true
+    let resolveInflight = null
+    this.inflightTick = new Promise(resolve => { resolveInflight = resolve })
     let executedAny = false
     try {
       const identity = await this.ensureIdentity()
@@ -282,6 +287,10 @@ export class HubAgent {
       this.logger?.warn?.(`dsh-feishu: hub heartbeat error: ${safeError(error)}`)
     } finally {
       this.polling = false
+      if (resolveInflight) {
+        resolveInflight()
+        this.inflightTick = null
+      }
       if (this.timer && (this.pendingRetick || executedAny)) {
         this.pendingRetick = false
         setImmediate(() => void this.tick())
@@ -671,6 +680,12 @@ export class HubAgent {
             engine: getTurboNativeBinaryPath() ? 'rust-native' : 'node-fsevents',
             message: '⚡ 已启用 Rust 原生加速引擎并同步最新代码',
           }
+        }
+        // 兼容两种叫法：Web UI 早期发 remote_toggle/enable，插件内部统一用 remote_mode/active
+        case 'remote_mode':
+        case 'remote_toggle': {
+          const active = cmd.active !== undefined ? cmd.active !== false : cmd.enable !== false
+          return await this.bridge.executeHubCommand({ ...cmd, type: 'remote_mode', active })
         }
         default:
           return await this.bridge.executeHubCommand(cmd)
