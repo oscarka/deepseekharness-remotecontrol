@@ -737,6 +737,28 @@
       position: relative;
     }
 
+    /* 往上翻旧消息时不强行拉回底部，只浮出「最新消息」提示 */
+    #scrollBottomBtn {
+      position: absolute;
+      right: 16px;
+      bottom: calc(96px + var(--safe-bottom));
+      z-index: 50;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.97);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.16);
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--primary);
+      cursor: pointer;
+      transition: opacity 0.16s ease, transform 0.16s ease;
+    }
+    #scrollBottomBtn:active { transform: scale(0.96); }
+
     .bubble {
       max-width: 88%;
       padding: 12px 15px;
@@ -2276,6 +2298,11 @@
       renderSessionList();
       document.getElementById('chatFullscreen').classList.add('open');
       document.body.classList.add('mobile-chat-open');
+      // 重新进入上次读到一半的会话时，如果不在底部，直接浮出「最新消息」
+      const box = document.getElementById('chatMessages');
+      if (box && box.scrollHeight - box.scrollTop - box.clientHeight >= 120) {
+        setScrollBottomVisible(true);
+      }
       if (!document.body.classList.contains('DesktopSplitMode')) {
         trackOverlay('chat', rawCloseChat);
         maybeShowSwipeHint();
@@ -2285,6 +2312,7 @@
     function rawCloseChat() {
       document.getElementById('chatFullscreen').classList.remove('open');
       document.body.classList.remove('mobile-chat-open');
+      setScrollBottomVisible(false);
     }
 
     function closeMobileChat() {
@@ -2366,6 +2394,11 @@
       selectedAgyOptionIndex = 1;
 
       const box = document.getElementById('chatMessages');
+      // 用户正往上翻旧消息时，新内容不要把他强行拉回底部，只浮出「最新消息」
+      const nearBottom = box.dataset.dshSession !== String(activeSessionId)
+        || (box.scrollHeight - box.scrollTop - box.clientHeight < 120);
+      const prevScrollTop = box.scrollTop;
+      box.dataset.dshSession = String(activeSessionId);
       const msgs = s.transcript.length > 0
         ? s.transcript
         : [{ role: 'assistant', text: s.rawLastPreview || s.lastPreview }];
@@ -2478,7 +2511,14 @@
       `;
 
       box.innerHTML = bubblesHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
-      box.scrollTop = box.scrollHeight;
+      if (nearBottom) {
+        box.scrollTop = box.scrollHeight;
+        setScrollBottomVisible(false);
+      } else {
+        // innerHTML 重绘会丢掉滚动位置，这里恢复回用户正在看的位置
+        box.scrollTop = prevScrollTop;
+        setScrollBottomVisible(true);
+      }
     }
 
     function formatAssistantText(rawText) {
@@ -2503,7 +2543,33 @@
 
     function scrollToChatBottom() {
       const box = document.getElementById('chatMessages');
-      if (box) box.scrollTop = box.scrollHeight;
+      if (box) {
+        if (typeof box.scrollTo === 'function') {
+          box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
+        } else {
+          box.scrollTop = box.scrollHeight;
+        }
+      }
+      setScrollBottomVisible(false);
+    }
+
+    function setScrollBottomVisible(visible) {
+      const btn = document.getElementById('scrollBottomBtn');
+      if (!btn) return;
+      // 只在会话页打开时浮出，避免轮询刷新时按钮飘到列表页上
+      const chatOpen = document.getElementById('chatFullscreen')?.classList.contains('open');
+      btn.style.display = visible && chatOpen ? 'flex' : 'none';
+    }
+
+    function setupChatScrollWatcher() {
+      const box = document.getElementById('chatMessages');
+      if (!box) return;
+      // 手指滚回底部时自动收起提示
+      box.addEventListener('scroll', () => {
+        if (box.scrollHeight - box.scrollTop - box.clientHeight < 40) {
+          setScrollBottomVisible(false);
+        }
+      }, { passive: true });
     }
 
     // ==================== 6. 发送指令 / 实时插话 / 停止 / 审批 ====================
@@ -3747,6 +3813,7 @@
     }
 
     setupOverlayGestures();
+    setupChatScrollWatcher();
     fetchState();
     connectSSE();
     setInterval(fetchState, 2000);
