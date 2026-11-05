@@ -739,20 +739,20 @@
     .chat-messages {
       flex: 1;
       overflow-y: auto;
-      padding: 16px;
+      padding: 18px 16px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 18px;
       -webkit-overflow-scrolling: touch;
       position: relative;
     }
 
     .bubble {
       max-width: 88%;
-      padding: 12px 15px;
+      padding: 13px 16px;
       border-radius: 18px;
       font-size: 14.5px;
-      line-height: 1.58;
+      line-height: 1.7;
       word-break: break-word;
     }
     .bubble.user {
@@ -770,6 +770,46 @@
       border-bottom-left-radius: 5px;
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
     }
+
+    /* AI 回复里的简单 Markdown 排版（标题/列表/引用/代码/链接） */
+    .md-body { white-space: normal; }
+    .md-body p { margin: 0 0 9px; }
+    .md-body p:last-child { margin-bottom: 0; }
+    .md-body .md-h1 { font-size: 16.5px; font-weight: 700; margin: 14px 0 7px; line-height: 1.4; }
+    .md-body .md-h2 { font-size: 15.5px; font-weight: 700; margin: 13px 0 6px; line-height: 1.4; }
+    .md-body .md-h3 { font-size: 15px; font-weight: 700; margin: 12px 0 5px; line-height: 1.4; }
+    .md-body .md-h4,
+    .md-body .md-h5,
+    .md-body .md-h6 { font-size: 14.5px; font-weight: 700; margin: 10px 0 4px; }
+    .md-body ul,
+    .md-body ol { margin: 4px 0 10px; padding-left: 22px; }
+    .md-body li { margin: 3px 0; }
+    .md-body blockquote {
+      margin: 10px 0;
+      padding: 4px 10px;
+      border-left: 3px solid #bfdbfe;
+      background: var(--subtle);
+      color: var(--text-secondary);
+      border-radius: 0 8px 8px 0;
+    }
+    .md-body hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+    .md-body a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+    .md-body code {
+      background: var(--subtle);
+      padding: 1.5px 5px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+      color: #0f172a;
+    }
+    .md-body pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+    .md-body .code-card { margin: 10px 0; }
+    .md-body .md-table-wrap { overflow-x: auto; margin: 10px 0; -webkit-overflow-scrolling: touch; }
+    .md-body table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    .md-body th,
+    .md-body td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; vertical-align: top; }
+    .md-body th { background: var(--subtle); font-weight: 600; white-space: nowrap; }
+    .md-body > *:first-child { margin-top: 0; }
 
     .thought-box {
       margin-bottom: 9px;
@@ -1656,7 +1696,7 @@
       </div>
 
       <div class="chat-composer" id="chatComposerBar">
-        <textarea class="chat-input" id="globalPromptInput" rows="1" placeholder="发指令继续对话..." oninput="onComposerInput()" onkeydown="onComposerKeydown(event)"></textarea>
+        <textarea class="chat-input" id="globalPromptInput" rows="1" placeholder="发指令继续对话..." autocorrect="on" autocapitalize="sentences" spellcheck="true" oninput="onComposerInput()" onkeydown="onComposerKeydown(event)"></textarea>
         <button class="send-btn" id="chatSendBtn" onclick="sendPromptToActiveSession()">发送</button>
       </div>
     </section>
@@ -1858,6 +1898,7 @@
     // DOM 增量比对 Key（防止 3.5s 轮询清空输入框或合上展开的 <details>）
     let lastRenderedChatKey = '';
     let lastRenderedComposerKey = '';
+    let lastRenderedChatSessionId = '';
 
     // 置顶与已读记录（使用 v4 基线，完美对齐原型图的视觉层次）
     let pinnedMap = {};
@@ -2343,6 +2384,7 @@
       seenMap[activeSessionId] = Math.max(found.session.updatedAt || 0, Date.now());
       try { localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap)); } catch {}
       lastRenderedChatKey = ''; // 切换会话时强制渲染
+      lastRenderedChatSessionId = ''; // 打开会话先看到最新消息
       renderActiveChatStage();
       renderProjectStrip();
       renderSessionList();
@@ -2476,7 +2518,7 @@
               `;
             }).join('')}</div>`
           : '';
-        return `<div class="bubble assistant">${thought}<div style="white-space:pre-wrap;">${formatAssistantText(m.text)}</div>${tools}</div>`;
+        return `<div class="bubble assistant">${thought}<div class="md-body">${formatAssistantText(m.text)}</div>${tools}</div>`;
       }).join('');
 
       const filesChangedHtml = (s.harness === 'antigravity-ide' && Array.isArray(s.changedFiles) && s.changedFiles.length > 0) ? `
@@ -2544,28 +2586,174 @@
         </div>
       `;
 
+      // 正在往上翻历史时，新内容到达不要把用户拽回底部
+      const sessionChanged = lastRenderedChatSessionId !== s.id;
+      const wasNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+      const prevScrollTop = box.scrollTop;
       box.innerHTML = bubblesHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
-      box.scrollTop = box.scrollHeight;
+      if (sessionChanged || wasNearBottom) box.scrollTop = box.scrollHeight;
+      else box.scrollTop = prevScrollTop;
+      lastRenderedChatSessionId = s.id;
+    }
+
+    // ---- 轻量 Markdown 渲染：标题 / 列表 / 引用 / 代码 / 链接 / 加粗 ----
+    // 只做「AI 回复更好读」所需的子集，全部先转义，链接只允许 http(s)。
+    function renderInlineMarkdown(rawLine) {
+      let safe = esc(rawLine);
+      const htmlBits = [];
+      const stash = (html) => {
+        htmlBits.push(html);
+        return `\u0000PH${htmlBits.length - 1}\u0000`;
+      };
+      // 行内代码和链接先「藏起来」，避免里面的 * 被当成加粗/斜体
+      safe = safe.replace(/`([^`\n]+)`/g, (_m, code) => stash(`<code>${code}</code>`));
+      safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label, url) =>
+        stash(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`));
+      safe = safe
+        .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
+        .replace(/\*([^\s*](?:[^*\n]*[^\s*])?)\*/g, '<em>$1</em>');
+      return safe.replace(/\u0000PH(\d+)\u0000/g, (_m, idx) => htmlBits[Number(idx)] || '');
+    }
+
+    function renderMarkdownBlocks(rawBlock) {
+      const lines = String(rawBlock || '').replace(/\r\n?/g, '\n').split('\n');
+      const out = [];
+      let paragraph = [];
+      let list = null;
+      let quote = [];
+
+      const flushParagraph = () => {
+        if (!paragraph.length) return;
+        out.push(`<p>${paragraph.map(renderInlineMarkdown).join('<br>')}</p>`);
+        paragraph = [];
+      };
+      const flushList = () => {
+        if (!list) return;
+        const itemsHtml = list.items.map(item =>
+          `<li>${item.split('\n').map(renderInlineMarkdown).join('<br>')}</li>`
+        ).join('');
+        out.push(`<${list.type}>${itemsHtml}</${list.type}>`);
+        list = null;
+      };
+      const flushQuote = () => {
+        if (!quote.length) return;
+        out.push(`<blockquote>${quote.map(renderInlineMarkdown).join('<br>')}</blockquote>`);
+        quote = [];
+      };
+      const flushAll = () => { flushParagraph(); flushList(); flushQuote(); };
+      const splitTableRow = (line) => {
+        let text = line.trim();
+        if (text.startsWith('|')) text = text.slice(1);
+        if (text.endsWith('|')) text = text.slice(0, -1);
+        return text.split('|').map(cell => cell.trim());
+      };
+      const isTableRow = (line) => Boolean(line) && line.includes('|') && line.trim() !== '';
+      const isTableSep = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
+
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+        const line = lines[lineIndex];
+        if (!line.trim()) { flushAll(); continue; }
+
+        // 表格：表头 + |---|---| 分隔行
+        if (isTableRow(line) && lineIndex + 1 < lines.length && isTableSep(lines[lineIndex + 1])) {
+          flushAll();
+          const headerCells = splitTableRow(line);
+          const aligns = splitTableRow(lines[lineIndex + 1]).map(cell => {
+            const left = cell.startsWith(':');
+            const right = cell.endsWith(':');
+            if (left && right) return 'center';
+            if (right) return 'right';
+            return '';
+          });
+          lineIndex += 1;
+          const bodyRows = [];
+          while (
+            lineIndex + 1 < lines.length
+            && isTableRow(lines[lineIndex + 1])
+            && !isTableSep(lines[lineIndex + 1])
+          ) {
+            lineIndex += 1;
+            bodyRows.push(splitTableRow(lines[lineIndex]));
+          }
+          const cellHtml = (tag, text, index) => {
+            const align = aligns[index] ? ` style="text-align:${aligns[index]};"` : '';
+            return `<${tag}${align}>${renderInlineMarkdown(text || '')}</${tag}>`;
+          };
+          out.push(`<div class="md-table-wrap"><table><thead><tr>${
+            headerCells.map((cell, index) => cellHtml('th', cell, index)).join('')
+          }</tr></thead><tbody>${
+            bodyRows.map(row => `<tr>${headerCells.map((_h, index) => cellHtml('td', row[index] || '', index)).join('')}</tr>`).join('')
+          }</tbody></table></div>`);
+          continue;
+        }
+
+        const heading = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
+        if (heading) {
+          flushAll();
+          const level = heading[1].length;
+          out.push(`<div class="md-h${level}">${renderInlineMarkdown(heading[2])}</div>`);
+          continue;
+        }
+        if (/^\s{0,3}(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flushAll(); out.push('<hr>'); continue; }
+
+        const quoted = /^\s{0,3}>\s?(.*)$/.exec(line);
+        if (quoted) {
+          flushParagraph(); flushList();
+          quote.push(quoted[1]);
+          continue;
+        }
+
+        const ulItem = /^\s{0,3}[-*+]\s+(.*)$/.exec(line);
+        const olItem = /^\s{0,3}\d+[.)]\s+(.*)$/.exec(line);
+        if (ulItem || olItem) {
+          flushParagraph(); flushQuote();
+          const type = ulItem ? 'ul' : 'ol';
+          let item = (ulItem || olItem)[1];
+          const task = /^\[( |x|X)\]\s+(.*)$/.exec(item);
+          if (task) item = `${task[1].toLowerCase() === 'x' ? '☑' : '☐'} ${task[2]}`;
+          if (!list || list.type !== type) { flushList(); list = { type, items: [] }; }
+          list.items.push(item);
+          continue;
+        }
+
+        // 列表项的续行（缩进 2 格以上）接到上一项里
+        if (list && /^\s{2,}\S/.test(line)) {
+          list.items[list.items.length - 1] += '\n' + line.trim();
+          continue;
+        }
+
+        flushList(); flushQuote();
+        paragraph.push(line);
+      }
+      flushAll();
+      return out.join('');
+    }
+
+    function renderMarkdown(rawText) {
+      let text = String(rawText || '');
+      // 流式输出时代码块可能还没收尾，先补一个结尾，避免整段变成纯文本
+      if (((text.match(/```/g) || []).length % 2) === 1) text += '\n```';
+
+      const chunks = [];
+      const fence = /```([a-zA-Z0-9_+\-]*)\n?([\s\S]*?)```/g;
+      let cursor = 0;
+      let match;
+      while ((match = fence.exec(text))) {
+        if (match.index > cursor) chunks.push(renderMarkdownBlocks(text.slice(cursor, match.index)));
+        const lang = match[1] || 'code';
+        const code = match[2].replace(/\n$/, '');
+        // encodeURIComponent 不转义单引号，手动替换，避免代码里的 ' 截断 onclick
+        const encoded = encodeURIComponent(code).replace(/'/g, '%27');
+        chunks.push(`<div class="code-card"><div class="code-card-header"><span>${esc(lang)}</span><button class="code-copy-btn" onclick="copyCodeText('${encoded}')">📋 复制</button></div><pre>${esc(code)}</pre></div>`);
+        cursor = fence.lastIndex;
+      }
+      if (cursor < text.length) chunks.push(renderMarkdownBlocks(text.slice(cursor)));
+      return chunks.join('');
     }
 
     function formatAssistantText(rawText) {
-      let safe = esc(rawText || '');
-      // 1. 提取 ```code``` 代码块并替换为带复制按钮的卡片占位符
-      const codeBlocks = [];
-      safe = safe.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-        const cleanCode = code.trim();
-        const idx = codeBlocks.length;
-        codeBlocks.push(`<div class="code-card"><div class="code-card-header"><span>${lang || 'code'}</span><button class="code-copy-btn" onclick="copyCodeText('${encodeURIComponent(cleanCode)}')">📋 复制</button></div><pre>${cleanCode}</pre></div>`);
-        return `@@CODE_BLOCK_${idx}@@`;
-      });
-      // 2. 格式化 Markdown 标题、加粗与行内代码
-      safe = safe
-        .replace(/^###\s+(.+)$/gm, '<strong style="font-size:15px;display:block;margin:6px 0 2px;">$1</strong>')
-        .replace(/^##\s+(.+)$/gm, '<strong style="font-size:15.5px;display:block;margin:8px 0 3px;">$1</strong>')
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/`([^`\n]+)`/g, '<code style="background:var(--subtle);padding:1.5px 5px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:#0f172a;">$1</code>');
-      // 3. 还原代码块卡片
-      return safe.replace(/@@CODE_BLOCK_(\d+)@@/g, (_m, idx) => codeBlocks[Number(idx)] || '');
+      return renderMarkdown(rawText);
     }
 
     function scrollToChatBottom() {
