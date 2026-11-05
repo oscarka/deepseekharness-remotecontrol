@@ -1,0 +1,16 @@
+[package]
+name = "dsh-turbo-native"
+version = "2.0.0"
+edition = "2021"
+description = "Native macOS Rust accelerator for DeepSeek Harness & Antigravity IDE Remote Control (zero-copy JSONL tailing, sub-ms directory scan, CoreGraphics keystroke injection, and Accessibility permission auto-prompt)"
+
+[[bin]]
+name = "dsh-turbo-native"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
