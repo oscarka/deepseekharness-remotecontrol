@@ -1138,5 +1138,51 @@ test('antigravity-ide integration: transcript parsing, pending approval detectio
   }
 })
 
+test('remote mode: Web UI remote_mode / remote_toggle both switch Feishu notifications', async () => {
+  const tmpDsh = await mkdtemp(join(tmpdir(), 'dsh-remote-mode-'))
+  try {
+    const agent = makeAgent('session-remote-mode-1', '远程通知测试')
+    const transport = makeMockTransport()
+    const config = resolveConfig({
+      appId: APP_ID,
+      allowedOpenIds: [USER],
+      hostId: 'remote-mode-host',
+      hostName: '远程通知机',
+      hubUrl: 'https://dsh-hub.example.run.app',
+      hubToken: 'remote-mode-token',
+      dshHome: tmpDsh,
+      auditFile: '',
+      controlChatFile: '',
+      remoteStateFile: '',
+    })
+    const bridge = new FeishuBridge({
+      config,
+      agents: { list: () => [agent], get: id => (id === agent.id ? agent : undefined) },
+      transport,
+    })
+    const hubAgent = new HubAgent({
+      config,
+      bridge,
+      transport,
+      fetchImpl: async () => new Response('{}', { status: 500 }),
+    })
+    bridge.setHubAgent(hubAgent)
+
+    // 当前 Web UI 使用的叫法
+    const on = await hubAgent.handleHubCommand({ type: 'remote_mode', active: true })
+    assert.equal(on.ok, true)
+    assert.equal(on.remoteActive, true)
+    assert.equal(bridge.getSnapshotState().remoteActive, true)
+
+    // 兼容旧版 Web UI 的 remote_toggle/enable 叫法
+    const off = await hubAgent.handleHubCommand({ type: 'remote_toggle', enable: false })
+    assert.equal(off.ok, true)
+    assert.equal(off.remoteActive, false)
+    assert.equal(bridge.getSnapshotState().remoteActive, false)
+  } finally {
+    await rm(tmpDsh, { recursive: true, force: true })
+  }
+})
+
 
 
