@@ -318,6 +318,8 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
         results.push({
           id,
           shortId,
+          harness: 'dsh',
+          harnessLabel: 'DeepSeek Harness',
           title: customTitles[id] || title || transcript[0]?.text?.slice(0, 36) || '历史会话',
           status: 'idle',
           statusLabel: '已完成',

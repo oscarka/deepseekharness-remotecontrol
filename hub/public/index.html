@@ -573,6 +573,24 @@
       white-space: nowrap;
     }
 
+    .harness-mini-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1.5px 5.5px;
+      border-radius: 5px;
+      flex-shrink: 0;
+      white-space: nowrap;
+      color: #4338ca;
+      background: #e0e7ff;
+    }
+    .harness-mini-tag.agy {
+      color: #4338ca;
+      background: #e0e7ff;
+    }
+
     .session-preview-text {
       white-space: nowrap;
       overflow: hidden;
@@ -1398,10 +1416,13 @@
         <div class="form-label">1. 选择执行电脑</div>
         <div class="chip-selector" id="newTaskHostChips"></div>
 
-        <div class="form-label">2. 选择项目文件夹（免手敲路径）</div>
+        <div class="form-label">2. 选择执行引擎 (Harness / IDE)</div>
+        <div class="chip-selector" id="newTaskHarnessChips"></div>
+
+        <div class="form-label">3. 选择项目文件夹（免手敲路径）</div>
         <div class="chip-selector" id="newTaskProjectChips"></div>
 
-        <div class="form-label">3. 任务指令（或点选下方快捷指令）</div>
+        <div class="form-label">4. 任务指令（或点选下方快捷指令）</div>
         <div class="chip-selector" style="margin-bottom:6px;">
           <button class="choice-chip" onclick="fillQuickPrompt('帮我检查当前项目的定时任务和运行日志是否正常')">🔍 检查运行状态</button>
           <button class="choice-chip" onclick="fillQuickPrompt('运行单元测试并修复所有报错')">🧪 跑测试修 Bug</button>
@@ -1594,6 +1615,7 @@
     // 新建任务状态
     let newTaskHostId = '';
     let newTaskCwd = '';
+    let newTaskHarness = 'dsh';
 
     // 迁移向导状态
     let migSource = '';
@@ -1667,11 +1689,15 @@
           const project = t.project || (t.cwd ? t.cwd.split('/').filter(Boolean).pop() : '默认工作区') || '默认工作区';
           const status = pendingApp ? 'approval' : (t.status || 'idle');
           const rawPreview = t.lastOutput || lastMsg?.text || t.cwd || '点击查看对话详情';
+          const harness = t.harness || (String(t.id || '').startsWith('agy-ide:') ? 'antigravity-ide' : 'dsh');
+          const harnessLabel = t.harnessLabel || (harness === 'antigravity-ide' ? 'Antigravity IDE' : 'DeepSeek Harness');
 
           list.push({
             id: t.id,
             hostId: h.hostId,
             hostName: h.hostName || h.hostId,
+            harness,
+            harnessLabel,
             title: t.title || '未命名会话',
             project,
             cwd: t.cwd || '',
@@ -1836,6 +1862,7 @@
       const sessions = getNormalizedSessions();
       const activeCount = sessions.filter(s => s.status === 'running' || s.status === 'approval' || s.isRecentActive).length;
       const unreadCount = sessions.filter(s => s.unread).length;
+      const agyCount = sessions.filter(s => s.harness === 'antigravity-ide').length;
 
       const counts = {};
       for (const s of sessions) {
@@ -1848,6 +1875,11 @@
         `<button class="filter-pill smart-pill ${currentProject === 'SMART_ACTIVE' ? 'active' : ''}" onclick="selectProject('SMART_ACTIVE')">🔥 运行/待办 <span class="count">${activeCount}</span></button>`,
         `<button class="filter-pill smart-pill ${currentProject === 'SMART_UNREAD' ? 'active' : ''}" onclick="selectProject('SMART_UNREAD')">🔵 未读 <span class="count">${unreadCount}</span></button>`
       ];
+      if (agyCount > 0) {
+        smartPills.push(
+          `<button class="filter-pill smart-pill ${currentProject === 'HARNESS_AGY_IDE' ? 'active' : ''}" onclick="selectProject('HARNESS_AGY_IDE')">⚡ IDE <span class="count">${agyCount}</span></button>`
+        );
+      }
 
       strip.innerHTML = [
         `<button class="filter-pill ${currentProject === 'ALL' ? 'active' : ''}" onclick="selectProject('ALL')">全部 <span class="count">${sessions.length}</span></button>`,
@@ -1890,7 +1922,8 @@
       const filtered = allSessions.filter(s => {
         if (currentProject === 'SMART_ACTIVE' && s.status !== 'running' && s.status !== 'approval' && !s.isRecentActive) return false;
         if (currentProject === 'SMART_UNREAD' && !s.unread) return false;
-        if (!['ALL', 'SMART_ACTIVE', 'SMART_UNREAD'].includes(currentProject) && s.project !== currentProject) return false;
+        if (currentProject === 'HARNESS_AGY_IDE' && s.harness !== 'antigravity-ide') return false;
+        if (!['ALL', 'SMART_ACTIVE', 'SMART_UNREAD', 'HARNESS_AGY_IDE'].includes(currentProject) && s.project !== currentProject) return false;
         if (!q) return true;
         return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || s.lastPreview.toLowerCase().includes(q);
       });
@@ -1934,6 +1967,7 @@
         const unreadHtml = s.unread ? `<span class="unread-dot" title="有新消息"></span>` : '';
         const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : '';
         const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag">${esc(s.hostName)}</span>` : '';
+        const harnessTagHtml = s.harness === 'antigravity-ide' ? `<span class="harness-mini-tag agy">⚡ IDE</span>` : '';
         const rolePrefix = s.lastRole === 'user' ? '🧑 我: ' : '🤖 ';
 
         return `
@@ -1949,6 +1983,7 @@
               </div>
               <div class="session-sub-line">
                 ${hostBadgeHtml}
+                ${harnessTagHtml}
                 <span class="project-mini-tag">📁 ${esc(s.project)}</span>
                 <span class="session-preview-text">${rolePrefix}${esc(s.lastPreview)}</span>
               </div>
@@ -1998,7 +2033,8 @@
       const { session: s } = found;
 
       document.getElementById('chatTitle').textContent = s.title;
-      document.getElementById('chatSub').textContent = `📁 ${s.project} · 💻 ${s.hostName} (${s.msgCount} 条对话)`;
+      const harnessPrefix = s.harness === 'antigravity-ide' ? '⚡ Antigravity IDE · ' : '';
+      document.getElementById('chatSub').textContent = `${harnessPrefix}📁 ${s.project} · 💻 ${s.hostName} (${s.msgCount} 条对话)`;
 
       // 检查其他会话是否有待确认审批
       let otherApproval = null;
@@ -2421,6 +2457,19 @@
         </button>
       `).join('');
 
+      const harnessChips = document.getElementById('newTaskHarnessChips');
+      if (harnessChips) {
+        const harnessOpts = [
+          { id: 'dsh', label: '🟣 DeepSeek Harness (DSH)' },
+          { id: 'antigravity-ide', label: '⚡ Antigravity IDE' },
+        ];
+        harnessChips.innerHTML = harnessOpts.map(opt => `
+          <button class="choice-chip ${opt.id === newTaskHarness ? 'selected' : ''}" onclick="selectNewTaskHarness('${opt.id}')">
+            ${opt.label}
+          </button>
+        `).join('');
+      }
+
       const host = hosts.find(h => h.hostId === newTaskHostId);
       const projects = getHostProjects(host);
       if (!projects.some(p => p.cwd === newTaskCwd) && projects[0]) {
@@ -2437,6 +2486,11 @@
     function selectNewTaskHost(id) {
       newTaskHostId = id;
       newTaskCwd = '';
+      renderNewTaskForm();
+    }
+
+    function selectNewTaskHarness(h) {
+      newTaskHarness = h;
       renderNewTaskForm();
     }
 
@@ -2459,9 +2513,11 @@
       }
       document.getElementById('newTaskInput').value = '';
       closeSheet('newTaskSheet');
-      showToast('🚀 正在远程电脑创建新任务...');
+      const engineName = newTaskHarness === 'antigravity-ide' ? 'Antigravity IDE' : 'DeepSeek Harness';
+      showToast(`🚀 正在远程电脑 (${engineName}) 创建新任务...`);
       await dispatchHostCommand(newTaskHostId, {
         type: 'new_session',
+        harness: newTaskHarness,
         cwd: newTaskCwd,
         title: text.slice(0, 28),
         prompt: text,
