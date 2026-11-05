@@ -176,6 +176,8 @@ export async function renameDiskSession(dshHome, sessionId, newTitle) {
  * so the Web UI displays all of the user's real projects & conversations even when DSH Desktop
  * hasn't hydrated them into memory yet.
  */
+const dshSessionParseCache = new Map()
+
 export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, maxMessages = 40 } = {}) {
   if (!dshHome) return []
   const sessionsRoot = join(resolve(dshHome), 'sessions')
@@ -213,6 +215,14 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
         continue
       }
       if (!fileStat.isFile() || fileStat.size < 100) continue
+
+      const cachedKey = `${Math.round(fileStat.mtimeMs)}:${fileStat.size}:${customTitles[sessEntry.name] || ''}`
+      const cachedEntry = dshSessionParseCache.get(zstdPath)
+      if (cachedEntry && cachedEntry.cachedKey === cachedKey && cachedEntry.session) {
+        const customOverride = customTitles[cachedEntry.session.id]
+        results.push(customOverride ? { ...cachedEntry.session, title: customOverride } : cachedEntry.session)
+        continue
+      }
 
       try {
         const rawBuf = await readFile(zstdPath)
@@ -315,7 +325,7 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
         const rawProj = projectParts.at(-1) || '默认项目'
         const project = rawProj === 'default-workspace' ? '默认工作区' : rawProj
 
-        results.push({
+        const sessionObj = {
           id,
           shortId,
           harness: 'dsh',
@@ -330,7 +340,9 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
           lastOutput,
           queuedSteers: [],
           transcript: transcript.slice(-maxMessages),
-        })
+        }
+        dshSessionParseCache.set(zstdPath, { cachedKey, session: sessionObj })
+        results.push(sessionObj)
       } catch {
         // ignore unreadable session file
       }

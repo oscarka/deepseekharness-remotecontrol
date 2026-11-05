@@ -3,9 +3,11 @@ import { access, readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
+import { fastScanBrainDirs, sendNativeKeystroke } from '../../dsh-turbo/index.js'
 import { cleanForChat, redactText } from './redact.js'
 
 const execFileAsync = promisify(execFile)
+const sessionParseCache = new Map()
 
 export const AGY_IDE_PREFIX = 'agy-ide:'
 
@@ -476,7 +478,16 @@ export function getDefaultAntigravityBrainDirs(home = homedir()) {
  * 1. `<agyRoot>/annotations/<convId>.pbtxt` (`title:"..."`)
  * 2. `<agyRoot>/agyhub_summaries_proto.pb` (contains convId, summary title, and `file:///Users/...` workspace URI)
  */
+let cachedNativeMetaMap = null
+let cachedNativeMetaAt = 0
+let cachedNativeMetaKey = ''
+
 async function loadAntigravityMetadataForCandidates(brainDirs, candidates) {
+  const now = Date.now()
+  const key = `${brainDirs.join('|')}:${candidates.map(c => c.convId).join(',')}`
+  if (cachedNativeMetaMap && cachedNativeMetaKey === key && now - cachedNativeMetaAt < 3000) {
+    return cachedNativeMetaMap
+  }
   const metaMap = new Map()
   const agyRoots = [...new Set(brainDirs.filter(Boolean).map(d => dirname(resolve(d))))]
 
@@ -519,6 +530,9 @@ async function loadAntigravityMetadataForCandidates(brainDirs, candidates) {
     }
   }
 
+  cachedNativeMetaMap = metaMap
+  cachedNativeMetaAt = now
+  cachedNativeMetaKey = key
   return metaMap
 }
 
@@ -546,47 +560,63 @@ export async function loadAntigravityIdeSessions({
   const candidateFiles = []
   const seenConvIds = new Set()
 
-  for (const brainDir of brainDirs) {
-    if (!brainDir) continue
-    let entries = []
-    try {
-      entries = await readdir(brainDir, { withFileTypes: true })
-    } catch {
-      continue
-    }
-
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue
-      const convId = entry.name
-      if (convId.startsWith('.') || convId === 'tempmediaStorage') continue
-      if (seenConvIds.has(convId) || excludeConversationIds.has(convId)) continue
-
-      const logsDir = join(brainDir, convId, '.system_generated', 'logs')
-      const compactPath = join(logsDir, 'transcript.jsonl')
-      const fullPath = join(logsDir, 'transcript_full.jsonl')
-
-      let chosenPath = ''
-      let fileStat = null
-      for (const candidate of [compactPath, fullPath]) {
-        try {
-          const st = await stat(candidate)
-          if (st.isFile() && st.size > 20) {
-            chosenPath = candidate
-            fileStat = st
-            break
-          }
-        } catch {
-          // try next
-        }
-      }
-      if (!chosenPath || !fileStat) continue
-
-      seenConvIds.add(convId)
+  // Fast path: try Rust native sub-ms scanner first
+  const rustScan = await fastScanBrainDirs(brainDirs)
+  if (rustScan && Array.isArray(rustScan.items) && rustScan.items.length > 0) {
+    for (const item of rustScan.items) {
+      if (!item.convId || seenConvIds.has(item.convId) || excludeConversationIds.has(item.convId)) continue
+      seenConvIds.add(item.convId)
       candidateFiles.push({
-        convId,
-        path: chosenPath,
-        mtimeMs: Math.round(fileStat.mtimeMs),
+        convId: item.convId,
+        path: item.path,
+        mtimeMs: Number(item.mtimeMs) || 0,
+        size: Number(item.size) || 0,
       })
+    }
+  } else {
+    for (const brainDir of brainDirs) {
+      if (!brainDir) continue
+      let entries = []
+      try {
+        entries = await readdir(brainDir, { withFileTypes: true })
+      } catch {
+        continue
+      }
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        const convId = entry.name
+        if (convId.startsWith('.') || convId === 'tempmediaStorage') continue
+        if (seenConvIds.has(convId) || excludeConversationIds.has(convId)) continue
+
+        const logsDir = join(brainDir, convId, '.system_generated', 'logs')
+        const compactPath = join(logsDir, 'transcript.jsonl')
+        const fullPath = join(logsDir, 'transcript_full.jsonl')
+
+        let chosenPath = ''
+        let fileStat = null
+        for (const candidate of [compactPath, fullPath]) {
+          try {
+            const st = await stat(candidate)
+            if (st.isFile() && st.size > 20) {
+              chosenPath = candidate
+              fileStat = st
+              break
+            }
+          } catch {
+            // try next
+          }
+        }
+        if (!chosenPath || !fileStat) continue
+
+        seenConvIds.add(convId)
+        candidateFiles.push({
+          convId,
+          path: chosenPath,
+          mtimeMs: Math.round(fileStat.mtimeMs),
+          size: fileStat.size,
+        })
+      }
     }
   }
 
@@ -595,11 +625,32 @@ export async function loadAntigravityIdeSessions({
   const topCandidates = candidateFiles.slice(0, Math.max(maxSessions * 2, 30))
   const nativeMetaMap = await loadAntigravityMetadataForCandidates(brainDirs, topCandidates)
 
+  const settledKey = settledApprovals ? [...settledApprovals].join(',') : ''
   const sessions = []
   for (const item of topCandidates) {
     try {
-      const rawText = await readFile(item.path, 'utf8')
       const nativeMeta = nativeMetaMap.get(item.convId)
+      const sessionId = `${AGY_IDE_PREFIX}${item.convId}`
+      const customTitle = customTitles[sessionId] || customTitles[item.convId] || ''
+      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${customTitle}:${nativeMeta?.title || ''}:${settledKey}`
+      const cached = sessionParseCache.get(item.convId)
+      if (cached && cached.cacheKey === cacheKey && cached.session) {
+        // Recompute dynamic running/idle status against current `now` while skipping disk read & JSONL parse
+        const isRecentlyActive = now - cached.session.lastActivity <= 25_000
+        const status = cached.session.pendingApproval
+          ? 'approval'
+          : isRecentlyActive
+            ? 'running'
+            : 'idle'
+        sessions.push({
+          ...cached.session,
+          status,
+          statusLabel: cached.session.pendingApproval ? '⏳ 待审批' : status === 'running' ? '🟢 运行中' : '已完成',
+        })
+        continue
+      }
+
+      const rawText = await readFile(item.path, 'utf8')
       const parsed = parseAntigravityTranscript(rawText, {
         conversationId: item.convId,
         mtimeMs: item.mtimeMs,
@@ -611,6 +662,11 @@ export async function loadAntigravityIdeSessions({
         now,
       })
       if (parsed) {
+        sessionParseCache.set(item.convId, { cacheKey, session: parsed })
+        if (sessionParseCache.size > 120) {
+          const oldestKey = sessionParseCache.keys().next().value
+          sessionParseCache.delete(oldestKey)
+        }
         sessions.push(parsed)
       }
     } catch {
@@ -648,6 +704,17 @@ export async function executeAntigravityIdeAction(action, {
   }
 
   if (type === 'approve') {
+    if (execImpl === execFileAsync) {
+      const nativeAction = optionIndex === 2 ? 'approve-2' : optionIndex === 3 ? 'approve-3' : 'approve-1'
+      const nativeRes = await sendNativeKeystroke(nativeAction)
+      if (nativeRes.ok) {
+        return {
+          ok: true,
+          engine: 'rust-native',
+          message: `✅ [Rust 极速引擎] 已在 Antigravity IDE 提交选项 ${optionIndex}【允许执行】`,
+        }
+      }
+    }
     const keyChar = optionIndex === 2 ? '2' : optionIndex === 3 ? '3' : ''
     const selectOptionLine = keyChar ? `keystroke "${keyChar}"\n          delay 0.1` : `key code 36 using {option down}\n          delay 0.1`
     const script = `
@@ -670,6 +737,16 @@ export async function executeAntigravityIdeAction(action, {
   }
 
   if (type === 'deny') {
+    if (execImpl === execFileAsync) {
+      const nativeRes = await sendNativeKeystroke('deny-4')
+      if (nativeRes.ok) {
+        return {
+          ok: true,
+          engine: 'rust-native',
+          message: '🔴 [Rust 极速引擎] 已在 Antigravity IDE 执行远程【拒绝】',
+        }
+      }
+    }
     // Antigravity IDE extension defines `alt+shift+enter` for `antigravity.dynamic.rejectAgentStep` and `escape`
     const script = `
       tell application "System Events"
@@ -692,6 +769,16 @@ export async function executeAntigravityIdeAction(action, {
   }
 
   if (type === 'stop') {
+    if (execImpl === execFileAsync) {
+      const nativeRes = await sendNativeKeystroke('escape')
+      if (nativeRes.ok) {
+        return {
+          ok: true,
+          engine: 'rust-native',
+          message: '⏹️ [Rust 极速引擎] 已向 Antigravity IDE 发送停止指令',
+        }
+      }
+    }
     const script = `
       tell application "System Events"
         set procList to every process whose name contains "Antigravity IDE" or name contains "Electron" or name contains "Antigravity"

@@ -93,19 +93,26 @@ fi
 if [ -z "$NODE_BIN" ]; then
   for dsh_app_bin in \
     "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
-    "$HOME/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"; do
+    "$HOME/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
+    "/Applications/Antigravity IDE.app/Contents/MacOS/Electron" \
+    "$HOME/Applications/Antigravity IDE.app/Contents/MacOS/Electron"; do
     if [ -x "$dsh_app_bin" ]; then
       NODE_BIN="$dsh_app_bin"
       USE_ELECTRON_NODE=1
-      echo "🚀 使用 DeepSeek Harness.app 内置 Node.js 运行时: $NODE_BIN"
+      echo "🚀 使用客户端内置 Node.js 运行时: $NODE_BIN"
       break
     fi
   done
 fi
 
 if [ -z "$NODE_BIN" ]; then
-  echo "❌ 未找到 Node.js 或 DeepSeek Harness.app，请确认已安装 DeepSeek Harness 客户端"
+  echo "❌ 未找到 Node.js、Antigravity IDE.app 或 DeepSeek Harness.app"
   exit 1
+fi
+
+# 自动启用 dsh-turbo (Rust 原生加速引擎 + 辅助功能权限自检与弹窗引导)
+if [ -x "$SCRIPT_DIR/dsh-turbo/enable-turbo.sh" ]; then
+  "$SCRIPT_DIR/dsh-turbo/enable-turbo.sh" || true
 fi
 
 DSH_CLI="$(command -v dsh 2>/dev/null || true)"
