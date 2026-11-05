@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { FeishuBridge } from '../lib/bridge.js'
 import { resolveConfig } from '../lib/config.js'
 import { HubAgent } from '../lib/hub-agent.js'
+import { loadAntigravityIdeSessions, parseAntigravityTranscript } from '../lib/antigravity-ide.js'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from '../lib/migration.js'
 import { createHubServer } from '../../hub/server.js'
 import { HubCore } from '../../hub/hub-core.js'
@@ -821,5 +822,270 @@ test('iPhone Home Screen PWA & W3C Web Push (RFC 8292 VAPID + RFC 8291 aes128gcm
   assert.equal(sseRes.status, 200)
   assert.match(await sseRes.text(), /^event: state\ndata: /)
 })
+
+test('antigravity-ide integration: transcript parsing, pending approval detection, and remote control actions', async () => {
+  const tmpDsh = await mkdtemp(join(tmpdir(), 'dsh-agy-home-'))
+  const tmpBrain = await mkdtemp(join(tmpdir(), 'dsh-agy-brain-'))
+  const tmpWorkspace = await mkdtemp(join(tmpdir(), 'dsh-agy-ws-'))
+
+  try {
+    await writeFile(join(tmpWorkspace, 'README.md'), '# Antigravity IDE Demo Project\nHello from workspace.\n')
+
+    const convId = 'fcba452e-076a-4750-998f-0c357e11b7ad'
+    const convLogsDir = join(tmpBrain, convId, '.system_generated', 'logs')
+    await mkdir(convLogsDir, { recursive: true })
+
+    const nowIso = new Date().toISOString()
+    const transcriptLines = [
+      JSON.stringify({
+        step_index: 1,
+        type: 'USER_INPUT',
+        status: 'DONE',
+        created_at: nowIso,
+        content: `<USER_REQUEST>\n帮我检查 @[${tmpWorkspace}/README.md] 并运行部署脚本\n</USER_REQUEST>`,
+      }),
+      JSON.stringify({
+        step_index: 2,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: nowIso,
+        thinking: '先读取 README.md 了解项目结构。',
+        content: '正在读取项目说明文档...',
+        tool_calls: [
+          { id: 'tc-silent', name: 'task_boundary', arguments: JSON.stringify({ TaskName: 'Init' }) },
+          { id: 'tc-read', name: 'view_file', arguments: JSON.stringify({ AbsolutePath: join(tmpWorkspace, 'README.md') }) },
+        ],
+      }),
+      JSON.stringify({
+        step_index: 4,
+        type: 'CHECKPOINT',
+        status: 'DONE',
+        created_at: nowIso,
+        user_objective: '检查 README 并执行部署脚本验证',
+      }),
+      JSON.stringify({
+        step_index: 5,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: nowIso,
+        thinking: '需要执行宿主机部署命令，请求用户批准 BypassSandbox。',
+        content: '请批准执行部署脚本：',
+        tool_calls: [
+          {
+            id: 'tc-cmd',
+            name: 'run_command',
+            arguments: JSON.stringify({
+              CommandLine: './deploy-prod.sh --check',
+              Cwd: tmpWorkspace,
+              BypassSandbox: true,
+              toolSummary: 'Execute production check script',
+            }),
+          },
+        ],
+      }),
+    ]
+    await writeFile(join(convLogsDir, 'transcript.jsonl'), transcriptLines.join('\n') + '\n', 'utf8')
+
+    // 1. Direct unit test of parseAntigravityTranscript
+    const parsed = parseAntigravityTranscript(transcriptLines.join('\n'), {
+      conversationId: convId,
+      mtimeMs: Date.now(),
+      now: Date.now(),
+    })
+    assert.ok(parsed)
+    assert.equal(parsed.id, `agy-ide:${convId}`)
+    assert.equal(parsed.harness, 'antigravity-ide')
+    assert.equal(parsed.title, '检查 README 并执行部署脚本验证')
+    assert.equal(parsed.cwd, tmpWorkspace)
+    assert.equal(parsed.status, 'approval')
+    assert.ok(parsed.pendingApproval)
+    assert.equal(parsed.pendingApproval.code, 'AGY-FCBA45-5')
+    assert.match(parsed.pendingApproval.reason, /deploy-prod\.sh/)
+
+    // Verify silent tools (task_boundary) were filtered while view_file and run_command remain
+    const assistantMsgs = parsed.transcript.filter(m => m.role === 'assistant')
+    assert.equal(assistantMsgs.length, 2)
+    assert.equal(assistantMsgs[0].tools.length, 1)
+    assert.equal(assistantMsgs[0].tools[0].name, 'view_file')
+    assert.equal(assistantMsgs[0].thinking, '先读取 README.md 了解项目结构。')
+
+    // 2. If real historical conversation fcba452e-076a-4750-998f-0c357e11b7ad exists on disk, verify it parses cleanly too
+    const realHistPath = '/Users/dev/.gemini/antigravity-ide/brain/fcba452e-076a-4750-998f-0c357e11b7ad/.system_generated/logs/transcript.jsonl'
+    try {
+      const realRaw = await readFile(realHistPath, 'utf8')
+      const realParsed = parseAntigravityTranscript(realRaw, {
+        conversationId: convId,
+        mtimeMs: Date.now() - 86400_000,
+      })
+      assert.ok(realParsed)
+      assert.equal(realParsed.id, `agy-ide:${convId}`)
+      assert.ok(realParsed.transcript.length >= 2)
+      assert.match(realParsed.cwd, /google-skills|Users\/cc/)
+    } catch {
+      // Skip if not running on cc's machine
+    }
+
+    // 3. Test HubAgent + HubCore integration with Antigravity IDE sessions & remote control commands
+    const hub = new HubCore()
+    const { fetchAdapter } = createHubServer({ hub, token: 'agy-secret' })
+    const hubUrl = 'https://dsh-hub.example.run.app'
+    const authHeaders = {
+      'content-type': 'application/json',
+      authorization: 'Bearer agy-secret',
+    }
+
+    const executedCalls = []
+    const mockExec = async (bin, args) => {
+      executedCalls.push({ bin, args })
+      return { stdout: 'ok\n', stderr: '' }
+    }
+
+    const dshAgent = makeAgent('dsh-sess-1', 'DSH原生任务')
+    const transport = makeMockTransport()
+    const config = resolveConfig({
+      appId: APP_ID,
+      allowedOpenIds: [USER],
+      hostId: 'cc-mac',
+      hostName: 'cc 的 Mac',
+      hubUrl,
+      hubToken: 'agy-secret',
+      dshHome: tmpDsh,
+      antigravityBrainDirs: [tmpBrain],
+      enableAntigravityIde: true,
+      auditFile: '',
+      controlChatFile: '',
+      remoteStateFile: '',
+    })
+    const bridge = new FeishuBridge({
+      config,
+      agents: { list: () => [dshAgent], get: id => (id === dshAgent.id ? dshAgent : undefined) },
+      transport,
+    })
+    const hubAgent = new HubAgent({
+      config,
+      bridge,
+      transport,
+      fetchImpl: fetchAdapter,
+      execImpl: mockExec,
+    })
+    bridge.setHubAgent(hubAgent)
+
+    // Initial tick syncs both DSH and Antigravity IDE sessions + pending approval
+    await hubAgent.tick()
+
+    let state = await (await fetchAdapter(`${hubUrl}/api/state`, { headers: authHeaders })).json()
+    const hostState = state.hosts.find(h => h.hostId === 'cc-mac')
+    assert.ok(hostState)
+    assert.equal(hostState.bridgeState.tasks.length, 2)
+    const agyTask = hostState.bridgeState.tasks.find(t => t.id === `agy-ide:${convId}`)
+    assert.ok(agyTask)
+    assert.equal(agyTask.harness, 'antigravity-ide')
+    assert.equal(agyTask.status, 'approval')
+    assert.equal(hostState.bridgeState.approvals.length, 1)
+    assert.equal(hostState.bridgeState.approvals[0].code, 'AGY-FCBA45-5')
+
+    // 3a. Remote approve command for Antigravity IDE pending approval
+    await fetchAdapter(`${hubUrl}/api/hosts/cc-mac/command`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ type: 'approve', code: 'AGY-FCBA45-5' }),
+    })
+    await hubAgent.tick()
+    await hubAgent.tick()
+
+    assert.ok(executedCalls.some(c => c.bin === 'osascript'))
+    state = await (await fetchAdapter(`${hubUrl}/api/state`, { headers: authHeaders })).json()
+    const hostAfterApprove = state.hosts.find(h => h.hostId === 'cc-mac')
+    assert.equal(hostAfterApprove.bridgeState.approvals.length, 0)
+
+    // 3b. Remote prompt command to Antigravity IDE session
+    await fetchAdapter(`${hubUrl}/api/hosts/cc-mac/command`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        type: 'prompt',
+        agentId: `agy-ide:${convId}`,
+        text: '请继续检查日志并汇报结果',
+      }),
+    })
+    await hubAgent.tick()
+    await hubAgent.tick()
+    assert.ok(
+      executedCalls.some(
+        c =>
+          (c.args && c.args.includes('send-message') && c.args.includes(convId)) ||
+          c.bin === 'pbcopy' ||
+          c.bin === 'osascript',
+      ),
+    )
+
+    // 3c. Rename Antigravity IDE session
+    await fetchAdapter(`${hubUrl}/api/hosts/cc-mac/command`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        type: 'rename_session',
+        agentId: `agy-ide:${convId}`,
+        title: 'Antigravity IDE 生产部署核查',
+      }),
+    })
+    await hubAgent.tick()
+    await hubAgent.tick()
+
+    state = await (await fetchAdapter(`${hubUrl}/api/state`, { headers: authHeaders })).json()
+    const renamedTask = state.hosts
+      .find(h => h.hostId === 'cc-mac')
+      .bridgeState.tasks.find(t => t.id === `agy-ide:${convId}`)
+    assert.equal(renamedTask.title, 'Antigravity IDE 生产部署核查')
+
+    // 3d. Create E2EE Share Snapshot for Antigravity IDE session
+    const shareDispatch = await (
+      await fetchAdapter(`${hubUrl}/api/hosts/cc-mac/command`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          type: 'share_session',
+          agentId: `agy-ide:${convId}`,
+        }),
+      })
+    ).json()
+    await hubAgent.tick()
+    await hubAgent.tick()
+
+    state = await (await fetchAdapter(`${hubUrl}/api/state`, { headers: authHeaders })).json()
+    assert.equal(state.shares.length, 1)
+    assert.ok(state.shares[0].id.startsWith('shr-'))
+    const shareCmdRes = await (
+      await fetchAdapter(`${hubUrl}/api/commands/${shareDispatch.command.id}`, { headers: authHeaders })
+    ).json()
+    assert.equal(shareCmdRes.result.ok, true)
+    assert.ok(shareCmdRes.result.shareUrl.includes('#k='))
+
+    // 3e. List files in Antigravity IDE session's workspace
+    const listDispatch = await (
+      await fetchAdapter(`${hubUrl}/api/hosts/cc-mac/command`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          type: 'list_files',
+          agentId: `agy-ide:${convId}`,
+        }),
+      })
+    ).json()
+    await hubAgent.tick()
+    await hubAgent.tick()
+
+    const listCmdRes = await (
+      await fetchAdapter(`${hubUrl}/api/commands/${listDispatch.command.id}`, { headers: authHeaders })
+    ).json()
+    assert.equal(listCmdRes.result.ok, true)
+    assert.ok(listCmdRes.result.entries.some(e => e.name === 'README.md'))
+  } finally {
+    await rm(tmpDsh, { recursive: true, force: true })
+    await rm(tmpBrain, { recursive: true, force: true })
+    await rm(tmpWorkspace, { recursive: true, force: true })
+  }
+})
+
 
 

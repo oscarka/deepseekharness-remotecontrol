@@ -1,4 +1,12 @@
 import { createCipheriv, randomBytes } from 'node:crypto'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
+import {
+  executeAntigravityIdeAction,
+  isAntigravityIdeSessionId,
+  loadAntigravityIdeSessions,
+  toRawConversationId,
+} from './antigravity-ide.js'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from './migration.js'
 import { safeError } from './redact.js'
 import { extractSessionTranscript, loadDiskSessionsFromDshHome, loadOrCreateHostIdentity, renameDiskSession } from './workspace-ops.js'
@@ -6,18 +14,19 @@ import { extractSessionTranscript, loadDiskSessionsFromDshHome, loadOrCreateHost
 /**
  * Outbound agent that synchronizes a local DSH host with the Cloud Run Control Hub
  * (or embedded local Hub). Handles:
- * - Heartbeat state reporting (live tasks, approvals, ~/.dsh storage metrics, Ed25519 identity)
+ * - Heartbeat state reporting (live tasks, approvals, ~/.dsh storage metrics, Ed25519 identity, Antigravity IDE sessions)
  * - Active / Standby Feishu WebSocket coordination across multiple computers
  * - Executing Web UI commands (prompt, steer, new_session, rename/delete_session, list/read_file, share_session, stop, approve/deny, snapshot export/import, safe wipe)
  */
 export class HubAgent {
-  constructor({ config, bridge, transport, audit, logger, fetchImpl = globalThis.fetch }) {
+  constructor({ config, bridge, transport, audit, logger, fetchImpl = globalThis.fetch, execImpl = undefined }) {
     this.config = config
     this.bridge = bridge
     this.transport = transport
     this.audit = audit
     this.logger = logger
     this.fetch = fetchImpl
+    this.execImpl = execImpl
     this.timer = null
     this.polling = false
     this.disposed = false
@@ -25,6 +34,9 @@ export class HubAgent {
     this.pendingResults = []
     this.cachedStats = null
     this.cachedDiskSessions = []
+    this.cachedAgySessions = []
+    this.settledAgyApprovals = new Set()
+    this.deletedAgyIds = new Set()
     this.lastStatsAt = 0
     this.executedIds = new Set()
     this.identity = null
@@ -58,6 +70,14 @@ export class HubAgent {
     }
   }
 
+  shouldLoadAntigravityIde() {
+    if (this.config.enableAntigravityIde === false) return false
+    if (this.config.enableAntigravityIde === true) return true
+    if (Array.isArray(this.config.antigravityBrainDirs) && this.config.antigravityBrainDirs.length > 0) return true
+    const defaultDshHome = join(homedir(), '.dsh')
+    return Boolean(this.config.dshHome && resolve(this.config.dshHome) === resolve(defaultDshHome))
+  }
+
   async refreshDshStats(force = false) {
     const now = Date.now()
     if (!force && this.cachedStats && now - this.lastStatsAt < 10_000) {
@@ -66,6 +86,18 @@ export class HubAgent {
     try {
       this.cachedStats = await inspectDshHome(this.config.dshHome)
       this.cachedDiskSessions = await loadDiskSessionsFromDshHome(this.config.dshHome)
+      if (this.shouldLoadAntigravityIde()) {
+        this.cachedAgySessions = await loadAntigravityIdeSessions({
+          brainDirs: this.config.antigravityBrainDirs || undefined,
+          dshHome: this.config.dshHome,
+          maxSessions: this.config.maxAntigravitySessions || 100,
+          settledApprovals: this.settledAgyApprovals,
+          excludeConversationIds: this.deletedAgyIds,
+          now,
+        })
+      } else {
+        this.cachedAgySessions = []
+      }
       this.lastStatsAt = now
     } catch (error) {
       this.logger?.warn?.(`dsh-feishu: inspectDshHome failed: ${safeError(error)}`)
@@ -117,9 +149,15 @@ export class HubAgent {
       const identity = await this.ensureIdentity()
       const dshStats = await this.refreshDshStats(false)
       const bridgeState = this.bridge.getSnapshotState()
+      for (const t of bridgeState.tasks || []) {
+        if (!t.harness) {
+          t.harness = 'dsh'
+          t.harnessLabel = 'DeepSeek Harness'
+        }
+      }
+      const existingIds = new Set((bridgeState.tasks || []).map(t => t.id))
+      const wsSet = new Set(Array.isArray(bridgeState.workspaces) ? bridgeState.workspaces : [])
       if (Array.isArray(this.cachedDiskSessions) && this.cachedDiskSessions.length > 0) {
-        const existingIds = new Set((bridgeState.tasks || []).map(t => t.id))
-        const wsSet = new Set(Array.isArray(bridgeState.workspaces) ? bridgeState.workspaces : [])
         for (const ds of this.cachedDiskSessions) {
           if (!existingIds.has(ds.id)) {
             bridgeState.tasks.push(ds)
@@ -127,9 +165,29 @@ export class HubAgent {
           }
           if (ds.cwd) wsSet.add(ds.cwd)
         }
-        bridgeState.taskCount = bridgeState.tasks.length
-        bridgeState.workspaces = [...wsSet]
       }
+      if (Array.isArray(this.cachedAgySessions) && this.cachedAgySessions.length > 0) {
+        if (!Array.isArray(bridgeState.approvals)) bridgeState.approvals = []
+        const existingCodes = new Set(bridgeState.approvals.map(a => a.code))
+        for (const agySess of this.cachedAgySessions) {
+          if (!existingIds.has(agySess.id)) {
+            bridgeState.tasks.push(agySess)
+            existingIds.add(agySess.id)
+          }
+          if (agySess.cwd) wsSet.add(agySess.cwd)
+          if (
+            agySess.pendingApproval
+            && !existingCodes.has(agySess.pendingApproval.code)
+            && !this.settledAgyApprovals.has(agySess.pendingApproval.code)
+          ) {
+            bridgeState.approvals.push(agySess.pendingApproval)
+            existingCodes.add(agySess.pendingApproval.code)
+          }
+        }
+      }
+      bridgeState.taskCount = (bridgeState.tasks || []).length
+      bridgeState.runningCount = (bridgeState.tasks || []).filter(t => t.status === 'running').length
+      bridgeState.workspaces = [...wsSet]
       const resultsToSend = this.pendingResults.splice(0)
       const response = await this.fetch(`${this.config.hubUrl}/api/heartbeat`, {
         method: 'POST',
@@ -405,6 +463,7 @@ export class HubAgent {
           const targetId = String(cmd.agentId ?? '')
           const agent = this.bridge.agents.get(targetId)
             || (this.cachedDiskSessions || []).find(s => s.id === targetId)
+            || (this.cachedAgySessions || []).find(s => s.id === targetId)
           if (!agent) return { ok: false, error: '找不到该任务会话' }
           return await this.createEncryptedShare(agent)
         }
@@ -415,6 +474,7 @@ export class HubAgent {
             return await this.bridge.executeHubCommand(cmd)
           }
           const diskSession = (this.cachedDiskSessions || []).find(s => s.id === targetId)
+            || (this.cachedAgySessions || []).find(s => s.id === targetId)
           if (!diskSession) return { ok: false, error: '找不到该任务会话' }
           const renamed = await renameDiskSession(this.config.dshHome, targetId, cmd.title)
           if (renamed.ok) {
@@ -428,6 +488,15 @@ export class HubAgent {
         }
         case 'delete_session': {
           const targetId = String(cmd.agentId ?? '')
+          if (isAntigravityIdeSessionId(targetId)) {
+            this.deletedAgyIds.add(toRawConversationId(targetId))
+            this.cachedAgySessions = (this.cachedAgySessions || []).filter(s => s.id !== targetId)
+            return {
+              ok: true,
+              agentId: targetId,
+              message: `已从总控台隐藏 Antigravity IDE 会话 (${toRawConversationId(targetId).slice(0, 8)})`,
+            }
+          }
           const res = await this.bridge.executeHubCommand(cmd)
           this.cachedDiskSessions = (this.cachedDiskSessions || []).filter(s => s.id !== targetId)
           await this.refreshDshStats(true)
@@ -437,10 +506,75 @@ export class HubAgent {
         case 'read_file': {
           const targetId = String(cmd.agentId ?? '')
           const diskSession = (this.cachedDiskSessions || []).find(s => s.id === targetId)
+            || (this.cachedAgySessions || []).find(s => s.id === targetId)
           const enrichedCmd = (!cmd.cwd && diskSession?.cwd)
             ? { ...cmd, cwd: diskSession.cwd }
             : cmd
           return await this.bridge.executeHubCommand(enrichedCmd)
+        }
+        case 'approve':
+        case 'deny': {
+          const code = String(cmd.code ?? '').trim().toUpperCase()
+          if (code.startsWith('AGY-')) {
+            this.settledAgyApprovals.add(code)
+            for (const s of this.cachedAgySessions || []) {
+              if (s.pendingApproval?.code === code) {
+                s.pendingApproval = null
+                s.status = 'idle'
+                s.statusLabel = '已完成'
+              }
+            }
+            const res = await executeAntigravityIdeAction({ type, code }, { execImpl: this.execImpl })
+            return {
+              ...res,
+              code,
+              decision: type === 'approve' ? 'allowed-once' : 'rejected',
+            }
+          }
+          return await this.bridge.executeHubCommand(cmd)
+        }
+        case 'prompt':
+        case 'steer':
+        case 'stop': {
+          const targetId = String(cmd.agentId ?? '')
+          if (isAntigravityIdeSessionId(targetId)) {
+            const res = await executeAntigravityIdeAction(
+              { type, agentId: targetId, text: cmd.text },
+              { execImpl: this.execImpl },
+            )
+            if (res.ok && (type === 'prompt' || type === 'steer')) {
+              const sess = (this.cachedAgySessions || []).find(s => s.id === targetId)
+              if (sess && Array.isArray(sess.transcript) && cmd.text) {
+                sess.transcript.push({
+                  index: sess.transcript.length,
+                  role: 'user',
+                  text: String(cmd.text).trim(),
+                  thinking: '',
+                  tools: [],
+                  toolCalls: [],
+                  time: Date.now(),
+                })
+                sess.lastActivity = Date.now()
+                sess.updatedAt = Date.now()
+              }
+            }
+            return res
+          }
+          return await this.bridge.executeHubCommand(cmd)
+        }
+        case 'new_session': {
+          if (cmd.harness === 'antigravity-ide') {
+            return await executeAntigravityIdeAction(
+              {
+                type: 'new_session',
+                title: cmd.title,
+                prompt: cmd.prompt || cmd.text,
+                cwd: cmd.cwd,
+              },
+              { execImpl: this.execImpl },
+            )
+          }
+          return await this.bridge.executeHubCommand(cmd)
         }
         default:
           return await this.bridge.executeHubCommand(cmd)
