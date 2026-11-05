@@ -672,6 +672,12 @@ export class HubAgent {
             message: '⚡ 已启用 Rust 原生加速引擎并同步最新代码',
           }
         }
+        // 兼容两种叫法：Web UI 早期发 remote_toggle/enable，插件内部统一用 remote_mode/active
+        case 'remote_mode':
+        case 'remote_toggle': {
+          const active = cmd.active !== undefined ? cmd.active !== false : cmd.enable !== false
+          return await this.bridge.executeHubCommand({ ...cmd, type: 'remote_mode', active })
+        }
         default:
           return await this.bridge.executeHubCommand(cmd)
       }

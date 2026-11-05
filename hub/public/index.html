@@ -3080,6 +3080,9 @@
                 <div>
                   <div class="settings-item-title">启用 iPhone 锁屏实时推送</div>
                   <div class="settings-item-desc">当任意电脑有待审批或任务完成时直接弹窗</div>
+                  <div class="settings-item-desc" style="margin-top:3px;color:var(--primary);">
+                    当前已订阅 ${(hubState.pushSubscriptions || []).length} 台设备 · iPhone 需先在 Safari「分享 → 添加到主屏幕」，从桌面图标打开后再开启
+                  </div>
                 </div>
                 <div style="display:flex;gap:6px;">
                   <button class="pill-action-btn primary" onclick="subscribeIphonePush()">📲 开启推送</button>
@@ -3119,9 +3122,25 @@
     }
 
     async function toggleHostRemoteMode(hostId, enable) {
-      await dispatchHostCommand(hostId, { type: 'remote_toggle', enable });
-      showToast(enable ? '🔔 已开启飞书通知' : '🔕 已关闭飞书通知');
-      setTimeout(fetchState, 600);
+      const host = (hubState.hosts || []).find(h => h.hostId === hostId);
+      if (host && host.online === false) {
+        showToast('❌ 该电脑当前离线，无法切换通知');
+        return;
+      }
+      try {
+        const res = await dispatchHostCommand(hostId, { type: 'remote_mode', active: enable });
+        if (res && res.ok === false) {
+          showToast('❌ ' + (res.error || '切换失败'));
+          return;
+        }
+        // 乐观更新，避免等待下一轮心跳（约 1.5s）导致按钮看起来「点了没反应」
+        if (host) host.remoteActive = enable;
+        renderSettingsTab();
+        showToast(enable ? '🔔 已开启飞书通知（2 小时无操作会自动关闭）' : '🔕 已关闭飞书通知');
+        setTimeout(fetchState, 2500);
+      } catch (err) {
+        showToast('❌ 切换失败: ' + (err.message || err));
+      }
     }
 
     async function promptChangePassword() {
@@ -3219,36 +3238,102 @@
       return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
     }
 
+    function isIosDevice() {
+      const ua = navigator.userAgent || '';
+      if (/iPad|iPhone|iPod/.test(ua)) return true;
+      // iPadOS 13+ 的 Safari 会把自己伪装成 Mac
+      return navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1;
+    }
+
+    function isStandaloneApp() {
+      if (navigator.standalone === true) return true;
+      try {
+        return window.matchMedia('(display-mode: standalone)').matches;
+      } catch {
+        return false;
+      }
+    }
+
     async function subscribeIphonePush() {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        showToast('请先用 Safari「添加到主屏幕」后再开启锁屏推送');
+      if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+        showToast('当前浏览器不支持 Web Push：iPhone 请用 Safari「添加到主屏幕」后从桌面图标打开');
+        return;
+      }
+      // iOS 只有「添加到主屏幕」的独立 App 才能使用 Web Push（iOS 16.4+）
+      if (isIosDevice() && !isStandaloneApp()) {
+        showToast('请先用 Safari「分享 → 添加到主屏幕」，再从桌面图标打开本页开启推送');
         return;
       }
       try {
-        const reg = await navigator.serviceWorker.register('/sw.js');
-        const perm = await Notification.requestPermission();
+        // 1) 权限请求必须紧跟点击手势，iOS 在 await 之后可能不再弹授权框
+        let perm = Notification.permission;
+        if (perm !== 'granted' && typeof Notification.requestPermission === 'function') {
+          perm = await Notification.requestPermission();
+        }
         if (perm !== 'granted') {
-          showToast('请在系统设置中允许通知权限');
+          showToast(perm === 'denied'
+            ? '通知权限已被拒绝：请到 iPhone「设置 → 通知 → DSH 远控」中改为允许'
+            : '未获得通知权限，请重试并在弹窗中点「允许」');
           return;
         }
+        // 2) 注册并等待 Service Worker 就绪
+        await navigator.serviceWorker.register('/sw.js');
+        const reg = await navigator.serviceWorker.ready;
+        // 3) 先丢弃旧订阅：服务器重启后 VAPID 密钥会轮换，沿用旧订阅会抛 InvalidStateError
+        const oldSub = await reg.pushManager.getSubscription().catch(() => null);
+        if (oldSub) await oldSub.unsubscribe().catch(() => {});
+        // 4) 取公钥并创建新订阅
         const keyRes = await (await apiFetch('/api/push/vapid-public-key')).json();
+        if (!keyRes || !keyRes.publicKey) throw new Error('服务器未返回 VAPID 公钥');
         const sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(keyRes.publicKey),
         });
-        await apiFetch('/api/push/subscribe', {
+        // 5) 上报订阅，并把服务端拒绝的真实原因显示出来
+        const res = await apiFetch('/api/push/subscribe', {
           method: 'POST',
-          body: JSON.stringify({ subscription: sub, deviceName: 'iPhone 主屏幕 App' }),
+          body: JSON.stringify({
+            subscription: sub,
+            deviceName: isIosDevice() ? 'iPhone 主屏幕 App' : '浏览器 Web Push',
+          }),
         });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.error || ('订阅上报失败 (HTTP ' + res.status + ')'));
+        }
         showToast('📲 已成功开启 iPhone 锁屏推送！');
+        setTimeout(fetchState, 300);
       } catch (err) {
-        showToast('开启失败: ' + (err.message || err));
+        const detail = (err && err.name ? err.name + ': ' : '') + ((err && err.message) || err);
+        console.warn('[DSH push] 开启失败', err);
+        let hint = '';
+        if (/push service|Registration failed|AbortError|network|Failed to fetch/i.test(detail)) {
+          hint = '（连不上推送服务：桌面 Chrome 需能访问 Google FCM，iPhone 请从主屏幕 App 打开）';
+        }
+        showToast('❌ 开启失败: ' + detail + hint);
       }
     }
 
     async function sendTestPush() {
-      await apiFetch('/api/push/test', { method: 'POST', body: JSON.stringify({}) });
-      showToast('🔔 已发送测试锁屏通知');
+      try {
+        const res = await apiFetch('/api/push/test', { method: 'POST', body: JSON.stringify({}) });
+        const data = await res.json().catch(() => ({}));
+        const total = Number(data.totalSubscriptions || 0);
+        const sent = Number(data.sentCount || 0);
+        if (!total) {
+          showToast('⚠️ 还没有设备订阅推送，请先点「开启推送」');
+          return;
+        }
+        if (!sent) {
+          const failed = (data.results || []).find(r => r && r.ok === false);
+          showToast('⚠️ 测试推送未送达：' + ((failed && failed.error) || '推送服务返回失败'));
+          return;
+        }
+        showToast(`🔔 已发送测试锁屏通知（${sent}/${total} 台设备）`);
+        setTimeout(fetchState, 300);
+      } catch (err) {
+        showToast('❌ 发送失败: ' + ((err && err.message) || err));
+      }
     }
 
     // ==================== 14. 通用导航与抽屉控制 ====================
