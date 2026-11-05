@@ -4,35 +4,39 @@ set -euo pipefail
 # 默认总控中心地址（可通过环境变量 FEISHU_HUB_URL 覆盖）
 HUB_URL="${FEISHU_HUB_URL:-https://dsh-remotecontrol-hub-339795034470.us-central1.run.app}"
 
-# 第一参数：电脑显示名称，例如 ./connect-host.sh "no2mini" "你的访问密钥"
-DEFAULT_NAME="$(scutil --get ComputerName 2>/dev/null || hostname -s 2>/dev/null || hostname)"
-HOST_NAME="${1:-${FEISHU_HOST_NAME:-$DEFAULT_NAME}}"
-
-# 第二参数（可选）：总控台访问密钥 HUB_TOKEN（绝不硬编码在公开代码库中！）
-ARG_TOKEN="${2:-}"
-
-# 第三参数（可选）：自定义 Host ID
-RAW_HOST_ID="${3:-${FEISHU_HOST_ID:-$(hostname -s 2>/dev/null || hostname)}}"
-HOST_ID="$(echo "$RAW_HOST_ID" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-_')"
-if [ -z "$HOST_ID" ]; then
-  HOST_ID="mac-$(date +%s)"
-fi
-
 DSH_DIR="${DSH_HOME:-$HOME/.dsh}"
 mkdir -p "$DSH_DIR"
 
 ENV_FILE="$DSH_DIR/feishu.env"
 
-# 读取本机已有的配置（如果之前已配置过密钥则自动复用）
+# 读取本机已有的配置（如果之前已配置过密钥或电脑名则自动复用）
 EXISTING_TOKEN=""
+EXISTING_HOST_ID=""
+EXISTING_HOST_NAME=""
 EXISTING_APP_ID=""
 EXISTING_APP_SECRET=""
 EXISTING_OPEN_IDS=""
 if [ -f "$ENV_FILE" ]; then
   EXISTING_TOKEN="$(grep -E '^FEISHU_HUB_TOKEN=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+  EXISTING_HOST_ID="$(grep -E '^FEISHU_HOST_ID=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+  EXISTING_HOST_NAME="$(grep -E '^FEISHU_HOST_NAME=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   EXISTING_APP_ID="$(grep -E '^FEISHU_APP_ID=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   EXISTING_APP_SECRET="$(grep -E '^FEISHU_APP_SECRET=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   EXISTING_OPEN_IDS="$(grep -E '^FEISHU_ALLOWED_OPEN_IDS=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+fi
+
+# 第一参数：电脑显示名称，例如 ./connect-host.sh "no2mini" "你的访问密钥"
+DEFAULT_NAME="$(scutil --get ComputerName 2>/dev/null || hostname -s 2>/dev/null || hostname)"
+HOST_NAME="${1:-${FEISHU_HOST_NAME:-${EXISTING_HOST_NAME:-$DEFAULT_NAME}}}"
+
+# 第二参数（可选）：总控台访问密钥 HUB_TOKEN（绝不硬编码在公开代码库中！）
+ARG_TOKEN="${2:-}"
+
+# 第三参数（可选）：自定义 Host ID
+RAW_HOST_ID="${3:-${FEISHU_HOST_ID:-${EXISTING_HOST_ID:-$(hostname -s 2>/dev/null || hostname)}}}"
+HOST_ID="$(echo "$RAW_HOST_ID" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-_')"
+if [ -z "$HOST_ID" ]; then
+  HOST_ID="mac-$(date +%s)"
 fi
 
 HUB_TOKEN="${ARG_TOKEN:-${FEISHU_HUB_TOKEN:-$EXISTING_TOKEN}}"
