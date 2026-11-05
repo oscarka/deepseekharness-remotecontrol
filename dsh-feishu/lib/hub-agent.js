@@ -45,6 +45,7 @@ export class HubAgent {
     this.cachedAgySessions = []
     this.settledAgyApprovals = new Set()
     this.deletedAgyIds = new Set()
+    this.pendingUserPrompts = new Map()
     this.lastStatsAt = 0
     this.executedIds = new Set()
     this.identity = null
@@ -129,6 +130,38 @@ export class HubAgent {
           excludeConversationIds: this.deletedAgyIds,
           now,
         })
+        for (const sess of this.cachedAgySessions) {
+          const pending = this.pendingUserPrompts.get(sess.id)
+          if (!pending || pending.length === 0) continue
+          const fresh = pending.filter(item => now - item.time < 20_000)
+          if (fresh.length === 0) {
+            this.pendingUserPrompts.delete(sess.id)
+            continue
+          }
+          this.pendingUserPrompts.set(sess.id, fresh)
+          if (!Array.isArray(sess.transcript)) sess.transcript = []
+          for (const item of fresh) {
+            const alreadyInTranscript = sess.transcript.some(
+              m => m.role === 'user' && String(m.text || '').trim() === item.text,
+            )
+            if (!alreadyInTranscript) {
+              sess.transcript = [
+                ...sess.transcript,
+                {
+                  index: sess.transcript.length,
+                  role: 'user',
+                  text: item.text,
+                  thinking: '',
+                  tools: [],
+                  toolCalls: [],
+                  time: item.time,
+                },
+              ]
+              sess.lastActivity = Math.max(sess.lastActivity || 0, item.time)
+              sess.updatedAt = Math.max(sess.updatedAt || 0, item.time)
+            }
+          }
+        }
       } else {
         this.cachedAgySessions = []
       }
@@ -608,29 +641,49 @@ export class HubAgent {
         case 'stop': {
           const targetId = String(cmd.agentId ?? '')
           if (isAntigravityIdeSessionId(targetId)) {
+            const sess = (this.cachedAgySessions || []).find(s => s.id === targetId)
             const res = await executeAntigravityIdeAction(
-              { type, agentId: targetId, text: cmd.text },
+              { type, agentId: targetId, text: cmd.text, cwd: sess?.cwd || cmd.cwd },
               { execImpl: this.execImpl },
             )
             if (res.ok && (type === 'prompt' || type === 'steer')) {
-              const sess = (this.cachedAgySessions || []).find(s => s.id === targetId)
-              if (sess && Array.isArray(sess.transcript) && cmd.text) {
-                sess.transcript.push({
-                  index: sess.transcript.length,
-                  role: 'user',
-                  text: String(cmd.text).trim(),
-                  thinking: '',
-                  tools: [],
-                  toolCalls: [],
-                  time: Date.now(),
-                })
-                sess.lastActivity = Date.now()
-                sess.updatedAt = Date.now()
+              const trimmedText = String(cmd.text || '').trim()
+              if (trimmedText) {
+                const nowTs = Date.now()
+                const list = this.pendingUserPrompts.get(targetId) || []
+                list.push({ text: trimmedText, time: nowTs })
+                this.pendingUserPrompts.set(targetId, list)
+                if (sess && Array.isArray(sess.transcript)) {
+                  sess.transcript = [
+                    ...sess.transcript,
+                    {
+                      index: sess.transcript.length,
+                      role: 'user',
+                      text: trimmedText,
+                      thinking: '',
+                      tools: [],
+                      toolCalls: [],
+                      time: nowTs,
+                    },
+                  ]
+                  sess.lastActivity = nowTs
+                  sess.updatedAt = nowTs
+                }
               }
             }
             return res
           }
-          return await this.bridge.executeHubCommand(cmd)
+          const bridgeRes = await this.bridge.executeHubCommand(cmd)
+          if (!bridgeRes?.ok && bridgeRes?.error === '找不到该任务会话') {
+            const isHistoricalDsh = (this.cachedDiskSessions || []).some(s => s.id === targetId)
+            if (isHistoricalDsh) {
+              return {
+                ok: false,
+                error: '该 DSH 历史会话未在桌面端运行，请切换到 ⚡ Antigravity IDE 会话或打开 DeepSeek Harness 桌面端',
+              }
+            }
+          }
+          return bridgeRes
         }
         case 'new_session': {
           if (cmd.harness === 'antigravity-ide') {

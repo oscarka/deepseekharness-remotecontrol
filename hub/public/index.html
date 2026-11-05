@@ -427,6 +427,16 @@
       -webkit-overflow-scrolling: touch;
     }
 
+    .file-loading-dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2.5px solid #cbd5e1;
+      border-top-color: var(--primary);
+      animation: fileSpin 0.8s linear infinite;
+    }
+    @keyframes fileSpin { to { transform: rotate(360deg); } }
+
     .session-list {
       display: flex;
       flex-direction: column;
@@ -815,10 +825,10 @@
     .chat-messages {
       flex: 1;
       overflow-y: auto;
-      padding: 16px;
+      padding: 18px 16px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 18px;
       -webkit-overflow-scrolling: touch;
       position: relative;
     }
@@ -847,10 +857,10 @@
 
     .bubble {
       max-width: 88%;
-      padding: 12px 15px;
+      padding: 13px 16px;
       border-radius: 18px;
       font-size: 14.5px;
-      line-height: 1.58;
+      line-height: 1.7;
       word-break: break-word;
     }
     .bubble.user {
@@ -868,6 +878,46 @@
       border-bottom-left-radius: 5px;
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
     }
+
+    /* AI 回复里的简单 Markdown 排版（标题/列表/引用/代码/链接） */
+    .md-body { white-space: normal; }
+    .md-body p { margin: 0 0 9px; }
+    .md-body p:last-child { margin-bottom: 0; }
+    .md-body .md-h1 { font-size: 16.5px; font-weight: 700; margin: 14px 0 7px; line-height: 1.4; }
+    .md-body .md-h2 { font-size: 15.5px; font-weight: 700; margin: 13px 0 6px; line-height: 1.4; }
+    .md-body .md-h3 { font-size: 15px; font-weight: 700; margin: 12px 0 5px; line-height: 1.4; }
+    .md-body .md-h4,
+    .md-body .md-h5,
+    .md-body .md-h6 { font-size: 14.5px; font-weight: 700; margin: 10px 0 4px; }
+    .md-body ul,
+    .md-body ol { margin: 4px 0 10px; padding-left: 22px; }
+    .md-body li { margin: 3px 0; }
+    .md-body blockquote {
+      margin: 10px 0;
+      padding: 4px 10px;
+      border-left: 3px solid #bfdbfe;
+      background: var(--subtle);
+      color: var(--text-secondary);
+      border-radius: 0 8px 8px 0;
+    }
+    .md-body hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+    .md-body a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+    .md-body code {
+      background: var(--subtle);
+      padding: 1.5px 5px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+      color: #0f172a;
+    }
+    .md-body pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+    .md-body .code-card { margin: 10px 0; }
+    .md-body .md-table-wrap { overflow-x: auto; margin: 10px 0; -webkit-overflow-scrolling: touch; }
+    .md-body table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    .md-body th,
+    .md-body td { border: 1px solid var(--border); padding: 6px 9px; text-align: left; vertical-align: top; }
+    .md-body th { background: var(--subtle); font-weight: 600; white-space: nowrap; }
+    .md-body > *:first-child { margin-top: 0; }
 
     .thought-box {
       margin-bottom: 9px;
@@ -1248,7 +1298,7 @@
       background: var(--surface);
       border-top: 1px solid var(--border);
       display: flex;
-      align-items: center;
+      align-items: flex-end;
       gap: 8px;
       flex-shrink: 0;
     }
@@ -1261,6 +1311,12 @@
       font-size: 16px !important;
       color: var(--text);
       outline: none;
+      resize: none;
+      min-width: 0;
+      line-height: 1.45;
+      max-height: 132px;
+      overflow-y: hidden;
+      font-family: inherit;
     }
     .chat-input:focus {
       background: var(--surface);
@@ -1447,6 +1503,42 @@
     }
 
     /* 轻量 Toast 提示 */
+    /* 首次用 Safari 打开时提示「添加到主屏幕」，否则锁屏推送收不到 */
+    .install-hint {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: calc(66px + var(--safe-bottom));
+      z-index: 70;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 13px;
+      border-radius: 14px;
+      background: rgba(15, 23, 42, 0.95);
+      color: #fff;
+      font-size: 12.5px;
+      line-height: 1.45;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.28);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.22s ease, transform 0.22s ease;
+    }
+    .install-hint.show { opacity: 1; transform: translateY(0); }
+    .install-hint-text { flex: 1; }
+    .install-hint-text strong { color: #93c5fd; }
+    .install-hint-close {
+      border: none;
+      background: rgba(255, 255, 255, 0.14);
+      color: #fff;
+      border-radius: 999px;
+      padding: 6px 11px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
     .toast-pill {
       position: fixed;
       top: 20px;
@@ -1601,6 +1693,11 @@
 <body class="PhoneFrameMode">
 
   <!-- 顶部轻提示 Toast -->
+  <div class="install-hint" id="installHint">
+    <div class="install-hint-text">📲 想收锁屏通知？点底部分享 <strong>→ 添加到主屏幕</strong>，再从桌面图标打开</div>
+    <button class="install-hint-close" onclick="dismissInstallHint()">知道了</button>
+  </div>
+
   <div class="toast-pill" id="toastPill">操作成功</div>
 
   <!-- 电脑端视图模式切换器（真机手机端自动隐藏） -->
@@ -1707,7 +1804,7 @@
       </div>
 
       <div class="chat-composer" id="chatComposerBar">
-        <input class="chat-input" id="globalPromptInput" placeholder="发指令继续对话..." onkeydown="if(event.key==='Enter')sendPromptToActiveSession()" />
+        <textarea class="chat-input" id="globalPromptInput" rows="1" placeholder="发指令继续对话..." autocorrect="on" autocapitalize="sentences" spellcheck="true" oninput="onComposerInput()" onkeydown="onComposerKeydown(event)"></textarea>
         <button class="send-btn" id="chatSendBtn" onclick="sendPromptToActiveSession()">发送</button>
       </div>
     </section>
@@ -1844,7 +1941,8 @@
     }
 
     async function submitAuthLogin() {
-      const raw = document.getElementById('authTokenInput').value.trim();
+      const inputEl = document.getElementById('authTokenInput');
+      const raw = inputEl.value.trim();
       if (!raw) return;
       // 如果输入的是 6 位配对码，先尝试配对交换
       if (/^[A-Z0-9]{6}$/i.test(raw)) {
@@ -1857,23 +1955,36 @@
           const exData = await exRes.json();
           if (exRes.ok && exData.token) {
             localStorage.setItem('dsh_hub_token', exData.token);
+            const paired = await fetchState();
+            if (!paired.ok) {
+              showToast('❌ 配对成功但读取数据失败：' + (paired.error || '请重试'));
+              return;
+            }
             document.getElementById('authOverlay').classList.remove('show');
             showToast('🔓 配对解锁成功');
-            await fetchState();
             connectSSE();
             return;
           }
         } catch {}
       }
       localStorage.setItem('dsh_hub_token', raw);
-      try {
-        await fetchState();
-        document.getElementById('authOverlay').classList.remove('show');
-        showToast('🔓 解锁成功');
-        connectSSE();
-      } catch {
-        showToast('❌ 密码不正确，请重试');
+      // 以前这里不检查 fetchState 的结果：密码错了也会显示「解锁成功」，
+      // 两秒后轮询发现 401，锁屏又弹回来。现在必须确认真的拿到了数据。
+      const state = await fetchState();
+      if (!state.ok) {
+        if (state.unauthorized) {
+          localStorage.removeItem('dsh_hub_token');
+          showToast('❌ 访问密码或配对码不正确，请重试');
+          document.getElementById('authOverlay').classList.add('show');
+          try { inputEl.select(); } catch {}
+        } else {
+          showToast('❌ 无法连接总控台：' + (state.error || '网络异常'));
+        }
+        return;
       }
+      document.getElementById('authOverlay').classList.remove('show');
+      showToast('🔓 解锁成功');
+      connectSSE();
     }
 
     function lockAndLogout() {
@@ -1899,6 +2010,7 @@
     // DOM 增量比对 Key（防止 3.5s 轮询清空输入框或合上展开的 <details>）
     let lastRenderedChatKey = '';
     let lastRenderedComposerKey = '';
+    let lastRenderedChatSessionId = '';
 
     // 置顶与已读记录（使用 v4 基线，完美对齐原型图的视觉层次）
     let pinnedMap = {};
@@ -1944,6 +2056,9 @@
     // 文件浏览状态
     let fileProjectCwd = '';
     let fileSubDir = '';
+    // 加载态：目录/文件读取是「命令下发 + 等电脑心跳回传」，不显示状态会像卡死
+    let fileLoading = null;        // { hostId, cwd, subDir, at, drawer }
+    let filePreviewLoading = null; // { hostId, at, drawer }
     let actionTargetSession = null;
     let actionTargetHostId = '';
     let confirmSheetDelete = false;
@@ -2243,6 +2358,8 @@
         searchBox.style.display = 'none';
         renderSettingsTab();
       }
+      // 桌面双栏的「代码」页是独立容器，也要跟着刷新
+      if (desktopStageMode === 'code') renderFilePanes();
 
       // 如果有打开的会话，增量更新聊天窗口（不打断输入与已展开的思考过程）
       if (activeSessionId) {
@@ -2401,6 +2518,7 @@
       );
       try { localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap)); } catch {}
       lastRenderedChatKey = ''; // 切换会话时强制渲染
+      lastRenderedChatSessionId = ''; // 打开会话先看到最新消息
       renderActiveChatStage();
       renderProjectStrip();
       renderSessionList();
@@ -2476,6 +2594,9 @@
         alertBar.style.display = 'none';
       }
 
+      // 切换会话时换回该会话的草稿（同一会话内绝不覆盖用户正在输入的内容）
+      switchComposerSession(s.id);
+
       // 更新底部输入状态（仅当状态变化时调整 placeholder，绝不清空用户正在输入的内容！）
       const composerKey = `${s.id}:${s.status}`;
       if (composerKey !== lastRenderedComposerKey) {
@@ -2550,7 +2671,7 @@
               `;
             }).join('')}</div>`
           : '';
-        return `<div class="bubble assistant">${thought}<div style="white-space:pre-wrap;">${formatAssistantText(m.text)}</div>${tools}</div>`;
+        return `<div class="bubble assistant">${thought}<div class="md-body">${formatAssistantText(m.text)}</div>${tools}</div>`;
       }).join('');
 
       const filesChangedHtml = (s.harness === 'antigravity-ide' && Array.isArray(s.changedFiles) && s.changedFiles.length > 0) ? `
@@ -2618,8 +2739,10 @@
         </div>
       `;
 
+      // 正在往上翻历史时，新内容到达不要把用户拽回底部
+      const sessionChanged = lastRenderedChatSessionId !== s.id;
       box.innerHTML = bubblesHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
-      if (nearBottom) {
+      if (sessionChanged || nearBottom) {
         box.scrollTop = box.scrollHeight;
         setScrollBottomVisible(false);
       } else {
@@ -2627,26 +2750,167 @@
         box.scrollTop = prevScrollTop;
         setScrollBottomVisible(true);
       }
+      lastRenderedChatSessionId = s.id;
+    }
+
+    // ---- 轻量 Markdown 渲染：标题 / 列表 / 引用 / 代码 / 链接 / 加粗 ----
+    // 只做「AI 回复更好读」所需的子集，全部先转义，链接只允许 http(s)。
+    function renderInlineMarkdown(rawLine) {
+      let safe = esc(rawLine);
+      const htmlBits = [];
+      const stash = (html) => {
+        htmlBits.push(html);
+        return `\u0000PH${htmlBits.length - 1}\u0000`;
+      };
+      // 行内代码和链接先「藏起来」，避免里面的 * 被当成加粗/斜体
+      safe = safe.replace(/`([^`\n]+)`/g, (_m, code) => stash(`<code>${code}</code>`));
+      safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label, url) =>
+        stash(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`));
+      safe = safe
+        .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
+        .replace(/\*([^\s*](?:[^*\n]*[^\s*])?)\*/g, '<em>$1</em>');
+      return safe.replace(/\u0000PH(\d+)\u0000/g, (_m, idx) => htmlBits[Number(idx)] || '');
+    }
+
+    function renderMarkdownBlocks(rawBlock) {
+      const lines = String(rawBlock || '').replace(/\r\n?/g, '\n').split('\n');
+      const out = [];
+      let paragraph = [];
+      let list = null;
+      let quote = [];
+
+      const flushParagraph = () => {
+        if (!paragraph.length) return;
+        out.push(`<p>${paragraph.map(renderInlineMarkdown).join('<br>')}</p>`);
+        paragraph = [];
+      };
+      const flushList = () => {
+        if (!list) return;
+        const itemsHtml = list.items.map(item =>
+          `<li>${item.split('\n').map(renderInlineMarkdown).join('<br>')}</li>`
+        ).join('');
+        out.push(`<${list.type}>${itemsHtml}</${list.type}>`);
+        list = null;
+      };
+      const flushQuote = () => {
+        if (!quote.length) return;
+        out.push(`<blockquote>${quote.map(renderInlineMarkdown).join('<br>')}</blockquote>`);
+        quote = [];
+      };
+      const flushAll = () => { flushParagraph(); flushList(); flushQuote(); };
+      const splitTableRow = (line) => {
+        let text = line.trim();
+        if (text.startsWith('|')) text = text.slice(1);
+        if (text.endsWith('|')) text = text.slice(0, -1);
+        return text.split('|').map(cell => cell.trim());
+      };
+      const isTableRow = (line) => Boolean(line) && line.includes('|') && line.trim() !== '';
+      const isTableSep = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
+
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+        const line = lines[lineIndex];
+        if (!line.trim()) { flushAll(); continue; }
+
+        // 表格：表头 + |---|---| 分隔行
+        if (isTableRow(line) && lineIndex + 1 < lines.length && isTableSep(lines[lineIndex + 1])) {
+          flushAll();
+          const headerCells = splitTableRow(line);
+          const aligns = splitTableRow(lines[lineIndex + 1]).map(cell => {
+            const left = cell.startsWith(':');
+            const right = cell.endsWith(':');
+            if (left && right) return 'center';
+            if (right) return 'right';
+            return '';
+          });
+          lineIndex += 1;
+          const bodyRows = [];
+          while (
+            lineIndex + 1 < lines.length
+            && isTableRow(lines[lineIndex + 1])
+            && !isTableSep(lines[lineIndex + 1])
+          ) {
+            lineIndex += 1;
+            bodyRows.push(splitTableRow(lines[lineIndex]));
+          }
+          const cellHtml = (tag, text, index) => {
+            const align = aligns[index] ? ` style="text-align:${aligns[index]};"` : '';
+            return `<${tag}${align}>${renderInlineMarkdown(text || '')}</${tag}>`;
+          };
+          out.push(`<div class="md-table-wrap"><table><thead><tr>${
+            headerCells.map((cell, index) => cellHtml('th', cell, index)).join('')
+          }</tr></thead><tbody>${
+            bodyRows.map(row => `<tr>${headerCells.map((_h, index) => cellHtml('td', row[index] || '', index)).join('')}</tr>`).join('')
+          }</tbody></table></div>`);
+          continue;
+        }
+
+        const heading = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
+        if (heading) {
+          flushAll();
+          const level = heading[1].length;
+          out.push(`<div class="md-h${level}">${renderInlineMarkdown(heading[2])}</div>`);
+          continue;
+        }
+        if (/^\s{0,3}(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flushAll(); out.push('<hr>'); continue; }
+
+        const quoted = /^\s{0,3}>\s?(.*)$/.exec(line);
+        if (quoted) {
+          flushParagraph(); flushList();
+          quote.push(quoted[1]);
+          continue;
+        }
+
+        const ulItem = /^\s{0,3}[-*+]\s+(.*)$/.exec(line);
+        const olItem = /^\s{0,3}\d+[.)]\s+(.*)$/.exec(line);
+        if (ulItem || olItem) {
+          flushParagraph(); flushQuote();
+          const type = ulItem ? 'ul' : 'ol';
+          let item = (ulItem || olItem)[1];
+          const task = /^\[( |x|X)\]\s+(.*)$/.exec(item);
+          if (task) item = `${task[1].toLowerCase() === 'x' ? '☑' : '☐'} ${task[2]}`;
+          if (!list || list.type !== type) { flushList(); list = { type, items: [] }; }
+          list.items.push(item);
+          continue;
+        }
+
+        // 列表项的续行（缩进 2 格以上）接到上一项里
+        if (list && /^\s{2,}\S/.test(line)) {
+          list.items[list.items.length - 1] += '\n' + line.trim();
+          continue;
+        }
+
+        flushList(); flushQuote();
+        paragraph.push(line);
+      }
+      flushAll();
+      return out.join('');
+    }
+
+    function renderMarkdown(rawText) {
+      let text = String(rawText || '');
+      // 流式输出时代码块可能还没收尾，先补一个结尾，避免整段变成纯文本
+      if (((text.match(/```/g) || []).length % 2) === 1) text += '\n```';
+
+      const chunks = [];
+      const fence = /```([a-zA-Z0-9_+\-]*)\n?([\s\S]*?)```/g;
+      let cursor = 0;
+      let match;
+      while ((match = fence.exec(text))) {
+        if (match.index > cursor) chunks.push(renderMarkdownBlocks(text.slice(cursor, match.index)));
+        const lang = match[1] || 'code';
+        const code = match[2].replace(/\n$/, '');
+        // encodeURIComponent 不转义单引号，手动替换，避免代码里的 ' 截断 onclick
+        const encoded = encodeURIComponent(code).replace(/'/g, '%27');
+        chunks.push(`<div class="code-card"><div class="code-card-header"><span>${esc(lang)}</span><button class="code-copy-btn" onclick="copyCodeText('${encoded}')">📋 复制</button></div><pre>${esc(code)}</pre></div>`);
+        cursor = fence.lastIndex;
+      }
+      if (cursor < text.length) chunks.push(renderMarkdownBlocks(text.slice(cursor)));
+      return chunks.join('');
     }
 
     function formatAssistantText(rawText) {
-      let safe = esc(rawText || '');
-      // 1. 提取 ```code``` 代码块并替换为带复制按钮的卡片占位符
-      const codeBlocks = [];
-      safe = safe.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-        const cleanCode = code.trim();
-        const idx = codeBlocks.length;
-        codeBlocks.push(`<div class="code-card"><div class="code-card-header"><span>${lang || 'code'}</span><button class="code-copy-btn" onclick="copyCodeText('${encodeURIComponent(cleanCode)}')">📋 复制</button></div><pre>${cleanCode}</pre></div>`);
-        return `@@CODE_BLOCK_${idx}@@`;
-      });
-      // 2. 格式化 Markdown 标题、加粗与行内代码
-      safe = safe
-        .replace(/^###\s+(.+)$/gm, '<strong style="font-size:15px;display:block;margin:6px 0 2px;">$1</strong>')
-        .replace(/^##\s+(.+)$/gm, '<strong style="font-size:15.5px;display:block;margin:8px 0 3px;">$1</strong>')
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/`([^`\n]+)`/g, '<code style="background:var(--subtle);padding:1.5px 5px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:#0f172a;">$1</code>');
-      // 3. 还原代码块卡片
-      return safe.replace(/@@CODE_BLOCK_(\d+)@@/g, (_m, idx) => codeBlocks[Number(idx)] || '');
+      return renderMarkdown(rawText);
     }
 
     function scrollToChatBottom() {
@@ -2689,6 +2953,84 @@
       return res.json();
     }
 
+    // ---- 输入框：多行、自动增高、按会话存草稿 ----
+    let composerSessionId = '';
+    let composerDraftTimer = null;
+
+    function composerDraftKey(sessionId) {
+      return 'dsh_draft_v1_' + sessionId;
+    }
+
+    function readComposerDraft(sessionId) {
+      if (!sessionId) return '';
+      try { return localStorage.getItem(composerDraftKey(sessionId)) || ''; } catch { return ''; }
+    }
+
+    function persistComposerDraft(sessionId = composerSessionId) {
+      if (!sessionId) return;
+      const input = document.getElementById('globalPromptInput');
+      if (!input) return;
+      try {
+        // 只存用户真正写过的内容，空白不占空间
+        if (input.value.trim()) localStorage.setItem(composerDraftKey(sessionId), input.value);
+        else localStorage.removeItem(composerDraftKey(sessionId));
+      } catch {}
+    }
+
+    function autoGrowComposer() {
+      const input = document.getElementById('globalPromptInput');
+      if (!input || input.tagName !== 'TEXTAREA') return;
+      input.style.height = 'auto';
+      const fullHeight = input.scrollHeight || 24;
+      input.style.height = Math.min(fullHeight, 132) + 'px';
+      input.style.overflowY = fullHeight > 132 ? 'auto' : 'hidden';
+    }
+
+    function onComposerInput() {
+      autoGrowComposer();
+      clearTimeout(composerDraftTimer);
+      composerDraftTimer = setTimeout(() => persistComposerDraft(), 250);
+    }
+
+    function composerUsesCoarsePointer() {
+      try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+    }
+
+    // 电脑上 Enter 发送、Shift+Enter 换行；手机上 Enter 换行，用「发送」按钮
+    function shouldSendOnEnter({ shiftKey, isComposing, coarsePointer } = {}) {
+      if (isComposing) return false;
+      if (shiftKey) return false;
+      return !coarsePointer;
+    }
+
+    function onComposerKeydown(event) {
+      if (event.key !== 'Enter') return;
+      if (!shouldSendOnEnter({
+        shiftKey: event.shiftKey,
+        // Safari 输入法确认候选词时 keyCode 也是 229，不能误发
+        isComposing: event.isComposing || event.keyCode === 229,
+        coarsePointer: composerUsesCoarsePointer(),
+      })) return;
+      event.preventDefault();
+      sendPromptToActiveSession();
+    }
+
+    function switchComposerSession(nextSessionId) {
+      const input = document.getElementById('globalPromptInput');
+      if (!input) return;
+      if (composerSessionId === nextSessionId) return;
+      if (composerSessionId) persistComposerDraft(composerSessionId);
+      composerSessionId = nextSessionId || '';
+      input.value = readComposerDraft(composerSessionId);
+      input.style.height = '';
+      autoGrowComposer();
+    }
+
+    window.addEventListener('pagehide', () => persistComposerDraft());
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') persistComposerDraft();
+    });
+
     async function sendPromptToActiveSession() {
       const input = document.getElementById('globalPromptInput');
       const text = input.value.trim();
@@ -2697,10 +3039,21 @@
       if (!found) return;
       const { session: s } = found;
       input.value = '';
+      try { localStorage.removeItem(composerDraftKey(composerSessionId || activeSessionId)); } catch {}
+      autoGrowComposer();
+
+      if (Array.isArray(s.transcript)) {
+        const lastEntry = s.transcript[s.transcript.length - 1];
+        if (!lastEntry || lastEntry.role !== 'user' || lastEntry.text !== text) {
+          s.transcript.push({ role: 'user', text, time: Date.now() });
+          lastRenderedChatKey = '';
+          renderChatMessages();
+        }
+      }
 
       const cmdType = s.status === 'running' ? 'steer' : 'prompt';
       showToast(cmdType === 'steer' ? '⚡ 已发送实时插话' : '📨 已发送指令');
-      await dispatchHostCommand(s.hostId, {
+      const dispatchRes = await dispatchHostCommand(s.hostId, {
         type: cmdType,
         agentId: s.id,
         text,
@@ -2708,6 +3061,30 @@
       });
       setTimeout(fetchState, 250);
       setTimeout(fetchState, 800);
+
+      const cmdId = dispatchRes?.command?.id;
+      if (cmdId) {
+        (async () => {
+          for (let i = 0; i < 12; i++) {
+            await new Promise(r => setTimeout(r, 350));
+            try {
+              const res = await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`);
+              const data = await res.json();
+              if (data?.command?.status === 'completed') {
+                if (data.result && data.result.ok === false) {
+                  showToast('❌ ' + (data.result.error || data.result.message || '发送失败'));
+                  if (input && !input.value.trim()) {
+                    input.value = text;
+                    autoGrowComposer();
+                  }
+                }
+                fetchState();
+                return;
+              }
+            } catch {}
+          }
+        })();
+      }
     }
 
     function sendQuickFollowup(text) {
@@ -2755,14 +3132,30 @@
       openSheet('inChatFileSheet');
       document.body.classList.add('mobile-file-open');
       document.getElementById('inChatFileTitle').textContent = `📂 ${found.session.project} (${found.session.hostName})`;
-      document.getElementById('inChatFileBody').innerHTML = `<div style="padding:36px;text-align:center;color:#94a3b8;">正在读取 ${esc(found.session.hostName)} 的目录...</div>`;
-      await dispatchHostCommand(found.session.hostId, {
-        type: 'list_files',
-        agentId: found.session.id,
-        cwd: fileProjectCwd,
-        subDir: '',
-      });
-      setTimeout(fetchState, 700);
+      await requestDirList(found.session.hostId, found.session.id, fileProjectCwd, '', true);
+    }
+
+    // 文件预览统一按 kind 分流：图片走 <img>，文本才逐行编号，二进制给提示
+    function previewKind(preview) {
+      if (!preview) return 'none';
+      if (preview.kind === 'image' && preview.dataBase64) return 'image';
+      if (preview.kind === 'binary') return 'binary';
+      return 'text';
+    }
+
+    function imagePreviewSrc(preview) {
+      return `data:${preview.mime || 'image/png'};base64,${preview.dataBase64}`;
+    }
+
+    // 把 "src/lib/a.ts" 拆成 [{name:'src',path:'src'},{name:'lib',path:'src/lib'},...]
+    function buildBreadcrumbSegments(subDir) {
+      const clean = String(subDir || '').replace(/^\/+|\/+$/g, '');
+      if (!clean) return [];
+      const parts = clean.split('/').filter(Boolean);
+      return parts.map((name, index) => ({
+        name,
+        path: parts.slice(0, index + 1).join('/'),
+      }));
     }
 
     function renderInChatFileDrawerBody() {
@@ -2771,43 +3164,86 @@
       const host = found.host;
       if (!host) return;
       const body = document.getElementById('inChatFileBody');
+      reconcileFileLoading(host);
       const preview = host.lastFilePreview;
       const listing = host.lastFsListing;
+      const previewLoading = filePreviewLoading
+        && filePreviewLoading.hostId === host.hostId
+        && filePreviewLoading.drawer;
+
+      if (previewLoading) {
+        const loadingName = String(filePreviewLoading.relPath || '').split('/').filter(Boolean).pop() || '文件';
+        body.innerHTML = `
+          <div class="breadcrumbs-bar" style="justify-content:space-between;">
+            <button class="back-btn" style="padding:0;font-size:13px;" onclick="cancelFilePreviewLoading()">‹ 返回目录</button>
+            <span style="font-weight:700;color:var(--text);">${esc(loadingName)}</span>
+            <span style="width:56px;"></span>
+          </div>
+          <div style="padding:16px 12px;background:#0f172a;min-height:300px;">
+            ${fileLoadingSpinnerHtml('正在读取文件内容…')}
+          </div>
+        `;
+        return;
+      }
 
       if (preview && preview._showInDrawer) {
+        const kind = previewKind(preview);
+        const previewKey = `${preview.at || 0}:${preview.relPath || ''}:${kind}`;
+        if (body.dataset.dshPreviewKey === previewKey && body.querySelector('.file-preview-body')) return;
+        body.dataset.dshPreviewKey = previewKey;
         const lines = String(preview.content || '').split('\n');
         const numberedHtml = lines.map((line, i) =>
           `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`
         ).join('');
+        const previewBodyHtml = kind === 'image'
+          ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+               <img src="${imagePreviewSrc(preview)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:46vh;object-fit:contain;border-radius:8px;" />
+               <div style="font-size:12px;color:#94a3b8;">${esc(formatBytes(preview.size))} · 长按图片可保存到相册</div>
+             </div>`
+          : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
+               ${numberedHtml}
+             </div>`;
         body.innerHTML = `
           <div class="breadcrumbs-bar" style="justify-content:space-between;">
             <button class="back-btn" style="padding:0;font-size:13px;" onclick="backFromDrawerPreview()">‹ 返回目录</button>
             <span style="font-weight:700;color:var(--text);">${esc(preview.name)}</span>
             <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="quoteFileIntoChat('${esc(preview.relPath || preview.name)}')">📎 插入到输入框</button>
           </div>
-          <div style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
-            ${numberedHtml}
-          </div>
+          ${previewBodyHtml}
         `;
         return;
       }
 
       const entries = listing?.entries || [];
+      const loadingDir = fileLoading && fileLoading.hostId === host.hostId && fileLoading.drawer;
+      const rootCwd = listing?.rootCwd || fileProjectCwd;
+      const activeSubDir = loadingDir ? (fileLoading.subDir || '') : (listing?.subDir || '');
+      const crumbs = buildBreadcrumbSegments(activeSubDir);
+      const hostId = esc(host.hostId);
+      const sessionId = esc(found.session.id);
+
       body.innerHTML = `
         <div class="breadcrumbs-bar">
-          <span class="crumb-link" onclick="requestDirList('${esc(host.hostId)}', '${esc(found.session.id)}', '${esc(fileProjectCwd)}', '')">🏠 ${esc(found.session.project)}</span>
-          ${listing?.subDir ? `<span>/</span><span style="font-weight:600;color:var(--text);">${esc(listing.subDir)}</span>` : `<span style="color:#94a3b8;margin-left:auto;font-family:monospace;">${esc(listing?.rootCwd || fileProjectCwd)}</span>`}
+          <span class="crumb-link" onclick="requestDirList('${hostId}', '${sessionId}', '${esc(rootCwd)}', '', true)">🏠 ${esc(found.session.project)}</span>
+          ${crumbs.map((c, index) => {
+            const isLast = index === crumbs.length - 1;
+            const sep = '<span style="color:#94a3b8;">/</span>';
+            return sep + (isLast
+              ? `<span style="font-weight:600;color:var(--text);">${esc(c.name)}</span>`
+              : `<span class="crumb-link" onclick="requestDirList('${hostId}', '${sessionId}', '${esc(rootCwd)}', '${esc(c.path)}', true)">${esc(c.name)}</span>`);
+          }).join('')}
+          ${crumbs.length === 0 ? `<span style="color:#94a3b8;margin-left:auto;font-family:monospace;">${esc(rootCwd)}</span>` : ''}
         </div>
         <div>
-          ${entries.map(e => `
-            <div class="file-row" onclick="clickRealFileEntry('${esc(host.hostId)}', '${esc(found.session.id)}', '${esc(listing?.rootCwd || fileProjectCwd)}', '${esc(e.relPath)}', ${Boolean(e.isDirectory)}, true)">
+          ${loadingDir ? fileLoadingSpinnerHtml(activeSubDir ? `正在读取 ${activeSubDir} …` : '正在读取目录…') : (entries.map(e => `
+            <div class="file-row" onclick="clickRealFileEntry('${hostId}', '${sessionId}', '${esc(rootCwd)}', '${esc(e.relPath)}', ${Boolean(e.isDirectory)}, true)">
               <div class="file-row-left">
                 <span style="font-size:18px;">${e.isDirectory ? '📁' : '📄'}</span>
                 <span style="font-weight:500;">${esc(e.name)}</span>
               </div>
               <span style="font-size:12px;color:#94a3b8;">${e.isDirectory ? '目录' : formatBytes(e.size)} ›</span>
             </div>
-          `).join('') || `<div style="padding:36px;text-align:center;color:#94a3b8;">正在同步目录文件列表...</div>`}
+          `).join('') || `<div style="padding:36px;text-align:center;color:#94a3b8;">正在同步目录文件列表...</div>`)}
         </div>
       `;
     }
@@ -2825,45 +3261,143 @@
       const input = document.getElementById('globalPromptInput');
       input.value = `请查看文件 @${relPath} 并帮我分析：${input.value}`;
       input.focus();
+      onComposerInput();
       showToast(`📎 已插入 @${relPath}`);
     }
 
     // ==================== 8. 文件浏览 Tab & 桌面右侧代码视图 ====================
-    async function requestDirList(hostId, agentId, cwd, subDir) {
+    function sleepMs(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function fileLoadingSpinnerHtml(text) {
+      return `<div style="padding:40px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;color:#94a3b8;font-size:13.5px;">
+        <div class="file-loading-dot"></div>
+        <div>${esc(text)}</div>
+      </div>`;
+    }
+
+    // 目录/文件结果靠电脑心跳回传，这里判断「新结果到了没有」并清掉加载态。
+    // 注意不要用手机时钟和服务器时间比大小，只比较结果本身有没有变化。
+    function reconcileFileLoading(host) {
+      if (!host) return;
+      if (fileLoading && fileLoading.hostId === host.hostId) {
+        const listing = host.lastFsListing;
+        const sameDir = listing
+          && (listing.rootCwd || '') === fileLoading.cwd
+          && (listing.subDir || '') === (fileLoading.subDir || '');
+        if (sameDir && listing.at !== fileLoading.prevAt) {
+          fileLoading = null;
+        } else if (Date.now() - fileLoading.at > 15000) {
+          fileLoading = null;
+        }
+      }
+      if (filePreviewLoading && filePreviewLoading.hostId === host.hostId) {
+        const box = host.lastFilePreview;
+        if (box && box.at !== filePreviewLoading.prevAt && box.relPath === filePreviewLoading.relPath) {
+          box._showInDrawer = Boolean(filePreviewLoading.drawer);
+          box._showInMain = !filePreviewLoading.drawer;
+          filePreviewLoading = null;
+        } else if (Date.now() - filePreviewLoading.at > 15000) {
+          filePreviewLoading = null;
+        }
+      }
+    }
+
+    async function requestDirList(hostId, agentId, cwd, subDir, inDrawer = false) {
       fileProjectCwd = cwd;
       fileSubDir = subDir;
       const host = (hubState.hosts || []).find(h => h.hostId === hostId);
-      if (host?.lastFilePreview) host.lastFilePreview._showInMain = false;
-      await dispatchHostCommand(hostId, {
-        type: 'list_files',
-        agentId,
+      if (host?.lastFilePreview) {
+        host.lastFilePreview._showInMain = false;
+        host.lastFilePreview._showInDrawer = false;
+      }
+      fileLoading = {
+        hostId,
         cwd,
-        subDir,
-      });
-      setTimeout(fetchState, 650);
+        subDir: subDir || '',
+        prevAt: host?.lastFsListing?.at || 0,
+        at: Date.now(),
+        drawer: inDrawer,
+      };
+      renderAll();
+      let failure = '';
+      try {
+        const out = await dispatchHostCommand(hostId, { type: 'list_files', agentId, cwd, subDir });
+        if (out && out.ok === false) failure = out.error || '电脑未接受该指令';
+      } catch (err) {
+        failure = (err && err.message) || String(err);
+      }
+      if (failure) {
+        fileLoading = null;
+        showToast('❌ 读取目录失败：' + failure);
+        renderAll();
+        return;
+      }
+      // 先快速轮询几次，拿到结果就停；超时交给 reconcileFileLoading
+      for (let i = 0; i < 10 && fileLoading; i++) {
+        await sleepMs(400);
+        const state = await fetchState();
+        if (!state.ok) break;
+      }
+      if (fileLoading) {
+        fileLoading = null;
+        showToast('⚠️ 读取目录超时：电脑可能离线，请重新点一下目录');
+      }
+      renderAll();
+      renderFilePanes();
     }
 
     async function clickRealFileEntry(hostId, agentId, cwd, relPath, isDir, inDrawer = false) {
       if (isDir) {
-        await requestDirList(hostId, agentId, cwd, relPath);
+        await requestDirList(hostId, agentId, cwd, relPath, inDrawer);
         return;
       }
-      showToast('📄 正在读取文件内容...');
-      await dispatchHostCommand(hostId, {
-        type: 'read_file',
-        agentId,
-        cwd,
+      const host = (hubState.hosts || []).find(h => h.hostId === hostId);
+      filePreviewLoading = {
+        hostId,
         relPath,
-      });
-      setTimeout(async () => {
-        await fetchState();
-        const host = (hubState.hosts || []).find(h => h.hostId === hostId);
-        if (host?.lastFilePreview) {
-          host.lastFilePreview._showInDrawer = inDrawer;
-          host.lastFilePreview._showInMain = !inDrawer;
-          renderAll();
-        }
-      }, 700);
+        prevAt: host?.lastFilePreview?.at || 0,
+        at: Date.now(),
+        drawer: inDrawer,
+      };
+      renderAll();
+      let failure = '';
+      try {
+        const out = await dispatchHostCommand(hostId, { type: 'read_file', agentId, cwd, relPath });
+        if (out && out.ok === false) failure = out.error || '电脑未接受该指令';
+      } catch (err) {
+        failure = (err && err.message) || String(err);
+      }
+      if (failure) {
+        filePreviewLoading = null;
+        showToast('❌ 读取文件失败：' + failure);
+        renderAll();
+        return;
+      }
+      for (let i = 0; i < 10 && filePreviewLoading; i++) {
+        await sleepMs(400);
+        const state = await fetchState();
+        if (!state.ok) break;
+      }
+      if (filePreviewLoading) {
+        filePreviewLoading = null;
+        showToast('⚠️ 读取文件超时：电脑可能离线，请重新点一下文件');
+      }
+      renderAll();
+      renderFilePanes();
+    }
+
+    function renderFilePanes() {
+      if (desktopStageMode !== 'code') return;
+      const pane = document.getElementById('desktopStageCodePane');
+      if (!pane || pane.style.display === 'none') return;
+      renderFilesTab(pane);
+    }
+
+    function cancelFilePreviewLoading() {
+      filePreviewLoading = null;
+      renderAll();
     }
 
     function renderFilesTab(container = document.getElementById('mainViewport')) {
@@ -2873,6 +3407,7 @@
         container.innerHTML = `<div style="padding:48px 20px;text-align:center;color:#94a3b8;">暂无在线电脑</div>`;
         return;
       }
+      reconcileFileLoading(host);
       const projects = getHostProjects(host);
       if (!fileProjectCwd && projects[0]) {
         fileProjectCwd = projects[0].cwd;
@@ -2881,29 +3416,62 @@
       const agentId = firstSession?.id || '';
 
       const preview = host.lastFilePreview;
+      const previewLoading = filePreviewLoading
+        && filePreviewLoading.hostId === host.hostId
+        && !filePreviewLoading.drawer;
+      if (previewLoading) {
+        const loadingName = String(filePreviewLoading.relPath || '').split('/').filter(Boolean).pop() || '文件';
+        container.innerHTML = `
+          <div class="breadcrumbs-bar" style="justify-content:space-between;">
+            <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="cancelFilePreviewLoading()">‹ 返回文件列表</button>
+            <span style="font-weight:700;color:var(--text);">${esc(loadingName)}</span>
+            <span style="width:72px;"></span>
+          </div>
+          <div style="padding:16px 12px;background:#0f172a;min-height:calc(100% - 44px);">
+            ${fileLoadingSpinnerHtml('正在读取文件内容…')}
+          </div>
+        `;
+        return;
+      }
+
       if (preview && preview._showInMain) {
+        const kind = previewKind(preview);
+        // 图片/长文件在每次 2 秒轮询里都重建 DOM 会卡顿，内容没变就复用
+        const previewKey = `${preview.at || 0}:${preview.relPath || ''}:${kind}`;
+        if (container.dataset.dshPreviewKey === previewKey && container.querySelector('.file-preview-body')) return;
+        container.dataset.dshPreviewKey = previewKey;
         const lines = String(preview.content || '').split('\n');
         const numberedHtml = lines.map((line, i) =>
           `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`
         ).join('');
+        const previewBodyHtml = kind === 'image'
+          ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+               <img src="${imagePreviewSrc(preview)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;" />
+               <div style="font-size:12px;color:#94a3b8;">${esc(formatBytes(preview.size))} · 长按图片可保存到相册</div>
+             </div>`
+          : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:calc(100% - 44px);overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;">
+               ${numberedHtml}
+             </div>`;
         container.innerHTML = `
           <div class="breadcrumbs-bar" style="justify-content:space-between;">
             <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="closeMainFilePreview('${esc(host.hostId)}')">‹ 返回文件列表</button>
             <span style="font-weight:700;color:var(--text);">${esc(preview.name)}</span>
             <div style="display:flex;gap:6px;">
-              <button class="icon-pill-btn" onclick="copyCodeText('${encodeURIComponent(preview.content || '')}')">📋 复制</button>
+              ${kind === 'image' ? '' : `<button class="icon-pill-btn" onclick="copyCodeText('${encodeURIComponent(preview.content || '')}')">📋 复制</button>`}
               <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="askAiAboutFile('${esc(host.hostId)}', '${esc(fileProjectCwd)}', '${esc(preview.relPath || preview.name)}')">💬 让 AI 分析</button>
             </div>
           </div>
-          <div style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:calc(100% - 44px);overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;">
-            ${numberedHtml}
-          </div>
+          ${previewBodyHtml}
         `;
         return;
       }
 
       const listing = host.lastFsListing;
       const entries = listing?.entries || [];
+      const loadingDir = fileLoading && fileLoading.hostId === host.hostId && !fileLoading.drawer;
+      const rootCwd = listing?.rootCwd || fileProjectCwd;
+      const activeSubDir = loadingDir ? (fileLoading.subDir || '') : (listing?.subDir || '');
+      const crumbs = buildBreadcrumbSegments(activeSubDir);
 
       const projectPillsHtml = `
         <div class="filter-strip" style="border-bottom:1px solid var(--hairline);">
@@ -2913,14 +3481,24 @@
         </div>
       `;
 
+      // 逐级面包屑：src / lib / utils 都能点，不用先退回根目录
       const breadcrumbHtml = `
         <div class="breadcrumbs-bar">
-          <span class="crumb-link" onclick="requestDirList('${esc(host.hostId)}', '${esc(agentId)}', '${esc(fileProjectCwd)}', '')">🏠 根目录</span>
-          ${listing?.subDir ? `<span>/</span><span style="font-weight:600;color:var(--text);">${esc(listing.subDir)}</span>` : `<span style="color:#94a3b8;margin-left:auto;font-family:monospace;">${esc(listing?.rootCwd || fileProjectCwd)}</span>`}
+          <span class="crumb-link" onclick="requestDirList('${esc(host.hostId)}', '${esc(agentId)}', '${esc(rootCwd)}', '')">🏠 根目录</span>
+          ${crumbs.map((c, index) => {
+            const isLast = index === crumbs.length - 1;
+            const sep = '<span style="color:#94a3b8;">/</span>';
+            return sep + (isLast
+              ? `<span style="font-weight:600;color:var(--text);">${esc(c.name)}</span>`
+              : `<span class="crumb-link" onclick="requestDirList('${esc(host.hostId)}', '${esc(agentId)}', '${esc(rootCwd)}', '${esc(c.path)}')">${esc(c.name)}</span>`);
+          }).join('')}
+          ${crumbs.length === 0 ? `<span style="color:#94a3b8;margin-left:auto;font-family:monospace;">${esc(rootCwd)}</span>` : ''}
         </div>
       `;
 
-      const listHtml = entries.map(e => `
+      const listHtml = loadingDir
+        ? fileLoadingSpinnerHtml(activeSubDir ? `正在读取 ${activeSubDir} …` : '正在读取目录…')
+        : (entries.map(e => `
         <div class="file-row" onclick="clickRealFileEntry('${esc(host.hostId)}', '${esc(agentId)}', '${esc(listing?.rootCwd || fileProjectCwd)}', '${esc(e.relPath)}', ${Boolean(e.isDirectory)}, false)">
           <div class="file-row-left">
             <span style="font-size:18px;">${e.isDirectory ? '📁' : '📄'}</span>
@@ -2928,7 +3506,7 @@
           </div>
           <span style="font-size:12px;color:#94a3b8;">${e.isDirectory ? '目录' : formatBytes(e.size)} ›</span>
         </div>
-      `).join('') || `<div style="padding:36px;text-align:center;color:#94a3b8;">点击上方项目胶囊加载远程目录...</div>`;
+      `).join('') || `<div style="padding:36px;text-align:center;color:#94a3b8;">点击上方项目胶囊加载远程目录...</div>`);
 
       container.innerHTML = projectPillsHtml + breadcrumbHtml + `<div>${listHtml}</div>`;
     }
@@ -3262,17 +3840,20 @@
           <div>
             <div class="settings-group-title">手机锁屏通知 (iOS 16.4+ Web Push)</div>
             <div class="settings-card">
-              <div class="settings-item">
-                <div>
-                  <div class="settings-item-title">启用 iPhone 锁屏实时推送</div>
-                  <div class="settings-item-desc">当任意电脑有待审批或任务完成时直接弹窗</div>
-                  <div class="settings-item-desc" style="margin-top:3px;color:var(--primary);">
-                    当前已订阅 ${(hubState.pushSubscriptions || []).length} 台设备 · iPhone 需先在 Safari「分享 → 添加到主屏幕」，从桌面图标打开后再开启
-                  </div>
+              <div class="settings-item" style="display:block;">
+                <div class="settings-item-title">启用 iPhone 锁屏实时推送</div>
+                <div class="settings-item-desc">当任意电脑有待审批、任务完成或异常时直接弹窗</div>
+                <div id="pushLocalStatus" style="margin-top:9px;font-size:12.5px;font-weight:600;color:var(--primary);">
+                  正在检测本机推送状态…
                 </div>
-                <div style="display:flex;gap:6px;">
+                <div id="pushDeviceList" style="margin-top:4px;font-size:12px;color:#64748b;line-height:1.55;"></div>
+                <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
                   <button class="pill-action-btn primary" onclick="subscribeIphonePush()">📲 开启推送</button>
-                  <button class="pill-action-btn" onclick="sendTestPush()">测试</button>
+                  <button class="pill-action-btn" onclick="sendTestPush()">🔔 测试</button>
+                  <button class="pill-action-btn" style="color:var(--red);" onclick="disableIphonePush()">关闭本机推送</button>
+                </div>
+                <div class="settings-item-desc" style="margin-top:8px;">
+                  iPhone 需先在 Safari「分享 → 添加到主屏幕」，再从桌面图标打开本页开启，才能收到锁屏通知
                 </div>
               </div>
             </div>
@@ -3299,6 +3880,85 @@
           </div>
         </div>
       `;
+      void refreshPushStatus();
+    }
+
+    // 本机是否真的订阅成功，只有浏览器自己知道；服务端登记数则代表所有设备
+    let lastPushStatusAt = 0;
+    async function refreshPushStatus(manual = false) {
+      // 设置页每 2 秒会重绘一次，避免跟着重复查询 Service Worker
+      if (!manual && Date.now() - lastPushStatusAt < 1500) return;
+      lastPushStatusAt = Date.now();
+      const statusEl = document.getElementById('pushLocalStatus');
+      const listEl = document.getElementById('pushDeviceList');
+      if (!statusEl) return;
+      const subs = hubState.pushSubscriptions || [];
+      if (listEl) {
+        if (!subs.length) {
+          listEl.textContent = '还没有设备登记推送';
+        } else {
+          const devices = subs.slice(0, 5).map(sub => {
+            const name = sub.deviceName || '未知设备';
+            const host = sub.endpointHost ? ` · ${sub.endpointHost}` : '';
+            return `${name}${host}`;
+          });
+          const more = subs.length > 5 ? ` 等 ${subs.length} 台` : '';
+          listEl.textContent = `已在服务端登记 ${subs.length} 台设备：${devices.join('；')}${more}`;
+        }
+      }
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') {
+        statusEl.textContent = '本机：当前浏览器不支持锁屏推送（iPhone 需从主屏幕 App 打开）';
+        statusEl.style.color = '#d97706';
+        return;
+      }
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        const sub = reg ? await reg.pushManager.getSubscription() : null;
+        const permission = Notification.permission;
+        if (sub && permission === 'granted') {
+          statusEl.textContent = '本机：✅ 已开启锁屏推送';
+          statusEl.style.color = '#059669';
+        } else if (sub && permission === 'denied') {
+          statusEl.textContent = '本机：已订阅但通知权限被拒绝，请到「设置 → 通知」中允许';
+          statusEl.style.color = '#dc2626';
+        } else if (permission === 'denied') {
+          statusEl.textContent = '本机：通知权限被拒绝，请到「设置 → 通知 → DSH 远控」中允许';
+          statusEl.style.color = '#dc2626';
+        } else {
+          statusEl.textContent = '本机：未开启（点下方「开启推送」）';
+          statusEl.style.color = '#d97706';
+        }
+        if (manual) showToast('已刷新推送状态');
+      } catch (err) {
+        statusEl.textContent = '本机：状态读取失败（' + ((err && err.message) || err) + '）';
+        statusEl.style.color = '#dc2626';
+      }
+    }
+
+    async function disableIphonePush() {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration();
+        const sub = reg ? await reg.pushManager.getSubscription() : null;
+        if (!sub) {
+          showToast('本机当前没有开启推送');
+          void refreshPushStatus();
+          return;
+        }
+        const endpoint = sub.endpoint;
+        await sub.unsubscribe();
+        // 同步删掉服务端记录，避免「设备列表里还在、但永远送不到」
+        try {
+          await apiFetch('/api/push/unsubscribe', {
+            method: 'POST',
+            body: JSON.stringify({ endpoint }),
+          });
+        } catch {}
+        showToast('🔕 已关闭本机推送');
+        setTimeout(fetchState, 300);
+        void refreshPushStatus();
+      } catch (err) {
+        showToast('❌ 关闭失败：' + ((err && err.message) || err));
+      }
     }
 
     async function activateFeishuHost(hostId) {
@@ -3969,17 +4629,86 @@
       setupSheetSwipeDismiss();
     }
 
+    // ==================== 15b. 「添加到主屏幕」提示 ====================
+    // iOS 只有从主屏幕图标打开时才允许 Web Push，普通 Safari 标签页收不到锁屏通知。
+    function isIosDeviceForHint() {
+      const ua = navigator.userAgent || '';
+      if (/iPad|iPhone|iPod/.test(ua)) return true;
+      return navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1;
+    }
+
+    function isStandaloneForHint() {
+      if (navigator.standalone === true) return true;
+      try { return window.matchMedia('(display-mode: standalone)').matches; } catch { return false; }
+    }
+
+    function shouldShowInstallHint({ isIos, isStandalone, dismissed } = {}) {
+      return Boolean(isIos) && !isStandalone && !dismissed;
+    }
+
+    function setupInstallHint() {
+      const el = document.getElementById('installHint');
+      if (!el) return;
+      let dismissed = true;
+      try { dismissed = localStorage.getItem('dsh_a2hs_dismissed_v1') === '1'; } catch {}
+      const show = shouldShowInstallHint({
+        isIos: isIosDeviceForHint(),
+        isStandalone: isStandaloneForHint(),
+        dismissed,
+      });
+      if (!show) {
+        el.style.display = 'none';
+        return;
+      }
+      el.style.display = 'flex';
+      // 别一进页面就盖住列表，缓一下再出现
+      setTimeout(() => { el.classList.add('show'); }, 1200);
+    }
+
+    function dismissInstallHint() {
+      try { localStorage.setItem('dsh_a2hs_dismissed_v1', '1'); } catch {}
+      const el = document.getElementById('installHint');
+      if (el) {
+        el.classList.remove('show');
+        el.style.display = 'none';
+      }
+    }
+
     // ==================== 16. SSE 实时流与轮询同步 ====================
+    // 返回 { ok, unauthorized?, error? }：调用方（尤其是登录）需要知道失败原因，
+    // 不能再把所有异常吞掉，否则「密码错了」会被误报成「解锁成功」。
+    // 「在文件页打开了某个预览」是纯前端状态，每次轮询都会拿到新对象，
+    // 不把它们搬过去的话，预览会在 2 秒后自己弹回目录列表。
+    function preservePreviewUiState(nextState) {
+      const prevHosts = hubState.hosts || [];
+      for (const host of nextState.hosts || []) {
+        const prev = prevHosts.find(h => h.hostId === host.hostId)?.lastFilePreview;
+        const next = host.lastFilePreview;
+        if (!prev || !next) continue;
+        if (prev.at === next.at && prev.relPath === next.relPath) {
+          next._showInMain = Boolean(prev._showInMain);
+          next._showInDrawer = Boolean(prev._showInDrawer);
+        }
+      }
+    }
+
+    function applyHubState(nextState) {
+      preservePreviewUiState(nextState);
+      hubState = nextState;
+    }
     async function fetchState() {
       try {
         const res = await apiFetch('/api/state');
         const data = await res.json();
         if (data.ok) {
-          hubState = data;
+          applyHubState(data);
           renderAll();
+          return { ok: true };
         }
-      } catch {
-        // handled by apiFetch 401 overlay
+        return { ok: false, error: data.error || '服务端返回异常' };
+      } catch (err) {
+        const message = err && err.message ? err.message : String(err);
+        return { ok: false, unauthorized: message === 'Unauthorized', error: message };
       }
     }
 
@@ -3997,7 +4726,7 @@
           try {
             const data = JSON.parse(evt.data);
             if (data.ok) {
-              hubState = data;
+              applyHubState(data);
               renderAll();
             }
           } catch {}
@@ -4007,6 +4736,7 @@
 
     setupOverlayGestures();
     setupChatScrollWatcher();
+    setupInstallHint();
     fetchState();
     connectSSE();
     setInterval(fetchState, 2000);

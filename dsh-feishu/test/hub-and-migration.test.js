@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { FeishuBridge } from '../lib/bridge.js'
 import { resolveConfig } from '../lib/config.js'
 import { HubAgent } from '../lib/hub-agent.js'
-import { loadAntigravityIdeSessions, parseAntigravityTranscript } from '../lib/antigravity-ide.js'
+import { executeAntigravityIdeAction, loadAntigravityIdeSessions, parseAntigravityTranscript } from '../lib/antigravity-ide.js'
 import { checkAccessibilityPermission, fastScanBrainDirs, getTurboNativeBinaryPath } from '../../dsh-turbo/index.js'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from '../lib/migration.js'
 import { createHubServer } from '../../hub/server.js'
@@ -1261,6 +1261,58 @@ test('antigravity-ide turnState: distinguishes running thinking/tool steps from 
   assert.equal(interruptedParsed.turnState, 'interrupted')
   assert.equal(interruptedParsed.statusLabel, '⚠️ 中断待继续')
 })
+
+test('antigravity-ide Connect-RPC prompt delivery & merged Web UI Markdown/UX helpers', async () => {
+  const prevAddr = process.env.ANTIGRAVITY_LS_ADDRESS
+  const prevCsrf = process.env.ANTIGRAVITY_CSRF_TOKEN
+  process.env.ANTIGRAVITY_LS_ADDRESS = '127.0.0.1:51749'
+  process.env.ANTIGRAVITY_CSRF_TOKEN = 'test-csrf-token-123'
+
+  try {
+    const rpcCalls = []
+    const mockFetch = async (url, init) => {
+      rpcCalls.push({ url, init })
+      return new Response(JSON.stringify({}), { status: 200 })
+    }
+
+    const res = await executeAntigravityIdeAction(
+      {
+        type: 'prompt',
+        agentId: 'agy-ide:5ce97dab-7b27-4285-9b3f-f8d35fc6f541',
+        text: '测试输入框直接发送指令',
+      },
+      {
+        execImpl: async () => ({ stdout: '', stderr: '' }),
+        fetchImpl: mockFetch,
+      },
+    )
+
+    assert.equal(res.ok, true)
+    assert.equal(res.method, 'connect-rpc')
+    assert.equal(rpcCalls.length, 1)
+    assert.match(rpcCalls[0].url, /SendUserCascadeMessage$/)
+    assert.equal(rpcCalls[0].init.headers['x-codeium-csrf-token'], 'test-csrf-token-123')
+    const sentBody = JSON.parse(rpcCalls[0].init.body)
+    assert.equal(sentBody.cascadeId, '5ce97dab-7b27-4285-9b3f-f8d35fc6f541')
+    assert.deepEqual(sentBody.items, [{ text: '测试输入框直接发送指令' }])
+  } finally {
+    if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS
+    else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr
+    if (prevCsrf === undefined) delete process.env.ANTIGRAVITY_CSRF_TOKEN
+    else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf
+  }
+
+  // Verify hub/public/index.html merged features (Markdown rendering, composer Enter logic, file preview kind, full-row status classes)
+  const indexHtml = await readFile(join( process.cwd(), 'hub/public/index.html'), 'utf8')
+  assert.match(indexHtml, /function renderMarkdown\(/)
+  assert.match(indexHtml, /function shouldSendOnEnter\(/)
+  assert.match(indexHtml, /function shouldShowInstallHint\(/)
+  assert.match(indexHtml, /function previewKind\(/)
+  assert.match(indexHtml, /function shouldDismissHorizontalSwipe\(/)
+  assert.match(indexHtml, /row-state-running/)
+  assert.match(indexHtml, /row-state-conclusion/)
+})
+
 
 
 

@@ -782,20 +782,93 @@ export async function loadAntigravityIdeSessions({
 }
 
 /**
+ * Discover running Antigravity IDE LanguageServer (`agy --hub --hub-port=<PORT> --csrf_token=<TOKEN>`) instances.
+ * Prioritizes the instance whose `--add-dir` matches `preferredCwd`.
+ */
+export async function discoverAntigravityHubInstances({
+  execImpl = execFileAsync,
+  preferredCwd = '',
+} = {}) {
+  const instances = []
+  const seenAddresses = new Set()
+
+  const addInstance = ({ address, port, csrfToken, addDir = '', binPath = '' }) => {
+    const normAddr = String(address || (port ? `127.0.0.1:${port}` : '')).trim()
+    const token = String(csrfToken || '').trim()
+    if (!normAddr || !token || seenAddresses.has(normAddr)) return
+    seenAddresses.add(normAddr)
+    instances.push({
+      address: normAddr,
+      port: Number(port) || Number(normAddr.split(':')[1]) || 0,
+      csrfToken: token,
+      addDir: String(addDir || '').trim(),
+      binPath: String(binPath || '').trim(),
+    })
+  }
+
+  if (process.env.ANTIGRAVITY_LS_ADDRESS && process.env.ANTIGRAVITY_CSRF_TOKEN) {
+    addInstance({
+      address: process.env.ANTIGRAVITY_LS_ADDRESS,
+      csrfToken: process.env.ANTIGRAVITY_CSRF_TOKEN,
+    })
+  }
+
+  if (execImpl === execFileAsync) {
+    try {
+      const { stdout } = await execFileAsync('ps', ['-ax', '-o', 'command='], { timeout: 2000 })
+      for (const rawLine of String(stdout || '').split('\n')) {
+        const line = rawLine.trim()
+        if (!line.includes('--hub') || !line.includes('--hub-port=') || !line.includes('--csrf_token=')) {
+          continue
+        }
+        const portMatch = line.match(/--hub-port=(\d+)/)
+        const csrfMatch = line.match(/--csrf_token=([^\s]+)/)
+        const dirMatch = line.match(/--add-dir=([^\s]+)/)
+        const binMatch = line.match(/^(\S+\/agy)\b/)
+        if (portMatch && csrfMatch) {
+          addInstance({
+            address: `127.0.0.1:${portMatch[1]}`,
+            port: Number(portMatch[1]),
+            csrfToken: csrfMatch[1],
+            addDir: dirMatch ? dirMatch[1] : '',
+            binPath: binMatch ? binMatch[1] : '',
+          })
+        }
+      }
+    } catch {
+      // ignore ps failure
+    }
+  }
+
+  const targetCwd = String(preferredCwd || '').trim()
+  if (targetCwd && instances.length > 1) {
+    instances.sort((a, b) => {
+      const aMatch = a.addDir && (a.addDir === targetCwd || targetCwd.startsWith(a.addDir + '/') || a.addDir.startsWith(targetCwd + '/')) ? 1 : 0
+      const bMatch = b.addDir && (b.addDir === targetCwd || targetCwd.startsWith(b.addDir + '/') || b.addDir.startsWith(targetCwd + '/')) ? 1 : 0
+      return bMatch - aMatch
+    })
+  }
+
+  return instances
+}
+
+/**
  * Execute remote control actions targeting Antigravity IDE:
  * - `approve`: Trigger Antigravity IDE's acceptAgentStep (`Option + Enter` / `Enter` or numbered option `1`/`2`/`3` + `Enter`)
  * - `deny`: Trigger Antigravity IDE's rejectAgentStep (`Option + Shift + Enter` / `Escape` or option `4`)
- * - `stop`: Trigger Antigravity IDE's interruptAgent (`Escape`)
- * - `prompt` / `steer`: Send message via official `agentapi send-message <id> <text>` with UI focus fallback (`Cmd + L` + paste)
+ * - `stop`: Trigger Antigravity IDE's CancelCascadeInvocation RPC or interruptAgent (`Escape`)
+ * - `prompt` / `steer`: Send message via Connect-RPC `SendUserCascadeMessage` or official `agentapi send-message <id> <text>` with discovered LS port + CSRF token, falling back to UI focus
  * - `new_session`: Create a new Antigravity IDE conversation via `agentapi new-conversation` or `Cmd + Shift + L`
  */
 export async function executeAntigravityIdeAction(action, {
   home = homedir(),
   execImpl = execFileAsync,
+  fetchImpl = globalThis.fetch,
 } = {}) {
   const type = String(action?.type ?? '').trim()
   const rawConvId = toRawConversationId(action?.agentId || action?.conversationId || '')
   const optionIndex = Number(action?.optionIndex) || 1
+  const preferredCwd = String(action?.cwd ?? '').trim()
 
   const runAppleScript = async script => {
     try {
@@ -872,6 +945,33 @@ export async function executeAntigravityIdeAction(action, {
   }
 
   if (type === 'stop') {
+    if (rawConvId && typeof fetchImpl === 'function') {
+      const hubs = await discoverAntigravityHubInstances({ execImpl, preferredCwd })
+      for (const hub of hubs) {
+        try {
+          const resp = await fetchImpl(
+            `http://${hub.address}/exa.language_server_pb.LanguageServerService/CancelCascadeInvocation`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-codeium-csrf-token': hub.csrfToken,
+              },
+              body: JSON.stringify({ cascadeId: rawConvId }),
+            },
+          )
+          if (resp.ok) {
+            return {
+              ok: true,
+              engine: 'connect-rpc',
+              message: '⏹️ 已通过 Antigravity RPC 停止当前任务',
+            }
+          }
+        } catch {
+          // try next hub or fallback
+        }
+      }
+    }
     if (execImpl === execFileAsync) {
       const nativeRes = await sendNativeKeystroke('escape')
       if (nativeRes.ok) {
@@ -904,33 +1004,87 @@ export async function executeAntigravityIdeAction(action, {
     const text = String(action?.text ?? '').trim()
     if (!text) return { ok: false, error: '发送内容不能为空' }
 
-    // Strategy 1: Try official `agentapi send-message <convId> <text>`
-    const agentApiCandidates = [
-      join(home, '.gemini', 'antigravity', 'bin', 'agentapi'),
-      join(home, '.gemini', 'bin', 'agy'),
-    ]
-    for (const binPath of agentApiCandidates) {
-      try {
-        await access(binPath)
-        const args = binPath.endsWith('/agy')
-          ? ['agentapi', 'send-message', rawConvId, text]
-          : ['send-message', rawConvId, text]
-        const { stdout } = await execImpl(binPath, args, { timeout: 8000 })
-        const parsed = JSON.parse(stdout || '{}')
-        if (!parsed.error) {
-          return {
-            ok: true,
-            agentId: `${AGY_IDE_PREFIX}${rawConvId}`,
-            method: 'agentapi',
-            message: '📨 已通过 Antigravity 官方 RPC 通道投递指令',
+    const hubs = await discoverAntigravityHubInstances({ execImpl, preferredCwd })
+
+    // Strategy 1A: Direct Connect-RPC `SendUserCascadeMessage` to running Antigravity LanguageServer
+    if (rawConvId && typeof fetchImpl === 'function' && hubs.length > 0) {
+      for (const hub of hubs) {
+        try {
+          const resp = await fetchImpl(
+            `http://${hub.address}/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-codeium-csrf-token': hub.csrfToken,
+              },
+              body: JSON.stringify({
+                cascadeId: rawConvId,
+                items: [{ text }],
+              }),
+            },
+          )
+          if (resp.ok) {
+            const data = await resp.json().catch(() => ({}))
+            if (!data?.error && !data?.code) {
+              return {
+                ok: true,
+                agentId: `${AGY_IDE_PREFIX}${rawConvId}`,
+                method: 'connect-rpc',
+                message: '📨 已通过 Antigravity RPC 通道投递指令',
+              }
+            }
           }
+        } catch {
+          // Try next hub or Strategy 1B
         }
-      } catch {
-        // Fallback to Strategy 2 below
       }
     }
 
-    // Strategy 2: Focus Antigravity IDE chat panel (`Cmd+L`) and paste prompt
+    // Strategy 1B: Official `agentapi send-message <convId> <text>` with discovered LS address + CSRF token
+    const agentApiCandidates = [
+      ...hubs.map(h => h.binPath).filter(Boolean),
+      join(home, '.gemini', 'antigravity', 'bin', 'agentapi'),
+      join(home, '.gemini', 'bin', 'agy'),
+    ]
+    const uniqueBins = [...new Set(agentApiCandidates)]
+    const envTargets = hubs.length > 0
+      ? hubs.map(h => ({
+          ...process.env,
+          ANTIGRAVITY_LS_ADDRESS: h.address,
+          ANTIGRAVITY_CSRF_TOKEN: h.csrfToken,
+        }))
+      : [undefined]
+
+    for (const binPath of uniqueBins) {
+      try {
+        await access(binPath)
+      } catch {
+        continue
+      }
+      const args = binPath.endsWith('/agy')
+        ? ['agentapi', 'send-message', rawConvId, text]
+        : ['send-message', rawConvId, text]
+      for (const envOpt of envTargets) {
+        try {
+          const execOpts = envOpt ? { timeout: 8000, env: envOpt } : { timeout: 8000 }
+          const { stdout } = await execImpl(binPath, args, execOpts)
+          const parsed = JSON.parse(stdout || '{}')
+          if (!parsed.error) {
+            return {
+              ok: true,
+              agentId: `${AGY_IDE_PREFIX}${rawConvId}`,
+              method: 'agentapi',
+              message: '📨 已通过 Antigravity 官方 RPC 通道投递指令',
+            }
+          }
+        } catch {
+          // Try next hub env or fallback to Strategy 2
+        }
+      }
+    }
+
+    // Strategy 2: Focus Antigravity IDE chat panel and paste prompt
     try {
       await execImpl('sh', ['-c', `printf %s ${JSON.stringify(text)} | pbcopy`], { timeout: 3000 })
     } catch {
@@ -963,23 +1117,48 @@ export async function executeAntigravityIdeAction(action, {
   if (type === 'new_session') {
     const promptText = String(action?.prompt ?? action?.text ?? '').trim()
     const title = String(action?.title ?? '').trim() || (promptText ? promptText.slice(0, 36) : 'Antigravity 新对话')
-    const agentApiPath = join(home, '.gemini', 'antigravity', 'bin', 'agentapi')
-    try {
-      await access(agentApiPath)
-      const args = ['new-conversation', `--title=${title}`, promptText || '你好']
-      const { stdout } = await execImpl(agentApiPath, args, { timeout: 8000 })
-      const parsed = JSON.parse(stdout || '{}')
-      const newId = parsed?.response?.conversationId || parsed?.conversationId
-      if (newId) {
-        return {
-          ok: true,
-          agentId: `${AGY_IDE_PREFIX}${newId}`,
-          title,
-          message: `⚡ 已在 Antigravity IDE 创建新对话「${title}」`,
+    const hubs = await discoverAntigravityHubInstances({ execImpl, preferredCwd })
+    const agentApiCandidates = [
+      ...hubs.map(h => h.binPath).filter(Boolean),
+      join(home, '.gemini', 'antigravity', 'bin', 'agentapi'),
+      join(home, '.gemini', 'bin', 'agy'),
+    ]
+    const uniqueBins = [...new Set(agentApiCandidates)]
+    const envTargets = hubs.length > 0
+      ? hubs.map(h => ({
+          ...process.env,
+          ANTIGRAVITY_LS_ADDRESS: h.address,
+          ANTIGRAVITY_CSRF_TOKEN: h.csrfToken,
+        }))
+      : [undefined]
+
+    for (const binPath of uniqueBins) {
+      try {
+        await access(binPath)
+      } catch {
+        continue
+      }
+      const args = binPath.endsWith('/agy')
+        ? ['agentapi', 'new-conversation', `--title=${title}`, '--', promptText || '你好']
+        : ['new-conversation', `--title=${title}`, promptText || '你好']
+      for (const envOpt of envTargets) {
+        try {
+          const execOpts = envOpt ? { timeout: 8000, env: envOpt } : { timeout: 8000 }
+          const { stdout } = await execImpl(binPath, args, execOpts)
+          const parsed = JSON.parse(stdout || '{}')
+          const newId = parsed?.response?.conversationId || parsed?.conversationId
+          if (newId) {
+            return {
+              ok: true,
+              agentId: `${AGY_IDE_PREFIX}${newId}`,
+              title,
+              message: `⚡ 已在 Antigravity IDE 创建新对话「${title}」`,
+            }
+          }
+        } catch {
+          // Try next hub or fallback
         }
       }
-    } catch {
-      // Fallback to UI shortcut Cmd+Shift+L
     }
 
     if (promptText) {
