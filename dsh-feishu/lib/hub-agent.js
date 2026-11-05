@@ -51,6 +51,7 @@ export class HubAgent {
     this.turbo = null
     this.pendingRetick = false
     this.followUpTimer = null
+    this.inflightTick = null
   }
 
   getFleetSummary() {
@@ -178,9 +179,13 @@ export class HubAgent {
     if (this.disposed || !this.config.hubUrl) return
     if (this.polling) {
       if (this.timer) this.pendingRetick = true
+      // 等待正在进行的这一轮结束，避免调用方被告知「已刷新」却拿到旧状态
+      if (this.inflightTick) await this.inflightTick
       return
     }
     this.polling = true
+    let resolveInflight = null
+    this.inflightTick = new Promise(resolve => { resolveInflight = resolve })
     let executedAny = false
     try {
       const identity = await this.ensureIdentity()
@@ -282,6 +287,10 @@ export class HubAgent {
       this.logger?.warn?.(`dsh-feishu: hub heartbeat error: ${safeError(error)}`)
     } finally {
       this.polling = false
+      if (resolveInflight) {
+        resolveInflight()
+        this.inflightTick = null
+      }
       if (this.timer && (this.pendingRetick || executedAny)) {
         this.pendingRetick = false
         setImmediate(() => void this.tick())
