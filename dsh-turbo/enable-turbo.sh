@@ -36,3 +36,4 @@ if [ -x "$NATIVE_BIN" ]; then
 else
   echo "⚡ 已启用 Node FSEvents 实时加速流模式"
 fi
+

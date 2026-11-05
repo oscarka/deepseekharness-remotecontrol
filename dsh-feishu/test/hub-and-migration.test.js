@@ -1184,5 +1184,84 @@ test('remote mode: Web UI remote_mode / remote_toggle both switch Feishu notific
   }
 })
 
+test('antigravity-ide turnState: distinguishes running thinking/tool steps from final conclusion and interrupted states', () => {
+  const convId = '11223344-5566-7788-99aa-bbccddeeff00'
+  const t0 = Date.now() - 5000
+  const baseUserStep = JSON.stringify({
+    step_index: 1,
+    type: 'USER_INPUT',
+    status: 'DONE',
+    created_at: new Date(t0).toISOString(),
+    content: '<USER_REQUEST>\n检查状态机逻辑\n</USER_REQUEST>',
+  })
+  const toolStep = JSON.stringify({
+    step_index: 2,
+    type: 'PLANNER_RESPONSE',
+    status: 'DONE',
+    created_at: new Date(t0 + 1000).toISOString(),
+    thinking: '正在读取文件分析中...',
+    tool_calls: [{ id: 'tc-1', name: 'read_file', arguments: '{"Path":"/Users/cc/app/index.js"}' }],
+  })
+  const genericStep = JSON.stringify({
+    step_index: 3,
+    type: 'GENERIC',
+    status: 'DONE',
+    created_at: new Date(t0 + 2000).toISOString(),
+    content: 'Showing lines 1-50',
+  })
+
+  // 1. Mid-turn (after GENERIC tool output while AI thinks about next step) -> running, no conclusion yet
+  const midTurnParsed = parseAntigravityTranscript([baseUserStep, toolStep, genericStep].join('\n'), {
+    conversationId: convId,
+    mtimeMs: t0 + 2000,
+    now: t0 + 3000,
+  })
+  assert.equal(midTurnParsed.status, 'running')
+  assert.equal(midTurnParsed.turnState, 'running')
+  assert.equal(midTurnParsed.isMidTurn, true)
+  assert.equal(midTurnParsed.lastConclusionAt, 0)
+
+  // 2. Final conclusion step (PLANNER_RESPONSE with content and no tool_calls) -> immediately idle + conclusion
+  const conclusionStep = JSON.stringify({
+    step_index: 4,
+    type: 'PLANNER_RESPONSE',
+    status: 'DONE',
+    created_at: new Date(t0 + 4000).toISOString(),
+    thinking: '分析完毕，给出最终结论。',
+    content: '状态机检查已完成，共有 3 种核心高亮状态。',
+  })
+  const concludedParsed = parseAntigravityTranscript(
+    [baseUserStep, toolStep, genericStep, conclusionStep].join('\n'),
+    {
+      conversationId: convId,
+      mtimeMs: t0 + 4000,
+      now: t0 + 4500,
+    },
+  )
+  assert.equal(concludedParsed.status, 'idle')
+  assert.equal(concludedParsed.turnState, 'conclusion')
+  assert.equal(concludedParsed.isMidTurn, false)
+  assert.equal(concludedParsed.statusLabel, '🔵 已出结论')
+  assert.ok(concludedParsed.lastConclusionAt >= t0 + 4000)
+
+  // 3. Stream interrupted error step (>15s ago) -> interrupted state
+  const errStep = JSON.stringify({
+    step_index: 5,
+    type: 'ERROR_MESSAGE',
+    status: 'DONE',
+    created_at: new Date(t0 + 2000).toISOString(),
+    content: 'Error: The stream was interrupted.',
+  })
+  const interruptedParsed = parseAntigravityTranscript([baseUserStep, toolStep, errStep].join('\n'), {
+    conversationId: convId,
+    mtimeMs: t0 + 2000,
+    now: t0 + 25_000,
+  })
+  assert.equal(interruptedParsed.status, 'idle')
+  assert.equal(interruptedParsed.turnState, 'interrupted')
+  assert.equal(interruptedParsed.statusLabel, '⚠️ 中断待继续')
+})
+
+
 
 

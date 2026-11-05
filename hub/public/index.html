@@ -440,9 +440,10 @@
       gap: 8px;
       padding: 14px 12px 14px 16px;
       border-bottom: 1px solid var(--hairline);
+      border-left: 4px solid transparent;
       background: var(--surface);
       cursor: pointer;
-      transition: background 0.12s;
+      transition: background 0.15s, border-color 0.15s;
       width: 100%;
       min-width: 0;
     }
@@ -450,9 +451,68 @@
       background: #fafcff;
     }
     .session-row:hover { background: #f8fafc; }
+
+    /* 整行状态高亮：绿=运行中，蓝=已出结论(未读)，黄=待授权，橙=异常中断 */
+    .session-row.row-state-running {
+      background: linear-gradient(90deg, #ecfdf5 0%, #f0fdf4 100%);
+      border-left-color: #10b981;
+      border-bottom-color: #bbf7d0;
+    }
+    .session-row.row-state-running:hover {
+      background: #dcfce7;
+    }
+    .session-row.row-state-running .session-title {
+      color: #065f46;
+      font-weight: 700;
+    }
+    .session-row.row-state-running .session-preview-text {
+      color: #047857;
+      font-weight: 500;
+    }
+
+    .session-row.row-state-conclusion {
+      background: linear-gradient(90deg, #eff6ff 0%, #dbeafe 100%);
+      border-left-color: #2563eb;
+      border-bottom-color: #bfdbfe;
+    }
+    .session-row.row-state-conclusion:hover {
+      background: #dbeafe;
+    }
+    .session-row.row-state-conclusion .session-title {
+      color: #1e3a8a;
+      font-weight: 700;
+    }
+    .session-row.row-state-conclusion .session-preview-text {
+      color: #1d4ed8;
+      font-weight: 500;
+    }
+
+    .session-row.row-state-approval {
+      background: linear-gradient(90deg, #fffbeb 0%, #fef3c7 100%);
+      border-left-color: #f59e0b;
+      border-bottom-color: #fde68a;
+    }
+    .session-row.row-state-approval:hover {
+      background: #fef3c7;
+    }
+    .session-row.row-state-approval .session-title {
+      color: #92400e;
+      font-weight: 700;
+    }
+    .session-row.row-state-approval .session-preview-text {
+      color: #b45309;
+      font-weight: 500;
+    }
+
+    .session-row.row-state-interrupted {
+      background: linear-gradient(90deg, #fff7ed 0%, #ffedd5 100%);
+      border-left-color: #ea580c;
+      border-bottom-color: #fed7aa;
+    }
+
     @media (min-width: 769px) {
       body.DesktopSplitMode .session-row.selected-desktop {
-        background: var(--primary-soft);
+        box-shadow: inset 0 0 0 1.5px var(--primary);
       }
     }
 
@@ -519,20 +579,46 @@
       align-items: center;
       gap: 4px;
       font-size: 11px;
-      font-weight: 600;
-      color: #059669;
-      background: var(--green-soft);
+      font-weight: 700;
+      color: #ffffff;
+      background: #10b981;
       padding: 2px 8px;
       border-radius: 999px;
+      box-shadow: 0 1px 4px rgba(16, 185, 129, 0.25);
+    }
+    .badge-conclusion {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #ffffff;
+      background: #2563eb;
+      padding: 2px 8px;
+      border-radius: 999px;
+      box-shadow: 0 1px 4px rgba(37, 99, 235, 0.25);
     }
     .badge-approval {
       display: inline-flex;
       align-items: center;
       gap: 4px;
       font-size: 11px;
-      font-weight: 600;
-      color: #d97706;
-      background: var(--amber-soft);
+      font-weight: 700;
+      color: #ffffff;
+      background: #d97706;
+      padding: 2px 8px;
+      border-radius: 999px;
+      box-shadow: 0 1px 4px rgba(217, 119, 6, 0.25);
+    }
+    .badge-interrupted {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #c2410c;
+      background: #ffedd5;
+      border: 1px solid #fdba74;
       padding: 2px 8px;
       border-radius: 999px;
     }
@@ -1927,6 +2013,9 @@
     // ==================== 3. 数据聚合与扁平化 ====================
     function getNormalizedSessions() {
       const list = [];
+      const isChatOpenNow = document.getElementById('chatFullscreen')?.classList.contains('open')
+        || document.body.classList.contains('DesktopSplitMode');
+
       for (const h of hubState.hosts || []) {
         if (currentHostId && currentHostId !== 'ALL_HOSTS' && h.hostId !== currentHostId) continue;
         const tasks = h.bridgeState?.tasks || [];
@@ -1938,9 +2027,29 @@
           const lastMsg = transcript.length > 0 ? transcript[transcript.length - 1] : null;
           const project = t.project || (t.cwd ? t.cwd.split('/').filter(Boolean).pop() : '默认工作区') || '默认工作区';
           const status = pendingApp ? 'approval' : (t.status || 'idle');
-          const rawPreview = t.lastOutput || lastMsg?.text || t.cwd || '点击查看对话详情';
           const harness = t.harness || (String(t.id || '').startsWith('agy-ide:') ? 'antigravity-ide' : 'dsh');
           const harnessLabel = t.harnessLabel || (harness === 'antigravity-ide' ? 'Antigravity IDE' : 'DeepSeek Harness');
+
+          let lastConclusionAt = Number(t.lastConclusionAt) || 0;
+          if (!lastConclusionAt && status === 'idle' && lastMsg?.role === 'assistant' && Boolean(lastMsg?.text) && (!lastMsg.tools || lastMsg.tools.length === 0)) {
+            lastConclusionAt = ts;
+          }
+          const lastInterruptedAt = Number(t.lastInterruptedAt) || 0;
+          const turnState = status === 'approval'
+            ? 'approval'
+            : status === 'running'
+              ? 'running'
+              : t.turnState === 'interrupted'
+                ? 'interrupted'
+                : (t.turnState === 'conclusion' || lastConclusionAt > 0)
+                  ? 'conclusion'
+                  : 'idle';
+
+          const rawPreview = status === 'running'
+            ? (t.runningSummary || t.lastOutput || lastMsg?.text || '正在思考与执行任务...')
+            : status === 'approval'
+              ? (pendingApp?.promptTitle || pendingApp?.reason || t.lastOutput || '等待你批准工具执行')
+              : (t.lastOutput || lastMsg?.text || t.cwd || '点击查看对话详情');
 
           const changedFiles = Array.isArray(t.changedFiles)
             ? t.changedFiles
@@ -1956,6 +2065,9 @@
             project,
             cwd: t.cwd || '',
             status,
+            turnState,
+            lastConclusionAt,
+            lastInterruptedAt,
             approvalObj: pendingApp || null,
             changedFiles,
             msgCount: Number(t.messageCount) || transcript.length || 0,
@@ -1963,6 +2075,8 @@
             timeLabel: formatTime(ts),
             pinned: Boolean(pinnedMap[t.id]),
             unread: false,
+            hasUnreadConclusion: false,
+            isUnreadInterrupted: false,
             isRecentActive: false,
             lastRole: lastMsg?.role || 'assistant',
             lastPreview: cleanPreviewText(rawPreview) || '点击查看对话详情',
@@ -1972,56 +2086,69 @@
         }
       }
 
-      // 按更新时间排序以确定每台电脑最近活跃的前 2 条会话
       const sortedByTime = [...list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
-      // 首次初始化时默认将前 2 条最新会话置顶（对齐原型图双置顶视觉层次，用户可随时在 ⋯ 中修改）
-      if (sortedByTime.length > 0 && !localStorage.getItem('dsh_pinned_init_v4')) {
-        if (sortedByTime[0]) {
-          pinnedMap[sortedByTime[0].id] = true;
-          sortedByTime[0].pinned = true;
-        }
-        if (sortedByTime[1]) {
-          pinnedMap[sortedByTime[1].id] = true;
-          sortedByTime[1].pinned = true;
-        }
-        try {
-          localStorage.setItem('dsh_pinned_v4', JSON.stringify(pinnedMap));
-          localStorage.setItem('dsh_pinned_init_v4', '1');
-        } catch {}
-      }
-
-      // 标记最近活跃态与未读蓝点（保留最新进展的 1 条未读蓝点与 1 条绿标待命态，其余旧历史对话自动归入已读基线）
+      // 仅针对「真正完结给出最终结论」或「异常断流中断」计算未读态，Thinking / 工具执行过程中不再刷假未读
       let seenDirty = false;
-      const highlightIdx = sortedByTime.length > 1 ? 1 : 0;
       sortedByTime.forEach((s, idx) => {
-        if (s.status === 'running' || s.status === 'approval') {
-          s.isRecentActive = true;
-          s.unread = s.id !== activeSessionId;
-          return;
-        }
-        if (idx === highlightIdx) {
-          s.isRecentActive = true;
-          if (!seenMap[s.id]) {
-            s.unread = s.id !== activeSessionId;
-          } else {
-            s.unread = s.updatedAt > seenMap[s.id] && s.id !== activeSessionId;
-          }
-        } else {
-          if (!seenMap[s.id]) {
-            seenMap[s.id] = s.updatedAt || Date.now();
+        if (s.id === activeSessionId && isChatOpenNow) {
+          const maxTs = Math.max(seenMap[s.id] || 0, s.updatedAt || 0, s.lastConclusionAt || 0);
+          if (seenMap[s.id] !== maxTs) {
+            seenMap[s.id] = maxTs;
             seenDirty = true;
           }
-          s.unread = s.updatedAt > seenMap[s.id] && s.id !== activeSessionId;
         }
+
+        if (s.status === 'running' || s.status === 'approval') {
+          if (!seenMap[s.id]) {
+            seenMap[s.id] = s.lastConclusionAt || 1;
+            seenDirty = true;
+          }
+          s.hasUnreadConclusion = false;
+          s.isUnreadInterrupted = false;
+          s.unread = false;
+          return;
+        }
+
+        // 首次加载时：保留最新 1 条已完结结论作为蓝色「已出结论」示例，其余旧历史对话自动归入已读基线
+        if (!seenMap[s.id]) {
+          if (idx === 0 && s.turnState === 'conclusion' && s.id !== activeSessionId) {
+            seenMap[s.id] = Math.max(1, (s.lastConclusionAt || s.updatedAt || 2) - 1000);
+          } else {
+            seenMap[s.id] = Math.max(s.updatedAt || 0, s.lastConclusionAt || 0, Date.now());
+          }
+          seenDirty = true;
+        }
+
+        const seenAt = Number(seenMap[s.id]) || 0;
+        const isCurrentOpen = s.id === activeSessionId && isChatOpenNow;
+        s.hasUnreadConclusion = !isCurrentOpen
+          && s.turnState === 'conclusion'
+          && s.lastConclusionAt > 0
+          && s.lastConclusionAt > seenAt;
+        s.isUnreadInterrupted = !isCurrentOpen
+          && s.turnState === 'interrupted'
+          && (s.lastInterruptedAt || s.updatedAt) > seenAt;
+        s.unread = s.hasUnreadConclusion || s.isUnreadInterrupted;
       });
 
       if (seenDirty) {
         try { localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap)); } catch {}
       }
 
+      // 优先级排序：1. 待授权(黄) → 2. 运行中(绿) → 3. 已出结论未读(蓝)/中断 → 4. 置顶 → 5. 最新时间
+      const statePriority = (s) => {
+        if (s.status === 'approval') return 4;
+        if (s.status === 'running') return 3;
+        if (s.hasUnreadConclusion || s.isUnreadInterrupted) return 2;
+        if (s.pinned) return 1;
+        return 0;
+      };
+
       return list.sort((a, b) => {
-        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+        const pa = statePriority(a);
+        const pb = statePriority(b);
+        if (pa !== pb) return pb - pa;
         return (b.updatedAt || 0) - (a.updatedAt || 0);
       });
     }
@@ -2137,8 +2264,8 @@
 
     function renderProjectStrip() {
       const sessions = getNormalizedSessions();
-      const activeCount = sessions.filter(s => s.status === 'running' || s.status === 'approval' || s.isRecentActive).length;
-      const unreadCount = sessions.filter(s => s.unread).length;
+      const activeCount = sessions.filter(s => s.status === 'running' || s.status === 'approval').length;
+      const unreadCount = sessions.filter(s => s.hasUnreadConclusion || s.isUnreadInterrupted).length;
       const agyCount = sessions.filter(s => s.harness === 'antigravity-ide').length;
       const dshCount = sessions.filter(s => s.harness !== 'antigravity-ide').length;
 
@@ -2150,8 +2277,8 @@
       const strip = document.getElementById('projectStrip');
 
       const smartPills = [
-        `<button class="filter-pill smart-pill ${currentProject === 'SMART_ACTIVE' ? 'active' : ''}" onclick="selectProject('SMART_ACTIVE')">🔥 运行/待办 <span class="count">${activeCount}</span></button>`,
-        `<button class="filter-pill smart-pill ${currentProject === 'SMART_UNREAD' ? 'active' : ''}" onclick="selectProject('SMART_UNREAD')">🔵 未读 <span class="count">${unreadCount}</span></button>`
+        `<button class="filter-pill smart-pill ${currentProject === 'SMART_ACTIVE' ? 'active' : ''}" onclick="selectProject('SMART_ACTIVE')">🟢 运行中 <span class="count">${activeCount}</span></button>`,
+        `<button class="filter-pill smart-pill ${currentProject === 'SMART_UNREAD' ? 'active' : ''}" onclick="selectProject('SMART_UNREAD')">🔵 已出结论 <span class="count">${unreadCount}</span></button>`
       ];
       if (agyCount > 0) {
         smartPills.push(
@@ -2171,36 +2298,19 @@
       const viewport = document.getElementById('mainViewport');
       const allSessions = getNormalizedSessions();
 
-      // 检查所有电脑是否有待确认审批，若无则提取跨设备最近活跃任务作为顶部快捷接管横幅
+      // 仅当在线电脑存在真实待确认授权时显示顶部黄色授权横幅，无授权时顶部保持干净
       let pendingAppInfo = null;
       for (const h of hubState.hosts || []) {
+        if (h.online === false) continue;
+        if (currentHostId && currentHostId !== 'ALL_HOSTS' && h.hostId !== currentHostId) continue;
         const app = (h.bridgeState?.approvals || [])[0];
         if (app) { pendingAppInfo = { app, host: h }; break; }
       }
 
-      let crossHostSpot = null;
-      if (!pendingAppInfo && !liveBannerDismissed) {
-        const otherHost = (hubState.hosts || []).find(h => h.hostId !== currentHostId && (h.bridgeState?.tasks || []).length > 0)
-          || (hubState.hosts || [])[0];
-        if (otherHost) {
-          const t0 = (otherHost.bridgeState?.tasks || [])[0];
-          if (t0) {
-            const rawPrev = t0.lastOutput || (t0.transcript?.at(-1)?.text) || t0.cwd || '点击立即接管继续推进';
-            crossHostSpot = {
-              id: t0.id,
-              hostId: otherHost.hostId,
-              hostName: otherHost.hostName || otherHost.hostId,
-              title: t0.title || '最近活跃任务',
-              desc: cleanPreviewText(rawPrev),
-            };
-          }
-        }
-      }
-
       const q = searchQuery.trim().toLowerCase();
       const filtered = allSessions.filter(s => {
-        if (currentProject === 'SMART_ACTIVE' && s.status !== 'running' && s.status !== 'approval' && !s.isRecentActive) return false;
-        if (currentProject === 'SMART_UNREAD' && !s.unread) return false;
+        if (currentProject === 'SMART_ACTIVE' && s.status !== 'running' && s.status !== 'approval') return false;
+        if (currentProject === 'SMART_UNREAD' && !s.hasUnreadConclusion && !s.isUnreadInterrupted) return false;
         if (currentProject === 'HARNESS_DSH' && s.harness === 'antigravity-ide') return false;
         if (currentProject === 'HARNESS_AGY_IDE' && s.harness !== 'antigravity-ide') return false;
         if (!['ALL', 'SMART_ACTIVE', 'SMART_UNREAD', 'HARNESS_DSH', 'HARNESS_AGY_IDE'].includes(currentProject) && s.project !== currentProject) return false;
@@ -2219,46 +2329,40 @@
             <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false, 4)">拒绝</button>
           </div>
         </div>
-      ` : crossHostSpot ? `
-        <div class="live-activity-bar">
-          <div class="live-activity-left" onclick="openChat('${esc(crossHostSpot.id)}')">
-            <div class="live-activity-title">⏳ [${esc(crossHostSpot.hostName)}] 跨设备活跃任务待你继续推进</div>
-            <div class="live-activity-desc">${esc(crossHostSpot.title)}：${esc(crossHostSpot.desc)}</div>
-          </div>
-          <div class="live-activity-actions">
-            <button class="mini-approve-btn" onclick="openChat('${esc(crossHostSpot.id)}')">✓ 接管</button>
-            <button class="mini-approve-btn ghost" onclick="dismissLiveBanner()">收起</button>
-          </div>
-        </div>
       ` : '';
 
       const showHostTag = currentHostId === 'ALL_HOSTS' && (hubState.hosts || []).length > 1;
 
       const rowsHtml = filtered.map(s => {
+        let rowStateClass = '';
         let statusHtml = `<span class="session-time">${esc(s.timeLabel)}</span>`;
-        if (s.status === 'running') {
+        if (s.status === 'approval') {
+          rowStateClass = 'row-state-approval';
+          statusHtml = `<span class="badge-approval">⏳ 待你授权</span>`;
+        } else if (s.status === 'running') {
+          rowStateClass = 'row-state-running';
           statusHtml = `<span class="badge-running">● 运行中</span>`;
-        } else if (s.status === 'approval') {
-          statusHtml = `<span class="badge-approval">⏳ 待确认</span>`;
-        } else if (s.isRecentActive) {
-          statusHtml = `<span class="badge-running">● 运行就绪</span>`;
+        } else if (s.hasUnreadConclusion) {
+          rowStateClass = 'row-state-conclusion';
+          statusHtml = `<span class="badge-conclusion">🔵 已出结论</span>`;
+        } else if (s.isUnreadInterrupted) {
+          rowStateClass = 'row-state-interrupted';
+          statusHtml = `<span class="badge-interrupted">⚠️ 中断待继续</span>`;
         }
 
-        const unreadHtml = s.unread ? `<span class="unread-dot" title="有新消息"></span>` : '';
         const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : '';
         const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag">${esc(s.hostName)}</span>` : '';
         const harnessTagHtml = s.harness === 'antigravity-ide' ? `<span class="harness-mini-tag agy">⚡ IDE</span>` : '';
-        const rolePrefix = s.lastRole === 'user' ? '🧑 我: ' : '🤖 ';
+        const rolePrefix = s.status === 'running' ? '' : (s.lastRole === 'user' ? '🧑 我: ' : '🤖 ');
         const displayTitle = s.harness === 'antigravity-ide' && s.project && !s.title.startsWith(s.project)
           ? `${s.project} / ${s.title}`
           : s.title;
 
         return `
-          <div class="session-row ${s.pinned ? 'pinned-row' : ''} ${s.id === activeSessionId ? 'selected-desktop' : ''}" onclick="openChat('${esc(s.id)}')">
+          <div class="session-row ${rowStateClass} ${s.pinned ? 'pinned-row' : ''} ${s.id === activeSessionId ? 'selected-desktop' : ''}" onclick="openChat('${esc(s.id)}')">
             <div class="session-main">
               <div class="session-top-line">
                 <div class="session-title-wrap">
-                  ${unreadHtml}
                   ${pinHtml}
                   <div class="session-title">${esc(displayTitle)}</div>
                 </div>
@@ -2290,7 +2394,11 @@
       if (!found) return;
       activeSessionId = found.session.id;
       activeSessionHostId = found.session.hostId;
-      seenMap[activeSessionId] = Math.max(found.session.updatedAt || 0, Date.now());
+      seenMap[activeSessionId] = Math.max(
+        found.session.updatedAt || 0,
+        found.session.lastConclusionAt || 0,
+        Date.now()
+      );
       try { localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap)); } catch {}
       lastRenderedChatKey = ''; // 切换会话时强制渲染
       renderActiveChatStage();
