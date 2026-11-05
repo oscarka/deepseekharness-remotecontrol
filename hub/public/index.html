@@ -1520,11 +1520,16 @@
     <div class="primary-pane">
       <!-- 1. 唯一极简顶栏 -->
       <header class="top-bar" id="mobileTopHostBtn">
-        <button class="host-switcher-btn" onclick="openHostSheet()">
-          <span class="status-dot" id="topHostDot"></span>
-          <span class="host-switcher-name" id="topHostName">连接中...</span>
-          <span class="host-switcher-caret">▾</span>
-        </button>
+        <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+          <button class="host-switcher-btn" onclick="openHostSheet()">
+            <span class="status-dot" id="topHostDot"></span>
+            <span class="host-switcher-name" id="topHostName">连接中...</span>
+            <span class="host-switcher-caret">▾</span>
+          </button>
+          <button id="turboBadgeBtn" onclick="openTurboGuideSheet()" style="border:1px solid #a7f3d0;background:#ecfdf5;color:#059669;border-radius:999px;padding:4px 9px;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;">
+            ⚡ 极速
+          </button>
+        </div>
         <button class="new-chat-btn" onclick="openNewTaskSheet()">
           <span>＋</span>
           <span>新建对话</span>
@@ -1671,6 +1676,18 @@
           <button style="border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;" onclick="closeSheet('mobileSettingsSheet')">✕</button>
         </div>
         <div id="migrateWizardBody"></div>
+      </div>
+    </div>
+
+    <!-- 抽屉 6：Rust 极速实时引擎与最流畅设置指南 -->
+    <div class="sheet-backdrop" id="turboGuideSheet" onclick="if(event.target===this)closeSheet('turboGuideSheet')">
+      <div class="sheet-panel" style="max-height:86dvh;overflow-y:auto;">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">
+          <span>⚡ 极速实时同步 (Rust + SSE) 指南</span>
+          <button style="border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;" onclick="closeSheet('turboGuideSheet')">✕</button>
+        </div>
+        <div id="turboGuideBody"></div>
       </div>
     </div>
 
@@ -2037,6 +2054,28 @@
       } else if (currentHostObj) {
         dotEl.className = 'status-dot' + (currentHostObj.online ? '' : ' offline');
         document.getElementById('topHostName').textContent = `${currentHostObj.hostName} (${(currentHostObj.bridgeState?.tasks || []).length})`;
+      }
+
+      const turboBtn = document.getElementById('turboBadgeBtn');
+      if (turboBtn) {
+        const refHost = currentHostObj || hosts.find(h => h.online) || hosts[0];
+        const turbo = refHost?.bridgeState?.turbo;
+        if (turbo?.enabled && turbo?.accessibilityGranted !== false) {
+          turboBtn.textContent = turbo.engine === 'rust-native' ? '🦀 极速实时' : '⚡ 极速实时';
+          turboBtn.style.background = '#ecfdf5';
+          turboBtn.style.color = '#059669';
+          turboBtn.style.borderColor = '#a7f3d0';
+        } else if (turbo?.enabled && turbo?.accessibilityGranted === false) {
+          turboBtn.textContent = '⚠️ 需开权限';
+          turboBtn.style.background = '#fffbeb';
+          turboBtn.style.color = '#d97706';
+          turboBtn.style.borderColor = '#fde68a';
+        } else {
+          turboBtn.textContent = '🚀 点此提速';
+          turboBtn.style.background = '#eff6ff';
+          turboBtn.style.color = '#2563eb';
+          turboBtn.style.borderColor = '#bfdbfe';
+        }
       }
 
       const searchBox = document.getElementById('searchAndFilterBox');
@@ -2481,7 +2520,8 @@
         text,
         prompt: text,
       });
-      setTimeout(fetchState, 600);
+      setTimeout(fetchState, 250);
+      setTimeout(fetchState, 800);
     }
 
     function sendQuickFollowup(text) {
@@ -2497,7 +2537,8 @@
         type: 'stop',
         agentId: found.session.id,
       });
-      setTimeout(fetchState, 600);
+      setTimeout(fetchState, 250);
+      setTimeout(fetchState, 800);
     }
 
     async function sendApprovalDecision(hostId, code, allow, optionIndex = 1) {
@@ -2515,7 +2556,8 @@
         allow: Boolean(allow),
         optionIndex: Number(optionIndex) || (allow ? 1 : 4),
       });
-      setTimeout(fetchState, 600);
+      setTimeout(fetchState, 200);
+      setTimeout(fetchState, 750);
     }
 
     // ==================== 7. 聊天内「📂 文件速览浮层抽屉」 ====================
@@ -2994,6 +3036,12 @@
                       <span class="metric-val">${formatBytes(h.totalBytes)}</span>
                     </div>
                   </div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#475569;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--hairline);">
+                    <span>⚡ 同步引擎：<strong>${esc(h.bridgeState?.turbo?.engineLabel || '🐢 标准轮询 (可升级)')}</strong></span>
+                    <button class="pill-action-btn primary" style="padding:4px 10px;font-size:11.5px;" onclick="openTurboGuideSheet()">
+                      ${h.bridgeState?.turbo?.enabled ? '⚡ 极速详情' : '🚀 一键提速'}
+                    </button>
+                  </div>
                   <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:#475569;">
                     <span>飞书远程完成/异常卡片通知</span>
                     <button class="pill-action-btn ${h.remoteActive ? 'primary' : ''}" style="padding:4px 10px;font-size:11.5px;" onclick="toggleHostRemoteMode('${esc(h.hostId)}', ${!h.remoteActive})">
@@ -3288,6 +3336,86 @@
       showToast('📋 已复制到剪贴板');
     }
 
+    function openTurboGuideSheet() {
+      const hosts = hubState.hosts || [];
+      const currentTk = getToken();
+      const body = document.getElementById('turboGuideBody');
+      const oneStepCmd = `git clone https://github.com/oscarka/deepseekharness-remotecontrol.git ~/deepseekharness-remote && cd ~/deepseekharness-remote && ./connect-host.sh "电脑名称" "${currentTk}"`;
+
+      body.innerHTML = `
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px;margin-bottom:14px;font-size:13px;color:#166534;line-height:1.5;">
+          <strong>🦀 Rust 原生极速引擎 + 双向 SSE 实时流 (dsh-turbo)</strong><br/>
+          对 DeepSeek Harness / Antigravity IDE / Codex 本体 <strong>100% 零改动</strong>，通过只读监听日志文件末尾字节与 macOS 原生 CGEvent 按键注入，将延迟从 3~10 秒压至 <strong>&lt;200ms</strong>。
+        </div>
+
+        <div class="form-label">1. 已连接电脑极速引擎与权限状态</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
+          ${hosts.map(h => {
+            const tb = h.bridgeState?.turbo;
+            const isTurbo = Boolean(tb?.enabled);
+            const axOk = tb ? tb.accessibilityGranted !== false : false;
+            return `
+              <div style="border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--subtle);">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                  <strong style="font-size:14px;">${h.online ? '🟢' : '⚪'} ${esc(h.hostName)}</strong>
+                  <span style="font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:${isTurbo ? '#dcfce7' : '#fef3c7'};color:${isTurbo ? '#15803d' : '#b45309'};">
+                    ${esc(tb?.engineLabel || '🐢 标准轮询模式')}
+                  </span>
+                </div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">
+                  辅助功能遥控权限：${axOk ? '<span style="color:#16a34a;font-weight:600;">✅ 已授权 (支持 1ms 审批点击)</span>' : '<span style="color:#d97706;font-weight:600;">⚠️ 待开启或待升级</span>'}
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button class="pill-action-btn primary" style="font-size:12px;padding:5px 11px;" onclick="upgradeHostTurbo('${esc(h.hostId)}')">
+                    🚀 远程一键升级/刷新极速引擎
+                  </button>
+                  <button class="pill-action-btn" style="font-size:12px;padding:5px 11px;" onclick="requestHostAxPermission('${esc(h.hostId)}')">
+                    🔓 在电脑弹出辅助功能授权框
+                  </button>
+                </div>
+              </div>
+            `;
+          }).join('') || `<div style="padding:14px;text-align:center;color:#94a3b8;font-size:13px;">暂未检测到已接入的电脑</div>`}
+        </div>
+
+        <div class="form-label">2. 如何让手机遥控最流畅最快（3 步指南）</div>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px;color:#334155;line-height:1.55;margin-bottom:14px;">
+          <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid var(--border);">
+            <strong>① 一步命令接入（自动启用 Rust 加速 + 免二次安装）</strong><br/>
+            新电脑只需运行一次 <code>./connect-host.sh</code>，脚本会自动寻找系统或 IDE 内置运行时、挂载 <code>dsh-turbo</code> 预编译 Rust 加速模块，并自动弹出 macOS 辅助功能授权框。<br/>
+            <button class="pill-action-btn" style="margin-top:6px;font-size:11.5px;padding:4px 10px;" onclick="copyCodeText('${encodeURIComponent(oneStepCmd)}')">📋 复制一键满血接入命令</button>
+          </div>
+          <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid var(--border);">
+            <strong>② 勾选 macOS「辅助功能」权限</strong><br/>
+            若手机点审批时电脑未自动按下回车，点上方「🔓 在电脑弹出辅助功能授权框」，在电脑弹出的「系统设置 → 隐私与安全性 → 辅助功能」中打开开关即可。
+          </div>
+          <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid var(--border);">
+            <strong>③ iPhone Safari 添加到主屏幕 + 开启锁屏推送</strong><br/>
+            在 Safari 点底部「分享 → 添加到主屏幕」，从桌面独立图标打开并开启锁屏推送，获得原生 App 级全屏帧率与锁屏秒级提醒。
+          </div>
+        </div>
+      `;
+      document.getElementById('turboGuideSheet').classList.add('open');
+    }
+
+    async function requestHostAxPermission(hostId) {
+      showToast('🔓 正在电脑端弹出 macOS 辅助功能授权窗口...');
+      await dispatchHostCommand(hostId, { type: 'request_ax_permission' });
+      setTimeout(fetchState, 400);
+      setTimeout(() => {
+        if (document.getElementById('turboGuideSheet').classList.contains('open')) openTurboGuideSheet();
+      }, 900);
+    }
+
+    async function upgradeHostTurbo(hostId) {
+      showToast('🚀 已发送远程升级并启用 Rust 极速引擎指令...');
+      await dispatchHostCommand(hostId, { type: 'upgrade_turbo' });
+      setTimeout(fetchState, 600);
+      setTimeout(() => {
+        if (document.getElementById('turboGuideSheet').classList.contains('open')) openTurboGuideSheet();
+      }, 1200);
+    }
+
     // ==================== 15. SSE 实时流与轮询同步 ====================
     async function fetchState() {
       try {
@@ -3326,7 +3454,7 @@
 
     fetchState();
     connectSSE();
-    setInterval(fetchState, 3500);
+    setInterval(fetchState, 2000);
   </script>
 </body>
 </html>

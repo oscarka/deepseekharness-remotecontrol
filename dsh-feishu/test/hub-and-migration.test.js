@@ -7,6 +7,7 @@ import { FeishuBridge } from '../lib/bridge.js'
 import { resolveConfig } from '../lib/config.js'
 import { HubAgent } from '../lib/hub-agent.js'
 import { loadAntigravityIdeSessions, parseAntigravityTranscript } from '../lib/antigravity-ide.js'
+import { checkAccessibilityPermission, fastScanBrainDirs, getTurboNativeBinaryPath } from '../../dsh-turbo/index.js'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from '../lib/migration.js'
 import { createHubServer } from '../../hub/server.js'
 import { HubCore } from '../../hub/hub-core.js'
@@ -1084,6 +1085,52 @@ test('antigravity-ide integration: transcript parsing, pending approval detectio
     ).json()
     assert.equal(listCmdRes.result.ok, true)
     assert.ok(listCmdRes.result.entries.some(e => e.name === 'README.md'))
+
+    // 4. Verify dsh-turbo Rust native accelerator, telemetry reporting, and remote permission/upgrade commands
+    if (process.platform === 'darwin') {
+      const nativeBin = getTurboNativeBinaryPath()
+      assert.ok(nativeBin.endsWith('dsh-turbo-native'))
+      const scanRes = await fastScanBrainDirs([tmpBrain])
+      assert.ok(scanRes?.ok)
+      assert.equal(scanRes.engine, 'rust-native')
+      assert.equal(scanRes.items.length, 1)
+      assert.equal(scanRes.items[0].convId, convId)
+
+      const axRes = await checkAccessibilityPermission({ prompt: false })
+      assert.equal(axRes.ok, true)
+      assert.equal(typeof axRes.trusted, 'boolean')
+    }
+
+    assert.equal(hostState.bridgeState.turbo.enabled, true)
+
+    const axDispatch = await (
+      await fetchAdapter(`${hubUrl}/api/hosts/cc-mac/command`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ type: 'request_ax_permission' }),
+      })
+    ).json()
+    await hubAgent.tick()
+    await hubAgent.tick()
+    const axCmdRes = await (
+      await fetchAdapter(`${hubUrl}/api/commands/${axDispatch.command.id}`, { headers: authHeaders })
+    ).json()
+    assert.equal(axCmdRes.result.ok, true)
+    assert.equal(axCmdRes.result.prompted, true)
+
+    const upgDispatch = await (
+      await fetchAdapter(`${hubUrl}/api/hosts/cc-mac/command`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ type: 'upgrade_turbo' }),
+      })
+    ).json()
+    await hubAgent.tick()
+    await hubAgent.tick()
+    const upgCmdRes = await (
+      await fetchAdapter(`${hubUrl}/api/commands/${upgDispatch.command.id}`, { headers: authHeaders })
+    ).json()
+    assert.equal(upgCmdRes.result.ok, true)
   } finally {
     await rm(tmpDsh, { recursive: true, force: true })
     await rm(tmpBrain, { recursive: true, force: true })

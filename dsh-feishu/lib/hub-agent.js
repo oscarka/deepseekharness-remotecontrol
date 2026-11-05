@@ -1,12 +1,20 @@
+import { execFile } from 'node:child_process'
 import { createCipheriv, randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
+import { checkAccessibilityPermission, getTurboNativeBinaryPath, TurboController } from '../../dsh-turbo/index.js'
 import {
   executeAntigravityIdeAction,
+  getDefaultAntigravityBrainDirs,
   isAntigravityIdeSessionId,
   loadAntigravityIdeSessions,
   toRawConversationId,
 } from './antigravity-ide.js'
+
+const execFileAsync = promisify(execFile)
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from './migration.js'
 import { safeError } from './redact.js'
 import { extractSessionTranscript, loadDiskSessionsFromDshHome, loadOrCreateHostIdentity, renameDiskSession } from './workspace-ops.js'
@@ -40,6 +48,9 @@ export class HubAgent {
     this.lastStatsAt = 0
     this.executedIds = new Set()
     this.identity = null
+    this.turbo = null
+    this.pendingRetick = false
+    this.followUpTimer = null
   }
 
   getFleetSummary() {
@@ -55,15 +66,36 @@ export class HubAgent {
   start() {
     if (this.timer || this.disposed || !this.config.hubUrl) return
     this.bridge?.setHubAgent?.(this)
+    this.turbo = new TurboController({
+      hostId: this.config.hostId,
+      brainDirs: this.config.antigravityBrainDirs || getDefaultAntigravityBrainDirs(),
+      dshHome: this.config.dshHome,
+      hubUrl: this.config.hubUrl,
+      hubToken: this.config.hubToken,
+      fetchImpl: this.fetch,
+      execImpl: this.execImpl,
+      onTriggerSync: () => {
+        void this.tick()
+      },
+    })
+    void this.turbo.start()
     this.timer = setInterval(() => {
       void this.tick()
-    }, this.config.hubPollMs || 2000)
+    }, this.config.hubPollMs || 1500)
     this.timer.unref?.()
     void this.tick()
   }
 
   stop() {
     this.disposed = true
+    if (this.turbo) {
+      this.turbo.stop()
+      this.turbo = null
+    }
+    if (this.followUpTimer) {
+      clearTimeout(this.followUpTimer)
+      this.followUpTimer = null
+    }
     if (this.timer) {
       clearInterval(this.timer)
       this.timer = null
@@ -80,11 +112,12 @@ export class HubAgent {
 
   async refreshDshStats(force = false) {
     const now = Date.now()
-    if (!force && this.cachedStats && now - this.lastStatsAt < 10_000) {
-      return this.cachedStats
-    }
     try {
-      this.cachedStats = await inspectDshHome(this.config.dshHome)
+      // Heavy directory byte-walk is cached for 25s, while incremental mtime-cached sessions refresh on every tick (<1ms)
+      if (force || !this.cachedStats || now - this.lastStatsAt >= 25_000) {
+        this.cachedStats = await inspectDshHome(this.config.dshHome)
+        this.lastStatsAt = now
+      }
       this.cachedDiskSessions = await loadDiskSessionsFromDshHome(this.config.dshHome)
       if (this.shouldLoadAntigravityIde()) {
         this.cachedAgySessions = await loadAntigravityIdeSessions({
@@ -98,7 +131,6 @@ export class HubAgent {
       } else {
         this.cachedAgySessions = []
       }
-      this.lastStatsAt = now
     } catch (error) {
       this.logger?.warn?.(`dsh-feishu: inspectDshHome failed: ${safeError(error)}`)
       if (!this.cachedStats) {
@@ -143,8 +175,13 @@ export class HubAgent {
   }
 
   async tick() {
-    if (this.disposed || this.polling || !this.config.hubUrl) return
+    if (this.disposed || !this.config.hubUrl) return
+    if (this.polling) {
+      if (this.timer) this.pendingRetick = true
+      return
+    }
     this.polling = true
+    let executedAny = false
     try {
       const identity = await this.ensureIdentity()
       const dshStats = await this.refreshDshStats(false)
@@ -188,6 +225,15 @@ export class HubAgent {
       bridgeState.taskCount = (bridgeState.tasks || []).length
       bridgeState.runningCount = (bridgeState.tasks || []).filter(t => t.status === 'running').length
       bridgeState.workspaces = [...wsSet]
+      bridgeState.turbo = this.turbo
+        ? this.turbo.getTelemetry()
+        : {
+            enabled: true,
+            version: '2.0.0',
+            engine: getTurboNativeBinaryPath() ? 'rust-native' : 'node-fsevents',
+            engineLabel: getTurboNativeBinaryPath() ? '🦀 Rust 原生极速引擎 + 实时流' : '⚡ FSEvents 实时事件流',
+            accessibilityGranted: true,
+          }
       const resultsToSend = this.pendingResults.splice(0)
       const response = await this.fetch(`${this.config.hubUrl}/api/heartbeat`, {
         method: 'POST',
@@ -222,6 +268,7 @@ export class HubAgent {
               this.executedIds.delete(oldest)
             }
           }
+          executedAny = true
           const outcome = await this.handleHubCommand(cmd)
           this.pendingResults.push({
             id: cmd.id,
@@ -235,6 +282,15 @@ export class HubAgent {
       this.logger?.warn?.(`dsh-feishu: hub heartbeat error: ${safeError(error)}`)
     } finally {
       this.polling = false
+      if (this.timer && (this.pendingRetick || executedAny)) {
+        this.pendingRetick = false
+        setImmediate(() => void this.tick())
+        if (executedAny) {
+          if (this.followUpTimer) clearTimeout(this.followUpTimer)
+          this.followUpTimer = setTimeout(() => void this.tick(), 350)
+          this.followUpTimer.unref?.()
+        }
+      }
     }
   }
 
@@ -580,6 +636,41 @@ export class HubAgent {
             )
           }
           return await this.bridge.executeHubCommand(cmd)
+        }
+        case 'request_ax_permission': {
+          const perm = await checkAccessibilityPermission({
+            prompt: true,
+            execImpl: this.execImpl || execFileAsync,
+          })
+          if (this.turbo) {
+            this.turbo.axTrusted = Boolean(perm.trusted)
+            this.turbo.lastAxCheckAt = Date.now()
+          }
+          return {
+            ok: true,
+            trusted: Boolean(perm.trusted),
+            prompted: true,
+            message: perm.trusted
+              ? '✅ 当前电脑已具备 macOS 辅助功能权限'
+              : '🔓 已在电脑端弹出 macOS「系统设置 → 辅助功能」授权窗口，请勾选开启',
+          }
+        }
+        case 'upgrade_turbo': {
+          const runExec = this.execImpl || execFileAsync
+          try {
+            await runExec('git', ['-C', REPO_ROOT, 'pull', '--ff-only'], { timeout: 15_000 })
+          } catch {}
+          try {
+            await runExec(join(REPO_ROOT, 'dsh-turbo', 'enable-turbo.sh'), [], { timeout: 10_000 })
+          } catch {}
+          if (this.turbo) {
+            await this.turbo.refreshAccessibilityState(true)
+          }
+          return {
+            ok: true,
+            engine: getTurboNativeBinaryPath() ? 'rust-native' : 'node-fsevents',
+            message: '⚡ 已启用 Rust 原生加速引擎并同步最新代码',
+          }
         }
         default:
           return await this.bridge.executeHubCommand(cmd)
