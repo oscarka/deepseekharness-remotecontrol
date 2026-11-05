@@ -260,8 +260,8 @@ export function parseAntigravityTranscript(jsonlText, {
         continue
       }
 
-      const asstText = cleanForChat(redactText(rawContent), 4000)
-      const thinkingText = cleanForChat(redactText(rawThinking), 1200)
+      const asstText = cleanForChat(redactText(rawContent), 1800)
+      const thinkingText = cleanForChat(redactText(rawThinking), 600)
       if (asstText) {
         lastOutput = asstText.slice(0, 1200)
       } else if (tools.length > 0 && !lastOutput) {
@@ -375,8 +375,8 @@ export function getDefaultAntigravityBrainDirs(home = homedir()) {
 export async function loadAntigravityIdeSessions({
   brainDirs = getDefaultAntigravityBrainDirs(),
   dshHome = '',
-  maxSessions = 100,
-  maxMessages = 40,
+  maxSessions = 20,
+  maxMessages = 25,
   settledApprovals = new Set(),
   excludeConversationIds = new Set(),
   now = Date.now(),

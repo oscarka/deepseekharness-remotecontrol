@@ -1863,6 +1863,7 @@
       const activeCount = sessions.filter(s => s.status === 'running' || s.status === 'approval' || s.isRecentActive).length;
       const unreadCount = sessions.filter(s => s.unread).length;
       const agyCount = sessions.filter(s => s.harness === 'antigravity-ide').length;
+      const dshCount = sessions.filter(s => s.harness !== 'antigravity-ide').length;
 
       const counts = {};
       for (const s of sessions) {
@@ -1877,6 +1878,7 @@
       ];
       if (agyCount > 0) {
         smartPills.push(
+          `<button class="filter-pill smart-pill ${currentProject === 'HARNESS_DSH' ? 'active' : ''}" onclick="selectProject('HARNESS_DSH')">🟣 DSH <span class="count">${dshCount}</span></button>`,
           `<button class="filter-pill smart-pill ${currentProject === 'HARNESS_AGY_IDE' ? 'active' : ''}" onclick="selectProject('HARNESS_AGY_IDE')">⚡ IDE <span class="count">${agyCount}</span></button>`
         );
       }
@@ -1922,8 +1924,9 @@
       const filtered = allSessions.filter(s => {
         if (currentProject === 'SMART_ACTIVE' && s.status !== 'running' && s.status !== 'approval' && !s.isRecentActive) return false;
         if (currentProject === 'SMART_UNREAD' && !s.unread) return false;
+        if (currentProject === 'HARNESS_DSH' && s.harness === 'antigravity-ide') return false;
         if (currentProject === 'HARNESS_AGY_IDE' && s.harness !== 'antigravity-ide') return false;
-        if (!['ALL', 'SMART_ACTIVE', 'SMART_UNREAD', 'HARNESS_AGY_IDE'].includes(currentProject) && s.project !== currentProject) return false;
+        if (!['ALL', 'SMART_ACTIVE', 'SMART_UNREAD', 'HARNESS_DSH', 'HARNESS_AGY_IDE'].includes(currentProject) && s.project !== currentProject) return false;
         if (!q) return true;
         return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || s.lastPreview.toLowerCase().includes(q);
       });
