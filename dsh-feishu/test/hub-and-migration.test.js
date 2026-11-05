@@ -900,6 +900,10 @@ test('antigravity-ide integration: transcript parsing, pending approval detectio
     assert.equal(parsed.status, 'approval')
     assert.ok(parsed.pendingApproval)
     assert.equal(parsed.pendingApproval.code, 'AGY-FCBA45-5')
+    assert.equal(parsed.pendingApproval.promptTitle, 'Allow execute production check script?')
+    assert.equal(parsed.pendingApproval.subtitle, 'the auto-run safety check did not reach a decision')
+    assert.equal(parsed.pendingApproval.options.length, 4)
+    assert.equal(parsed.pendingApproval.options[0].label, 'Yes, allow this time')
     assert.match(parsed.pendingApproval.reason, /deploy-prod\.sh/)
 
     // Verify silent tools (task_boundary) were filtered while view_file and run_command remain
