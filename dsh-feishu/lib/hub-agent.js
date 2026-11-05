@@ -90,7 +90,7 @@ export class HubAgent {
         this.cachedAgySessions = await loadAntigravityIdeSessions({
           brainDirs: this.config.antigravityBrainDirs || undefined,
           dshHome: this.config.dshHome,
-          maxSessions: this.config.maxAntigravitySessions || 100,
+          maxSessions: this.config.maxAntigravitySessions || 20,
           settledApprovals: this.settledAgyApprovals,
           excludeConversationIds: this.deletedAgyIds,
           now,
