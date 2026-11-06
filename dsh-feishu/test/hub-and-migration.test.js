@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdir, mkdtemp, rm, stat, writeFile, readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FeishuBridge } from '../lib/bridge.js'
@@ -1305,19 +1305,28 @@ test('antigravity-ide Connect-RPC prompt delivery & merged Web UI Markdown/UX he
     else process.env.ANTIGRAVITY_CSRF_TOKEN = prevCsrf
   }
 
-  // Verify hub/public/index.html merged features (Markdown rendering, composer Enter logic, file preview kind, full-row status classes)
-  const indexHtml = await readFile(join( process.cwd(), 'hub/public/index.html'), 'utf8')
-  assert.match(indexHtml, /function renderMarkdown\(/)
-  assert.match(indexHtml, /function shouldSendOnEnter\(/)
-  assert.match(indexHtml, /function shouldShowInstallHint\(/)
-  assert.match(indexHtml, /function previewKind\(/)
-  assert.match(indexHtml, /function shouldDismissHorizontalSwipe\(/)
-  assert.match(indexHtml, /row-state-running/)
-  assert.match(indexHtml, /row-state-conclusion/)
-  assert.doesNotMatch(indexHtml, /renderChatMessages\(/)
-  assert.match(indexHtml, /data\?\.ready/)
-  assert.match(indexHtml, /lastRenderedStripKey/)
-  assert.match(indexHtml, /lastRenderedListKey/)
+  // Verify Vite + Preact built bundle preserves all merged features & Rust turbo controls
+  const indexHtml = await readFile(join(process.cwd(), 'hub/public/index.html'), 'utf8')
+  const assetFiles = await readdir(join(process.cwd(), 'hub/public/assets'))
+  const assetContents = await Promise.all(
+    assetFiles.map(name => readFile(join(process.cwd(), 'hub/public/assets', name), 'utf8')),
+  )
+  const fullBundle = [indexHtml, ...assetContents].join('\n')
+  assert.match(indexHtml, /id="app"/)
+  assert.match(fullBundle, /function renderMarkdown\(/)
+  assert.match(fullBundle, /function shouldSendOnEnter\(/)
+  assert.match(fullBundle, /function shouldShowInstallHint\(/)
+  assert.match(fullBundle, /function previewKind\(/)
+  assert.match(fullBundle, /function shouldDismissHorizontalSwipe\(/)
+  assert.match(fullBundle, /row-state-running/)
+  assert.match(fullBundle, /row-state-conclusion/)
+  assert.doesNotMatch(fullBundle, /renderChatMessages\(/)
+  assert.match(fullBundle, /data\?\.ready/)
+  assert.match(fullBundle, /lastRenderedStripKey/)
+  assert.match(fullBundle, /lastRenderedListKey/)
+  assert.match(fullBundle, /function openTurboGuideSheet\(/)
+  assert.match(fullBundle, /function upgradeHostTurbo\(/)
+  assert.match(fullBundle, /function requestHostAxPermission\(/)
 })
 
 test('antigravity-ide revert rollback & HubCore heartbeat deduplication', () => {
@@ -1428,15 +1437,157 @@ test('antigravity-ide revert rollback & HubCore heartbeat deduplication', () => 
   assert.equal(sseEmissions, 2) // State changed -> immediately broadcast
 })
 
-test('Voice input button, binary file preview card, and push notification deep-link routing work in index.html', async () => {
+test('Vite + Preact bundle, static /assets/* serving, voice input abort state machine, binary file preview, and push deep-link routing work end-to-end', async () => {
+  const assetDir = new URL('../../hub/public/assets/', import.meta.url)
+  const assetFiles = await readdir(assetDir)
+  const jsAsset = assetFiles.find(f => f.endsWith('.js'))
+  const cssAsset = assetFiles.find(f => f.endsWith('.css'))
+  assert.ok(jsAsset, 'Expected built Preact JS asset in hub/public/assets/')
+  assert.ok(cssAsset, 'Expected built CSS asset in hub/public/assets/')
+
   const html = await readFile(new URL('../../hub/public/index.html', import.meta.url), 'utf8')
-  assert.match(html, /id="chatVoiceBtn"/)
-  assert.match(html, /id="newTaskVoiceBtn"/)
-  assert.match(html, /function toggleVoiceInput\(/)
-  assert.match(html, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/)
-  assert.match(html, /kind === 'binary'/)
-  assert.match(html, /function tryOpenDeepLinkTarget\(/)
-  assert.match(html, /NOTIFICATION_CLICK/)
+  const jsCode = await readFile(new URL(`../../hub/public/assets/${jsAsset}`, import.meta.url), 'utf8')
+  const cssCode = await readFile(new URL(`../../hub/public/assets/${cssAsset}`, import.meta.url), 'utf8')
+  const bundle = `${html}\n${jsCode}\n${cssCode}`
+
+  assert.match(bundle, /chatVoiceBtn/)
+  assert.match(bundle, /newTaskVoiceBtn/)
+  assert.match(bundle, /function toggleVoiceInput\(/)
+  assert.match(bundle, /function stopVoiceInput\(/)
+  assert.match(bundle, /rec\.abort\(\)/)
+  assert.match(bundle, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/)
+  assert.match(bundle, /kind === "binary"|kind === 'binary'/)
+  assert.match(bundle, /function tryOpenDeepLinkTarget\(/)
+  assert.match(bundle, /NOTIFICATION_CLICK/)
+
+  // Verify createHubServer serves /assets/* with immutable cache headers via fetchAdapter
+  const { fetchAdapter } = createHubServer({ token: 'test-token' })
+  const jsRes = await fetchAdapter(`https://dsh-hub.example.run.app/assets/${jsAsset}`)
+  assert.equal(jsRes.status, 200)
+  assert.match(jsRes.headers.get('content-type') || '', /javascript/)
+  assert.match(jsRes.headers.get('cache-control') || '', /immutable/)
+
+  const cssRes = await fetchAdapter(`https://dsh-hub.example.run.app/assets/${cssAsset}`)
+  assert.equal(cssRes.status, 200)
+  assert.match(cssRes.headers.get('content-type') || '', /text\/css/)
+
+  // Verify voice input start -> result -> toggle stop (rec.abort() + callback detachment + UI reset)
+  const hookSource = await readFile(new URL('../../hub/web/src/hooks/useVoiceInput.ts', import.meta.url), 'utf8')
+  const cleanJs = hookSource
+    .replace(/export interface[\s\S]*?\n\}\n/, '')
+    .replace(/export function /g, 'function ')
+    .replace(/: any/g, '')
+    .replace(/: string/g, '')
+    .replace(/: boolean/g, '')
+    .replace(/: void/g, '')
+    .replace(/\?\s*:\s*VoiceControllerDeps/g, '')
+    .replace(/ as [A-Za-z0-9_| <>]+/g, '')
+    .replace(/\(window\)/g, 'window')
+
+  let abortCalled = 0
+  let stopCalled = 0
+  let startCalled = 0
+  let lastInstance = null
+
+  const fakeElements = {
+    globalPromptInput: {
+      value: '已有前缀 ',
+      focused: false,
+      focus() { this.focused = true },
+    },
+    chatVoiceBtn: {
+      textContent: '🎤',
+      attrs: {},
+      classes: new Set(['voice-btn']),
+      classList: {
+        toggle(cls, force) {
+          if (force) fakeElements.chatVoiceBtn.classes.add(cls)
+          else fakeElements.chatVoiceBtn.classes.delete(cls)
+        },
+        contains(cls) {
+          return fakeElements.chatVoiceBtn.classes.has(cls)
+        },
+      },
+      setAttribute(k, v) { this.attrs[k] = v },
+    },
+    newTaskVoiceBtn: {
+      textContent: '🎤 语音输入',
+      attrs: {},
+      classes: new Set(['voice-pill-btn']),
+      classList: {
+        toggle(cls, force) {
+          if (force) fakeElements.newTaskVoiceBtn.classes.add(cls)
+          else fakeElements.newTaskVoiceBtn.classes.delete(cls)
+        },
+        contains(cls) {
+          return fakeElements.newTaskVoiceBtn.classes.has(cls)
+        },
+      },
+      setAttribute(k, v) { this.attrs[k] = v },
+    },
+  }
+
+  const fakeWindow = {
+    webkitSpeechRecognition: class FakeSpeechRecognition {
+      constructor() {
+        lastInstance = this
+      }
+      start() { startCalled += 1 }
+      abort() { abortCalled += 1 }
+      stop() { stopCalled += 1 }
+    },
+  }
+  const fakeDocument = {
+    getElementById(id) { return fakeElements[id] || null },
+  }
+  const fakeNavigator = { language: 'zh-CN' }
+  const toasts = []
+  let composerInputCalls = 0
+
+  const factory = new Function(
+    'window',
+    'document',
+    'navigator',
+    `${cleanJs}\nreturn { toggleVoiceInput, stopVoiceInput, isVoiceRecording };`,
+  )
+  const voice = factory(fakeWindow, fakeDocument, fakeNavigator)
+  const deps = {
+    showToast(msg) { toasts.push(msg) },
+    onComposerInput() { composerInputCalls += 1 },
+  }
+
+  // 1) First click starts recording
+  voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
+  assert.equal(startCalled, 1)
+  assert.equal(voice.isVoiceRecording(), true)
+  assert.equal(fakeElements.chatVoiceBtn.classList.contains('recording'), true)
+  assert.equal(fakeElements.chatVoiceBtn.textContent, '⏹')
+  assert.equal(fakeElements.chatVoiceBtn.attrs['aria-pressed'], 'true')
+
+  // 2) Speech recognition emits interim + final result
+  lastInstance.onresult({
+    resultIndex: 0,
+    results: [
+      { isFinal: true, 0: { transcript: '帮我检查测试' } },
+    ],
+  })
+  assert.equal(fakeElements.globalPromptInput.value, '已有前缀 帮我检查测试')
+  assert.equal(composerInputCalls, 1)
+
+  // 3) Second click immediately stops recording, calls abort() + stop(), detaches callbacks, resets UI
+  const savedOnResult = lastInstance.onresult
+  assert.equal(typeof savedOnResult, 'function')
+  voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
+  assert.equal(voice.isVoiceRecording(), false)
+  assert.equal(abortCalled, 1)
+  assert.equal(stopCalled, 1)
+  assert.equal(lastInstance.onresult, null)
+  assert.equal(lastInstance.onerror, null)
+  assert.equal(lastInstance.onend, null)
+  assert.equal(fakeElements.chatVoiceBtn.classList.contains('recording'), false)
+  assert.equal(fakeElements.chatVoiceBtn.textContent, '🎤')
+  assert.equal(fakeElements.chatVoiceBtn.attrs['aria-pressed'], 'false')
+  assert.ok(toasts.some(t => t.includes('已关闭语音输入')))
 })
 
 

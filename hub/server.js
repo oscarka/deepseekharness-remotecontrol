@@ -60,6 +60,32 @@ export function createHubServer({
       }
     }
 
+    if (method === 'GET' && pathname.startsWith('/assets/')) {
+      const rel = pathname.slice('/assets/'.length)
+      if (!rel || rel.includes('..') || rel.includes('/')) {
+        return { status: 404, body: 'Not found' }
+      }
+      try {
+        const assetPath = join(__dirname, 'public', 'assets', rel)
+        const body = await readFile(assetPath, 'utf8')
+        const contentType = rel.endsWith('.css')
+          ? 'text/css; charset=utf-8'
+          : rel.endsWith('.js')
+            ? 'application/javascript; charset=utf-8'
+            : 'text/plain; charset=utf-8'
+        return {
+          status: 200,
+          headers: {
+            'content-type': contentType,
+            'cache-control': 'public, max-age=31536000, immutable',
+          },
+          body,
+        }
+      } catch {
+        return { status: 404, body: 'Asset not found' }
+      }
+    }
+
     // PWA Web App Manifest for iPhone / Android Home Screen installation
     if (method === 'GET' && pathname === '/manifest.json') {
       return {
@@ -477,6 +503,7 @@ export function createHubServer({
       return {
         status: out.status,
         ok: out.status >= 200 && out.status < 300,
+        headers: new Headers(out.headers || {}),
         async json() {
           if (out.json !== undefined) return out.json
           return JSON.parse(out.body || '{}')
