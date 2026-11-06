@@ -169,7 +169,7 @@ if [ -n "$DSH_CLI" ]; then
   "$DSH_CLI" plugin --profile desktop add "$SCRIPT_DIR/dsh-feishu" >/dev/null 2>&1 || true
 fi
 
-# 停止旧的后台同步进程（如果有）
+# 停止所有旧的后台同步进程（防止多实例并发消费队列指令）
 PID_FILE="$DSH_DIR/hub-daemon.pid"
 PLIST_DIR="$HOME/Library/LaunchAgents"
 PLIST_FILE="$PLIST_DIR/com.dsh.remotecontrol.plist"
@@ -180,9 +180,10 @@ if [ -f "$PID_FILE" ]; then
   OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
   if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
     kill "$OLD_PID" 2>/dev/null || true
-    sleep 0.5
   fi
 fi
+pkill -f "dsh-feishu/daemon.mjs" 2>/dev/null || true
+sleep 0.5
 
 # 先执行一次同步验证
 if [ "$USE_ELECTRON_NODE" = "1" ]; then
@@ -216,6 +217,10 @@ if [ "$(uname -s)" = "Darwin" ] && mkdir -p "$PLIST_DIR" 2>/dev/null; then
     <string>${DSH_DIR}</string>
     <key>ELECTRON_RUN_AS_NODE</key>
     <string>${USE_ELECTRON_NODE}</string>
+    <key>ANTIGRAVITY_LS_ADDRESS</key>
+    <string>${ANTIGRAVITY_LS_ADDRESS:-}</string>
+    <key>ANTIGRAVITY_CSRF_TOKEN</key>
+    <string>${ANTIGRAVITY_CSRF_TOKEN:-}</string>
   </dict>
   <key>WorkingDirectory</key>
   <string>${SCRIPT_DIR}</string>
@@ -231,12 +236,15 @@ if [ "$(uname -s)" = "Darwin" ] && mkdir -p "$PLIST_DIR" 2>/dev/null; then
 </plist>
 EOF
   if launchctl load -w "$PLIST_FILE" >/dev/null 2>&1; then
-    sleep 0.6
-    NEW_PID="$(pgrep -f "dsh-feishu/daemon.mjs" | tail -n 1 || true)"
-    if [ -n "$NEW_PID" ]; then
-      echo "$NEW_PID" > "$PID_FILE"
-      LAUNCHD_OK=1
-    fi
+    LAUNCHD_OK=1
+    for _ in 1 2 3 4 5; do
+      sleep 0.3
+      NEW_PID="$(pgrep -f "dsh-feishu/daemon.mjs" | tail -n 1 || true)"
+      if [ -n "$NEW_PID" ]; then
+        echo "$NEW_PID" > "$PID_FILE"
+        break
+      fi
+    done
   fi
 fi
 

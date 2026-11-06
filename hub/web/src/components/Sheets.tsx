@@ -16,7 +16,7 @@ export function Sheets() {
           <div class="sheet-title">
             <span>切换遥控的电脑</span>
             <span
-              style="font-size:12px;color:#64748b;font-weight:500;"
+              style="font-size:12px;color:var(--muted);font-weight:500;"
               id="hostSheetCountLabel"
             ></span>
           </div>
@@ -32,7 +32,7 @@ export function Sheets() {
             <span>✨ 新建远程对话任务</span>
             <button
               type="button"
-              style="border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;"
+              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;"
               onClick={() => (window as any).closeSheet?.('newTaskSheet')}
             >
               ✕
@@ -145,7 +145,7 @@ export function Sheets() {
             <span id="inChatFileTitle">📂 当前项目文件速览</span>
             <button
               type="button"
-              style="border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;"
+              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;"
               onClick={() => (window as any).closeMobileFile?.()}
             >
               ✕
@@ -167,7 +167,7 @@ export function Sheets() {
             <span>📦 跨电脑一键迁移向导</span>
             <button
               type="button"
-              style="border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;"
+              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;"
               onClick={() => (window as any).closeSheet?.('mobileSettingsSheet')}
             >
               ✕
@@ -189,7 +189,7 @@ export function Sheets() {
             <span>⚡ 极速实时同步 (Rust + SSE) 指南</span>
             <button
               type="button"
-              style="border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;"
+              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;"
               onClick={() => (window as any).closeSheet?.('turboGuideSheet')}
             >
               ✕

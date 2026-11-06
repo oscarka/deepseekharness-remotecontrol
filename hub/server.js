@@ -61,7 +61,7 @@ export function createHubServer({
       return { status: 204, headers: { 'access-control-allow-origin': '*' }, body: '' }
     }
 
-    if (method === 'GET' && (pathname === '/healthz' || pathname === '/ready')) {
+    if (method === 'GET' && (pathname === '/healthz' || pathname === '/ready' || pathname === '/api/health')) {
       return {
         status: 200,
         json: {

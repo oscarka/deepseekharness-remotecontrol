@@ -1930,7 +1930,64 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
     body: JSON.stringify({ code: pairCreate.code }),
   })
   assert.equal(rateLimitedRes.status, 429)
+
+  // 5. Verify v2 audit fixes (N1, N3, N6, N7, N10, and sendApprovalDecision renderAll fix)
+  const apiHealth = await (await fetchAdapter(`${hubUrl}/api/health`)).json()
+  assert.equal(apiHealth.ok, true)
+
+  // N3: Expired image blob returns 404 instead of empty 200 text/plain
+  hub.hosts.get('mac-studio').lastFilePreview = {
+    relPath: 'assets/expired.png',
+    mimeType: 'image/png',
+    hasBlob: true,
+    updatedAt: Date.now(),
+  }
+  hub.filePreviewBlobs.delete('mac-studio')
+  const expiredBlobRes = await fetchAdapter(`${hubUrl}/api/hosts/mac-studio/file-preview`, {
+    headers: { authorization: 'Bearer mobile-ux-token' },
+  })
+  assert.equal(expiredBlobRes.status, 404)
+
+  // N7 & N10: getFullState prunes expired queued commands immediately and records text in recentResults
+  const { command: expInPoll } = hub.queueCommand('mac-studio', {
+    type: 'prompt',
+    agentId: 'task-offline-2',
+    text: '手机轮询时直接过期的指令',
+  })
+  expInPoll.expiresAt = Date.now() - 500
+  const stateAfterPollExpire = hub.getFullState()
+  const studioHostAfterExpire = stateAfterPollExpire.hosts.find(h => h.hostId === 'mac-studio')
+  assert.equal(studioHostAfterExpire.pendingCommands.length, 0)
+  const expResult = studioHostAfterExpire.recentResults.find(r => r.commandId === expInPoll.id)
+  assert.ok(expResult)
+  assert.equal(expResult.expired, true)
+  assert.equal(expResult.text, '手机轮询时直接过期的指令')
+
+  // N1: listShares includes both id and shareId, and deleteShare clears host.lastShareResult
+  const createdShare = hub.createShare({
+    hostId: 'mac-studio',
+    hostName: 'Mac Studio',
+    agentId: 'task-1',
+    title: 'Share N1 Test',
+    ciphertextBase64: 'YWJj',
+    ivBase64: 'MTIz',
+  })
+  hub.hosts.get('mac-studio').lastShareResult = {
+    ok: true,
+    shareId: createdShare.id,
+    shareUrl: `https://example.com/?share=${createdShare.id}#k=xyz`,
+  }
+  const sharesList = hub.listShares()
+  assert.equal(sharesList[0].id, createdShare.id)
+  assert.equal(sharesList[0].shareId, createdShare.id)
+  hub.deleteShare(createdShare.id)
+  assert.equal(hub.hosts.get('mac-studio').lastShareResult, null)
+
+  // Verify controller.js does not contain undefined renderApp() call
+  const controllerSrc = await readFile(new URL('../../hub/web/src/controller.js', import.meta.url), 'utf8')
+  assert.doesNotMatch(controllerSrc, /\brenderApp\s*\(/)
 })
+
 
 
 

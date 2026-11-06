@@ -2,12 +2,16 @@
 set -euo pipefail
 
 SERVICE_NAME="${SERVICE_NAME:-dsh-remotecontrol-hub}"
-REGION="${REGION:-asia-east1}"
+REGION="${REGION:-us-central1}"
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
 
 if [[ -z "${PROJECT_ID}" ]]; then
   echo "请先设置 GCP 项目: export PROJECT_ID=your-gcp-project-id"
   exit 1
+fi
+
+if [[ -z "${HUB_TOKEN:-}" ]] && [[ -f "${HOME}/.dsh/feishu.env" ]]; then
+  HUB_TOKEN="$(grep -E '^FEISHU_HUB_TOKEN=' "${HOME}/.dsh/feishu.env" | tail -n 1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)"
 fi
 
 if [[ -z "${HUB_TOKEN:-}" ]]; then

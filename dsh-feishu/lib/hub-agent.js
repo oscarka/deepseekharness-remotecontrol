@@ -45,6 +45,7 @@ export class HubAgent {
     this.cachedAgySessions = []
     this.cachedPushSubscriptions = []
     this.settledAgyApprovals = new Set()
+    this.recentAgyApprovals = new Map()
     this.deletedAgyIds = new Set()
     this.pendingUserPrompts = new Map()
     this.lastStatsAt = 0
@@ -255,6 +256,16 @@ export class HubAgent {
             existingIds.add(agySess.id)
           }
           if (agySess.cwd) wsSet.add(agySess.cwd)
+          if (agySess.pendingApproval?.code) {
+            this.recentAgyApprovals.set(agySess.pendingApproval.code.toUpperCase(), {
+              session: agySess,
+              approval: agySess.pendingApproval,
+            })
+            if (this.recentAgyApprovals.size > 200) {
+              const oldestKey = this.recentAgyApprovals.keys().next().value
+              this.recentAgyApprovals.delete(oldestKey)
+            }
+          }
           if (
             agySess.pendingApproval
             && !existingCodes.has(agySess.pendingApproval.code)
@@ -624,14 +635,14 @@ export class HubAgent {
         case 'approval': {
           const code = String(cmd.code ?? '').trim().toUpperCase()
           const effectiveType = type === 'approval' ? (cmd.allow !== false ? 'approve' : 'deny') : type
-          if (code.startsWith('AGY-')) {
-            this.settledAgyApprovals.add(code)
-            let matchedSession = null
-            let matchedApproval = null
+          if (code.startsWith('AGY-') || isAntigravityIdeSessionId(cmd.agentId)) {
+            const remembered = code ? this.recentAgyApprovals.get(code) : null
+            let matchedSession = remembered?.session || null
+            let matchedApproval = remembered?.approval || null
             for (const s of this.cachedAgySessions || []) {
-              if (s.pendingApproval?.code === code || (cmd.agentId && s.id === cmd.agentId)) {
+              if (s.pendingApproval?.code?.toUpperCase() === code || (cmd.agentId && s.id === cmd.agentId)) {
                 matchedSession = s
-                if (s.pendingApproval?.code === code) {
+                if (s.pendingApproval) {
                   matchedApproval = s.pendingApproval
                   s.pendingApproval = null
                   s.status = effectiveType === 'approve' ? 'running' : 'idle'
@@ -644,11 +655,17 @@ export class HubAgent {
                 type: effectiveType,
                 code,
                 optionIndex: cmd.optionIndex,
-                agentId: matchedSession?.id || cmd.agentId,
+                agentId: matchedSession?.id || matchedApproval?.agentId || cmd.agentId,
                 cwd: matchedSession?.cwd || cmd.cwd,
                 pendingApproval: matchedApproval,
               },
-              { execImpl: this.execImpl },
+              { execImpl: this.execImpl, fetchImpl: this.fetch },
+            )
+            if (res?.ok && code) {
+              this.settledAgyApprovals.add(code)
+            }
+            this.logger?.log?.(
+              `[dsh-feishu] Antigravity ${effectiveType} (${code}, option=${cmd.optionIndex ?? 1}) -> ok=${res?.ok} engine=${res?.engine || 'fallback'} msg=${res?.message || res?.error || ''}`,
             )
             return {
               ...res,
