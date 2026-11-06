@@ -8,8 +8,13 @@
     "node": ">=20"
   },
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
     "start": "node hub/server.js",
     "test": "node --test dsh-feishu/test/*.test.js"
+  },
+  "devDependencies": {
+    "preact": "^11.1.1",
+    "vite": "^8.3.5"
   }
 }
-

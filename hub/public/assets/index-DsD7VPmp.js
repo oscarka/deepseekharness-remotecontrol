@@ -1,0 +1,3436 @@
+// \0vite/modulepreload-polyfill.js
+(function polyfill() {
+	const relList = document.createElement("link").relList;
+	if (relList && relList.supports && relList.supports("modulepreload")) return;
+	for (const link of document.querySelectorAll("link[rel=\"modulepreload\"]")) processPreload(link);
+	new MutationObserver((mutations) => {
+		for (const mutation of mutations) {
+			if (mutation.type !== "childList") continue;
+			for (const node of mutation.addedNodes) if (node.tagName === "LINK" && node.rel === "modulepreload") processPreload(node);
+		}
+	}).observe(document, {
+		childList: true,
+		subtree: true
+	});
+	function getFetchOpts(link) {
+		const fetchOpts = {};
+		if (link.integrity) fetchOpts.integrity = link.integrity;
+		if (link.referrerPolicy) fetchOpts.referrerPolicy = link.referrerPolicy;
+		if (link.crossOrigin === "use-credentials") fetchOpts.credentials = "include";
+		else if (link.crossOrigin === "anonymous") fetchOpts.credentials = "omit";
+		else fetchOpts.credentials = "same-origin";
+		return fetchOpts;
+	}
+	function processPreload(link) {
+		if (link.ep) return;
+		link.ep = true;
+		const fetchOpts = getFetchOpts(link);
+		fetch(link.href, fetchOpts);
+	}
+})();
+// node_modules/.pnpm/preact@11.1.1/node_modules/preact/dist/preact.mjs
+var n;
+var t;
+var i;
+var u;
+var f;
+var e;
+var o;
+var l;
+var c;
+var a;
+var h = Symbol.for("pv");
+var p = {};
+var v = [];
+var y = /^m(i|n|o|s|text|space)$/;
+var w = Array.isArray;
+var d = v.slice;
+var _ = Object.assign;
+function g(n) {
+	n && n.parentNode && n.remove();
+}
+function k(n, t, r) {
+	var i, u, f, e = {}, o = arguments.length;
+	for (f in t) "key" == f ? i = t[f] : "ref" == f && "function" != typeof n ? u = t[f] : e[f] = t[f];
+	return o > 2 && (e.children = o > 3 ? d.call(arguments, 2) : r), m(n, e, i, u, null);
+}
+function m(r, i, u, f, e) {
+	var o = {
+		type: r,
+		props: i,
+		key: u,
+		ref: f,
+		__k: null,
+		__: null,
+		__b: 0,
+		__e: null,
+		__c: null,
+		constructor: h,
+		__v: e || ++t,
+		__i: -1,
+		__u: 0
+	};
+	return !e && n.vnode && n.vnode(o), o;
+}
+function M(n) {
+	return n.children;
+}
+function x(n, t) {
+	this.props = n, this.context = t, this.__g = 0;
+}
+function S(n, t) {
+	if (null == t) return n.__ && S(n.__, n.__i + 1);
+	for (var r; t < n.__k.length; t++) if ((r = n.__k[t]) && r.__e) return r.__e;
+	return "function" != typeof n.type || n.props.__P ? null : S(n);
+}
+function C(n) {
+	if ((n = n.__) && n.__c && !n.props.__P) return n.__e = null, n.__k.some(function(t) {
+		return t && (n.__e = t.__e);
+	}), C(n);
+}
+function j(t) {
+	(8 & t.__g || (t.__g |= 8, i.push(t), f++)) && u == n.debounceRendering || ((u = n.debounceRendering) || queueMicrotask)(L);
+}
+function L() {
+	var t, r, o, l, c, a, s, p, v;
+	try {
+		for (r = 1; i.length;) i.length > r && i.sort(e), t = i.shift(), r = i.length, 8 & t.__g && (l = void 0, c = void 0, a = (c = (o = t).__v).__e, s = [], p = [], (v = o.__P) && ((l = _({ constructor: h }, c)).__v = c.__v + 1, n.vnode && n.vnode(l), V(v, l, c, o.__n, v.namespaceURI, 32 & c.__u ? [a] : null, s, a || S(c), 32 & c.__u, p), l.__v = c.__v, l.__.__k[l.__i] = l, D(s, l, p), c.__ = c.__e = null, l.__e != a && C(l)));
+	} finally {
+		(f = i.length) && (u || queueMicrotask)(L);
+	}
+}
+function H(n, t, r, i, u, f, e, o, l, c, a) {
+	var s, h, y, w, d, _, g = i.__k || v, k = t.length;
+	for (l = I(r, t, g, l, k), s = 0; s < k; s++) null != (y = r.__k[s]) && (h = ~y.__i && g[y.__i] || p, y.__i = s, _ = V(n, y, h, u, f, e, o, l, c, a), w = y.__e, (h.ref != y.ref || 8 & h.__u) && (h.ref && F(h.ref, null, y, h), y.ref && a.push(y.ref, y.__c || w, y)), d = d || w, 4 & y.__u ? (l = q(y, l, n, !h.__v), h.__e && (h.__e = null)) : "function" == typeof y.type && void 0 !== _ ? l = _ : w && (l = w.nextSibling), y.__u &= -21);
+	return r.__e = d, l;
+}
+function I(n, t, r, i, u) {
+	var f, e, o, l, c, a, s, p, v, y = r.length, d = y, _ = 0, g = 0, k = n.__k = Array(u);
+	for (f = 0; f < u; f++) null != (e = t[f]) && "boolean" != typeof e && "function" != typeof e ? ("object" != typeof e || e.constructor === String ? e = k[f] = m(null, e) : w(e) ? e = k[f] = m(M, { children: e }) : e.constructor === h && e.__b ? e = k[f] = m(e.type, e.props, e.key, e.ref, e.__v) : k[f] = e, l = f + _, e.__ = n, e.__b = n.__b + 1, o = null, ~(c = e.__i = O(e, r, l, d)) && (d--, (o = r[c]) && (o.__u |= 2)), o && o.__v ? (e.__u |= 16, c == l - 1 ? _-- : c == l + 1 ? _++ : c != l && (c > l ? _-- : _++, g = 1)) : (~c || (u > y ? _-- : u < y && _++), "function" != typeof e.type && (e.__u |= 4))) : k[f] = null;
+	if (g) {
+		for (a = [], s = [], f = 0; f < u; f++) if ((e = k[f]) && 16 & e.__u) {
+			for (_ = 0, p = a.length; _ < p;) a[v = _ + p >> 1] < e.__i ? _ = v + 1 : p = v;
+			a[_] = e.__i, s[f] = _ + 1;
+		}
+		for (_ = a.length; f--;) s[f] && (s[f] == _ ? _-- : k[f].__u |= 4);
+	}
+	if (d) for (f = 0; f < y; f++) !(o = r[f]) || 2 & o.__u || (o.__e == i && (i = S(o)), G(o, o));
+	return i;
+}
+function q(n, t, r, i) {
+	var u, f, e, o;
+	if ("function" == typeof n.type) {
+		if (n.props.__P) return t;
+		if (u = n.__k) for (f = 0; f < u.length; f++) u[f] && (u[f].__ = n, t = q(u[f], t, r, !1));
+		return t;
+	}
+	for (t && !t.parentNode && (t = S(n)) && !t.parentNode && (t = null), e = n.__e, o = t; o && 8 == o.nodeType;) o = o.nextSibling;
+	for (e != o && (!i && r.moveBefore && e.parentNode ? r.moveBefore(e, t) : r.insertBefore(e, t || null)), t = e; (t = t && t.nextSibling) && 8 == t.nodeType && !t.data.startsWith("$s"););
+	return t;
+}
+function O(n, t, r, i) {
+	var u, f = n.key, e = n.type, o = t[r], l = o && !(2 & o.__u);
+	if (null === o && null == f || l && f == o.key && e == o.type) return r;
+	if (i > (l ? 1 : 0)) {
+		for (u = r - 1; u >= 0; u--) if ((o = t[u]) && !(2 & o.__u) && f == o.key && e == o.type) return u;
+		for (u = r + 1; u < t.length; u++) if ((o = t[u]) && !(2 & o.__u) && f == o.key && e == o.type) return u;
+	}
+	return -1;
+}
+function P(n, t, r) {
+	r ??= "", "-" == t[0] ? n.setProperty(t, r) : n[t] = r;
+}
+function T(n, t, r, i, u) {
+	var f, e;
+	if ("style" == t) if ("string" == typeof r) n.style.cssText = r;
+	else {
+		if ("string" == typeof i && (n.style.cssText = i = ""), i) for (t in i) r && t in r || P(n.style, t);
+		if (r) for (t in r) i && r[t] == i[t] || P(n.style, t, r[t]);
+	}
+	else if ("o" == t[0] && "n" == t[1]) (n.__e || (n.__e = {}))[t] = r, r && i || (e = a[t] || (a[t] = N(t)), (n.__a || (n.__a = {}))[t] = c, f = t != (t = t.replace(l, "$1")), (t = t.slice(2))[0] < "a" && (t = t.toLowerCase()), r ? n.addEventListener(t, e, f) : n.removeEventListener(t, e, f));
+	else {
+		if ("http://www.w3.org/2000/svg" == u) t = t.replace(/xlink(H|:h)/, "h").replace(/sName$/, "s");
+		else if ("width" != t && "height" != t && "href" != t && "list" != t && "form" != t && "tabIndex" != t && "download" != t && "rowSpan" != t && "colSpan" != t && "role" != t && "popover" != t && t in n) try {
+			n[t] = null == r ? "" : r;
+			return;
+		} catch (n) {}
+		if ("function" == typeof r) return;
+		null == r || !1 === r && "-" != t[4] ? n.removeAttribute(t) : n.setAttribute(t, "popover" == t && 1 == r ? "" : r);
+	}
+}
+function N(t) {
+	return function(r) {
+		var i = this.__e;
+		if (i) {
+			if (i = i[t], null == r[o]) r[o] = c++;
+			else if (r[o] < this.__a[t]) return;
+			return i(n.event ? n.event(r) : r);
+		}
+	};
+}
+function V(t, r, i, u, f, e, o, l, c, a) {
+	var s, p, y, d, k, b, m, $, C, j, L, I, q, A, O, P, T, N, V = r.type;
+	if (r.constructor !== h) return null;
+	128 & i.__u && (c = 32 & i.__u, s = i.__c.__z) && (r.__u |= c, p = e = [], 8 == s.nodeType ? l = z(s, e) : e.push(s), l = e[0] || l), (s = n.__b) && s(r);
+	n: if ("function" == typeof V) {
+		y = o.length;
+		try {
+			if ($ = r.props, C = (s = V.prototype) && s.render, j = (s = V.contextType) && u[s.__c], L = s ? j ? j.props.value : s.__ : u, (d = i.__c) ? (r.__c = d, 2 & d.__g && (d.__g |= 1)) : (C ? r.__c = d = new V($, L) : (r.__c = d = new x($, L), d.constructor = V, d.render = J), j && j.sub(d), d.state || (d.state = {}), d.__n = u, d.__g |= 8, d.__h = [], d.__k = []), C && (d.__s || (d.__s = d.state), V.getDerivedStateFromProps && (d.__s == d.state && (d.__s = _({}, d.__s)), _(d.__s, V.getDerivedStateFromProps($, d.__s)))), k = d.props, b = d.state, d.__v = r, i.__c) {
+				if ($ !== k && C && !V.getDerivedStateFromProps && d.componentWillReceiveProps && d.componentWillReceiveProps($, L), r.__v == i.__v && !(8 & d.__g) || !(4 & d.__g) && d.shouldComponentUpdate && !1 === d.shouldComponentUpdate($, d.__s, L)) {
+					r.__v != i.__v && (d.props = $, d.state = d.__s, d.__g &= -9), r.__e = i.__e, r.__k = i.__k, r.__k.some(function(n) {
+						n && (n.__ = r);
+					}), v.push.apply(d.__h, d.__k), d.__k = [], d.__h.length && o.push(d), l = S(i);
+					break n;
+				}
+				d.componentWillUpdate && d.componentWillUpdate($, d.__s, L), C && d.componentDidUpdate && d.__h.push(function() {
+					d.componentDidUpdate(k, b, m);
+				});
+			} else C && !V.getDerivedStateFromProps && d.componentWillMount && d.componentWillMount(), C && d.componentDidMount && d.__h.push(d.componentDidMount);
+			if (d.context = L, d.props = $, d.__P = t, d.__g &= -5, I = n.__r, q = 0, C) d.state = d.__s, d.__g &= -9, I && I(r), s = d.render(d.props, d.state, d.context), v.push.apply(d.__h, d.__k), d.__k = [];
+			else do
+				d.__g &= -9, I && I(r), s = d.render(d.props, d.state, d.context), d.state = d.__s;
+			while (8 & d.__g && ++q < 25);
+			d.state = d.__s, d.getChildContext && (u = _({}, u, d.getChildContext())), C && i.__c && d.getSnapshotBeforeUpdate && (m = d.getSnapshotBeforeUpdate(k, b)), A = s && s.type === M && null == s.key ? s.props.children : s, $.__P && (s = l, f = (t = $.__P).namespaceURI, c = e = null, i.props && i.props.__P != t && (i.__k.some(function(n) {
+				n && G(n, n);
+			}), i.__k = null), l = i.__k ? S(i, 0) : null), l = H(t, w(A) ? A : [A], r, i, u, f, e, o, l, c, a), $.__P && (r.__e = null, l = s), r.__u &= -161, p && p.some(g), d.__h.length && o.push(d), 1 & d.__g && (d.__g &= -4);
+		} catch (t) {
+			if (o.length = y, r.__v = null, c || e) if (t.then) {
+				if (O = 0, r.__u |= 128 | c, e) {
+					for (~(T = e.indexOf(l || void 0)) || (T = e.length); (N = e[T - 1]) && 8 == N.nodeType;) T--;
+					for (; T < e.length; T++) if (N = e[T]) {
+						if (e[T] = null, 8 == N.nodeType) {
+							if (N.data.startsWith("$s")) O++ || (P = N);
+							else if (O && N.data.startsWith("/$s") && !--O) break;
+						} else if (!O) break;
+					}
+				}
+				if (!P) {
+					for (; l && 8 == l.nodeType && l.nextSibling;) l = l.nextSibling;
+					P = l;
+				}
+				(s = z(P = r.__c.__z || (r.__c.__z = P))) ? (r.__e = P, l = s) : r.__e = l, l = l && l.nextSibling;
+			} else e && e.some(g);
+			else r.__e = i.__e;
+			r.__k || (r.__k = i.__k || []), t.then || B(r), n.__e(t, r, i);
+		}
+	} else l = r.__e = E(i.__e, r, i, u, f, e, o, c, a, t);
+	return (s = n.diffed) && s(r), l;
+}
+function z(n, t) {
+	if (n && 8 == n.nodeType && n.data.startsWith("$s")) for (var r = 1; n = n.nextSibling;) {
+		if (8 == n.nodeType) {
+			if (n.data.startsWith("$s")) r++;
+			else if (n.data.startsWith("/$s") && !--r) return n;
+		}
+		t && t.push(n);
+	}
+}
+function B(n) {
+	n && (n.__c && (n.__c.__g |= 4), n.__k && n.__k.some(B));
+}
+function D(t, r, i) {
+	for (var u = 0; u < i.length;) F(i[u++], i[u++], i[u++]);
+	n.__c && n.__c(r, t), t.some(function(r) {
+		try {
+			t = r.__h, r.__h = [], t.some(function(n) {
+				n.call(r);
+			});
+		} catch (t) {
+			n.__e(t, r.__v);
+		}
+	});
+}
+function E(t, r, i, u, f, e, o, l, c, a) {
+	var s, h, v, _, k, b, m, $, M, x = i.props || p, C = r.props, j = r.type;
+	if ("svg" == j ? f = "http://www.w3.org/2000/svg" : "math" == j ? f = "http://www.w3.org/1998/Math/MathML" : f || (f = "http://www.w3.org/1999/xhtml"), e) {
+		for (s = 0; s < e.length; s++) if ((k = e[s]) && (j ? k.localName == j : 3 == k.nodeType)) {
+			t = k, e[s] = null;
+			break;
+		}
+	}
+	if (!t) {
+		if ($ = a.ownerDocument || document, !j) return $.createTextNode(C);
+		t = $.createElementNS(f, j, C.is && C), l && (n.__m && n.__m(r, e), l = !1), e = null;
+	}
+	if (j) {
+		if (a = "template" == j && t.content || t, e = "textarea" == j && null != C.defaultValue ? null : e && d.call(a.childNodes), !l && e) for (x = {}, s = 0; s < t.attributes.length; s++) x[(k = t.attributes[s]).name] = k.value;
+		for (s in x) k = x[s], "dangerouslySetInnerHTML" == s ? v = k : "children" == s || s in C || "value" == s && "defaultValue" in C || "checked" == s && "defaultChecked" in C || T(t, s, null, k, f);
+		for (s in M = 1 & i.__u, C) k = C[s], "children" == s ? _ = k : "dangerouslySetInnerHTML" == s ? h = k : "value" == s ? b = k : "checked" == s ? m = k : l && "function" != typeof k || !(x[s] !== k || M && null != k) || T(t, s, k, x[s], f);
+		h ? (l || v && (h.__html == v.__html || h.__html == t.innerHTML) || (t.innerHTML = h.__html), r.__k = []) : (v && (t.textContent = ""), ("foreignObject" == j || "http://www.w3.org/1998/Math/MathML" == f && y.test(j)) && (f = "http://www.w3.org/1999/xhtml"), H(a, w(_) ? _ : [_], r, i, u, f, e, o, e ? e[0] : i.__k && S(i, 0), l, c), e && e.some(g)), l && "textarea" != j || (s = "value", "progress" == j && null == b ? t.removeAttribute(s) : null == b || b === t[s] && ("progress" != j || b) || T(t, s, b, x[s], f), s = "checked", null != m && m != t[s] && T(t, s, m, x[s], f));
+	} else x === C || l && t.data == C || (t.data = C);
+	return t;
+}
+function F(t, r, i, u) {
+	try {
+		"function" == typeof t ? r ? r.__x = t(r) || 1 : u && (u = u.__c || u.__e) && (r = u.__x) && (u.__x = null, "function" == typeof r ? r() : t(null)) : t.current = r;
+	} catch (t) {
+		n.__e(t, i);
+	}
+}
+function G(t, r, i) {
+	var u, f, e, o;
+	if (n.unmount && n.unmount(t), !(u = t.ref) || u.current && u.current != t.__e || F(u, null, r, t), u = t.__c) {
+		if (u.componentWillUnmount) try {
+			u.componentWillUnmount();
+		} catch (t) {
+			n.__e(t, r);
+		}
+		u.__P = u.__n = null;
+	}
+	if (u = t.__k) for (o = 0; o < u.length; o++) u[o] && G(u[o], r, "function" != typeof t.type || i && !t.props.__P);
+	!i && (u = t.__c) && (u = u.__z) && (f = z(u, e = [])) && (u == t.__e && e.some(g), g(f), g(u)), (u = t.__e) && (i || g(u), u.__e && (u.__e = null)), t.__e = t.__c = t.__ = null;
+}
+function J(n, t, r) {
+	return this.constructor(n, r);
+}
+function K(t, r) {
+	var i, u, f, e;
+	n.__ && n.__(t, r), 9 == r.nodeType && (r = r.documentElement), u = (i = t && 32 & t.__u) ? null : r.__k, r.__k = m(M, { children: [t] }), f = [], e = [], V(r, r.__k, u || p, p, r.namespaceURI, u ? null : r.firstChild ? d.call(r.childNodes) : null, f, u ? u.__e : r.firstChild, i, e), D(f, r.__k, e), r.__k.props.children = null;
+}
+n = { __e: function(n, t, r, i) {
+	for (var u, e, o; t = t.__;) if ((u = t.__c) && !(1 & u.__g)) {
+		u.__g |= 4;
+		try {
+			if ((o = (e = u.constructor) && e.getDerivedStateFromError) && u.setState(e.getDerivedStateFromError(n)), u.componentDidCatch && (u.componentDidCatch(n, i || {}), o = 1), o && 8 & u.__g) return void (u.__g |= 2);
+		} catch (t) {
+			n = t;
+		}
+	}
+	throw f = 0, n;
+} }, t = 0, x.prototype.setState = function(n, t) {
+	var r = this.__s;
+	r && r != this.state || (r = this.__s = _({}, this.state)), "function" == typeof n && (n = n(_({}, r), this.props)), n && (_(r, n), this.__v && (t && this.__k.push(t), j(this)));
+}, x.prototype.forceUpdate = function(n) {
+	this.__v && (this.__g |= 4, n && this.__h.push(n), j(this));
+}, x.prototype.render = M, i = [], f = 0, e = function(n, t) {
+	return n.__v.__b - t.__v.__b;
+}, o = Symbol(), l = /(PointerCapture)$|Capture$/i, c = 0, a = {};
+// hub/web/src/components/TopBar.tsx
+function TopBar() {
+	return /* @__PURE__ */ k(M, null, /* @__PURE__ */ k("header", {
+		class: "top-bar",
+		id: "mobileTopHostBtn"
+	}, /* @__PURE__ */ k("div", { style: "display:flex;align-items:center;gap:6px;min-width:0;" }, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "host-switcher-btn",
+		onClick: () => window.openHostSheet?.()
+	}, /* @__PURE__ */ k("span", {
+		class: "status-dot",
+		id: "topHostDot"
+	}), /* @__PURE__ */ k("span", {
+		class: "host-switcher-name",
+		id: "topHostName"
+	}, "连接中..."), /* @__PURE__ */ k("span", { class: "host-switcher-caret" }, "▾")), /* @__PURE__ */ k("button", {
+		type: "button",
+		id: "turboBadgeBtn",
+		onClick: () => window.openTurboGuideSheet?.(),
+		style: "border:1px solid #a7f3d0;background:#ecfdf5;color:#059669;border-radius:999px;padding:4px 9px;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;"
+	}, "⚡ 极速")), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "new-chat-btn",
+		onClick: () => window.openNewTaskSheet?.()
+	}, /* @__PURE__ */ k("span", null, "＋"), /* @__PURE__ */ k("span", null, "新建对话"))), /* @__PURE__ */ k("div", {
+		class: "search-and-filter",
+		id: "searchAndFilterBox"
+	}, /* @__PURE__ */ k("div", { class: "search-box-wrap" }, /* @__PURE__ */ k("div", { class: "search-box" }, /* @__PURE__ */ k("span", { style: "font-size:13px;color:#94a3b8;" }, "🔍"), /* @__PURE__ */ k("input", {
+		id: "searchInput",
+		placeholder: "搜索对话标题、项目或内容...",
+		onInput: () => window.onSearchInput?.()
+	}), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "search-clear",
+		id: "searchClearBtn",
+		onClick: () => window.clearSearch?.()
+	}, "✕"))), /* @__PURE__ */ k("nav", {
+		class: "filter-strip",
+		id: "projectStrip"
+	})));
+}
+// hub/web/src/components/BottomTabs.tsx
+function BottomTabs() {
+	return /* @__PURE__ */ k("footer", { class: "bottom-tabs" }, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "tab-btn active",
+		id: "tab-chats",
+		onClick: () => window.switchTab?.("chats")
+	}, /* @__PURE__ */ k("span", { class: "icon" }, "💬"), /* @__PURE__ */ k("span", null, "对话")), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "tab-btn",
+		id: "tab-files",
+		onClick: () => window.switchTab?.("files")
+	}, /* @__PURE__ */ k("span", { class: "icon" }, "📂"), /* @__PURE__ */ k("span", null, "项目文件")), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "tab-btn",
+		id: "tab-settings",
+		onClick: () => window.switchTab?.("settings")
+	}, /* @__PURE__ */ k("span", { class: "icon" }, "⚙️"), /* @__PURE__ */ k("span", null, "设备与设置")));
+}
+// hub/web/src/components/ChatStage.tsx
+function ChatStage() {
+	return /* @__PURE__ */ k("section", {
+		class: "chat-fullscreen chat-stage",
+		id: "chatFullscreen"
+	}, /* @__PURE__ */ k("div", { class: "chat-navbar" }, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "back-btn",
+		onClick: () => window.closeMobileChat?.()
+	}, "‹ 返回"), /* @__PURE__ */ k("div", { class: "chat-nav-center" }, /* @__PURE__ */ k("div", {
+		class: "chat-nav-title",
+		id: "chatTitle"
+	}, "选择一个会话"), /* @__PURE__ */ k("div", {
+		class: "chat-nav-sub",
+		id: "chatSub"
+	}, "点击左侧任意对话开始遥控")), /* @__PURE__ */ k("div", { class: "chat-nav-actions" }, /* @__PURE__ */ k("div", { class: "desktop-stage-tabs" }, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "stage-seg-btn active",
+		id: "stageBtnChat",
+		onClick: () => window.switchDesktopStage?.("chat")
+	}, "💬 对话流"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "stage-seg-btn",
+		id: "stageBtnCode",
+		onClick: () => window.switchDesktopStage?.("code")
+	}, "📂 项目代码")), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "icon-pill-btn mobile-only-file-btn",
+		onClick: () => window.openInChatFileDrawer?.()
+	}, "📂 文件速览"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "icon-pill-btn",
+		onClick: () => window.openCurrentSessionActions?.()
+	}, "⋯"))), /* @__PURE__ */ k("div", {
+		class: "chat-switch-alert",
+		id: "chatSwitchAlert",
+		style: "display:none;"
+	}), /* @__PURE__ */ k("div", {
+		class: "chat-messages",
+		id: "chatMessages"
+	}, /* @__PURE__ */ k("div", { style: "margin:auto;text-align:center;color:#94a3b8;font-size:14px;" }, "👈 点击任意会话查看详细对话与思考过程")), /* @__PURE__ */ k("div", {
+		class: "main-viewport file-preview-pane",
+		id: "desktopStageCodePane",
+		style: "display:none;background:var(--surface);"
+	}), /* @__PURE__ */ k("div", {
+		class: "running-control-bar",
+		id: "runningControlBar"
+	}, /* @__PURE__ */ k("span", null, "🟢 AI 正在电脑上执行任务..."), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "stop-task-btn",
+		onClick: () => window.stopActiveSession?.()
+	}, "⏹ 立即停止")), /* @__PURE__ */ k("div", {
+		class: "chat-composer",
+		id: "chatComposerBar"
+	}, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "voice-btn",
+		id: "chatVoiceBtn",
+		title: "语音输入（点击说话，再点停止）",
+		"aria-label": "语音输入",
+		onClick: (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			window.toggleVoiceInput?.("globalPromptInput", "chatVoiceBtn");
+		}
+	}, "🎤"), /* @__PURE__ */ k("textarea", {
+		class: "chat-input",
+		id: "globalPromptInput",
+		rows: 1,
+		placeholder: "发指令继续对话...",
+		autocorrect: "on",
+		autocapitalize: "sentences",
+		spellcheck: true,
+		onInput: () => window.onComposerInput?.(),
+		onKeyDown: (e) => window.onComposerKeydown?.(e)
+	}), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "send-btn",
+		id: "chatSendBtn",
+		onClick: () => window.sendPromptToActiveSession?.()
+	}, "发送")));
+}
+// hub/web/src/components/Sheets.tsx
+function Sheets() {
+	const closeIfBackdrop = (sheetId) => (e) => {
+		if (e.target === e.currentTarget) window.closeSheet?.(sheetId);
+	};
+	return /* @__PURE__ */ k(M, null, /* @__PURE__ */ k("div", {
+		class: "sheet-backdrop",
+		id: "hostSheet",
+		onClick: closeIfBackdrop("hostSheet")
+	}, /* @__PURE__ */ k("div", { class: "sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", { class: "sheet-title" }, /* @__PURE__ */ k("span", null, "切换遥控的电脑"), /* @__PURE__ */ k("span", {
+		style: "font-size:12px;color:#64748b;font-weight:500;",
+		id: "hostSheetCountLabel"
+	})), /* @__PURE__ */ k("div", { id: "hostOptionList" }))), /* @__PURE__ */ k("div", {
+		class: "sheet-backdrop",
+		id: "newTaskSheet",
+		onClick: closeIfBackdrop("newTaskSheet")
+	}, /* @__PURE__ */ k("div", { class: "sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", { class: "sheet-title" }, /* @__PURE__ */ k("span", null, "✨ 新建远程对话任务"), /* @__PURE__ */ k("button", {
+		type: "button",
+		style: "border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;",
+		onClick: () => window.closeSheet?.("newTaskSheet")
+	}, "✕")), /* @__PURE__ */ k("div", { class: "form-label" }, "1. 选择执行电脑"), /* @__PURE__ */ k("div", {
+		class: "chip-selector",
+		id: "newTaskHostChips"
+	}), /* @__PURE__ */ k("div", { class: "form-label" }, "2. 选择执行引擎 (Harness / IDE)"), /* @__PURE__ */ k("div", {
+		class: "chip-selector",
+		id: "newTaskHarnessChips"
+	}), /* @__PURE__ */ k("div", { class: "form-label" }, "3. 选择项目文件夹（免手敲路径）"), /* @__PURE__ */ k("div", {
+		class: "chip-selector",
+		id: "newTaskProjectChips"
+	}), /* @__PURE__ */ k("div", {
+		class: "form-label",
+		style: "display:flex;align-items:center;justify-content:space-between;"
+	}, /* @__PURE__ */ k("span", null, "4. 任务指令（或点选下方快捷指令）"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "voice-pill-btn",
+		id: "newTaskVoiceBtn",
+		onClick: (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			window.toggleVoiceInput?.("newTaskInput", "newTaskVoiceBtn");
+		}
+	}, "🎤 语音输入")), /* @__PURE__ */ k("div", {
+		class: "chip-selector",
+		style: "margin-bottom:6px;"
+	}, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "choice-chip",
+		onClick: () => window.fillQuickPrompt?.("帮我检查当前项目的定时任务和运行日志是否正常")
+	}, "🔍 检查运行状态"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "choice-chip",
+		onClick: () => window.fillQuickPrompt?.("运行单元测试并修复所有报错")
+	}, "🧪 跑测试修 Bug"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "choice-chip",
+		onClick: () => window.fillQuickPrompt?.("查看 git status 并总结最近的代码改动")
+	}, "📦 总结代码改动")), /* @__PURE__ */ k("textarea", {
+		class: "new-task-textarea",
+		id: "newTaskInput",
+		placeholder: "输入你想让电脑执行的任务...",
+		autocorrect: "on",
+		autocapitalize: "sentences",
+		spellcheck: true
+	}), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "primary-block-btn",
+		onClick: () => window.submitNewTask?.()
+	}, "🚀 立即在电脑上启动任务"))), /* @__PURE__ */ k("div", {
+		class: "sheet-backdrop",
+		id: "taskActionSheet",
+		onClick: closeIfBackdrop("taskActionSheet")
+	}, /* @__PURE__ */ k("div", { class: "sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", {
+		class: "sheet-title",
+		id: "actionSheetTitle"
+	}, "会话操作"), /* @__PURE__ */ k("div", { id: "actionSheetBody" }))), /* @__PURE__ */ k("div", {
+		class: "sheet-backdrop",
+		id: "inChatFileSheet",
+		onClick: closeIfBackdrop("inChatFileSheet")
+	}, /* @__PURE__ */ k("div", {
+		class: "sheet-panel",
+		style: "padding-left:0;padding-right:0;padding-bottom:0;height:82dvh;display:flex;flex-direction:column;"
+	}, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", {
+		class: "sheet-title",
+		style: "padding:0 16px 8px;margin:0;border-bottom:1px solid var(--border);"
+	}, /* @__PURE__ */ k("span", { id: "inChatFileTitle" }, "📂 当前项目文件速览"), /* @__PURE__ */ k("button", {
+		type: "button",
+		style: "border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;",
+		onClick: () => window.closeMobileFile?.()
+	}, "✕")), /* @__PURE__ */ k("div", {
+		id: "inChatFileBody",
+		style: "flex:1;overflow-y:auto;"
+	}))), /* @__PURE__ */ k("div", {
+		class: "sheet-backdrop",
+		id: "mobileSettingsSheet",
+		onClick: closeIfBackdrop("mobileSettingsSheet")
+	}, /* @__PURE__ */ k("div", { class: "sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", { class: "sheet-title" }, /* @__PURE__ */ k("span", null, "📦 跨电脑一键迁移向导"), /* @__PURE__ */ k("button", {
+		type: "button",
+		style: "border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;",
+		onClick: () => window.closeSheet?.("mobileSettingsSheet")
+	}, "✕")), /* @__PURE__ */ k("div", { id: "migrateWizardBody" }))), /* @__PURE__ */ k("div", {
+		class: "sheet-backdrop",
+		id: "turboGuideSheet",
+		onClick: closeIfBackdrop("turboGuideSheet")
+	}, /* @__PURE__ */ k("div", {
+		class: "sheet-panel",
+		style: "max-height:86dvh;overflow-y:auto;"
+	}, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", { class: "sheet-title" }, /* @__PURE__ */ k("span", null, "⚡ 极速实时同步 (Rust + SSE) 指南"), /* @__PURE__ */ k("button", {
+		type: "button",
+		style: "border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;",
+		onClick: () => window.closeSheet?.("turboGuideSheet")
+	}, "✕")), /* @__PURE__ */ k("div", { id: "turboGuideBody" }))));
+}
+// hub/web/src/App.tsx
+function App() {
+	return /* @__PURE__ */ k(M, null, /* @__PURE__ */ k("div", {
+		class: "install-hint",
+		id: "installHint"
+	}, /* @__PURE__ */ k("div", { class: "install-hint-text" }, "📲 想收锁屏通知？点底部分享 ", /* @__PURE__ */ k("strong", null, "→ 添加到主屏幕"), "，再从桌面图标打开"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "install-hint-close",
+		onClick: () => window.dismissInstallHint?.()
+	}, "知道了")), /* @__PURE__ */ k("div", {
+		class: "toast-pill",
+		id: "toastPill"
+	}, "操作成功"), /* @__PURE__ */ k("div", { class: "preview-toolbar" }, /* @__PURE__ */ k("span", null, "视图体验："), /* @__PURE__ */ k("button", {
+		type: "button",
+		id: "btnPhoneMode",
+		class: "active",
+		onClick: () => window.setPreviewMode?.("phone")
+	}, "📱 iPhone 手机视图"), /* @__PURE__ */ k("button", {
+		type: "button",
+		id: "btnDesktopMode",
+		onClick: () => window.setPreviewMode?.("desktop")
+	}, "🖥️ 电脑双栏同屏视图")), /* @__PURE__ */ k("div", {
+		class: "auth-overlay",
+		id: "authOverlay"
+	}, /* @__PURE__ */ k("div", { class: "auth-card" }, /* @__PURE__ */ k("div", { style: "font-size:38px;margin-bottom:8px;" }, "🔒"), /* @__PURE__ */ k("div", { style: "font-size:18px;font-weight:800;color:var(--text);" }, "DSH 远控隐私锁"), /* @__PURE__ */ k("div", { style: "font-size:13px;color:var(--text-secondary);margin-top:6px;line-height:1.5;" }, "请输入你的总控台访问密码（HUB_TOKEN）或 6 位配对码解锁对话列表"), /* @__PURE__ */ k("input", {
+		type: "password",
+		class: "auth-input",
+		id: "authTokenInput",
+		placeholder: "输入访问密码或 6 位配对码...",
+		onKeyDown: (e) => {
+			if (e.key === "Enter") window.submitAuthLogin?.();
+		}
+	}), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "primary-block-btn",
+		onClick: () => window.submitAuthLogin?.()
+	}, "🔓 解锁进入总控台"))), /* @__PURE__ */ k("div", { class: "app-shell" }, /* @__PURE__ */ k("div", { class: "primary-pane" }, /* @__PURE__ */ k(TopBar, null), /* @__PURE__ */ k("main", {
+		class: "main-viewport",
+		id: "mainViewport"
+	}), /* @__PURE__ */ k(BottomTabs, null)), /* @__PURE__ */ k(ChatStage, null), /* @__PURE__ */ k(Sheets, null), /* @__PURE__ */ k("button", {
+		type: "button",
+		id: "scrollBottomBtn",
+		style: "display:none;",
+		onClick: () => window.scrollToChatBottom?.()
+	}, "⬇️ 最新消息")));
+}
+// hub/web/src/utils/format.ts
+function esc(str) {
+	return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function cleanPreviewText(raw) {
+	return String(raw || "").replace(/```[\s\S]*?```/g, "[代码片段] ").replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/#{1,6}\s+/g, "").replace(/\*\*([^*]+)\*\*/g, "$1").replace(/\*([^*]+)\*/g, "$1").replace(/`([^`]+)`/g, "$1").replace(/\s+/g, " ").trim();
+}
+function formatTime(ts) {
+	if (!ts) return "";
+	const num = typeof ts === "number" ? ts : Date.parse(String(ts));
+	if (!Number.isFinite(num) || num <= 0) return "";
+	const diffSec = Math.max(0, Math.floor((Date.now() - num) / 1e3));
+	if (diffSec < 60) return "刚刚";
+	if (diffSec < 3600) return Math.floor(diffSec / 60) + " 分钟前";
+	if (diffSec < 86400) return Math.floor(diffSec / 3600) + " 小时前";
+	if (diffSec < 2592e3) return Math.floor(diffSec / 86400) + " 天前";
+	const d = new Date(num);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function formatBytes(bytes) {
+	const b = Number(bytes) || 0;
+	if (b < 1024) return b + " B";
+	if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
+	return (b / 1048576).toFixed(1) + " MB";
+}
+function urlBase64ToUint8Array(base64String) {
+	const base64 = (base64String + "=".repeat((4 - base64String.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+	const rawData = atob(base64);
+	return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+}
+function isIosDevice() {
+	const ua = navigator.userAgent || "";
+	if (/iPad|iPhone|iPod/.test(ua)) return true;
+	return navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1;
+}
+function isStandaloneApp() {
+	if (navigator.standalone === true) return true;
+	try {
+		return window.matchMedia("(display-mode: standalone)").matches;
+	} catch {
+		return false;
+	}
+}
+function isIosDeviceForHint() {
+	return isIosDevice();
+}
+function isStandaloneForHint() {
+	return isStandaloneApp();
+}
+function shouldShowInstallHint({ isIos, isStandalone, dismissed } = {}) {
+	return Boolean(isIos) && !isStandalone && !dismissed;
+}
+// hub/web/src/utils/markdown.ts
+function renderInlineMarkdown(rawLine) {
+	let safe = esc(rawLine);
+	const htmlBits = [];
+	const stash = (html) => {
+		htmlBits.push(html);
+		return `\u0000PH${htmlBits.length - 1}\u0000`;
+	};
+	safe = safe.replace(/`([^`\n]+)`/g, (_m, code) => stash(`<code>${code}</code>`));
+	safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label, url) => stash(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`));
+	safe = safe.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_\n]+)__/g, "<strong>$1</strong>").replace(/\*([^\s*](?:[^*\n]*[^\s*])?)\*/g, "<em>$1</em>");
+	return safe.replace(/\u0000PH(\d+)\u0000/g, (_m, idx) => htmlBits[Number(idx)] || "");
+}
+function renderMarkdownBlocks(rawBlock) {
+	const lines = String(rawBlock || "").replace(/\r\n?/g, "\n").split("\n");
+	const out = [];
+	let paragraph = [];
+	let list = null;
+	let quote = [];
+	const flushParagraph = () => {
+		if (!paragraph.length) return;
+		out.push(`<p>${paragraph.map(renderInlineMarkdown).join("<br>")}</p>`);
+		paragraph = [];
+	};
+	const flushList = () => {
+		if (!list) return;
+		const itemsHtml = list.items.map((item) => `<li>${item.split("\n").map(renderInlineMarkdown).join("<br>")}</li>`).join("");
+		out.push(`<${list.type}>${itemsHtml}</${list.type}>`);
+		list = null;
+	};
+	const flushQuote = () => {
+		if (!quote.length) return;
+		out.push(`<blockquote>${quote.map(renderInlineMarkdown).join("<br>")}</blockquote>`);
+		quote = [];
+	};
+	const flushAll = () => {
+		flushParagraph();
+		flushList();
+		flushQuote();
+	};
+	const splitTableRow = (line) => {
+		let text = line.trim();
+		if (text.startsWith("|")) text = text.slice(1);
+		if (text.endsWith("|")) text = text.slice(0, -1);
+		return text.split("|").map((cell) => cell.trim());
+	};
+	const isTableRow = (line) => Boolean(line) && line.includes("|") && line.trim() !== "";
+	const isTableSep = (line) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
+	for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+		const line = lines[lineIndex];
+		if (!line.trim()) {
+			flushAll();
+			continue;
+		}
+		if (isTableRow(line) && lineIndex + 1 < lines.length && isTableSep(lines[lineIndex + 1])) {
+			flushAll();
+			const headerCells = splitTableRow(line);
+			const aligns = splitTableRow(lines[lineIndex + 1]).map((cell) => {
+				const left = cell.startsWith(":");
+				const right = cell.endsWith(":");
+				if (left && right) return "center";
+				if (right) return "right";
+				return "";
+			});
+			lineIndex += 1;
+			const bodyRows = [];
+			while (lineIndex + 1 < lines.length && isTableRow(lines[lineIndex + 1]) && !isTableSep(lines[lineIndex + 1])) {
+				lineIndex += 1;
+				bodyRows.push(splitTableRow(lines[lineIndex]));
+			}
+			const cellHtml = (tag, text, index) => {
+				return `<${tag}${aligns[index] ? ` style="text-align:${aligns[index]};"` : ""}>${renderInlineMarkdown(text || "")}</${tag}>`;
+			};
+			out.push(`<div class="md-table-wrap"><table><thead><tr>${headerCells.map((cell, index) => cellHtml("th", cell, index)).join("")}</tr></thead><tbody>${bodyRows.map((row) => `<tr>${headerCells.map((_h, index) => cellHtml("td", row[index] || "", index)).join("")}</tr>`).join("")}</tbody></table></div>`);
+			continue;
+		}
+		const heading = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
+		if (heading) {
+			flushAll();
+			const level = heading[1].length;
+			out.push(`<div class="md-h${level}">${renderInlineMarkdown(heading[2])}</div>`);
+			continue;
+		}
+		if (/^\s{0,3}(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+			flushAll();
+			out.push("<hr>");
+			continue;
+		}
+		const quoted = /^\s{0,3}>\s?(.*)$/.exec(line);
+		if (quoted) {
+			flushParagraph();
+			flushList();
+			quote.push(quoted[1]);
+			continue;
+		}
+		const ulItem = /^\s{0,3}[-*+]\s+(.*)$/.exec(line);
+		const olItem = /^\s{0,3}\d+[.)]\s+(.*)$/.exec(line);
+		if (ulItem || olItem) {
+			flushParagraph();
+			flushQuote();
+			const type = ulItem ? "ul" : "ol";
+			let item = (ulItem || olItem)[1];
+			const task = /^\[( |x|X)\]\s+(.*)$/.exec(item);
+			if (task) item = `${task[1].toLowerCase() === "x" ? "☑" : "☐"} ${task[2]}`;
+			if (!list || list.type !== type) {
+				flushList();
+				list = {
+					type,
+					items: []
+				};
+			}
+			list.items.push(item);
+			continue;
+		}
+		if (list && /^\s{2,}\S/.test(line)) {
+			list.items[list.items.length - 1] += "\n" + line.trim();
+			continue;
+		}
+		flushList();
+		flushQuote();
+		paragraph.push(line);
+	}
+	flushAll();
+	return out.join("");
+}
+function renderMarkdown(rawText) {
+	let text = String(rawText || "");
+	if ((text.match(/```/g) || []).length % 2 === 1) text += "\n```";
+	const chunks = [];
+	const fence = /```([a-zA-Z0-9_+\-]*)\n?([\s\S]*?)```/g;
+	let cursor = 0;
+	let match;
+	while (match = fence.exec(text)) {
+		if (match.index > cursor) chunks.push(renderMarkdownBlocks(text.slice(cursor, match.index)));
+		const lang = match[1] || "code";
+		const code = match[2].replace(/\n$/, "");
+		const encoded = encodeURIComponent(code).replace(/'/g, "%27");
+		chunks.push(`<div class="code-card"><div class="code-card-header"><span>${esc(lang)}</span><button class="code-copy-btn" onclick="copyCodeText('${encoded}')">📋 复制</button></div><pre>${esc(code)}</pre></div>`);
+		cursor = fence.lastIndex;
+	}
+	if (cursor < text.length) chunks.push(renderMarkdownBlocks(text.slice(cursor)));
+	return chunks.join("");
+}
+function formatAssistantText(rawText) {
+	return renderMarkdown(rawText);
+}
+// hub/web/src/utils/filePreview.ts
+function previewKind(preview) {
+	if (!preview) return "none";
+	if (preview.kind === "image" && preview.dataBase64) return "image";
+	if (preview.kind === "binary") return "binary";
+	return "text";
+}
+function imagePreviewSrc(preview) {
+	return `data:${preview.mime || "image/png"};base64,${preview.dataBase64}`;
+}
+function buildBreadcrumbSegments(subDir) {
+	const clean = String(subDir || "").replace(/^\/+|\/+$/g, "");
+	if (!clean) return [];
+	const parts = clean.split("/").filter(Boolean);
+	return parts.map((name, index) => ({
+		name,
+		path: parts.slice(0, index + 1).join("/")
+	}));
+}
+function fileLoadingSpinnerHtml(text) {
+	return `<div style="padding:40px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;color:#94a3b8;font-size:13.5px;">
+    <div class="file-loading-dot"></div>
+    <div>${esc(text)}</div>
+  </div>`;
+}
+// hub/web/src/utils/gestures.ts
+function composerUsesCoarsePointer() {
+	try {
+		return window.matchMedia("(pointer: coarse)").matches;
+	} catch {
+		return false;
+	}
+}
+function shouldSendOnEnter({ shiftKey, isComposing, coarsePointer } = {}) {
+	if (isComposing) return false;
+	if (shiftKey) return false;
+	return !coarsePointer;
+}
+function shouldDismissHorizontalSwipe({ dx = 0, dy = 0, width = 375, durationMs = 1, minVelocity = .5 } = {}) {
+	if (!(dx > 0)) return false;
+	if (Math.abs(dy) > dx) return false;
+	if (dx >= Math.min(Math.max(90, (width || 375) * .28), 160)) return true;
+	return dx / Math.max(1, durationMs || 1) >= minVelocity;
+}
+function shouldDismissVerticalSwipe({ dy = 0, dx = 0, height = 480, durationMs = 1, minVelocity = .5 } = {}) {
+	if (!(dy > 0)) return false;
+	if (Math.abs(dx) > dy) return false;
+	if (dy >= Math.min(Math.max(80, (height || 480) * .2), 150)) return true;
+	return dy / Math.max(1, durationMs || 1) >= minVelocity;
+}
+// hub/web/src/hooks/useVoiceInput.ts
+var activeVoiceRecognition = null;
+var activeVoiceInputId = "";
+var activeVoiceBtnId = "";
+var voiceWatchdogTimer = null;
+function setVoiceBtnRecording(btnId, recording) {
+	const btn = document.getElementById(btnId);
+	if (!btn) return;
+	btn.classList.toggle("recording", Boolean(recording));
+	btn.setAttribute("aria-pressed", recording ? "true" : "false");
+	if (btn.classList.contains("voice-pill-btn")) btn.textContent = recording ? "⏹ 停止听写" : "🎤 语音输入";
+	else btn.textContent = recording ? "⏹" : "🎤";
+}
+function isVoiceRecording() {
+	return Boolean(activeVoiceRecognition || activeVoiceBtnId);
+}
+function stopVoiceInput() {
+	if (voiceWatchdogTimer) {
+		clearTimeout(voiceWatchdogTimer);
+		voiceWatchdogTimer = null;
+	}
+	const rec = activeVoiceRecognition;
+	const btnId = activeVoiceBtnId;
+	activeVoiceRecognition = null;
+	activeVoiceInputId = "";
+	activeVoiceBtnId = "";
+	if (btnId) setVoiceBtnRecording(btnId, false);
+	setVoiceBtnRecording("chatVoiceBtn", false);
+	setVoiceBtnRecording("newTaskVoiceBtn", false);
+	if (rec) {
+		try {
+			rec.onresult = null;
+			rec.onerror = null;
+			rec.onend = null;
+		} catch {}
+		try {
+			rec.abort();
+		} catch {}
+		try {
+			rec.stop();
+		} catch {}
+	}
+}
+function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoiceBtn", deps) {
+	const showToast = deps?.showToast || (window.showToast ?? (() => {}));
+	const onComposerInput = deps?.onComposerInput || (window.onComposerInput ?? (() => {}));
+	const btn = document.getElementById(btnId);
+	if (activeVoiceRecognition && activeVoiceInputId === targetInputId || btn?.classList.contains("recording")) {
+		stopVoiceInput();
+		showToast("⏹ 已关闭语音输入");
+		return;
+	}
+	if (activeVoiceRecognition) stopVoiceInput();
+	const input = document.getElementById(targetInputId);
+	if (!input) return;
+	const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+	if (!SpeechRecognitionCtor) {
+		input.focus();
+		showToast("🎙️ 已唤起输入法，请点手机键盘右下角「🎤 麦克风」直接语音输入");
+		return;
+	}
+	try {
+		const recognition = new SpeechRecognitionCtor();
+		recognition.lang = navigator.language && navigator.language.startsWith("zh") ? navigator.language : "zh-CN";
+		recognition.interimResults = true;
+		recognition.continuous = false;
+		recognition.maxAlternatives = 1;
+		const baseText = input.value || "";
+		let finalTranscript = "";
+		activeVoiceRecognition = recognition;
+		activeVoiceInputId = targetInputId;
+		activeVoiceBtnId = btnId;
+		setVoiceBtnRecording(btnId, true);
+		showToast("🎙️ 正在听写，再点一次「⏹」立即关闭");
+		voiceWatchdogTimer = setTimeout(() => {
+			if (activeVoiceRecognition === recognition) stopVoiceInput();
+		}, 6e4);
+		recognition.onresult = (event) => {
+			if (activeVoiceRecognition !== recognition) return;
+			let interim = "";
+			for (let i = event.resultIndex; i < event.results.length; i += 1) {
+				const seg = event.results[i][0]?.transcript || "";
+				if (event.results[i].isFinal) finalTranscript += seg;
+				else interim += seg;
+			}
+			input.value = baseText + finalTranscript + interim;
+			if (targetInputId === "globalPromptInput") onComposerInput();
+		};
+		recognition.onerror = (event) => {
+			const errCode = event?.error || "";
+			stopVoiceInput();
+			if (errCode === "not-allowed" || errCode === "service-not-allowed") {
+				input.focus();
+				showToast("🎙️ 未授予浏览器麦克风权限，可直接点手机键盘右下角「🎤」语音输入");
+			} else if (errCode && errCode !== "aborted" && errCode !== "no-speech") showToast("⚠️ 语音识别已停止：" + errCode);
+		};
+		recognition.onend = () => {
+			if (activeVoiceRecognition === recognition) stopVoiceInput();
+			if (targetInputId === "globalPromptInput") onComposerInput();
+		};
+		recognition.start();
+	} catch {
+		stopVoiceInput();
+		input.focus();
+		showToast("🎙️ 已聚焦输入框，请使用键盘右下角「🎤 麦克风」语音输入");
+	}
+}
+// hub/web/src/controller.js
+function initHubController() {
+	const urlParams = new URLSearchParams(location.search);
+	const queryToken = (urlParams.get("token") || "").trim();
+	let pendingDeepLinkHostId = (urlParams.get("host") || "").trim();
+	let pendingDeepLinkTaskId = (urlParams.get("task") || urlParams.get("session") || "").trim();
+	if (queryToken || pendingDeepLinkHostId || pendingDeepLinkTaskId) {
+		if (queryToken) localStorage.setItem("dsh_hub_token", queryToken);
+		urlParams.delete("token");
+		urlParams.delete("host");
+		urlParams.delete("task");
+		urlParams.delete("session");
+		const cleanSearch = urlParams.toString();
+		const cleanUrl = location.pathname + (cleanSearch ? "?" + cleanSearch : "") + location.hash;
+		try {
+			history.replaceState(null, "", cleanUrl);
+		} catch {}
+	}
+	function getToken() {
+		return localStorage.getItem("dsh_hub_token") || "";
+	}
+	function authHeaders(extra = {}) {
+		const tk = getToken();
+		const h = {
+			"content-type": "application/json",
+			...extra
+		};
+		if (tk) {
+			h["authorization"] = "Bearer " + tk;
+			h["x-hub-token"] = tk;
+		}
+		return h;
+	}
+	async function apiFetch(path, options = {}) {
+		const res = await fetch(path, {
+			...options,
+			headers: authHeaders(options.headers || {})
+		});
+		if (res.status === 401) {
+			document.getElementById("authOverlay").classList.add("show");
+			throw new Error("Unauthorized");
+		}
+		document.getElementById("authOverlay").classList.remove("show");
+		return res;
+	}
+	async function submitAuthLogin() {
+		const inputEl = document.getElementById("authTokenInput");
+		const raw = inputEl.value.trim();
+		if (!raw) return;
+		if (/^[A-Z0-9]{6}$/i.test(raw)) try {
+			const exRes = await fetch("/api/pairing/exchange", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ code: raw.toUpperCase() })
+			});
+			const exData = await exRes.json();
+			if (exRes.ok && exData.token) {
+				localStorage.setItem("dsh_hub_token", exData.token);
+				const paired = await fetchState();
+				if (!paired.ok) {
+					showToast("❌ 配对成功但读取数据失败：" + (paired.error || "请重试"));
+					return;
+				}
+				document.getElementById("authOverlay").classList.remove("show");
+				showToast("🔓 配对解锁成功");
+				connectSSE();
+				return;
+			}
+		} catch {}
+		localStorage.setItem("dsh_hub_token", raw);
+		const state = await fetchState();
+		if (!state.ok) {
+			if (state.unauthorized) {
+				localStorage.removeItem("dsh_hub_token");
+				showToast("❌ 访问密码或配对码不正确，请重试");
+				document.getElementById("authOverlay").classList.add("show");
+				try {
+					inputEl.select();
+				} catch {}
+			} else showToast("❌ 无法连接总控台：" + (state.error || "网络异常"));
+			return;
+		}
+		document.getElementById("authOverlay").classList.remove("show");
+		showToast("🔓 解锁成功");
+		connectSSE();
+	}
+	function lockAndLogout() {
+		localStorage.removeItem("dsh_hub_token");
+		document.getElementById("authOverlay").classList.add("show");
+		showToast("🔒 已锁定当前浏览器");
+	}
+	let hubState = {
+		hosts: [],
+		activeHostId: "",
+		migrations: [],
+		shares: [],
+		pushSubscriptions: []
+	};
+	let currentHostId = "";
+	let currentProject = "ALL";
+	let currentTab = "chats";
+	let searchQuery = "";
+	let activeSessionId = "";
+	let desktopStageMode = "chat";
+	const overlayStack = [];
+	let suppressPopstateCount = 0;
+	let lastRenderedChatKey = "";
+	let lastRenderedComposerKey = "";
+	let lastRenderedChatSessionId = "";
+	let lastRenderedStripKey = "";
+	let lastRenderedListKey = "";
+	let pinnedMap = {};
+	let seenMap = {};
+	try {
+		pinnedMap = JSON.parse(localStorage.getItem("dsh_pinned_v4") || "{}");
+	} catch {}
+	try {
+		seenMap = JSON.parse(localStorage.getItem("dsh_seen_v4") || "{}");
+	} catch {}
+	function dismissLiveBanner() {
+		renderSessionList();
+	}
+	if ((localStorage.getItem("dsh_preview_mode") || "phone") === "desktop") {
+		document.body.classList.remove("PhoneFrameMode");
+		document.body.classList.add("DesktopSplitMode");
+		document.getElementById("btnPhoneMode")?.classList.remove("active");
+		document.getElementById("btnDesktopMode")?.classList.add("active");
+	}
+	function setPreviewMode(mode) {
+		const isPhone = mode === "phone";
+		localStorage.setItem("dsh_preview_mode", mode);
+		document.body.classList.toggle("PhoneFrameMode", isPhone);
+		document.body.classList.toggle("DesktopSplitMode", !isPhone);
+		document.getElementById("btnPhoneMode")?.classList.toggle("active", isPhone);
+		document.getElementById("btnDesktopMode")?.classList.toggle("active", !isPhone);
+		if (isPhone && desktopStageMode === "code") switchDesktopStage("chat");
+		if (!isPhone && !activeSessionId) {
+			const first = getNormalizedSessions()[0];
+			if (first) {
+				activeSessionId = first.id;
+				first.hostId;
+			}
+		}
+		renderAll();
+	}
+	let fileProjectCwd = "";
+	let fileLoading = null;
+	let filePreviewLoading = null;
+	let actionTargetSession = null;
+	let actionTargetHostId = "";
+	let confirmSheetDelete = false;
+	let newTaskHostId = "";
+	let newTaskCwd = "";
+	let newTaskHarness = "dsh";
+	let migSource = "";
+	let migTarget = "";
+	let migSwitchFeishu = true;
+	let migWipeSource = false;
+	function showToast(msg) {
+		const el = document.getElementById("toastPill");
+		el.textContent = msg;
+		el.classList.add("show");
+		clearTimeout(window.__toastTimer);
+		window.__toastTimer = setTimeout(() => el.classList.remove("show"), 2400);
+	}
+	function getNormalizedSessions() {
+		const list = [];
+		const isChatOpenNow = document.getElementById("chatFullscreen")?.classList.contains("open") || document.body.classList.contains("DesktopSplitMode");
+		for (const h of hubState.hosts || []) {
+			if (currentHostId && currentHostId !== "ALL_HOSTS" && h.hostId !== currentHostId) continue;
+			const tasks = h.bridgeState?.tasks || [];
+			const approvals = h.bridgeState?.approvals || [];
+			for (const t of tasks) {
+				const ts = t.updatedAt || t.lastActivity || 0;
+				const pendingApp = approvals.find((a) => a.agentId === t.id);
+				const baseTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
+				const optimisticList = window.__dshOptimisticMsgs && window.__dshOptimisticMsgs[t.id] || [];
+				const nowMs = Date.now();
+				const remainingOpt = [];
+				for (const opt of optimisticList) {
+					if (nowMs - opt.time >= 15e3) continue;
+					if (baseTranscript.some((m) => m.role === "user" && m.text === opt.text)) continue;
+					remainingOpt.push(opt);
+					baseTranscript.push({
+						role: "user",
+						text: opt.text,
+						time: opt.time
+					});
+				}
+				if (window.__dshOptimisticMsgs && window.__dshOptimisticMsgs[t.id]) window.__dshOptimisticMsgs[t.id] = remainingOpt;
+				const transcript = baseTranscript;
+				const lastMsg = transcript.length > 0 ? transcript[transcript.length - 1] : null;
+				const project = t.project || (t.cwd ? t.cwd.split("/").filter(Boolean).pop() : "默认工作区") || "默认工作区";
+				const status = pendingApp ? "approval" : t.status || "idle";
+				const harness = t.harness || (String(t.id || "").startsWith("agy-ide:") ? "antigravity-ide" : "dsh");
+				const harnessLabel = t.harnessLabel || (harness === "antigravity-ide" ? "Antigravity IDE" : "DeepSeek Harness");
+				let lastConclusionAt = Number(t.lastConclusionAt) || 0;
+				if (!lastConclusionAt && status === "idle" && lastMsg?.role === "assistant" && Boolean(lastMsg?.text) && (!lastMsg.tools || lastMsg.tools.length === 0)) lastConclusionAt = ts;
+				const lastInterruptedAt = Number(t.lastInterruptedAt) || 0;
+				const turnState = status === "approval" ? "approval" : status === "running" ? "running" : t.turnState === "interrupted" ? "interrupted" : t.turnState === "conclusion" || lastConclusionAt > 0 ? "conclusion" : "idle";
+				const rawPreview = status === "running" ? t.runningSummary || t.lastOutput || lastMsg?.text || "正在思考与执行任务..." : status === "approval" ? pendingApp?.promptTitle || pendingApp?.reason || t.lastOutput || "等待你批准工具执行" : t.lastOutput || lastMsg?.text || t.cwd || "点击查看对话详情";
+				const changedFiles = Array.isArray(t.changedFiles) ? t.changedFiles : Array.isArray(pendingApp?.changedFiles) ? pendingApp.changedFiles : [];
+				list.push({
+					id: t.id,
+					hostId: h.hostId,
+					hostName: h.hostName || h.hostId,
+					harness,
+					harnessLabel,
+					title: t.title || "未命名会话",
+					project,
+					cwd: t.cwd || "",
+					status,
+					turnState,
+					lastConclusionAt,
+					lastInterruptedAt,
+					approvalObj: pendingApp || null,
+					changedFiles,
+					msgCount: Number(t.messageCount) || transcript.length || 0,
+					updatedAt: ts,
+					timeLabel: formatTime(ts),
+					pinned: Boolean(pinnedMap[t.id]),
+					unread: false,
+					hasUnreadConclusion: false,
+					isUnreadInterrupted: false,
+					isRecentActive: false,
+					lastRole: lastMsg?.role || "assistant",
+					lastPreview: cleanPreviewText(rawPreview) || "点击查看对话详情",
+					rawLastPreview: rawPreview,
+					transcript
+				});
+			}
+		}
+		const sortedByTime = [...list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+		let seenDirty = false;
+		sortedByTime.forEach((s, idx) => {
+			if (s.id === activeSessionId && isChatOpenNow) {
+				const maxTs = Math.max(seenMap[s.id] || 0, s.updatedAt || 0, s.lastConclusionAt || 0);
+				if (seenMap[s.id] !== maxTs) {
+					seenMap[s.id] = maxTs;
+					seenDirty = true;
+				}
+			}
+			if (s.status === "running" || s.status === "approval") {
+				if (!seenMap[s.id]) {
+					seenMap[s.id] = s.lastConclusionAt || 1;
+					seenDirty = true;
+				}
+				s.hasUnreadConclusion = false;
+				s.isUnreadInterrupted = false;
+				s.unread = false;
+				return;
+			}
+			if (!seenMap[s.id]) {
+				if (idx === 0 && s.turnState === "conclusion" && s.id !== activeSessionId) seenMap[s.id] = Math.max(1, (s.lastConclusionAt || s.updatedAt || 2) - 1e3);
+				else seenMap[s.id] = Math.max(s.updatedAt || 0, s.lastConclusionAt || 0, Date.now());
+				seenDirty = true;
+			}
+			const seenAt = Number(seenMap[s.id]) || 0;
+			const isCurrentOpen = s.id === activeSessionId && isChatOpenNow;
+			s.hasUnreadConclusion = !isCurrentOpen && s.turnState === "conclusion" && s.lastConclusionAt > 0 && s.lastConclusionAt > seenAt;
+			s.isUnreadInterrupted = !isCurrentOpen && s.turnState === "interrupted" && (s.lastInterruptedAt || s.updatedAt) > seenAt;
+			s.unread = s.hasUnreadConclusion || s.isUnreadInterrupted;
+		});
+		if (seenDirty) try {
+			localStorage.setItem("dsh_seen_v4", JSON.stringify(seenMap));
+		} catch {}
+		const statePriority = (s) => {
+			if (s.status === "approval") return 4;
+			if (s.status === "running") return 3;
+			if (s.hasUnreadConclusion || s.isUnreadInterrupted) return 2;
+			if (s.pinned) return 1;
+			return 0;
+		};
+		return list.sort((a, b) => {
+			const pa = statePriority(a);
+			const pb = statePriority(b);
+			if (pa !== pb) return pb - pa;
+			return (b.updatedAt || 0) - (a.updatedAt || 0);
+		});
+	}
+	function findSessionGlobal(sessionId) {
+		const prevHost = currentHostId;
+		currentHostId = "ALL_HOSTS";
+		const all = getNormalizedSessions();
+		currentHostId = prevHost;
+		const found = all.find((s) => s.id === sessionId);
+		if (!found) return null;
+		return {
+			session: found,
+			host: (hubState.hosts || []).find((h) => h.hostId === found.hostId)
+		};
+	}
+	function getHostProjects(host) {
+		if (!host) return [];
+		const map = /* @__PURE__ */ new Map();
+		for (const w of host.bridgeState?.workspaces || []) if (w.cwd) {
+			const name = w.name || w.cwd.split("/").filter(Boolean).pop() || w.cwd;
+			map.set(name, w.cwd);
+		}
+		for (const t of host.bridgeState?.tasks || []) if (t.cwd) {
+			const name = t.project || t.cwd.split("/").filter(Boolean).pop() || t.cwd;
+			if (!map.has(name)) map.set(name, t.cwd);
+		}
+		if (map.size === 0) map.set("默认工作区", "");
+		return [...map.entries()].map(([name, cwd]) => ({
+			name,
+			cwd
+		}));
+	}
+	function renderAll() {
+		const hosts = hubState.hosts || [];
+		if (!currentHostId || currentHostId !== "ALL_HOSTS" && !hosts.some((h) => h.hostId === currentHostId)) currentHostId = hubState.activeHostId && hosts.some((h) => h.hostId === hubState.activeHostId) ? hubState.activeHostId : hosts[0]?.hostId || "ALL_HOSTS";
+		const totalSessions = hosts.reduce((acc, h) => acc + (h.bridgeState?.tasks || []).length, 0);
+		const currentHostObj = hosts.find((h) => h.hostId === currentHostId);
+		const dotEl = document.getElementById("topHostDot");
+		if (currentHostId === "ALL_HOSTS") {
+			dotEl.className = "status-dot" + (hosts.some((h) => h.online) ? "" : " offline");
+			document.getElementById("topHostName").textContent = hosts.length <= 1 && hosts[0] ? `${hosts[0].hostName} (${totalSessions})` : `全部电脑 (${totalSessions})`;
+		} else if (currentHostObj) {
+			dotEl.className = "status-dot" + (currentHostObj.online ? "" : " offline");
+			document.getElementById("topHostName").textContent = `${currentHostObj.hostName} (${(currentHostObj.bridgeState?.tasks || []).length})`;
+		}
+		const turboBtn = document.getElementById("turboBadgeBtn");
+		if (turboBtn) {
+			const turbo = (currentHostObj || hosts.find((h) => h.online) || hosts[0])?.bridgeState?.turbo;
+			if (turbo?.enabled && turbo?.accessibilityGranted !== false) {
+				turboBtn.textContent = turbo.engine === "rust-native" ? "🦀 极速实时" : "⚡ 极速实时";
+				turboBtn.style.background = "#ecfdf5";
+				turboBtn.style.color = "#059669";
+				turboBtn.style.borderColor = "#a7f3d0";
+			} else if (turbo?.enabled && turbo?.accessibilityGranted === false) {
+				turboBtn.textContent = "⚠️ 需开权限";
+				turboBtn.style.background = "#fffbeb";
+				turboBtn.style.color = "#d97706";
+				turboBtn.style.borderColor = "#fde68a";
+			} else {
+				turboBtn.textContent = "🚀 点此提速";
+				turboBtn.style.background = "#eff6ff";
+				turboBtn.style.color = "#2563eb";
+				turboBtn.style.borderColor = "#bfdbfe";
+			}
+		}
+		const searchBox = document.getElementById("searchAndFilterBox");
+		const normalizedSessions = getNormalizedSessions();
+		if (currentTab === "chats") {
+			searchBox.style.display = "block";
+			renderProjectStrip(normalizedSessions);
+			renderSessionList(normalizedSessions);
+		} else if (currentTab === "files") {
+			searchBox.style.display = "none";
+			renderFilesTab(document.getElementById("mainViewport"));
+		} else {
+			searchBox.style.display = "none";
+			renderSettingsTab();
+		}
+		if (desktopStageMode === "code") renderFilePanes();
+		if (activeSessionId) renderActiveChatStage();
+		else if (window.innerWidth >= 769 && document.body.classList.contains("DesktopSplitMode")) {
+			const first = normalizedSessions[0];
+			if (first) {
+				activeSessionId = first.id;
+				first.hostId;
+				renderActiveChatStage();
+			}
+		}
+		if (document.getElementById("inChatFileSheet").classList.contains("open")) renderInChatFileDrawerBody();
+	}
+	function renderProjectStrip(sessionsArg) {
+		const sessions = Array.isArray(sessionsArg) ? sessionsArg : getNormalizedSessions();
+		const activeCount = sessions.filter((s) => s.status === "running" || s.status === "approval").length;
+		const unreadCount = sessions.filter((s) => s.hasUnreadConclusion || s.isUnreadInterrupted).length;
+		const agyCount = sessions.filter((s) => s.harness === "antigravity-ide").length;
+		const dshCount = sessions.filter((s) => s.harness !== "antigravity-ide").length;
+		const counts = {};
+		for (const s of sessions) counts[s.project] = (counts[s.project] || 0) + 1;
+		const projects = Object.keys(counts);
+		const strip = document.getElementById("projectStrip");
+		const stripKey = `${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${dshCount}:${projects.map((p) => `${p}:${counts[p]}`).join(",")}`;
+		if (stripKey === lastRenderedStripKey && strip.children.length > 0) return;
+		lastRenderedStripKey = stripKey;
+		const prevScrollLeft = strip.scrollLeft;
+		const smartPills = [`<button class="filter-pill smart-pill ${currentProject === "SMART_ACTIVE" ? "active" : ""}" onclick="selectProject('SMART_ACTIVE')">🟢 运行中 <span class="count">${activeCount}</span></button>`, `<button class="filter-pill smart-pill ${currentProject === "SMART_UNREAD" ? "active" : ""}" onclick="selectProject('SMART_UNREAD')">🔵 已出结论 <span class="count">${unreadCount}</span></button>`];
+		if (agyCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_DSH" ? "active" : ""}" onclick="selectProject('HARNESS_DSH')">🟣 DSH <span class="count">${dshCount}</span></button>`, `<button class="filter-pill smart-pill ${currentProject === "HARNESS_AGY_IDE" ? "active" : ""}" onclick="selectProject('HARNESS_AGY_IDE')">⚡ IDE <span class="count">${agyCount}</span></button>`);
+		strip.innerHTML = [
+			`<button class="filter-pill ${currentProject === "ALL" ? "active" : ""}" onclick="selectProject('ALL')">全部 <span class="count">${sessions.length}</span></button>`,
+			...smartPills,
+			...projects.map((p) => `<button class="filter-pill ${currentProject === p ? "active" : ""}" onclick="selectProject('${esc(p)}')">${esc(p)} <span class="count">${counts[p]}</span></button>`)
+		].join("");
+		strip.scrollLeft = prevScrollLeft;
+	}
+	function renderSessionList(sessionsArg) {
+		const viewport = document.getElementById("mainViewport");
+		const allSessions = Array.isArray(sessionsArg) ? sessionsArg : getNormalizedSessions();
+		let pendingAppInfo = null;
+		for (const h of hubState.hosts || []) {
+			if (h.online === false) continue;
+			if (currentHostId && currentHostId !== "ALL_HOSTS" && h.hostId !== currentHostId) continue;
+			const app = (h.bridgeState?.approvals || [])[0];
+			if (app) {
+				pendingAppInfo = {
+					app,
+					host: h
+				};
+				break;
+			}
+		}
+		const q = searchQuery.trim().toLowerCase();
+		const filtered = allSessions.filter((s) => {
+			if (currentProject === "SMART_ACTIVE" && s.status !== "running" && s.status !== "approval") return false;
+			if (currentProject === "SMART_UNREAD" && !s.hasUnreadConclusion && !s.isUnreadInterrupted) return false;
+			if (currentProject === "HARNESS_DSH" && s.harness === "antigravity-ide") return false;
+			if (currentProject === "HARNESS_AGY_IDE" && s.harness !== "antigravity-ide") return false;
+			if (![
+				"ALL",
+				"SMART_ACTIVE",
+				"SMART_UNREAD",
+				"HARNESS_DSH",
+				"HARNESS_AGY_IDE"
+			].includes(currentProject) && s.project !== currentProject) return false;
+			if (!q) return true;
+			return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || s.lastPreview.toLowerCase().includes(q);
+		});
+		const showHostTag = currentHostId === "ALL_HOSTS" && (hubState.hosts || []).length > 1;
+		const bannerKey = pendingAppInfo ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.promptTitle || ""}` : "";
+		const rowsSig = filtered.map((s) => `${s.id}:${s.status}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`).join("|");
+		const listKey = `${currentProject}:${q}:${showHostTag ? 1 : 0}:${bannerKey}#${rowsSig}`;
+		if (listKey === lastRenderedListKey && viewport.querySelector(".session-list")) return;
+		lastRenderedListKey = listKey;
+		const prevScrollTop = viewport.scrollTop;
+		viewport.innerHTML = `
+        ${pendingAppInfo ? `
+        <div class="live-activity-bar">
+          <div class="live-activity-left" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">
+            <div class="live-activity-title">⏳ [${esc(pendingAppInfo.host.hostName)}] ${esc(pendingAppInfo.app.project ? `${pendingAppInfo.app.project} / ` : "")}${esc(pendingAppInfo.app.title || "等待你批准工具执行")}</div>
+            <div class="live-activity-desc">${esc(pendingAppInfo.app.promptTitle || pendingAppInfo.app.reason || "")}</div>
+          </div>
+          <div class="live-activity-actions">
+            <button class="mini-approve-btn" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', true, 1)">✓ 允许</button>
+            <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false, 4)">拒绝</button>
+          </div>
+        </div>
+      ` : ""}
+        <div class="session-list">
+          ${filtered.map((s) => {
+			let rowStateClass = "";
+			let statusHtml = `<span class="session-time">${esc(s.timeLabel)}</span>`;
+			if (s.status === "approval") {
+				rowStateClass = "row-state-approval";
+				statusHtml = `<span class="badge-approval">⏳ 待你授权</span>`;
+			} else if (s.status === "running") {
+				rowStateClass = "row-state-running";
+				statusHtml = `<span class="badge-running">● 运行中</span>`;
+			} else if (s.hasUnreadConclusion) {
+				rowStateClass = "row-state-conclusion";
+				statusHtml = `<span class="badge-conclusion">🔵 已出结论</span>`;
+			} else if (s.isUnreadInterrupted) {
+				rowStateClass = "row-state-interrupted";
+				statusHtml = `<span class="badge-interrupted">⚠️ 中断待继续</span>`;
+			}
+			const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : "";
+			const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag">${esc(s.hostName)}</span>` : "";
+			const harnessTagHtml = s.harness === "antigravity-ide" ? `<span class="harness-mini-tag agy">⚡ IDE</span>` : "";
+			const rolePrefix = s.status === "running" ? "" : s.lastRole === "user" ? "🧑 我: " : "🤖 ";
+			const displayTitle = s.harness === "antigravity-ide" && s.project && !s.title.startsWith(s.project) ? `${s.project} / ${s.title}` : s.title;
+			return `
+          <div class="session-row ${rowStateClass} ${s.pinned ? "pinned-row" : ""} ${s.id === activeSessionId ? "selected-desktop" : ""}" onclick="openChat('${esc(s.id)}')">
+            <div class="session-main">
+              <div class="session-top-line">
+                <div class="session-title-wrap">
+                  ${pinHtml}
+                  <div class="session-title">${esc(displayTitle)}</div>
+                </div>
+                <div class="session-right-meta">${statusHtml}</div>
+              </div>
+              <div class="session-sub-line">
+                ${hostBadgeHtml}
+                ${harnessTagHtml}
+                <span class="project-mini-tag">📁 ${esc(s.project)}</span>
+                <span class="session-preview-text">${rolePrefix}${esc(s.lastPreview)}</span>
+              </div>
+            </div>
+            <button class="row-more-btn" title="更多操作" onclick="event.stopPropagation(); openSessionActions('${esc(s.id)}')">⋯</button>
+          </div>
+        `;
+		}).join("") || `<div style="padding:48px 20px;text-align:center;color:#94a3b8;font-size:14px;">暂无匹配的对话记录</div>`}
+        </div>
+      `;
+		viewport.scrollTop = prevScrollTop;
+	}
+	function openChat(sessionId) {
+		const found = findSessionGlobal(sessionId);
+		if (!found) return;
+		activeSessionId = found.session.id;
+		found.session.hostId;
+		seenMap[activeSessionId] = Math.max(found.session.updatedAt || 0, found.session.lastConclusionAt || 0, Date.now());
+		try {
+			localStorage.setItem("dsh_seen_v4", JSON.stringify(seenMap));
+		} catch {}
+		lastRenderedChatKey = "";
+		renderActiveChatStage();
+		renderProjectStrip();
+		renderSessionList();
+		document.getElementById("chatFullscreen").classList.add("open");
+		document.body.classList.add("mobile-chat-open");
+		const box = document.getElementById("chatMessages");
+		if (box && box.scrollHeight - box.scrollTop - box.clientHeight >= 120) setScrollBottomVisible(true);
+		if (!document.body.classList.contains("DesktopSplitMode")) {
+			trackOverlay("chat", rawCloseChat);
+			maybeShowSwipeHint();
+		}
+	}
+	function rawCloseChat() {
+		stopVoiceInput();
+		document.getElementById("chatFullscreen").classList.remove("open");
+		document.body.classList.remove("mobile-chat-open");
+		setScrollBottomVisible(false);
+	}
+	function closeMobileChat() {
+		dismissOverlay("chat", rawCloseChat);
+	}
+	function closeMobileFile() {
+		closeSheet("inChatFileSheet");
+		document.body.classList.remove("mobile-file-open");
+	}
+	let selectedAgyOptionIndex = 1;
+	function selectAgyApprovalOption(idx) {
+		selectedAgyOptionIndex = Number(idx) || 1;
+		document.querySelectorAll(".agy-approval-opt").forEach((el) => {
+			el.classList.toggle("selected", Number(el.dataset.optIdx) === selectedAgyOptionIndex);
+		});
+	}
+	function submitAgyApproval(hostId, code) {
+		const idx = selectedAgyOptionIndex || 1;
+		sendApprovalDecision(hostId, code, idx !== 4, idx);
+	}
+	function renderActiveChatStage() {
+		const found = findSessionGlobal(activeSessionId);
+		if (!found) return;
+		const { session: s } = found;
+		const chatHeaderTitle = s.harness === "antigravity-ide" && s.project && !s.title.startsWith(s.project) ? `${s.project} / ${s.title}` : s.title;
+		document.getElementById("chatTitle").textContent = chatHeaderTitle;
+		const harnessPrefix = s.harness === "antigravity-ide" ? "⚡ Antigravity IDE · " : "";
+		document.getElementById("chatSub").textContent = `${harnessPrefix}📁 ${s.project} · 💻 ${s.hostName} (${s.msgCount} 条对话)`;
+		let otherApproval = null;
+		for (const h of hubState.hosts || []) {
+			const app = (h.bridgeState?.approvals || []).find((a) => a.agentId !== s.id);
+			if (app) {
+				otherApproval = {
+					app,
+					host: h
+				};
+				break;
+			}
+		}
+		const alertBar = document.getElementById("chatSwitchAlert");
+		if (otherApproval) {
+			alertBar.style.display = "flex";
+			alertBar.innerHTML = `
+          <span>⏳ [${esc(otherApproval.host.hostName)}]「${esc(otherApproval.app.project ? `${otherApproval.app.project} / ` : "")}${esc(otherApproval.app.title || otherApproval.app.toolName)}」待你审批</span>
+          <button style="border:none;background:#d97706;color:#fff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600;cursor:pointer;" onclick="openChat('${esc(otherApproval.app.agentId)}')">立即切换 ›</button>
+        `;
+		} else alertBar.style.display = "none";
+		switchComposerSession(s.id);
+		const composerKey = `${s.id}:${s.status}`;
+		if (composerKey !== lastRenderedComposerKey) {
+			lastRenderedComposerKey = composerKey;
+			const runningBar = document.getElementById("runningControlBar");
+			const chatInput = document.getElementById("globalPromptInput");
+			const sendBtn = document.getElementById("chatSendBtn");
+			if (s.status === "running") {
+				runningBar.classList.add("show");
+				chatInput.placeholder = "⚡ 实时插话 (Steer)：补充指令将立即注入...";
+				sendBtn.textContent = "⚡ 插话";
+			} else {
+				runningBar.classList.remove("show");
+				chatInput.placeholder = "发指令继续对话...";
+				sendBtn.textContent = "发送";
+			}
+		}
+		const trSig = s.transcript.slice(-6).map((m) => `${m.role}:${(m.text || "").length}:${(m.text || "").slice(-32)}:${(m.thinking || "").length}:${(m.tools || []).length}:${m.waitingForInput ? 1 : 0}`).join("|");
+		const chatKey = `${s.id}:${s.status}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ""}:${(s.changedFiles || []).length}`;
+		if (chatKey === lastRenderedChatKey) return;
+		lastRenderedChatKey = chatKey;
+		selectedAgyOptionIndex = 1;
+		const box = document.getElementById("chatMessages");
+		const openDetailIds = new Set(Array.from(box.querySelectorAll("details[open][data-detail-id]")).map((el) => el.dataset.detailId));
+		const nearBottom = box.dataset.dshSession !== String(activeSessionId) || box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+		const prevScrollTop = box.scrollTop;
+		box.dataset.dshSession = String(activeSessionId);
+		const bubblesHtml = (s.transcript.length > 0 ? s.transcript : [{
+			role: "assistant",
+			text: s.rawLastPreview || s.lastPreview
+		}]).map((m, msgIdx) => {
+			if (m.role === "user") return `<div class="bubble user">${esc(m.text)}</div>`;
+			const thinkId = `think-${msgIdx}`;
+			const thought = m.thinking ? `<details class="thought-box thinking-details" data-detail-id="${thinkId}" ${openDetailIds.has(thinkId) ? "open" : ""}><summary>💭 思考过程 (点击展开)</summary><div style="margin-top:6px;white-space:pre-wrap;">${esc(m.thinking)}</div></details>` : "";
+			if (m.isToolStepOnly) {
+				const toolOut = (m.tools || []).map((t) => t.commandLine || t.summary || "").filter(Boolean).join("\n");
+				const waitText = m.waitingForInput ? `<div style="margin-top:6px;font-size:12.5px;color:#64748b;">Waiting for user input.</div>` : "";
+				const stepToolId = `tool-step-${msgIdx}`;
+				return `
+            <div class="bubble assistant" style="padding:10px 14px;">
+              ${thought}
+              <details class="tool-chip-details" data-detail-id="${stepToolId}" ${openDetailIds.has(stepToolId) ? "open" : ""} style="border:none;background:transparent;">
+                <summary style="padding:2px 0;font-size:13px;color:#334155;">
+                  <span>${esc(m.text)}</span>
+                  <span style="color:#94a3b8;font-size:11px;">›</span>
+                </summary>
+                ${toolOut ? `<div class="tool-chip-output" style="margin-top:6px;border-radius:6px;">${esc(toolOut)}</div>` : ""}
+              </details>
+              ${waitText}
+            </div>
+          `;
+			}
+			const tools = (m.tools || []).length > 0 ? `<div class="tool-chips">${m.tools.map((t, tIdx) => {
+				const tName = t.name || "tool";
+				const tSummary = t.summary || "";
+				const tDetail = t.commandLine || tSummary || "执行完毕";
+				const chipId = `tool-${msgIdx}-${tIdx}`;
+				return `
+                <details class="tool-chip-details" data-detail-id="${chipId}" ${openDetailIds.has(chipId) ? "open" : ""}>
+                  <summary><span>🔧 ${esc(tName)} ${esc(tSummary.slice(0, 48))}</span><span style="color:#94a3b8;font-size:10.5px;">点击查看输出 ▾</span></summary>
+                  <div class="tool-chip-output">${esc(tDetail)}</div>
+                </details>
+              `;
+			}).join("")}</div>` : "";
+			return `<div class="bubble assistant">${thought}<div class="md-body">${formatAssistantText(m.text)}</div>${tools}</div>`;
+		}).join("");
+		const filesChangedHtml = s.harness === "antigravity-ide" && Array.isArray(s.changedFiles) && s.changedFiles.length > 0 ? `
+        <div class="agy-files-changed-card">
+          ${s.changedFiles.slice(-8).map((fc) => `
+            <div class="agy-file-row">
+              <span class="agy-file-dot">◉</span>
+              <span class="agy-file-diff"><span class="add">+${Number(fc.added || 0)}</span><span class="del">-${Number(fc.removed || 0)}</span></span>
+              <span class="agy-file-name">${esc(fc.name || "")}</span>
+              <span class="agy-file-path">${esc(fc.displayPath || fc.path || "")}</span>
+            </div>
+          `).join("")}
+          <div class="agy-files-footer">
+            <span>📄 ${s.changedFiles.length} Files With Changes ⌃</span>
+            <div class="agy-files-footer-btns">
+              <button class="agy-files-reject" onclick="openInChatFileDrawer()">查看改动</button>
+              <button class="agy-files-accept" onclick="openInChatFileDrawer()">Accept all</button>
+            </div>
+          </div>
+        </div>
+      ` : "";
+		const isAgyApproval = s.approvalObj && (s.approvalObj.harness === "antigravity-ide" || Array.isArray(s.approvalObj.options));
+		const approvalCardHtml = s.approvalObj ? isAgyApproval ? `
+        <div class="agy-approval-card">
+          <div class="agy-approval-header">
+            <span class="agy-approval-term-icon">&gt;_</span>
+            <span>${esc(s.approvalObj.promptTitle || `Allow ${s.approvalObj.toolName}?`)}</span>
+          </div>
+          <div class="agy-approval-subtitle">${esc(s.approvalObj.subtitle || "the auto-run safety check did not reach a decision")}</div>
+          ${s.approvalObj.commandLine ? `<div class="agy-approval-cmd">${esc(s.approvalObj.commandLine)}</div>` : `<div class="agy-approval-cmd">${esc(s.approvalObj.reason || "")}</div>`}
+          <div class="agy-approval-options">
+            ${(s.approvalObj.options && s.approvalObj.options.length > 0 ? s.approvalObj.options : [
+			{
+				index: 1,
+				label: "Yes, allow this time"
+			},
+			{
+				index: 2,
+				label: "Yes, and always allow in this conversation"
+			},
+			{
+				index: 3,
+				label: "Yes, and always allow"
+			},
+			{
+				index: 4,
+				label: "No (tell the agent what to do instead)"
+			}
+		]).map((opt) => `
+              <button type="button" class="agy-approval-opt ${opt.index === 1 ? "selected" : ""}" data-opt-idx="${opt.index}" onclick="selectAgyApprovalOption(${opt.index})" ondblclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', ${opt.index !== 4}, ${opt.index})">
+                <span class="agy-opt-num">${opt.index}</span>
+                <span>${esc(opt.label)}</span>
+              </button>
+            `).join("")}
+          </div>
+          <div class="agy-approval-footer">
+            <button type="button" class="agy-btn-skip" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false, 4)">Skip</button>
+            <button type="button" class="agy-btn-submit" onclick="submitAgyApproval('${esc(s.hostId)}', '${esc(s.approvalObj.code)}')">Submit <span>↵</span></button>
+          </div>
+        </div>
+      ` : `
+        <div class="inline-approval-card">
+          <div class="inline-approval-title">⏳ 等待你确认工具调用：${esc(s.approvalObj.toolName)}</div>
+          <div class="inline-approval-cmd">${esc(s.approvalObj.reason || "请求执行权限")}</div>
+          <div class="inline-approval-btns">
+            <button style="background:#10b981;color:#fff;" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', true, 1)">✅ 允许执行</button>
+            <button style="background:#fee2e2;color:#dc2626;" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false, 4)">✕ 拒绝</button>
+          </div>
+        </div>
+      ` : "";
+		const followupsHtml = `
+        <div class="quick-followups">
+          ${[
+			"▶ 继续执行下一步",
+			"🔍 查看 git status 与改动",
+			"🧪 运行测试验证"
+		].map((f) => `<button class="followup-pill" onclick="sendQuickFollowup('${esc(f)}')">${esc(f)}</button>`).join("")}
+        </div>
+      `;
+		const sessionChanged = lastRenderedChatSessionId !== s.id;
+		box.innerHTML = bubblesHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
+		if (sessionChanged || nearBottom) {
+			box.scrollTop = box.scrollHeight;
+			setScrollBottomVisible(false);
+		} else {
+			box.scrollTop = prevScrollTop;
+			setScrollBottomVisible(true);
+		}
+		lastRenderedChatSessionId = s.id;
+	}
+	function scrollToChatBottom() {
+		const box = document.getElementById("chatMessages");
+		if (box) {
+			if (typeof box.scrollTo === "function") box.scrollTo({
+				top: box.scrollHeight,
+				behavior: "smooth"
+			});
+			else box.scrollTop = box.scrollHeight;
+		}
+		setScrollBottomVisible(false);
+	}
+	function setScrollBottomVisible(visible) {
+		const btn = document.getElementById("scrollBottomBtn");
+		if (!btn) return;
+		const chatOpen = document.getElementById("chatFullscreen")?.classList.contains("open");
+		btn.style.display = visible && chatOpen ? "flex" : "none";
+	}
+	function setupChatScrollWatcher() {
+		const box = document.getElementById("chatMessages");
+		if (!box) return;
+		box.addEventListener("scroll", () => {
+			if (box.scrollHeight - box.scrollTop - box.clientHeight < 40) setScrollBottomVisible(false);
+		}, { passive: true });
+	}
+	async function dispatchHostCommand(hostId, payload) {
+		return (await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+			method: "POST",
+			body: JSON.stringify(payload)
+		})).json();
+	}
+	let composerSessionId = "";
+	let composerDraftTimer = null;
+	function composerDraftKey(sessionId) {
+		return "dsh_draft_v1_" + sessionId;
+	}
+	function readComposerDraft(sessionId) {
+		if (!sessionId) return "";
+		try {
+			return localStorage.getItem(composerDraftKey(sessionId)) || "";
+		} catch {
+			return "";
+		}
+	}
+	function persistComposerDraft(sessionId = composerSessionId) {
+		if (!sessionId) return;
+		const input = document.getElementById("globalPromptInput");
+		if (!input) return;
+		try {
+			if (input.value.trim()) localStorage.setItem(composerDraftKey(sessionId), input.value);
+			else localStorage.removeItem(composerDraftKey(sessionId));
+		} catch {}
+	}
+	function autoGrowComposer() {
+		const input = document.getElementById("globalPromptInput");
+		if (!input || input.tagName !== "TEXTAREA") return;
+		input.style.height = "auto";
+		const fullHeight = input.scrollHeight || 24;
+		input.style.height = Math.min(fullHeight, 132) + "px";
+		input.style.overflowY = fullHeight > 132 ? "auto" : "hidden";
+	}
+	function onComposerInput() {
+		autoGrowComposer();
+		clearTimeout(composerDraftTimer);
+		composerDraftTimer = setTimeout(() => persistComposerDraft(), 250);
+	}
+	function onComposerKeydown(event) {
+		if (event.key !== "Enter") return;
+		if (!shouldSendOnEnter({
+			shiftKey: event.shiftKey,
+			isComposing: event.isComposing || event.keyCode === 229,
+			coarsePointer: composerUsesCoarsePointer()
+		})) return;
+		event.preventDefault();
+		sendPromptToActiveSession();
+	}
+	function switchComposerSession(nextSessionId) {
+		const input = document.getElementById("globalPromptInput");
+		if (!input) return;
+		if (composerSessionId === nextSessionId) return;
+		stopVoiceInput();
+		if (composerSessionId) persistComposerDraft(composerSessionId);
+		composerSessionId = nextSessionId || "";
+		input.value = readComposerDraft(composerSessionId);
+		input.style.height = "";
+		autoGrowComposer();
+	}
+	window.addEventListener("pagehide", () => {
+		persistComposerDraft();
+		stopVoiceInput();
+	});
+	document.addEventListener("visibilitychange", () => {
+		if (document.visibilityState === "hidden") {
+			persistComposerDraft();
+			stopVoiceInput();
+		}
+	});
+	async function sendPromptToActiveSession() {
+		stopVoiceInput();
+		const input = document.getElementById("globalPromptInput");
+		const text = input.value.trim();
+		if (!text || !activeSessionId) return;
+		const found = findSessionGlobal(activeSessionId);
+		if (!found) return;
+		const { session: s } = found;
+		input.value = "";
+		try {
+			localStorage.removeItem(composerDraftKey(composerSessionId || activeSessionId));
+		} catch {}
+		autoGrowComposer();
+		window.__dshOptimisticMsgs = window.__dshOptimisticMsgs || {};
+		const optList = window.__dshOptimisticMsgs[s.id] || [];
+		optList.push({
+			text,
+			time: Date.now()
+		});
+		window.__dshOptimisticMsgs[s.id] = optList.slice(-5);
+		lastRenderedChatKey = "";
+		renderActiveChatStage();
+		const cmdType = s.status === "running" ? "steer" : "prompt";
+		showToast(cmdType === "steer" ? "⚡ 已发送实时插话" : "📨 已发送指令");
+		let dispatchRes = null;
+		try {
+			dispatchRes = await dispatchHostCommand(s.hostId, {
+				type: cmdType,
+				agentId: s.id,
+				cwd: s.cwd || "",
+				text,
+				prompt: text
+			});
+		} catch (err) {
+			dispatchRes = {
+				ok: false,
+				error: err?.message || "网络请求失败"
+			};
+		}
+		if (!dispatchRes || dispatchRes.ok === false) {
+			window.__dshOptimisticMsgs[s.id] = (window.__dshOptimisticMsgs[s.id] || []).filter((item) => item.text !== text);
+			lastRenderedChatKey = "";
+			renderActiveChatStage();
+			showToast("❌ " + (dispatchRes?.error || "发送指令失败"));
+			if (input && !input.value.trim()) {
+				input.value = text;
+				autoGrowComposer();
+			}
+			return;
+		}
+		setTimeout(fetchState, 250);
+		setTimeout(fetchState, 800);
+		const cmdId = dispatchRes?.command?.id;
+		if (cmdId) (async () => {
+			for (let i = 0; i < 16; i++) {
+				await new Promise((r) => setTimeout(r, 350));
+				try {
+					const data = await (await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`)).json();
+					if (data?.ready || data?.command?.status === "completed") {
+						if (data.result && data.result.ok === false) {
+							window.__dshOptimisticMsgs[s.id] = (window.__dshOptimisticMsgs[s.id] || []).filter((item) => item.text !== text);
+							lastRenderedChatKey = "";
+							renderActiveChatStage();
+							showToast("❌ " + (data.result.error || data.result.message || "发送失败"));
+							if (input && !input.value.trim()) {
+								input.value = text;
+								autoGrowComposer();
+							}
+						}
+						fetchState();
+						return;
+					}
+				} catch {}
+			}
+		})();
+	}
+	function sendQuickFollowup(text) {
+		document.getElementById("globalPromptInput").value = text;
+		sendPromptToActiveSession();
+	}
+	async function stopActiveSession() {
+		const found = findSessionGlobal(activeSessionId);
+		if (!found) return;
+		showToast("⏹ 正在停止任务...");
+		await dispatchHostCommand(found.session.hostId, {
+			type: "stop",
+			agentId: found.session.id
+		});
+		setTimeout(fetchState, 250);
+		setTimeout(fetchState, 800);
+	}
+	async function sendApprovalDecision(hostId, code, allow, optionIndex = 1) {
+		showToast(optionIndex === 2 ? "✅ 已批准并在当前会话始终允许" : optionIndex === 3 ? "✅ 已批准并始终允许该命令" : allow ? "✅ 已发送批准指令 (Option 1)" : "已拒绝/跳过该工具执行");
+		await dispatchHostCommand(hostId, {
+			type: "approval",
+			code,
+			allow: Boolean(allow),
+			optionIndex: Number(optionIndex) || (allow ? 1 : 4)
+		});
+		setTimeout(fetchState, 200);
+		setTimeout(fetchState, 750);
+	}
+	async function openInChatFileDrawer() {
+		const found = findSessionGlobal(activeSessionId);
+		if (!found) return;
+		fileProjectCwd = found.session.cwd || "";
+		openSheet("inChatFileSheet");
+		document.body.classList.add("mobile-file-open");
+		document.getElementById("inChatFileTitle").textContent = `📂 ${found.session.project} (${found.session.hostName})`;
+		await requestDirList(found.session.hostId, found.session.id, fileProjectCwd, "", true);
+	}
+	function renderInChatFileDrawerBody() {
+		const found = findSessionGlobal(activeSessionId);
+		if (!found) return;
+		const host = found.host;
+		if (!host) return;
+		const body = document.getElementById("inChatFileBody");
+		reconcileFileLoading(host);
+		const preview = host.lastFilePreview;
+		const listing = host.lastFsListing;
+		if (filePreviewLoading && filePreviewLoading.hostId === host.hostId && filePreviewLoading.drawer) {
+			body.innerHTML = `
+          <div class="breadcrumbs-bar" style="justify-content:space-between;">
+            <button class="back-btn" style="padding:0;font-size:13px;" onclick="cancelFilePreviewLoading()">‹ 返回目录</button>
+            <span style="font-weight:700;color:var(--text);">${esc(String(filePreviewLoading.relPath || "").split("/").filter(Boolean).pop() || "文件")}</span>
+            <span style="width:56px;"></span>
+          </div>
+          <div style="padding:16px 12px;background:#0f172a;min-height:300px;">
+            ${fileLoadingSpinnerHtml("正在读取文件内容…")}
+          </div>
+        `;
+			return;
+		}
+		if (preview && preview._showInDrawer) {
+			const kind = previewKind(preview);
+			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}`;
+			if (body.dataset.dshPreviewKey === previewKey && body.querySelector(".file-preview-body")) return;
+			body.dataset.dshPreviewKey = previewKey;
+			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
+			const previewBodyHtml = kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+               <img src="${imagePreviewSrc(preview)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:46vh;object-fit:contain;border-radius:8px;" />
+               <div style="font-size:12px;color:#94a3b8;">${esc(formatBytes(preview.size))} · 长按图片可保存到相册</div>
+             </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:32px 16px;background:#0f172a;color:#94a3b8;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
+                 <div style="font-size:32px;">📦</div>
+                 <div style="font-size:14px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
+                 <div style="font-size:12.5px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
+               </div>` : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
+                 ${numberedHtml}
+               </div>`;
+			body.innerHTML = `
+          <div class="breadcrumbs-bar" style="justify-content:space-between;">
+            <button class="back-btn" style="padding:0;font-size:13px;" onclick="backFromDrawerPreview()">‹ 返回目录</button>
+            <span style="font-weight:700;color:var(--text);">${esc(preview.name)}</span>
+            <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="quoteFileIntoChat('${esc(preview.relPath || preview.name)}')">📎 插入到输入框</button>
+          </div>
+          ${previewBodyHtml}
+        `;
+			return;
+		}
+		const entries = listing?.entries || [];
+		const loadingDir = fileLoading && fileLoading.hostId === host.hostId && fileLoading.drawer;
+		const rootCwd = listing?.rootCwd || fileProjectCwd;
+		const activeSubDir = loadingDir ? fileLoading.subDir || "" : listing?.subDir || "";
+		const crumbs = buildBreadcrumbSegments(activeSubDir);
+		const hostId = esc(host.hostId);
+		const sessionId = esc(found.session.id);
+		body.innerHTML = `
+        <div class="breadcrumbs-bar">
+          <span class="crumb-link" onclick="requestDirList('${hostId}', '${sessionId}', '${esc(rootCwd)}', '', true)">🏠 ${esc(found.session.project)}</span>
+          ${crumbs.map((c, index) => {
+			return "<span style=\"color:#94a3b8;\">/</span>" + (index === crumbs.length - 1 ? `<span style="font-weight:600;color:var(--text);">${esc(c.name)}</span>` : `<span class="crumb-link" onclick="requestDirList('${hostId}', '${sessionId}', '${esc(rootCwd)}', '${esc(c.path)}', true)">${esc(c.name)}</span>`);
+		}).join("")}
+          ${crumbs.length === 0 ? `<span style="color:#94a3b8;margin-left:auto;font-family:monospace;">${esc(rootCwd)}</span>` : ""}
+        </div>
+        <div>
+          ${loadingDir ? fileLoadingSpinnerHtml(activeSubDir ? `正在读取 ${activeSubDir} …` : "正在读取目录…") : entries.map((e) => `
+            <div class="file-row" onclick="clickRealFileEntry('${hostId}', '${sessionId}', '${esc(rootCwd)}', '${esc(e.relPath)}', ${Boolean(e.isDirectory)}, true)">
+              <div class="file-row-left">
+                <span style="font-size:18px;">${e.isDirectory ? "📁" : "📄"}</span>
+                <span style="font-weight:500;">${esc(e.name)}</span>
+              </div>
+              <span style="font-size:12px;color:#94a3b8;">${e.isDirectory ? "目录" : formatBytes(e.size)} ›</span>
+            </div>
+          `).join("") || `<div style="padding:36px;text-align:center;color:#94a3b8;">正在同步目录文件列表...</div>`}
+        </div>
+      `;
+	}
+	function backFromDrawerPreview() {
+		const found = findSessionGlobal(activeSessionId);
+		if (found?.host?.lastFilePreview) found.host.lastFilePreview._showInDrawer = false;
+		renderInChatFileDrawerBody();
+	}
+	function quoteFileIntoChat(relPath) {
+		closeMobileFile();
+		const input = document.getElementById("globalPromptInput");
+		input.value = `请查看文件 @${relPath} 并帮我分析：${input.value}`;
+		input.focus();
+		onComposerInput();
+		showToast(`📎 已插入 @${relPath}`);
+	}
+	function sleepMs(ms) {
+		return new Promise((resolve) => setTimeout(resolve, ms));
+	}
+	function reconcileFileLoading(host) {
+		if (!host) return;
+		if (fileLoading && fileLoading.hostId === host.hostId) {
+			const listing = host.lastFsListing;
+			if (listing && (listing.rootCwd || "") === fileLoading.cwd && (listing.subDir || "") === (fileLoading.subDir || "") && listing.at !== fileLoading.prevAt) fileLoading = null;
+			else if (Date.now() - fileLoading.at > 15e3) fileLoading = null;
+		}
+		if (filePreviewLoading && filePreviewLoading.hostId === host.hostId) {
+			const box = host.lastFilePreview;
+			if (box && box.at !== filePreviewLoading.prevAt && box.relPath === filePreviewLoading.relPath) {
+				box._showInDrawer = Boolean(filePreviewLoading.drawer);
+				box._showInMain = !filePreviewLoading.drawer;
+				filePreviewLoading = null;
+			} else if (Date.now() - filePreviewLoading.at > 15e3) filePreviewLoading = null;
+		}
+	}
+	async function requestDirList(hostId, agentId, cwd, subDir, inDrawer = false) {
+		fileProjectCwd = cwd;
+		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
+		if (host?.lastFilePreview) {
+			host.lastFilePreview._showInMain = false;
+			host.lastFilePreview._showInDrawer = false;
+		}
+		fileLoading = {
+			hostId,
+			cwd,
+			subDir: subDir || "",
+			prevAt: host?.lastFsListing?.at || 0,
+			at: Date.now(),
+			drawer: inDrawer
+		};
+		renderAll();
+		let failure = "";
+		try {
+			const out = await dispatchHostCommand(hostId, {
+				type: "list_files",
+				agentId,
+				cwd,
+				subDir
+			});
+			if (out && out.ok === false) failure = out.error || "电脑未接受该指令";
+		} catch (err) {
+			failure = err && err.message || String(err);
+		}
+		if (failure) {
+			fileLoading = null;
+			showToast("❌ 读取目录失败：" + failure);
+			renderAll();
+			return;
+		}
+		for (let i = 0; i < 10 && fileLoading; i++) {
+			await sleepMs(400);
+			if (!(await fetchState()).ok) break;
+		}
+		if (fileLoading) {
+			fileLoading = null;
+			showToast("⚠️ 读取目录超时：电脑可能离线，请重新点一下目录");
+		}
+		renderAll();
+		renderFilePanes();
+	}
+	async function clickRealFileEntry(hostId, agentId, cwd, relPath, isDir, inDrawer = false) {
+		if (isDir) {
+			await requestDirList(hostId, agentId, cwd, relPath, inDrawer);
+			return;
+		}
+		filePreviewLoading = {
+			hostId,
+			relPath,
+			prevAt: (hubState.hosts || []).find((h) => h.hostId === hostId)?.lastFilePreview?.at || 0,
+			at: Date.now(),
+			drawer: inDrawer
+		};
+		renderAll();
+		let failure = "";
+		try {
+			const out = await dispatchHostCommand(hostId, {
+				type: "read_file",
+				agentId,
+				cwd,
+				relPath
+			});
+			if (out && out.ok === false) failure = out.error || "电脑未接受该指令";
+		} catch (err) {
+			failure = err && err.message || String(err);
+		}
+		if (failure) {
+			filePreviewLoading = null;
+			showToast("❌ 读取文件失败：" + failure);
+			renderAll();
+			return;
+		}
+		for (let i = 0; i < 10 && filePreviewLoading; i++) {
+			await sleepMs(400);
+			if (!(await fetchState()).ok) break;
+		}
+		if (filePreviewLoading) {
+			filePreviewLoading = null;
+			showToast("⚠️ 读取文件超时：电脑可能离线，请重新点一下文件");
+		}
+		renderAll();
+		renderFilePanes();
+	}
+	function renderFilePanes() {
+		if (desktopStageMode !== "code") return;
+		const pane = document.getElementById("desktopStageCodePane");
+		if (!pane || pane.style.display === "none") return;
+		renderFilesTab(pane);
+	}
+	function cancelFilePreviewLoading() {
+		filePreviewLoading = null;
+		renderAll();
+	}
+	function renderFilesTab(container = document.getElementById("mainViewport")) {
+		const hosts = hubState.hosts || [];
+		const host = currentHostId === "ALL_HOSTS" ? hosts[0] : hosts.find((h) => h.hostId === currentHostId);
+		if (!host) {
+			container.innerHTML = `<div style="padding:48px 20px;text-align:center;color:#94a3b8;">暂无在线电脑</div>`;
+			return;
+		}
+		reconcileFileLoading(host);
+		const projects = getHostProjects(host);
+		if (!fileProjectCwd && projects[0]) fileProjectCwd = projects[0].cwd;
+		const agentId = ((host.bridgeState?.tasks || []).find((t) => t.cwd === fileProjectCwd) || (host.bridgeState?.tasks || [])[0])?.id || "";
+		const preview = host.lastFilePreview;
+		if (filePreviewLoading && filePreviewLoading.hostId === host.hostId && !filePreviewLoading.drawer) {
+			container.innerHTML = `
+          <div class="breadcrumbs-bar" style="justify-content:space-between;">
+            <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="cancelFilePreviewLoading()">‹ 返回文件列表</button>
+            <span style="font-weight:700;color:var(--text);">${esc(String(filePreviewLoading.relPath || "").split("/").filter(Boolean).pop() || "文件")}</span>
+            <span style="width:72px;"></span>
+          </div>
+          <div style="padding:16px 12px;background:#0f172a;min-height:calc(100% - 44px);">
+            ${fileLoadingSpinnerHtml("正在读取文件内容…")}
+          </div>
+        `;
+			return;
+		}
+		if (preview && preview._showInMain) {
+			const kind = previewKind(preview);
+			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}`;
+			if (container.dataset.dshPreviewKey === previewKey && container.querySelector(".file-preview-body")) return;
+			container.dataset.dshPreviewKey = previewKey;
+			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
+			const previewBodyHtml = kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+               <img src="${imagePreviewSrc(preview)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;" />
+               <div style="font-size:12px;color:#94a3b8;">${esc(formatBytes(preview.size))} · 长按图片可保存到相册</div>
+             </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:36px 16px;background:#0f172a;color:#94a3b8;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
+                 <div style="font-size:36px;">📦</div>
+                 <div style="font-size:14.5px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
+                 <div style="font-size:13px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
+               </div>` : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:calc(100% - 44px);overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;">
+                 ${numberedHtml}
+               </div>`;
+			container.innerHTML = `
+          <div class="breadcrumbs-bar" style="justify-content:space-between;">
+            <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="closeMainFilePreview('${esc(host.hostId)}')">‹ 返回文件列表</button>
+            <span style="font-weight:700;color:var(--text);">${esc(preview.name)}</span>
+            <div style="display:flex;gap:6px;">
+              ${kind !== "text" ? "" : `<button class="icon-pill-btn" onclick="copyCodeText('${encodeURIComponent(preview.content || "")}')">📋 复制</button>`}
+              <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="askAiAboutFile('${esc(host.hostId)}', '${esc(fileProjectCwd)}', '${esc(preview.relPath || preview.name)}')">💬 让 AI 分析</button>
+            </div>
+          </div>
+          ${previewBodyHtml}
+        `;
+			return;
+		}
+		const listing = host.lastFsListing;
+		const entries = listing?.entries || [];
+		const loadingDir = fileLoading && fileLoading.hostId === host.hostId && !fileLoading.drawer;
+		const rootCwd = listing?.rootCwd || fileProjectCwd;
+		const activeSubDir = loadingDir ? fileLoading.subDir || "" : listing?.subDir || "";
+		const crumbs = buildBreadcrumbSegments(activeSubDir);
+		const projectPillsHtml = `
+        <div class="filter-strip" style="border-bottom:1px solid var(--hairline);">
+          ${projects.map((p) => `
+            <button class="filter-pill ${p.cwd === fileProjectCwd ? "active" : ""}" onclick="requestDirList('${esc(host.hostId)}', '${esc(agentId)}', '${esc(p.cwd)}', '')">📁 ${esc(p.name)}</button>
+          `).join("")}
+        </div>
+      `;
+		const breadcrumbHtml = `
+        <div class="breadcrumbs-bar">
+          <span class="crumb-link" onclick="requestDirList('${esc(host.hostId)}', '${esc(agentId)}', '${esc(rootCwd)}', '')">🏠 根目录</span>
+          ${crumbs.map((c, index) => {
+			return "<span style=\"color:#94a3b8;\">/</span>" + (index === crumbs.length - 1 ? `<span style="font-weight:600;color:var(--text);">${esc(c.name)}</span>` : `<span class="crumb-link" onclick="requestDirList('${esc(host.hostId)}', '${esc(agentId)}', '${esc(rootCwd)}', '${esc(c.path)}')">${esc(c.name)}</span>`);
+		}).join("")}
+          ${crumbs.length === 0 ? `<span style="color:#94a3b8;margin-left:auto;font-family:monospace;">${esc(rootCwd)}</span>` : ""}
+        </div>
+      `;
+		const listHtml = loadingDir ? fileLoadingSpinnerHtml(activeSubDir ? `正在读取 ${activeSubDir} …` : "正在读取目录…") : entries.map((e) => `
+        <div class="file-row" onclick="clickRealFileEntry('${esc(host.hostId)}', '${esc(agentId)}', '${esc(listing?.rootCwd || fileProjectCwd)}', '${esc(e.relPath)}', ${Boolean(e.isDirectory)}, false)">
+          <div class="file-row-left">
+            <span style="font-size:18px;">${e.isDirectory ? "📁" : "📄"}</span>
+            <span style="font-weight:500;">${esc(e.name)}</span>
+          </div>
+          <span style="font-size:12px;color:#94a3b8;">${e.isDirectory ? "目录" : formatBytes(e.size)} ›</span>
+        </div>
+      `).join("") || `<div style="padding:36px;text-align:center;color:#94a3b8;">点击上方项目胶囊加载远程目录...</div>`;
+		container.innerHTML = projectPillsHtml + breadcrumbHtml + `<div>${listHtml}</div>`;
+	}
+	function closeMainFilePreview(hostId) {
+		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
+		if (host?.lastFilePreview) host.lastFilePreview._showInMain = false;
+		renderAll();
+	}
+	function askAiAboutFile(hostId, cwd, fileName) {
+		if (desktopStageMode === "code") switchDesktopStage("chat");
+		switchTab("chats");
+		newTaskHostId = hostId;
+		newTaskCwd = cwd;
+		openNewTaskSheet();
+		document.getElementById("newTaskInput").value = `请帮我阅读并分析 @${fileName} 文件，看看有没有可以优化的地方：`;
+	}
+	function switchDesktopStage(mode) {
+		desktopStageMode = mode;
+		document.getElementById("stageBtnChat").classList.toggle("active", mode === "chat");
+		document.getElementById("stageBtnCode").classList.toggle("active", mode === "code");
+		const chatBox = document.getElementById("chatMessages");
+		const composer = document.getElementById("chatComposerBar");
+		const codePane = document.getElementById("desktopStageCodePane");
+		if (mode === "code") {
+			chatBox.style.display = "none";
+			composer.style.display = "none";
+			codePane.style.display = "block";
+			const found = findSessionGlobal(activeSessionId);
+			if (found) {
+				fileProjectCwd = found.session.cwd;
+				requestDirList(found.session.hostId, found.session.id, found.session.cwd, "");
+			}
+			renderFilesTab(codePane);
+		} else {
+			chatBox.style.display = "flex";
+			composer.style.display = "flex";
+			codePane.style.display = "none";
+		}
+	}
+	function openNewTaskSheet() {
+		const hosts = hubState.hosts || [];
+		if (!newTaskHostId || !hosts.some((h) => h.hostId === newTaskHostId)) newTaskHostId = currentHostId !== "ALL_HOSTS" ? currentHostId : hosts[0]?.hostId || "";
+		const projects = getHostProjects(hosts.find((h) => h.hostId === newTaskHostId));
+		if (!newTaskCwd && projects[0]) newTaskCwd = projects[0].cwd;
+		renderNewTaskForm();
+		openSheet("newTaskSheet");
+		setTimeout(() => document.getElementById("newTaskInput").focus(), 100);
+	}
+	function renderNewTaskForm() {
+		const hosts = hubState.hosts || [];
+		const hostChips = document.getElementById("newTaskHostChips");
+		hostChips.innerHTML = hosts.map((h) => `
+        <button class="choice-chip ${h.hostId === newTaskHostId ? "selected" : ""}" onclick="selectNewTaskHost('${esc(h.hostId)}')">
+          🟢 ${esc(h.hostName)}
+        </button>
+      `).join("");
+		const harnessChips = document.getElementById("newTaskHarnessChips");
+		if (harnessChips) harnessChips.innerHTML = [{
+			id: "dsh",
+			label: "🟣 DeepSeek Harness (DSH)"
+		}, {
+			id: "antigravity-ide",
+			label: "⚡ Antigravity IDE"
+		}].map((opt) => `
+          <button class="choice-chip ${opt.id === newTaskHarness ? "selected" : ""}" onclick="selectNewTaskHarness('${opt.id}')">
+            ${opt.label}
+          </button>
+        `).join("");
+		const projects = getHostProjects(hosts.find((h) => h.hostId === newTaskHostId));
+		if (!projects.some((p) => p.cwd === newTaskCwd) && projects[0]) newTaskCwd = projects[0].cwd;
+		const projChips = document.getElementById("newTaskProjectChips");
+		projChips.innerHTML = projects.map((p) => `
+        <button class="choice-chip ${p.cwd === newTaskCwd ? "selected" : ""}" onclick="selectNewTaskProject('${esc(p.cwd)}')">
+          📁 ${esc(p.name)}
+        </button>
+      `).join("");
+	}
+	function selectNewTaskHost(id) {
+		newTaskHostId = id;
+		newTaskCwd = "";
+		renderNewTaskForm();
+	}
+	function selectNewTaskHarness(h) {
+		newTaskHarness = h;
+		renderNewTaskForm();
+	}
+	function selectNewTaskProject(cwd) {
+		newTaskCwd = cwd;
+		renderNewTaskForm();
+	}
+	function fillQuickPrompt(text) {
+		const box = document.getElementById("newTaskInput");
+		box.value = text;
+		box.focus();
+	}
+	async function submitNewTask() {
+		stopVoiceInput();
+		const text = document.getElementById("newTaskInput").value.trim();
+		if (!text || !newTaskHostId) {
+			showToast("请输入任务指令");
+			return;
+		}
+		document.getElementById("newTaskInput").value = "";
+		closeSheet("newTaskSheet");
+		showToast(`🚀 正在远程电脑 (${newTaskHarness === "antigravity-ide" ? "Antigravity IDE" : "DeepSeek Harness"}) 创建新任务...`);
+		await dispatchHostCommand(newTaskHostId, {
+			type: "new_session",
+			harness: newTaskHarness,
+			cwd: newTaskCwd,
+			title: text.slice(0, 28),
+			prompt: text
+		});
+		setTimeout(fetchState, 800);
+	}
+	function openCurrentSessionActions() {
+		if (activeSessionId) openSessionActions(activeSessionId);
+	}
+	function openSessionActions(sessionId) {
+		const found = findSessionGlobal(sessionId);
+		if (!found) return;
+		actionTargetSession = found.session;
+		actionTargetHostId = found.session.hostId;
+		confirmSheetDelete = false;
+		renderActionSheet();
+		openSheet("taskActionSheet");
+	}
+	function renderActionSheet() {
+		const s = actionTargetSession;
+		if (!s) return;
+		document.getElementById("actionSheetTitle").innerHTML = `
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(s.title)}</span>
+        <button style="border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;" onclick="closeSheet('taskActionSheet')">✕</button>
+      `;
+		document.getElementById("actionSheetBody").innerHTML = `
+        <div style="margin-bottom:10px;display:flex;gap:6px;">
+          <input id="renameInlineInput" value="${esc(s.title)}" style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid #cbd5e1;font-size:15px;outline:none;" />
+          <button style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:0 14px;font-weight:600;cursor:pointer;" onclick="saveInlineRename()">保存标题</button>
+        </div>
+        <button class="action-item" onclick="togglePinTargetSession()">
+          ${s.pinned ? "📌 取消置顶此对话" : "📌 置顶此对话（固定在列表最顶部）"}
+        </button>
+        <button class="action-item" onclick="shareTargetSession()">🔗 生成 AES-256 端到端加密回放链接</button>
+        <button class="action-item" onclick="jumpToSessionFiles('${esc(s.hostId)}', '${esc(s.id)}', '${esc(s.cwd)}')">📂 查看【${esc(s.project)}】项目文件夹</button>
+        <button class="action-item danger" onclick="deleteTargetSession()">
+          ${confirmSheetDelete ? "⚠️ 再次点击确认彻底删除" : "🗑️ 删除此条会话记录"}
+        </button>
+      `;
+	}
+	function togglePinTargetSession() {
+		if (!actionTargetSession) return;
+		const id = actionTargetSession.id;
+		pinnedMap[id] = !pinnedMap[id];
+		try {
+			localStorage.setItem("dsh_pinned_v4", JSON.stringify(pinnedMap));
+		} catch {}
+		closeSheet("taskActionSheet");
+		showToast(pinnedMap[id] ? "📌 已置顶该对话" : "已取消置顶");
+		renderAll();
+	}
+	async function saveInlineRename() {
+		const val = document.getElementById("renameInlineInput").value.trim();
+		if (!val || !actionTargetSession) return;
+		closeSheet("taskActionSheet");
+		showToast("✏️ 正在保存新标题...");
+		await dispatchHostCommand(actionTargetHostId, {
+			type: "rename_session",
+			agentId: actionTargetSession.id,
+			title: val
+		});
+		setTimeout(fetchState, 600);
+	}
+	async function shareTargetSession() {
+		if (!actionTargetSession) return;
+		closeSheet("taskActionSheet");
+		showToast("🔒 正在生成端到端加密回放链接...");
+		const cmdId = (await dispatchHostCommand(actionTargetHostId, {
+			type: "share_session",
+			agentId: actionTargetSession.id
+		}))?.command?.id;
+		if (!cmdId) return;
+		for (let i = 0; i < 8; i++) {
+			await new Promise((r) => setTimeout(r, 600));
+			const res = await (await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`)).json();
+			if (res.ready && res.result?.shareUrl) {
+				const fullUrl = res.result.shareUrl.startsWith("http") ? res.result.shareUrl : location.origin + res.result.shareUrl;
+				navigator.clipboard?.writeText(fullUrl);
+				showToast("🔗 加密链接已复制到剪贴板！");
+				return;
+			}
+		}
+		showToast("✅ 分享已生成，可在设置页查看");
+	}
+	async function jumpToSessionFiles(hostId, agentId, cwd) {
+		closeSheet("taskActionSheet");
+		closeMobileChat();
+		currentHostId = hostId;
+		fileProjectCwd = cwd;
+		switchTab("files");
+		await requestDirList(hostId, agentId, cwd, "");
+	}
+	async function deleteTargetSession() {
+		if (!confirmSheetDelete) {
+			confirmSheetDelete = true;
+			renderActionSheet();
+			return;
+		}
+		if (!actionTargetSession) return;
+		closeSheet("taskActionSheet");
+		showToast("🗑️ 正在删除会话...");
+		await dispatchHostCommand(actionTargetHostId, {
+			type: "delete_session",
+			agentId: actionTargetSession.id
+		});
+		if (activeSessionId === actionTargetSession.id) {
+			activeSessionId = "";
+			closeMobileChat();
+		}
+		setTimeout(fetchState, 600);
+	}
+	function renderSettingsTab() {
+		const hosts = hubState.hosts || [];
+		const onboardingCmd = `git clone https://github.com/oscarka/deepseekharness-remotecontrol.git ~/deepseekharness-remote && cd ~/deepseekharness-remote && ./connect-host.sh "新电脑名称" "${getToken()}"`;
+		document.getElementById("mainViewport").innerHTML = `
+        <div class="settings-wrap">
+          <div>
+            <div class="settings-group-title">已接入电脑实时看板 (${hosts.length} 台设备)</div>
+            <div class="host-visual-grid">
+              ${hosts.map((h) => `
+                <div class="host-visual-card ${h.isFeishuActive ? "active-feishu" : ""}">
+                  <div class="host-visual-top">
+                    <div>
+                      <div style="font-size:15.5px;font-weight:700;display:flex;align-items:center;gap:6px;">
+                        <span class="status-dot ${h.online ? "" : "offline"}"></span>
+                        <span>${esc(h.hostName)}</span>
+                        <span style="font-size:11.5px;color:#64748b;font-weight:500;">(${esc(h.platform || "macOS")} ${esc(h.arch || "")})</span>
+                      </div>
+                      <div style="font-size:11.5px;color:#64748b;margin-top:3px;">
+                        🔒 指纹 ${esc(h.fingerprint || "已锁定")} · ${h.online ? "实时在线" : "离线 (" + formatTime(h.lastSeen) + ")"}
+                      </div>
+                    </div>
+                    <button class="pill-action-btn ${h.isFeishuActive ? "primary" : ""}" onclick="activateFeishuHost('${esc(h.hostId)}')">
+                      ${h.isFeishuActive ? "🎯 飞书当前主控" : "切飞书到这台"}
+                    </button>
+                  </div>
+                  <div class="host-metrics-row">
+                    <div class="metric-cell">
+                      <span class="metric-label">总会话数</span>
+                      <span class="metric-val">${(h.bridgeState?.tasks || []).length} 条</span>
+                    </div>
+                    <div class="metric-cell">
+                      <span class="metric-label">运行中</span>
+                      <span class="metric-val">${h.runningCount || 0} 个</span>
+                    </div>
+                    <div class="metric-cell">
+                      <span class="metric-label">~/.dsh 存储</span>
+                      <span class="metric-val">${formatBytes(h.totalBytes)}</span>
+                    </div>
+                  </div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#475569;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--hairline);">
+                    <span>⚡ 同步引擎：<strong>${esc(h.bridgeState?.turbo?.engineLabel || "🐢 标准轮询 (可升级)")}</strong></span>
+                    <button class="pill-action-btn primary" style="padding:4px 10px;font-size:11.5px;" onclick="openTurboGuideSheet()">
+                      ${h.bridgeState?.turbo?.enabled ? "⚡ 极速详情" : "🚀 一键提速"}
+                    </button>
+                  </div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:#475569;">
+                    <span>飞书远程完成/异常卡片通知</span>
+                    <button class="pill-action-btn ${h.remoteActive ? "primary" : ""}" style="padding:4px 10px;font-size:11.5px;" onclick="toggleHostRemoteMode('${esc(h.hostId)}', ${!h.remoteActive})">
+                      ${h.remoteActive ? "🔔 已开启" : "🔕 已关闭"}
+                    </button>
+                  </div>
+                </div>
+              `).join("") || `<div style="padding:24px;text-align:center;color:#94a3b8;">暂未检测到在线电脑</div>`}
+            </div>
+          </div>
+
+          <div>
+            <div class="settings-group-title">多电脑协同与一键迁移</div>
+            <div class="settings-card">
+              <div class="settings-item">
+                <div>
+                  <div class="settings-item-title">跨电脑一键迁移会话</div>
+                  <div class="settings-item-desc">将源电脑 ~/.dsh 会话打包同步至目标电脑并可选清理源机</div>
+                </div>
+                <button class="pill-action-btn primary" onclick="openMigrateWizard()">📦 打开迁移向导</button>
+              </div>
+              <div class="settings-item">
+                <div>
+                  <div class="settings-item-title">接入新电脑（含你的私密认证密钥）</div>
+                  <div class="settings-item-desc">公开 GitHub 仓库不含密码，点击复制带密钥的专属接入命令</div>
+                </div>
+                <button class="pill-action-btn" onclick="copyCodeText('${encodeURIComponent(onboardingCmd)}')">📋 复制专属命令</button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="settings-group-title">手机锁屏通知 (iOS 16.4+ Web Push)</div>
+            <div class="settings-card">
+              <div class="settings-item" style="display:block;">
+                <div class="settings-item-title">启用 iPhone 锁屏实时推送</div>
+                <div class="settings-item-desc">当任意电脑有待审批、任务完成或异常时直接弹窗</div>
+                <div id="pushLocalStatus" style="margin-top:9px;font-size:12.5px;font-weight:600;color:var(--primary);">
+                  正在检测本机推送状态…
+                </div>
+                <div id="pushDeviceList" style="margin-top:4px;font-size:12px;color:#64748b;line-height:1.55;"></div>
+                <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+                  <button class="pill-action-btn primary" onclick="subscribeIphonePush()">📲 开启推送</button>
+                  <button class="pill-action-btn" onclick="sendTestPush()">🔔 测试</button>
+                  <button class="pill-action-btn" style="color:var(--red);" onclick="disableIphonePush()">关闭本机推送</button>
+                </div>
+                <div class="settings-item-desc" style="margin-top:8px;">
+                  iPhone 需先在 Safari「分享 → 添加到主屏幕」，再从桌面图标打开本页开启，才能收到锁屏通知
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="settings-group-title">隐私与访问密码保护</div>
+            <div class="settings-card">
+              <div class="settings-item">
+                <div>
+                  <div class="settings-item-title">修改总控台访问密码</div>
+                  <div class="settings-item-desc">随时更换访问密钥，防止未授权访问</div>
+                </div>
+                <button class="pill-action-btn" onclick="promptChangePassword()">🔑 修改密码</button>
+              </div>
+              <div class="settings-item">
+                <div>
+                  <div class="settings-item-title">锁定当前浏览器</div>
+                  <div class="settings-item-desc">清除本机浏览器缓存的登录凭证</div>
+                </div>
+                <button class="pill-action-btn" style="color:var(--red);" onclick="lockAndLogout()">🔒 立即锁定</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+		refreshPushStatus();
+	}
+	let lastPushStatusAt = 0;
+	async function refreshPushStatus(manual = false) {
+		if (!manual && Date.now() - lastPushStatusAt < 1500) return;
+		lastPushStatusAt = Date.now();
+		const statusEl = document.getElementById("pushLocalStatus");
+		const listEl = document.getElementById("pushDeviceList");
+		if (!statusEl) return;
+		const subs = hubState.pushSubscriptions || [];
+		if (listEl) {
+			if (!subs.length) listEl.textContent = "还没有设备登记推送";
+			else {
+				const devices = subs.slice(0, 5).map((sub) => {
+					return `${sub.deviceName || "未知设备"}${sub.endpointHost ? ` · ${sub.endpointHost}` : ""}`;
+				});
+				const more = subs.length > 5 ? ` 等 ${subs.length} 台` : "";
+				listEl.textContent = `已在服务端登记 ${subs.length} 台设备：${devices.join("；")}${more}`;
+			}
+		}
+		if (!("serviceWorker" in navigator) || !("PushManager" in window) || typeof Notification === "undefined") {
+			statusEl.textContent = "本机：当前浏览器不支持锁屏推送（iPhone 需从主屏幕 App 打开）";
+			statusEl.style.color = "#d97706";
+			return;
+		}
+		try {
+			const reg = await navigator.serviceWorker.getRegistration();
+			const sub = reg ? await reg.pushManager.getSubscription() : null;
+			const permission = Notification.permission;
+			if (sub && permission === "granted") {
+				statusEl.textContent = "本机：✅ 已开启锁屏推送";
+				statusEl.style.color = "#059669";
+			} else if (sub && permission === "denied") {
+				statusEl.textContent = "本机：已订阅但通知权限被拒绝，请到「设置 → 通知」中允许";
+				statusEl.style.color = "#dc2626";
+			} else if (permission === "denied") {
+				statusEl.textContent = "本机：通知权限被拒绝，请到「设置 → 通知 → DSH 远控」中允许";
+				statusEl.style.color = "#dc2626";
+			} else {
+				statusEl.textContent = "本机：未开启（点下方「开启推送」）";
+				statusEl.style.color = "#d97706";
+			}
+			if (manual) showToast("已刷新推送状态");
+		} catch (err) {
+			statusEl.textContent = "本机：状态读取失败（" + (err && err.message || err) + "）";
+			statusEl.style.color = "#dc2626";
+		}
+	}
+	async function disableIphonePush() {
+		try {
+			const reg = await navigator.serviceWorker.getRegistration();
+			const sub = reg ? await reg.pushManager.getSubscription() : null;
+			if (!sub) {
+				showToast("本机当前没有开启推送");
+				refreshPushStatus();
+				return;
+			}
+			const endpoint = sub.endpoint;
+			await sub.unsubscribe();
+			try {
+				await apiFetch("/api/push/unsubscribe", {
+					method: "POST",
+					body: JSON.stringify({ endpoint })
+				});
+			} catch {}
+			showToast("🔕 已关闭本机推送");
+			setTimeout(fetchState, 300);
+			refreshPushStatus();
+		} catch (err) {
+			showToast("❌ 关闭失败：" + (err && err.message || err));
+		}
+	}
+	async function activateFeishuHost(hostId) {
+		await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/activate`, { method: "POST" });
+		showToast("🎯 已切换飞书主控电脑");
+		setTimeout(fetchState, 400);
+	}
+	async function toggleHostRemoteMode(hostId, enable) {
+		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
+		if (host && host.online === false) {
+			showToast("❌ 该电脑当前离线，无法切换通知");
+			return;
+		}
+		try {
+			const res = await dispatchHostCommand(hostId, {
+				type: "remote_mode",
+				active: enable
+			});
+			if (res && res.ok === false) {
+				showToast("❌ " + (res.error || "切换失败"));
+				return;
+			}
+			if (host) host.remoteActive = enable;
+			renderSettingsTab();
+			showToast(enable ? "🔔 已开启飞书通知（2 小时无操作会自动关闭）" : "🔕 已关闭飞书通知");
+			setTimeout(fetchState, 2500);
+		} catch (err) {
+			showToast("❌ 切换失败: " + (err.message || err));
+		}
+	}
+	async function promptChangePassword() {
+		const next = prompt("请输入新的总控台访问密码（至少 6 位）：");
+		if (!next || next.trim().length < 6) return;
+		const clean = next.trim();
+		const data = await (await apiFetch("/api/auth/change-token", {
+			method: "POST",
+			body: JSON.stringify({ newToken: clean })
+		})).json();
+		if (data.ok) {
+			localStorage.setItem("dsh_hub_token", clean);
+			showToast("✅ 访问密码已更新！请同步更新各电脑 ~/.dsh/feishu.env");
+			renderSettingsTab();
+		} else showToast("❌ " + (data.error || "修改失败"));
+	}
+	function openMigrateWizard() {
+		const hosts = hubState.hosts || [];
+		if (hosts.length < 2) {
+			showToast("需要至少 2 台已接入的电脑才能互相迁移");
+			return;
+		}
+		migSource = hosts[0].hostId;
+		migTarget = hosts[1].hostId;
+		renderMigrateWizard();
+		openSheet("mobileSettingsSheet");
+	}
+	function renderMigrateWizard() {
+		const hosts = hubState.hosts || [];
+		const srcObj = hosts.find((h) => h.hostId === migSource) || hosts[0];
+		const dstObj = hosts.find((h) => h.hostId === migTarget) || hosts[1] || hosts[0];
+		const body = document.getElementById("migrateWizardBody");
+		body.innerHTML = `
+        <div class="form-label">1. 选择迁移方向</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <div style="flex:1;padding:10px 12px;border-radius:12px;background:var(--subtle);text-align:center;font-weight:700;font-size:14px;">
+            💻 ${esc(srcObj?.hostName || migSource)}
+            <div style="font-size:11px;color:#64748b;font-weight:400;margin-top:2px;">源电脑</div>
+          </div>
+          <button class="pill-action-btn" onclick="swapMigrateHosts()">⇄ 互换</button>
+          <div style="flex:1;padding:10px 12px;border-radius:12px;background:var(--primary-soft);border:1px solid #bfdbfe;text-align:center;font-weight:700;font-size:14px;color:var(--primary);">
+            💻 ${esc(dstObj?.hostName || migTarget)}
+            <div style="font-size:11px;color:#3b82f6;font-weight:400;margin-top:2px;">目标电脑</div>
+          </div>
+        </div>
+
+        <div class="form-label">2. 迁移选项</div>
+        <label style="display:flex;align-items:center;gap:8px;padding:9px 0;font-size:14px;cursor:pointer;">
+          <input type="checkbox" checked onchange="migSwitchFeishu=this.checked" />
+          <span>迁移完成后自动把飞书机器人切到目标电脑</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;padding:9px 0;font-size:14px;cursor:pointer;">
+          <input type="checkbox"  onchange="migWipeSource=this.checked" />
+          <span>迁移后清空源电脑上的会话历史（保留飞书凭证）</span>
+        </label>
+
+        <button class="primary-block-btn" onclick="submitRealMigration()">🚀 开始一键加密迁移</button>
+      `;
+	}
+	function swapMigrateHosts() {
+		const tmp = migSource;
+		migSource = migTarget;
+		migTarget = tmp;
+		renderMigrateWizard();
+	}
+	async function submitRealMigration() {
+		closeSheet("mobileSettingsSheet");
+		showToast("📦 已启动跨电脑加密迁移任务...");
+		await apiFetch("/api/migrate", {
+			method: "POST",
+			body: JSON.stringify({
+				sourceHostId: migSource,
+				targetHostId: migTarget,
+				switchFeishu: migSwitchFeishu,
+				wipeSource: migWipeSource
+			})
+		});
+		setTimeout(fetchState, 1e3);
+	}
+	async function subscribeIphonePush() {
+		if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+			showToast("当前浏览器不支持 Web Push：iPhone 请用 Safari「添加到主屏幕」后从桌面图标打开");
+			return;
+		}
+		if (isIosDevice() && !isStandaloneApp()) {
+			showToast("请先用 Safari「分享 → 添加到主屏幕」，再从桌面图标打开本页开启推送");
+			return;
+		}
+		try {
+			let perm = Notification.permission;
+			if (perm !== "granted" && typeof Notification.requestPermission === "function") perm = await Notification.requestPermission();
+			if (perm !== "granted") {
+				showToast(perm === "denied" ? "通知权限已被拒绝：请到 iPhone「设置 → 通知 → DSH 远控」中改为允许" : "未获得通知权限，请重试并在弹窗中点「允许」");
+				return;
+			}
+			await navigator.serviceWorker.register("/sw.js");
+			const reg = await navigator.serviceWorker.ready;
+			const oldSub = await reg.pushManager.getSubscription().catch(() => null);
+			if (oldSub) await oldSub.unsubscribe().catch(() => {});
+			const keyRes = await (await apiFetch("/api/push/vapid-public-key")).json();
+			if (!keyRes || !keyRes.publicKey) throw new Error("服务器未返回 VAPID 公钥");
+			const sub = await reg.pushManager.subscribe({
+				userVisibleOnly: true,
+				applicationServerKey: urlBase64ToUint8Array(keyRes.publicKey)
+			});
+			const res = await apiFetch("/api/push/subscribe", {
+				method: "POST",
+				body: JSON.stringify({
+					subscription: sub,
+					deviceName: isIosDevice() ? "iPhone 主屏幕 App" : "浏览器 Web Push"
+				})
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok || data.ok === false) throw new Error(data.error || "订阅上报失败 (HTTP " + res.status + ")");
+			showToast("📲 已成功开启 iPhone 锁屏推送！");
+			setTimeout(fetchState, 300);
+		} catch (err) {
+			const detail = (err && err.name ? err.name + ": " : "") + (err && err.message || err);
+			console.warn("[DSH push] 开启失败", err);
+			let hint = "";
+			if (/push service|Registration failed|AbortError|network|Failed to fetch/i.test(detail)) hint = "（连不上推送服务：桌面 Chrome 需能访问 Google FCM，iPhone 请从主屏幕 App 打开）";
+			showToast("❌ 开启失败: " + detail + hint);
+		}
+	}
+	async function sendTestPush() {
+		try {
+			const data = await (await apiFetch("/api/push/test", {
+				method: "POST",
+				body: JSON.stringify({})
+			})).json().catch(() => ({}));
+			const total = Number(data.totalSubscriptions || 0);
+			const sent = Number(data.sentCount || 0);
+			if (!total) {
+				showToast("⚠️ 还没有设备订阅推送，请先点「开启推送」");
+				return;
+			}
+			if (!sent) {
+				const failed = (data.results || []).find((r) => r && r.ok === false);
+				showToast("⚠️ 测试推送未送达：" + (failed && failed.error || "推送服务返回失败"));
+				return;
+			}
+			showToast(`🔔 已发送测试锁屏通知（${sent}/${total} 台设备）`);
+			setTimeout(fetchState, 300);
+		} catch (err) {
+			showToast("❌ 发送失败: " + (err && err.message || err));
+		}
+	}
+	function openHostSheet() {
+		const hosts = hubState.hosts || [];
+		const totalCount = hosts.reduce((acc, h) => acc + (h.bridgeState?.tasks || []).length, 0);
+		const onlineCount = hosts.filter((h) => h.online).length;
+		document.getElementById("hostSheetCountLabel").textContent = `${onlineCount}/${hosts.length} 台设备在线`;
+		const list = document.getElementById("hostOptionList");
+		list.innerHTML = [`<div class="host-option ${currentHostId === "ALL_HOSTS" ? "selected" : ""}" onclick="selectHost('ALL_HOSTS')">
+          <div>
+            <div style="font-weight:700;font-size:15px;">🌐 全部电脑汇总</div>
+            <div style="font-size:12.5px;color:#64748b;margin-top:2px;">一屏混排查看 ${hosts.length} 台电脑共 ${totalCount} 条会话</div>
+          </div>
+          <span style="font-size:13px;font-weight:600;color:#2563eb;">${currentHostId === "ALL_HOSTS" ? "当前视图 ✓" : "切换 ›"}</span>
+        </div>`, ...hosts.map((h) => `
+          <div class="host-option ${h.hostId === currentHostId ? "selected" : ""}" onclick="selectHost('${esc(h.hostId)}')">
+            <div>
+              <div style="font-weight:700;font-size:15px;">${h.online ? "🟢" : "⚪"} ${esc(h.hostName)}</div>
+              <div style="font-size:12.5px;color:#64748b;margin-top:2px;">${(h.bridgeState?.tasks || []).length} 条会话 · ${h.isFeishuActive ? "🎯 飞书当前主控" : h.online ? "在线待命" : "离线"}</div>
+            </div>
+            <span style="font-size:13px;font-weight:600;color:#2563eb;">${h.hostId === currentHostId ? "当前设备 ✓" : "切换 ›"}</span>
+          </div>
+        `)].join("");
+		openSheet("hostSheet");
+	}
+	function selectHost(id) {
+		currentHostId = id;
+		currentProject = "ALL";
+		fileProjectCwd = "";
+		closeSheet("hostSheet");
+		renderAll();
+	}
+	function selectProject(proj) {
+		currentProject = proj;
+		renderAll();
+	}
+	function switchTab(tab) {
+		currentTab = tab;
+		document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+		document.getElementById("tab-" + tab).classList.add("active");
+		if (tab === "files") {
+			const hosts = hubState.hosts || [];
+			const host = currentHostId === "ALL_HOSTS" ? hosts[0] : hosts.find((h) => h.hostId === currentHostId);
+			if (host && !host.lastFsListing) {
+				const projs = getHostProjects(host);
+				const firstTask = (host.bridgeState?.tasks || [])[0];
+				if (projs[0]) requestDirList(host.hostId, firstTask?.id || "", projs[0].cwd, "");
+			}
+		}
+		renderAll();
+	}
+	function closeSheet(id) {
+		dismissOverlay("sheet:" + id, () => rawCloseSheet(id));
+	}
+	function onSearchInput() {
+		searchQuery = document.getElementById("searchInput").value;
+		document.getElementById("searchClearBtn").style.display = searchQuery ? "inline-flex" : "none";
+		renderSessionList();
+	}
+	function clearSearch() {
+		const input = document.getElementById("searchInput");
+		input.value = "";
+		searchQuery = "";
+		document.getElementById("searchClearBtn").style.display = "none";
+		renderSessionList();
+	}
+	function copyCodeText(encoded) {
+		const text = decodeURIComponent(encoded);
+		navigator.clipboard?.writeText(text);
+		showToast("📋 已复制到剪贴板");
+	}
+	function openTurboGuideSheet() {
+		const hosts = hubState.hosts || [];
+		const currentTk = getToken();
+		const body = document.getElementById("turboGuideBody");
+		const oneStepCmd = `git clone https://github.com/oscarka/deepseekharness-remotecontrol.git ~/deepseekharness-remote && cd ~/deepseekharness-remote && ./connect-host.sh "电脑名称" "${currentTk}"`;
+		body.innerHTML = `
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px;margin-bottom:14px;font-size:13px;color:#166534;line-height:1.5;">
+          <strong>🦀 Rust 原生极速引擎 + 双向 SSE 实时流 (dsh-turbo)</strong><br/>
+          对 DeepSeek Harness / Antigravity IDE / Codex 本体 <strong>100% 零改动</strong>，通过只读监听日志文件末尾字节与 macOS 原生 CGEvent 按键注入，将延迟从 3~10 秒压至 <strong>&lt;200ms</strong>。
+        </div>
+
+        <div class="form-label">1. 已连接电脑极速引擎与权限状态</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
+          ${hosts.map((h) => {
+			const tb = h.bridgeState?.turbo;
+			const isTurbo = Boolean(tb?.enabled);
+			const axOk = tb ? tb.accessibilityGranted !== false : false;
+			return `
+              <div style="border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--subtle);">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+                  <strong style="font-size:14px;">${h.online ? "🟢" : "⚪"} ${esc(h.hostName)}</strong>
+                  <span style="font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:${isTurbo ? "#dcfce7" : "#fef3c7"};color:${isTurbo ? "#15803d" : "#b45309"};">
+                    ${esc(tb?.engineLabel || "🐢 标准轮询模式")}
+                  </span>
+                </div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">
+                  辅助功能遥控权限：${axOk ? "<span style=\"color:#16a34a;font-weight:600;\">✅ 已授权 (支持 1ms 审批点击)</span>" : "<span style=\"color:#d97706;font-weight:600;\">⚠️ 待开启或待升级</span>"}
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button class="pill-action-btn primary" style="font-size:12px;padding:5px 11px;" onclick="upgradeHostTurbo('${esc(h.hostId)}')">
+                    🚀 远程一键升级/刷新极速引擎
+                  </button>
+                  <button class="pill-action-btn" style="font-size:12px;padding:5px 11px;" onclick="requestHostAxPermission('${esc(h.hostId)}')">
+                    🔓 在电脑弹出辅助功能授权框
+                  </button>
+                </div>
+              </div>
+            `;
+		}).join("") || `<div style="padding:14px;text-align:center;color:#94a3b8;font-size:13px;">暂未检测到已接入的电脑</div>`}
+        </div>
+
+        <div class="form-label">2. 如何让手机遥控最流畅最快（3 步指南）</div>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px;color:#334155;line-height:1.55;margin-bottom:14px;">
+          <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid var(--border);">
+            <strong>① 一步命令接入（自动启用 Rust 加速 + 免二次安装）</strong><br/>
+            新电脑只需运行一次 <code>./connect-host.sh</code>，脚本会自动寻找系统或 IDE 内置运行时、挂载 <code>dsh-turbo</code> 预编译 Rust 加速模块，并自动弹出 macOS 辅助功能授权框。<br/>
+            <button class="pill-action-btn" style="margin-top:6px;font-size:11.5px;padding:4px 10px;" onclick="copyCodeText('${encodeURIComponent(oneStepCmd)}')">📋 复制一键满血接入命令</button>
+          </div>
+          <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid var(--border);">
+            <strong>② 勾选 macOS「辅助功能」权限</strong><br/>
+            若手机点审批时电脑未自动按下回车，点上方「🔓 在电脑弹出辅助功能授权框」，在电脑弹出的「系统设置 → 隐私与安全性 → 辅助功能」中打开开关即可。
+          </div>
+          <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid var(--border);">
+            <strong>③ iPhone Safari 添加到主屏幕 + 开启锁屏推送</strong><br/>
+            在 Safari 点底部「分享 → 添加到主屏幕」，从桌面独立图标打开并开启锁屏推送，获得原生 App 级全屏帧率与锁屏秒级提醒。
+          </div>
+        </div>
+      `;
+		openSheet("turboGuideSheet");
+	}
+	async function requestHostAxPermission(hostId) {
+		showToast("🔓 正在电脑端弹出 macOS 辅助功能授权窗口...");
+		await dispatchHostCommand(hostId, { type: "request_ax_permission" });
+		setTimeout(fetchState, 400);
+		setTimeout(() => {
+			if (document.getElementById("turboGuideSheet").classList.contains("open")) openTurboGuideSheet();
+		}, 900);
+	}
+	async function upgradeHostTurbo(hostId) {
+		showToast("🚀 已发送远程升级并启用 Rust 极速引擎指令...");
+		await dispatchHostCommand(hostId, { type: "upgrade_turbo" });
+		setTimeout(fetchState, 600);
+		setTimeout(() => {
+			if (document.getElementById("turboGuideSheet").classList.contains("open")) openTurboGuideSheet();
+		}, 1200);
+	}
+	function rawCloseSheet(id) {
+		if (id === "newTaskSheet") stopVoiceInput();
+		document.getElementById(id)?.classList.remove("open");
+		if (id === "inChatFileSheet") document.body.classList.remove("mobile-file-open");
+	}
+	function trackOverlay(kind, closeFn) {
+		if (overlayStack.some((item) => item.kind === kind)) return;
+		overlayStack.push({
+			kind,
+			closeFn
+		});
+		try {
+			history.pushState({
+				__dshOverlay: kind,
+				__dshDepth: overlayStack.length
+			}, "");
+		} catch {}
+	}
+	function openSheet(id) {
+		const el = document.getElementById(id);
+		if (!el) return;
+		el.classList.add("open");
+		trackOverlay("sheet:" + id, () => rawCloseSheet(id));
+	}
+	function dismissOverlay(kind, fallbackClose) {
+		const index = overlayStack.map((item) => item.kind).lastIndexOf(kind);
+		const entry = index >= 0 ? overlayStack.splice(index, 1)[0] : null;
+		if (entry) entry.closeFn();
+		else if (typeof fallbackClose === "function") fallbackClose();
+		if (entry && history.state && history.state.__dshOverlay) {
+			suppressPopstateCount += 1;
+			try {
+				history.back();
+			} catch {
+				suppressPopstateCount = Math.max(0, suppressPopstateCount - 1);
+			}
+		}
+	}
+	window.addEventListener("popstate", () => {
+		if (suppressPopstateCount > 0) {
+			suppressPopstateCount -= 1;
+			return;
+		}
+		const state = history.state || null;
+		const targetDepth = state && typeof state.__dshDepth === "number" ? state.__dshDepth : 0;
+		while (overlayStack.length > targetDepth) {
+			const entry = overlayStack.pop();
+			if (entry) entry.closeFn();
+		}
+	});
+	document.addEventListener("keydown", (event) => {
+		if (event.key !== "Escape" || overlayStack.length === 0) return;
+		const tag = document.activeElement && document.activeElement.tagName || "";
+		if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+		event.preventDefault();
+		const top = overlayStack[overlayStack.length - 1];
+		dismissOverlay(top.kind, top.closeFn);
+	});
+	function setupChatSwipeBack() {
+		const chat = document.getElementById("chatFullscreen");
+		if (!chat) return;
+		const EDGE = 30;
+		let tracking = false;
+		let decided = null;
+		let startX = 0;
+		let startY = 0;
+		let lastX = 0;
+		let lastY = 0;
+		let startedAt = 0;
+		let width = 0;
+		const resetChatStyle = () => {
+			chat.style.transition = "";
+			chat.style.transform = "";
+			chat.style.willChange = "";
+			chat.style.boxShadow = "";
+		};
+		const isHorizontallyScrollable = (target) => {
+			let node = target;
+			while (node && node !== chat && node.nodeType === 1) {
+				const overflowX = window.getComputedStyle(node).overflowX;
+				if (/(auto|scroll)/.test(overflowX) && node.scrollWidth > node.clientWidth + 4) return true;
+				node = node.parentElement;
+			}
+			return false;
+		};
+		chat.addEventListener("touchstart", (event) => {
+			if (event.touches.length !== 1) return;
+			if (!document.body.classList.contains("mobile-chat-open")) return;
+			if (document.body.classList.contains("DesktopSplitMode")) return;
+			const touch = event.touches[0];
+			const rect = chat.getBoundingClientRect();
+			if (touch.clientX - rect.left > EDGE) return;
+			if (isHorizontallyScrollable(event.target)) return;
+			tracking = true;
+			decided = null;
+			startX = touch.clientX;
+			startY = touch.clientY;
+			lastX = startX;
+			lastY = startY;
+			startedAt = Date.now();
+			width = rect.width || window.innerWidth;
+		}, { passive: true });
+		chat.addEventListener("touchmove", (event) => {
+			if (!tracking) return;
+			const touch = event.touches[0];
+			const dx = touch.clientX - startX;
+			const dy = touch.clientY - startY;
+			lastX = touch.clientX;
+			lastY = touch.clientY;
+			if (decided === null) {
+				if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+				decided = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.2;
+				if (!decided) {
+					tracking = false;
+					return;
+				}
+				chat.style.transition = "none";
+				chat.style.willChange = "transform";
+			}
+			if (dx <= 0) return;
+			if (event.cancelable) event.preventDefault();
+			chat.style.transform = `translateX(${Math.min(dx, width)}px)`;
+			chat.style.boxShadow = "-10px 0 30px rgba(15, 23, 42, 0.16)";
+		}, { passive: false });
+		const finishSwipe = () => {
+			if (!tracking) return;
+			tracking = false;
+			const dismiss = shouldDismissHorizontalSwipe({
+				dx: Math.max(0, lastX - startX),
+				dy: Math.abs(lastY - startY),
+				width,
+				durationMs: Date.now() - startedAt
+			});
+			chat.style.transition = "transform 0.24s cubic-bezier(0.22, 1, 0.36, 1)";
+			if (dismiss) {
+				chat.style.transform = `translateX(${width}px)`;
+				closeMobileChat();
+				setTimeout(resetChatStyle, 260);
+			} else {
+				chat.style.transform = "translateX(0px)";
+				setTimeout(resetChatStyle, 280);
+			}
+		};
+		chat.addEventListener("touchend", finishSwipe);
+		chat.addEventListener("touchcancel", finishSwipe);
+	}
+	function setupSheetSwipeDismiss() {
+		document.querySelectorAll(".sheet-backdrop").forEach((backdrop) => {
+			const panel = backdrop.querySelector(".sheet-panel");
+			if (!panel) return;
+			let tracking = false;
+			let startX = 0;
+			let startY = 0;
+			let lastX = 0;
+			let lastY = 0;
+			let startedAt = 0;
+			const resetPanelStyle = () => {
+				panel.style.transition = "";
+				panel.style.transform = "";
+				panel.style.willChange = "";
+			};
+			const hasScrolledInner = (target) => {
+				let node = target;
+				while (node && node !== panel && node.nodeType === 1) {
+					const overflowY = window.getComputedStyle(node).overflowY;
+					if (/(auto|scroll)/.test(overflowY) && node.scrollTop > 0) return true;
+					node = node.parentElement;
+				}
+				return false;
+			};
+			panel.addEventListener("touchstart", (event) => {
+				if (event.touches.length !== 1) return;
+				if (panel.scrollTop > 0 || hasScrolledInner(event.target)) return;
+				const touch = event.touches[0];
+				tracking = true;
+				startX = touch.clientX;
+				startY = touch.clientY;
+				lastX = startX;
+				lastY = startY;
+				startedAt = Date.now();
+			}, { passive: true });
+			panel.addEventListener("touchmove", (event) => {
+				if (!tracking) return;
+				const touch = event.touches[0];
+				const dy = touch.clientY - startY;
+				const dx = touch.clientX - startX;
+				lastX = touch.clientX;
+				lastY = touch.clientY;
+				if (dy <= 0) return;
+				if (Math.abs(dx) > dy * 1.2) {
+					tracking = false;
+					return;
+				}
+				if (event.cancelable) event.preventDefault();
+				panel.style.transition = "none";
+				panel.style.willChange = "transform";
+				panel.style.transform = `translateY(${dy}px)`;
+			}, { passive: false });
+			const finishSwipe = () => {
+				if (!tracking) return;
+				tracking = false;
+				const dismiss = shouldDismissVerticalSwipe({
+					dy: Math.max(0, lastY - startY),
+					dx: lastX - startX,
+					height: panel.offsetHeight,
+					durationMs: Date.now() - startedAt
+				});
+				panel.style.transition = "transform 0.2s cubic-bezier(0.22, 1, 0.36, 1)";
+				if (dismiss) {
+					panel.style.transform = `translateY(${panel.offsetHeight || 600}px)`;
+					setTimeout(() => {
+						closeSheet(backdrop.id);
+						resetPanelStyle();
+					}, 190);
+				} else {
+					panel.style.transform = "translateY(0)";
+					setTimeout(resetPanelStyle, 220);
+				}
+			};
+			panel.addEventListener("touchend", finishSwipe);
+			panel.addEventListener("touchcancel", finishSwipe);
+		});
+	}
+	function maybeShowSwipeHint() {
+		if (!("ontouchstart" in window)) return;
+		try {
+			if (localStorage.getItem("dsh_swipe_hint_v1")) return;
+			localStorage.setItem("dsh_swipe_hint_v1", "1");
+		} catch {
+			return;
+		}
+		setTimeout(() => showToast("💡 提示：从左边缘向右滑，即可返回会话列表"), 600);
+	}
+	function setupOverlayGestures() {
+		setupChatSwipeBack();
+		setupSheetSwipeDismiss();
+	}
+	function setupInstallHint() {
+		const el = document.getElementById("installHint");
+		if (!el) return;
+		let dismissed = true;
+		try {
+			dismissed = localStorage.getItem("dsh_a2hs_dismissed_v1") === "1";
+		} catch {}
+		if (!shouldShowInstallHint({
+			isIos: isIosDeviceForHint(),
+			isStandalone: isStandaloneForHint(),
+			dismissed
+		})) {
+			el.style.display = "none";
+			return;
+		}
+		el.style.display = "flex";
+		setTimeout(() => {
+			el.classList.add("show");
+		}, 1200);
+	}
+	function dismissInstallHint() {
+		try {
+			localStorage.setItem("dsh_a2hs_dismissed_v1", "1");
+		} catch {}
+		const el = document.getElementById("installHint");
+		if (el) {
+			el.classList.remove("show");
+			el.style.display = "none";
+		}
+	}
+	function preservePreviewUiState(nextState) {
+		const prevHosts = hubState.hosts || [];
+		for (const host of nextState.hosts || []) {
+			const prev = prevHosts.find((h) => h.hostId === host.hostId)?.lastFilePreview;
+			const next = host.lastFilePreview;
+			if (!prev || !next) continue;
+			if (prev.at === next.at && prev.relPath === next.relPath) {
+				next._showInMain = Boolean(prev._showInMain);
+				next._showInDrawer = Boolean(prev._showInDrawer);
+			}
+		}
+	}
+	function tryOpenDeepLinkTarget({ hostId, agentId } = {}) {
+		const targetTaskId = String(agentId || "").trim();
+		const targetHostId = String(hostId || "").trim();
+		if (targetHostId && (hubState.hosts || []).some((h) => h.hostId === targetHostId)) {
+			if (currentHostId !== "ALL_HOSTS" && currentHostId !== targetHostId) currentHostId = targetHostId;
+		}
+		if (targetTaskId) {
+			const found = findSessionGlobal(targetTaskId);
+			if (found) {
+				if (currentTab !== "chats") switchTab("chats");
+				openChat(found.session.id);
+				return true;
+			}
+			return false;
+		}
+		if (targetHostId && (hubState.hosts || []).some((h) => h.hostId === targetHostId)) {
+			currentHostId = targetHostId;
+			renderAll();
+			return true;
+		}
+		return false;
+	}
+	function flushPendingDeepLink() {
+		if (!pendingDeepLinkHostId && !pendingDeepLinkTaskId) return;
+		if (tryOpenDeepLinkTarget({
+			hostId: pendingDeepLinkHostId,
+			agentId: pendingDeepLinkTaskId
+		})) {
+			pendingDeepLinkHostId = "";
+			pendingDeepLinkTaskId = "";
+		}
+	}
+	if (typeof navigator !== "undefined" && "serviceWorker" in navigator && navigator.serviceWorker) try {
+		navigator.serviceWorker.addEventListener("message", (event) => {
+			const msg = event?.data;
+			if (msg && msg.type === "NOTIFICATION_CLICK" && msg.data) {
+				const { hostId, agentId } = msg.data;
+				if (!tryOpenDeepLinkTarget({
+					hostId,
+					agentId
+				})) {
+					pendingDeepLinkHostId = String(hostId || "").trim();
+					pendingDeepLinkTaskId = String(agentId || "").trim();
+					fetchState();
+				}
+			}
+		});
+	} catch {}
+	function applyHubState(nextState) {
+		preservePreviewUiState(nextState);
+		hubState = nextState;
+	}
+	async function fetchState() {
+		try {
+			const data = await (await apiFetch("/api/state")).json();
+			if (data.ok) {
+				applyHubState(data);
+				renderAll();
+				flushPendingDeepLink();
+				return { ok: true };
+			}
+			return {
+				ok: false,
+				error: data.error || "服务端返回异常"
+			};
+		} catch (err) {
+			const message = err && err.message ? err.message : String(err);
+			return {
+				ok: false,
+				unauthorized: message === "Unauthorized",
+				error: message
+			};
+		}
+	}
+	let sseSource = null;
+	let sseConnected = false;
+	let lastSseEventAt = 0;
+	function connectSSE() {
+		if (urlParams.get("nosse") === "1") return;
+		if (sseSource) try {
+			sseSource.close();
+		} catch {}
+		sseConnected = false;
+		const tk = getToken();
+		const url = "/api/events" + (tk ? "?token=" + encodeURIComponent(tk) : "");
+		try {
+			sseSource = new EventSource(url);
+			sseSource.onopen = () => {
+				sseConnected = true;
+				lastSseEventAt = Date.now();
+			};
+			sseSource.onerror = () => {
+				sseConnected = false;
+			};
+			sseSource.addEventListener("state", (evt) => {
+				try {
+					sseConnected = true;
+					lastSseEventAt = Date.now();
+					const data = JSON.parse(evt.data);
+					if (data.ok) {
+						applyHubState(data);
+						renderAll();
+						flushPendingDeepLink();
+					}
+				} catch {}
+			});
+		} catch {}
+	}
+	Object.assign(window, {
+		getToken,
+		authHeaders,
+		apiFetch,
+		submitAuthLogin,
+		lockAndLogout,
+		dismissLiveBanner,
+		setPreviewMode,
+		esc,
+		cleanPreviewText,
+		formatTime,
+		formatBytes,
+		showToast,
+		getNormalizedSessions,
+		findSessionGlobal,
+		getHostProjects,
+		renderAll,
+		renderProjectStrip,
+		renderSessionList,
+		openChat,
+		rawCloseChat,
+		closeMobileChat,
+		closeMobileFile,
+		selectAgyApprovalOption,
+		submitAgyApproval,
+		renderActiveChatStage,
+		renderInlineMarkdown,
+		renderMarkdownBlocks,
+		renderMarkdown,
+		formatAssistantText,
+		scrollToChatBottom,
+		setScrollBottomVisible,
+		setupChatScrollWatcher,
+		dispatchHostCommand,
+		composerDraftKey,
+		readComposerDraft,
+		persistComposerDraft,
+		autoGrowComposer,
+		onComposerInput,
+		composerUsesCoarsePointer,
+		shouldSendOnEnter,
+		onComposerKeydown,
+		switchComposerSession,
+		setVoiceBtnRecording,
+		isVoiceRecording,
+		stopVoiceInput,
+		toggleVoiceInput,
+		sendPromptToActiveSession,
+		sendQuickFollowup,
+		stopActiveSession,
+		sendApprovalDecision,
+		openInChatFileDrawer,
+		previewKind,
+		imagePreviewSrc,
+		buildBreadcrumbSegments,
+		renderInChatFileDrawerBody,
+		backFromDrawerPreview,
+		quoteFileIntoChat,
+		sleepMs,
+		fileLoadingSpinnerHtml,
+		reconcileFileLoading,
+		requestDirList,
+		clickRealFileEntry,
+		renderFilePanes,
+		cancelFilePreviewLoading,
+		renderFilesTab,
+		closeMainFilePreview,
+		askAiAboutFile,
+		switchDesktopStage,
+		openNewTaskSheet,
+		renderNewTaskForm,
+		selectNewTaskHost,
+		selectNewTaskHarness,
+		selectNewTaskProject,
+		fillQuickPrompt,
+		submitNewTask,
+		openCurrentSessionActions,
+		openSessionActions,
+		renderActionSheet,
+		togglePinTargetSession,
+		saveInlineRename,
+		shareTargetSession,
+		jumpToSessionFiles,
+		deleteTargetSession,
+		renderSettingsTab,
+		refreshPushStatus,
+		disableIphonePush,
+		activateFeishuHost,
+		toggleHostRemoteMode,
+		promptChangePassword,
+		openMigrateWizard,
+		renderMigrateWizard,
+		swapMigrateHosts,
+		submitRealMigration,
+		urlBase64ToUint8Array,
+		isIosDevice,
+		isStandaloneApp,
+		subscribeIphonePush,
+		sendTestPush,
+		openHostSheet,
+		selectHost,
+		selectProject,
+		switchTab,
+		closeSheet,
+		onSearchInput,
+		clearSearch,
+		copyCodeText,
+		openTurboGuideSheet,
+		requestHostAxPermission,
+		upgradeHostTurbo,
+		rawCloseSheet,
+		trackOverlay,
+		openSheet,
+		dismissOverlay,
+		shouldDismissHorizontalSwipe,
+		shouldDismissVerticalSwipe,
+		setupChatSwipeBack,
+		setupSheetSwipeDismiss,
+		maybeShowSwipeHint,
+		setupOverlayGestures,
+		isIosDeviceForHint,
+		isStandaloneForHint,
+		shouldShowInstallHint,
+		setupInstallHint,
+		dismissInstallHint,
+		preservePreviewUiState,
+		tryOpenDeepLinkTarget,
+		flushPendingDeepLink,
+		applyHubState,
+		fetchState,
+		connectSSE
+	});
+	setupOverlayGestures();
+	setupChatScrollWatcher();
+	setupInstallHint();
+	fetchState();
+	connectSSE();
+	setInterval(() => {
+		if (!sseConnected || Date.now() - lastSseEventAt > 8e3) fetchState();
+	}, 3e3);
+}
+// hub/web/src/main.tsx
+var root = document.getElementById("app");
+if (root) {
+	K(/* @__PURE__ */ k(App, null), root);
+	initHubController();
+}
