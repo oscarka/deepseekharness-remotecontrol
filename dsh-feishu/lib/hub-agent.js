@@ -348,6 +348,7 @@ export class HubAgent {
       bridgeState.taskCount = (bridgeState.tasks || []).length
       bridgeState.runningCount = (bridgeState.tasks || []).filter(t => t.status === 'running').length
       bridgeState.workspaces = [...wsSet]
+      bridgeState.harnesses = this.harnessRouter ? await this.harnessRouter.getAdaptersHealth() : []
       bridgeState.turbo = this.turbo
         ? this.turbo.getTelemetry()
         : {

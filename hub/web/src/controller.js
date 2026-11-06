@@ -914,15 +914,23 @@ export function initHubController() {
         const sendBtn = document.getElementById('chatSendBtn');
         if (s.controlMode === 'observe-only') {
           runningBar.classList.remove('show');
+          chatInput.disabled = true;
+          sendBtn.disabled = true;
           chatInput.placeholder = '👀 当前会话为只读观测模式（或正在电脑独立终端运行）';
-          sendBtn.textContent = '发送';
+          sendBtn.textContent = '👀 仅观测';
         } else if (s.status === 'running') {
           runningBar.classList.add('show');
+          chatInput.disabled = false;
+          sendBtn.disabled = false;
           chatInput.placeholder = '⚡ 实时插话 (Steer)：补充指令将立即注入...';
           sendBtn.textContent = '⚡ 插话';
         } else {
           runningBar.classList.remove('show');
-          chatInput.placeholder = '发指令继续对话...';
+          chatInput.disabled = false;
+          sendBtn.disabled = false;
+          chatInput.placeholder = s.controlMode === 'idle-resumable'
+            ? `发指令通过 ${s.harnessLabel || s.harness} CLI 继续对话...`
+            : '发指令继续对话...';
           sendBtn.textContent = '发送';
         }
       }
@@ -1830,8 +1838,10 @@ export function initHubController() {
       const harnessChips = document.getElementById('newTaskHarnessChips');
       if (harnessChips) {
         const harnessOpts = [
-          { id: 'dsh', label: '🟣 DeepSeek Harness (DSH)' },
           { id: 'antigravity-ide', label: '⚡ Antigravity IDE' },
+          { id: 'codex', label: '🧠 OpenAI Codex' },
+          { id: 'claude', label: '✴️ Claude Code' },
+          { id: 'dsh', label: '🟣 DeepSeek Harness' },
         ];
         harnessChips.innerHTML = harnessOpts.map(opt => `
           <button class="choice-chip ${opt.id === newTaskHarness ? 'selected' : ''}" onclick="selectNewTaskHarness('${opt.id}')">
@@ -1884,7 +1894,13 @@ export function initHubController() {
       }
       document.getElementById('newTaskInput').value = '';
       closeSheet('newTaskSheet');
-      const engineName = newTaskHarness === 'antigravity-ide' ? 'Antigravity IDE' : 'DeepSeek Harness';
+      const engineName = newTaskHarness === 'antigravity-ide'
+        ? 'Antigravity IDE'
+        : newTaskHarness === 'codex'
+          ? 'OpenAI Codex'
+          : newTaskHarness === 'claude'
+            ? 'Claude Code'
+            : 'DeepSeek Harness';
       showToast(`🚀 正在远程电脑 (${engineName}) 创建新任务...`);
       await dispatchHostCommand(newTaskHostId, {
         type: 'new_session',
@@ -2246,10 +2262,19 @@ export function initHubController() {
                     </div>
                   </div>
                   <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--text-secondary);padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--hairline);">
-                    <span>⚡ 同步引擎：<strong>${esc(h.bridgeState?.turbo?.engineLabel || '🐢 标准轮询 (可升级)')}</strong></span>
+                    <span>⚡ 同步引擎：<strong>${esc(h.bridgeState?.turbo?.engineLabel || '🐢 标准轮询 (可升级)')}</strong>${h.syncMeta?.seq ? ` · 序号 #${h.syncMeta.seq}` : ''}</span>
                     <button class="pill-action-btn primary" style="padding:4px 10px;font-size:11.5px;" onclick="openTurboGuideSheet()">
                       ${h.bridgeState?.turbo?.enabled ? '⚡ 极速详情' : '🚀 一键提速'}
                     </button>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--hairline);font-size:11.5px;">
+                    <span style="padding:2px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">⚡ Antigravity IDE · 🟢 完全遥控</span>
+                    <span style="padding:2px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">🟣 DSH · 🟢 完全遥控</span>
+                    ${(h.bridgeState?.harnesses || []).map(ad => `
+                      <span style="padding:2px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">
+                        ${esc(ad.icon || '🔌')} ${esc(ad.label || ad.id)} · ${ad.hasBinary ? '🔵 可续聊' : (ad.installed ? '👀 仅观测' : '⚪ 未安装')}
+                      </span>
+                    `).join('')}
                   </div>
                   <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--text-secondary);">
                     <span>飞书远程完成/异常卡片通知</span>

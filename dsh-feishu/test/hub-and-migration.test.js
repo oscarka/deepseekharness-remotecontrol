@@ -2498,6 +2498,22 @@ test('Phase 2: CodexAdapter & ClaudeAdapter parse real JSONL schemas, detect con
     assert.equal(claudeRes.ok, true)
     assert.equal(executedCmds[1].bin, fakeClaudeBin)
     assert.deepEqual(executedCmds[1].args, ['--resume', claudeUuid, '-p', '增加箱线图支持'])
+
+    const codexNewRes = await codexAdapter.createSession({
+      prompt: '初始化 FastAPI Agent Hosting 骨架',
+      cwd: '/Users/cc/chinagooglerun',
+    })
+    assert.equal(codexNewRes.ok, true)
+    assert.equal(executedCmds[2].bin, fakeCodexBin)
+    assert.deepEqual(executedCmds[2].args.slice(0, 2), ['exec', '初始化 FastAPI Agent Hosting 骨架'])
+
+    const claudeNewRes = await claudeAdapter.createSession({
+      prompt: '编写单元测试',
+      cwd: '/Users/cc/hermes-agent',
+    })
+    assert.equal(claudeNewRes.ok, true)
+    assert.equal(executedCmds[3].bin, fakeClaudeBin)
+    assert.deepEqual(executedCmds[3].args, ['-p', '编写单元测试'])
   } finally {
     await rm(tmpDir, { recursive: true, force: true })
   }
