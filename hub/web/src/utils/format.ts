@@ -83,3 +83,4 @@ export function shouldShowInstallHint({
 } = {}): boolean {
   return Boolean(isIos) && !isStandalone && !dismissed;
 }
+

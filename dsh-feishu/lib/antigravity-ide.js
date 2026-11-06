@@ -228,6 +228,8 @@ export function parseAntigravityTranscript(jsonlText, {
   liveStepCount = null,
   liveLastUserInputStepIndex = null,
   liveStatus = '',
+  hasLiveSummary = false,
+  liveWaitingSteps = null,
 } = {}) {
   const rawLines = String(jsonlText ?? '')
     .split('\n')
@@ -405,7 +407,43 @@ export function parseAntigravityTranscript(jsonlText, {
         runningSummary = `💭 正在思考: ${thinkingText.replace(/\s+/g, ' ').slice(0, 120)}`
       }
 
-      const isWaitingApproval = Boolean(approvalRequest && i === lines.length - 1)
+      const activeLiveWaiting = hasLiveSummary
+        ? (Array.isArray(liveWaitingSteps) && liveWaitingSteps.length > 0 ? liveWaitingSteps[0] : null)
+        : null
+      const livePermSpec = activeLiveWaiting?.step?.requestedInteraction?.permission
+        || (activeLiveWaiting?.step?.requestedInteraction?.interaction?.case === 'permission'
+          ? activeLiveWaiting.step.requestedInteraction.interaction.value
+          : null)
+
+      let effectiveApprovalRequest = approvalRequest
+      if (!effectiveApprovalRequest && activeLiveWaiting && i === lines.length - 1) {
+        const targetCmd = String(livePermSpec?.resource?.target || tools[0]?.commandLine || '').trim()
+        const actDesc = String(livePermSpec?.actionDescription || tools[0]?.summary || 'command execution').trim()
+        const lowerAct = actDesc ? actDesc.charAt(0).toLowerCase() + actDesc.slice(1) : 'command execution'
+        const firstSub = (targetCmd.split(/\s*(?:&&|\|\||;|\n)\s*/)[0] || targetCmd).trim()
+        const persistLabel = String(livePermSpec?.suggestedPersistPattern || firstSub || targetCmd).trim()
+        effectiveApprovalRequest = {
+          toolName: livePermSpec?.resource?.action ? `permission (${livePermSpec.resource.action})` : 'run_command (BypassSandbox)',
+          promptTitle: `Allow ${lowerAct}?`,
+          subtitle: String(livePermSpec?.reason || 'the auto-run safety check did not reach a decision'),
+          commandLine: targetCmd || '请求宿主机终端执行权限',
+          firstSubcommand: firstSub,
+          options: [
+            { index: 1, label: 'Yes, allow this time' },
+            { index: 2, label: persistLabel ? `Yes, and always allow '${persistLabel}' in this conversation` : 'Yes, and always allow in this conversation' },
+            { index: 3, label: persistLabel ? `Yes, and always allow '${persistLabel}'` : 'Yes, and always allow' },
+            { index: 4, label: 'No (tell the agent what to do instead)' },
+          ],
+          reason: `${actDesc ? `${actDesc}: ` : ''}${targetCmd || '请求宿主机终端执行权限'}`.slice(0, 2000),
+        }
+      }
+
+      // When LanguageServer live trajectory summary is available (`hasLiveSummary === true`),
+      // ONLY mark as waiting for approval when LanguageServer reports a step in `waitingSteps` (`CORTEX_STEP_STATUS_WAITING`).
+      // Commands that were auto-approved on the computer ("Always allow") have `waitingSteps = []` and must NOT pop up on mobile.
+      const isWaitingApproval = i === lines.length - 1
+        && (hasLiveSummary ? Boolean(activeLiveWaiting && effectiveApprovalRequest) : Boolean(effectiveApprovalRequest))
+
       const toolDisplayLine = tools.length > 0
         ? tools
             .map(t => {
@@ -431,20 +469,31 @@ export function parseAntigravityTranscript(jsonlText, {
       })
 
       // Check if this step is currently waiting for user approval (no subsequent completion step yet)
-      if (isWaitingApproval) {
+      if (isWaitingApproval && effectiveApprovalRequest) {
         const code = `AGY-${String(conversationId).slice(0, 6).toUpperCase()}-${step.step_index ?? i}`
+        const waitingStepIndex = activeLiveWaiting?.step?.metadata?.sourceTrajectoryStepInfo?.stepIndex
+          ?? activeLiveWaiting?.stepIndex
+          ?? ((typeof step.step_index === 'number' ? step.step_index : i) + 1)
+        const waitingTrajectoryId = activeLiveWaiting?.step?.metadata?.sourceTrajectoryStepInfo?.trajectoryId
+          || conversationId
         if (!settledApprovals.has(code) && now - lastActivity < 10 * 60 * 1000) {
           pendingApproval = {
             code,
             stepIndex: step.step_index ?? i,
+            waitingStepIndex,
+            trajectoryId: waitingTrajectoryId,
+            permissionAction: livePermSpec?.resource?.action || 'unsandboxed',
+            permissionTarget: livePermSpec?.resource?.target || effectiveApprovalRequest.commandLine || '',
+            suggestedPersistPattern: livePermSpec?.suggestedPersistPattern || '',
+            persistSuggestionType: livePermSpec?.persistSuggestionType || '',
             harness: 'antigravity-ide',
-            toolName: approvalRequest.toolName,
-            promptTitle: approvalRequest.promptTitle || '',
-            subtitle: approvalRequest.subtitle || '',
-            commandLine: approvalRequest.commandLine || '',
-            firstSubcommand: approvalRequest.firstSubcommand || '',
-            options: approvalRequest.options || [],
-            reason: approvalRequest.reason,
+            toolName: effectiveApprovalRequest.toolName,
+            promptTitle: effectiveApprovalRequest.promptTitle || '',
+            subtitle: effectiveApprovalRequest.subtitle || '',
+            commandLine: effectiveApprovalRequest.commandLine || '',
+            firstSubcommand: effectiveApprovalRequest.firstSubcommand || '',
+            options: effectiveApprovalRequest.options || [],
+            reason: effectiveApprovalRequest.reason,
             createdAt: stepTime || lastActivity,
             expiresAt: (stepTime || lastActivity) + 10 * 60 * 1000,
           }
@@ -452,6 +501,21 @@ export function parseAntigravityTranscript(jsonlText, {
       }
     } else if (stepType === 'RUN_COMMAND' || stepType === 'CODE_ACTION' || stepType === 'GENERIC') {
       pendingApproval = null
+      if (
+        stepType === 'GENERIC' &&
+        typeof step.content === 'string' &&
+        (step.content.includes('There were sandbox errors') || step.content.includes('Operation not permitted'))
+      ) {
+        const prevMsg = transcript.at(-1)
+        if (prevMsg && prevMsg.role === 'assistant' && Array.isArray(prevMsg.tools)) {
+          for (const t of prevMsg.tools) {
+            if (t.name === 'run_command' && !t.bypassSandbox && t.commandLine && !t.commandLine.includes('沙盒模式试探受限')) {
+              t.commandLine = `${t.commandLine}\n# 🛡️ 沙盒模式试探受限 (Operation not permitted)，AI 随后会自动切换宿主机权限重试`
+              t.command = t.commandLine
+            }
+          }
+        }
+      }
     }
   }
 
@@ -722,9 +786,10 @@ export async function loadAntigravityIdeSessions({
   // Sort by mtime descending and only parse top (maxSessions * 2) candidates for fast I/O
   candidateFiles.sort((a, b) => b.mtimeMs - a.mtimeMs)
   const topCandidates = candidateFiles.slice(0, Math.max(maxSessions * 2, 30))
+  const latestCandidateMtimeMs = topCandidates[0]?.mtimeMs || 0
   const [nativeMetaMap, liveSummariesMap] = await Promise.all([
     loadAntigravityMetadataForCandidates(brainDirs, topCandidates),
-    loadLiveTrajectorySummaries(),
+    loadLiveTrajectorySummaries({ minFreshAt: latestCandidateMtimeMs }),
   ])
 
   const settledKey = settledApprovals ? [...settledApprovals].join(',') : ''
@@ -733,6 +798,9 @@ export async function loadAntigravityIdeSessions({
     try {
       const nativeMeta = nativeMetaMap.get(item.convId)
       const liveSummary = liveSummariesMap.get(item.convId)
+      const hasLiveSummary = Boolean(liveSummary)
+      const liveWaitingSteps = Array.isArray(liveSummary?.waitingSteps) ? liveSummary.waitingSteps : []
+      const waitingKey = liveWaitingSteps.map(w => w?.stepIndex ?? '').join(',')
       const liveStepCount = liveSummary?.stepCount !== undefined ? Number(liveSummary.stepCount) : null
       const liveLastUserInputStepIndex = liveSummary?.lastUserInputStepIndex !== undefined
         ? Number(liveSummary.lastUserInputStepIndex)
@@ -742,7 +810,7 @@ export async function loadAntigravityIdeSessions({
       const effectiveNativeTitle = nativeMeta?.title || liveTitle || ''
       const sessionId = `${AGY_IDE_PREFIX}${item.convId}`
       const customTitle = customTitles[sessionId] || customTitles[item.convId] || ''
-      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${customTitle}:${effectiveNativeTitle}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}`
+      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${customTitle}:${effectiveNativeTitle}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}:${hasLiveSummary ? 1 : 0}:${waitingKey}`
       const cached = sessionParseCache.get(item.convId)
       if (cached && cached.cacheKey === cacheKey && cached.session) {
         // Recompute dynamic running/idle status against current `now` while skipping disk read & JSONL parse
@@ -791,6 +859,8 @@ export async function loadAntigravityIdeSessions({
         liveStepCount,
         liveLastUserInputStepIndex,
         liveStatus,
+        hasLiveSummary,
+        liveWaitingSteps,
       })
       if (parsed) {
         sessionParseCache.set(item.convId, { cacheKey, session: parsed })
@@ -868,9 +938,9 @@ async function getCachedRunningCommandsSnapshot() {
 let cachedLiveSummaries = new Map()
 let cachedLiveSummariesAt = 0
 
-async function loadLiveTrajectorySummaries() {
+async function loadLiveTrajectorySummaries({ minFreshAt = 0 } = {}) {
   const now = Date.now()
-  if (now - cachedLiveSummariesAt < 700) {
+  if (now - cachedLiveSummariesAt < 200 && cachedLiveSummariesAt >= minFreshAt) {
     return cachedLiveSummaries
   }
   cachedLiveSummariesAt = now
@@ -1216,6 +1286,174 @@ export async function executeAntigravityIdeAction(action, {
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error?.message || String(error) }
+    }
+  }
+
+  if (type === 'approve' || type === 'deny') {
+    const allow = type === 'approve'
+    if (typeof fetchImpl === 'function') {
+      try {
+        const hubs = await discoverAntigravityHubInstances({ execImpl, preferredCwd })
+        for (const hub of hubs) {
+          try {
+            const sumResp = await fetchImpl(
+              `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetAllCascadeTrajectories`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-codeium-csrf-token': hub.csrfToken,
+                },
+                body: JSON.stringify({}),
+              },
+            )
+            const sumData = sumResp?.ok ? await sumResp.json().catch(() => null) : null
+            const summaries = sumData?.trajectorySummaries || {}
+
+            let targetConvId = rawConvId
+            if (!targetConvId) {
+              for (const [cid, sum] of Object.entries(summaries)) {
+                if (Array.isArray(sum?.waitingSteps) && sum.waitingSteps.length > 0) {
+                  targetConvId = cid
+                  break
+                }
+              }
+            }
+
+            const hasConversationOnHub = Boolean(
+              targetConvId && summaries[targetConvId] && typeof summaries[targetConvId] === 'object',
+            )
+            if (!hasConversationOnHub && fetchImpl === globalThis.fetch) {
+              continue
+            }
+
+            const liveSummary = targetConvId ? summaries[targetConvId] : null
+            const waitingSteps = Array.isArray(liveSummary?.waitingSteps) ? liveSummary.waitingSteps : []
+            const waitingEntry = waitingSteps[waitingSteps.length - 1] || null
+            const stepIndex =
+              waitingEntry?.step?.metadata?.sourceTrajectoryStepInfo?.stepIndex ??
+              waitingEntry?.stepIndex ??
+              action?.pendingApproval?.waitingStepIndex ??
+              action?.stepIndex
+            const trajectoryId = String(
+              waitingEntry?.step?.metadata?.sourceTrajectoryStepInfo?.trajectoryId ||
+                liveSummary?.trajectoryId ||
+                action?.pendingApproval?.trajectoryId ||
+                targetConvId ||
+                '',
+            )
+
+            if (Number.isInteger(stepIndex) && stepIndex >= 0 && targetConvId) {
+              const reqInt = waitingEntry?.step?.requestedInteraction || null
+              const permReq = reqInt?.permission || null
+              const runCmdReq = reqInt?.runCommand || null
+              const filePermReq = reqInt?.filePermission || null
+
+              const interaction = {
+                trajectoryId: trajectoryId || targetConvId,
+                stepIndex,
+              }
+
+              if (runCmdReq && !permReq) {
+                const cmdLine = String(
+                  action?.pendingApproval?.commandLine ||
+                    action?.pendingApproval?.command ||
+                    runCmdReq.proposedCommandLine ||
+                    '',
+                )
+                interaction.runCommand = {
+                  confirm: allow,
+                  proposedCommandLine: cmdLine,
+                  submittedCommandLine: cmdLine,
+                }
+              } else if (filePermReq && !permReq) {
+                const scope = !allow
+                  ? 'PERMISSION_SCOPE_UNSPECIFIED'
+                  : optionIndex === 2
+                    ? 'PERMISSION_SCOPE_CONVERSATION'
+                    : optionIndex === 3
+                      ? 'PERMISSION_SCOPE_GLOBAL'
+                      : 'PERMISSION_SCOPE_ONCE'
+                interaction.filePermission = {
+                  allow,
+                  scope,
+                  absolutePathUri: String(filePermReq.absolutePathUri || ''),
+                }
+              } else {
+                const scope = !allow
+                  ? 'PERMISSION_SCOPE_UNSPECIFIED'
+                  : optionIndex === 2
+                    ? 'PERMISSION_SCOPE_CONVERSATION'
+                    : optionIndex === 3
+                      ? 'PERMISSION_SCOPE_GLOBAL'
+                      : 'PERMISSION_SCOPE_ONCE'
+                const allowPatterns = []
+                if (allow && (optionIndex === 2 || optionIndex === 3)) {
+                  const suggested = String(
+                    permReq?.suggestedPersistPattern || action?.pendingApproval?.suggestedPersistPattern || '',
+                  ).trim()
+                  const cmdLine = String(
+                    action?.pendingApproval?.commandLine || action?.pendingApproval?.command || '',
+                  ).trim()
+                  if (suggested) {
+                    allowPatterns.push(suggested)
+                  } else if (cmdLine) {
+                    const firstTokens = cmdLine.split(/\s+/).slice(0, 2).join(' ')
+                    if (firstTokens) allowPatterns.push(`unsandboxed(${firstTokens} *)`)
+                  }
+                }
+                interaction.permission = {
+                  allow,
+                  scope,
+                  persistGrants: {
+                    allow: allowPatterns,
+                    deny: [],
+                  },
+                }
+              }
+
+              const rpcResp = await fetchImpl(
+                `http://${hub.address}/exa.language_server_pb.LanguageServerService/HandleCascadeUserInteraction`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'x-codeium-csrf-token': hub.csrfToken,
+                  },
+                  body: JSON.stringify({
+                    cascadeId: targetConvId,
+                    interaction,
+                  }),
+                },
+              )
+              if (rpcResp?.ok) {
+                cachedLiveSummariesAt = 0
+                return {
+                  ok: true,
+                  engine: 'connect-rpc',
+                  message: allow
+                    ? `✅ [Antigravity RPC] 已远程批准执行 (选项 ${optionIndex})`
+                    : '🔴 [Antigravity RPC] 已远程拒绝执行',
+                }
+              }
+            } else if (hasConversationOnHub && waitingSteps.length === 0) {
+              cachedLiveSummariesAt = 0
+              return {
+                ok: true,
+                engine: 'connect-rpc-noop',
+                alreadySettled: true,
+                message: allow
+                  ? '✅ 该步骤已在电脑端自动授权通过或已完成'
+                  : 'ℹ️ 该步骤已在电脑端执行完毕，无需拒绝',
+              }
+            }
+          } catch {
+            // Try next hub instance or fall back to native keystroke / AppleScript
+          }
+        }
+      } catch {
+        // Fall back to native keystroke / AppleScript
+      }
     }
   }
 

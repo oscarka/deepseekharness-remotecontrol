@@ -1,13 +1,15 @@
     :root {
+      color-scheme: light dark;
       --bg: #f8fafc;
       --surface: #ffffff;
+      --surface-2: #f8fafc;
       --subtle: #f1f5f9;
       --subtle-hover: #e2e8f0;
       --border: #e2e8f0;
       --hairline: #f1f5f9;
       --text: #0f172a;
       --text-secondary: #475569;
-      --muted: #94a3b8;
+      --muted: #64748b;
       --primary: #2563eb;
       --primary-hover: #1d4ed8;
       --primary-soft: #eff6ff;
@@ -17,7 +19,57 @@
       --amber-soft: #fffbeb;
       --red: #ef4444;
       --red-soft: #fef2f2;
+      --code-bg: #0f172a;
+      --mono: "SF Mono", Menlo, Monaco, Consolas, monospace;
       --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    :root[data-theme="dark"] {
+      --bg: #0b1120;
+      --surface: #0f172a;
+      --surface-2: #1e293b;
+      --subtle: #1e293b;
+      --subtle-hover: #334155;
+      --border: #334155;
+      --hairline: #1e293b;
+      --text: #f1f5f9;
+      --text-secondary: #cbd5e1;
+      --muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #60a5fa;
+      --primary-soft: rgba(59, 130, 246, 0.16);
+      --green: #10b981;
+      --green-soft: rgba(16, 185, 129, 0.16);
+      --amber: #f59e0b;
+      --amber-soft: rgba(245, 158, 11, 0.16);
+      --red: #f87171;
+      --red-soft: rgba(239, 68, 68, 0.16);
+      --code-bg: #020617;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #0b1120;
+        --surface: #0f172a;
+        --surface-2: #1e293b;
+        --subtle: #1e293b;
+        --subtle-hover: #334155;
+        --border: #334155;
+        --hairline: #1e293b;
+        --text: #f1f5f9;
+        --text-secondary: #cbd5e1;
+        --muted: #94a3b8;
+        --primary: #3b82f6;
+        --primary-hover: #60a5fa;
+        --primary-soft: rgba(59, 130, 246, 0.16);
+        --green: #10b981;
+        --green-soft: rgba(16, 185, 129, 0.16);
+        --amber: #f59e0b;
+        --amber-soft: rgba(245, 158, 11, 0.16);
+        --red: #f87171;
+        --red-soft: rgba(239, 68, 68, 0.16);
+        --code-bg: #020617;
+      }
     }
 
     * {
@@ -1720,6 +1772,7 @@
       border-radius: 12px;
       border: 1px solid var(--border);
       background: var(--subtle);
+      color: var(--text);
       font-size: 16px !important;
       margin-top: 14px;
       outline: none;
@@ -1728,4 +1781,132 @@
     .auth-input:focus {
       background: var(--surface);
       border-color: var(--primary);
+    }
+
+    /* 断线重连提示细条 (#11) */
+    .connection-status-banner {
+      background: var(--amber-soft);
+      color: #b45309;
+      border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    /* 离线排队消息胶囊与取消按钮 (#1) */
+    .queued-cmd-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
+    }
+    .cancel-queued-btn {
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      background: rgba(15, 23, 42, 0.25);
+      color: #fff;
+      border-radius: 999px;
+      padding: 1px 7px;
+      font-size: 10.5px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* 外观主题三档分段开关 (#14) */
+    .theme-seg-group {
+      display: inline-flex;
+      background: var(--subtle);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .theme-seg-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .theme-seg-btn.active {
+      background: var(--surface);
+      color: var(--primary);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+
+    /* 深色模式组件级精细覆盖 (#14) */
+    :root[data-theme="dark"] .host-visual-card.active-feishu {
+      border-color: #3b82f6;
+      background: linear-gradient(180deg, rgba(59, 130, 246, 0.14) 0%, var(--surface) 100%);
+    }
+    :root[data-theme="dark"] .auth-overlay {
+      background: rgba(11, 17, 32, 0.94);
+    }
+    :root[data-theme="dark"] .connection-status-banner {
+      color: #fbbf24;
+    }
+    :root[data-theme="dark"] .msg-assistant .msg-bubble {
+      background: var(--surface-2);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    :root[data-theme="dark"] .sheet-panel,
+    :root[data-theme="dark"] .chat-fullscreen,
+    :root[data-theme="dark"] .composer-bar,
+    :root[data-theme="dark"] .bottom-tabs,
+    :root[data-theme="dark"] .top-bar,
+    :root[data-theme="dark"] .search-and-filter {
+      background: var(--surface);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    :root[data-theme="dark"] input,
+    :root[data-theme="dark"] textarea,
+    :root[data-theme="dark"] select {
+      color: var(--text);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .host-visual-card.active-feishu {
+        border-color: #3b82f6;
+        background: linear-gradient(180deg, rgba(59, 130, 246, 0.14) 0%, var(--surface) 100%);
+      }
+      :root:not([data-theme="light"]) .auth-overlay {
+        background: rgba(11, 17, 32, 0.94);
+      }
+      :root:not([data-theme="light"]) .connection-status-banner {
+        color: #fbbf24;
+      }
+      :root:not([data-theme="light"]) .msg-assistant .msg-bubble {
+        background: var(--surface-2);
+        border-color: var(--border);
+        color: var(--text);
+      }
+      :root:not([data-theme="light"]) .sheet-panel,
+      :root:not([data-theme="light"]) .chat-fullscreen,
+      :root:not([data-theme="light"]) .composer-bar,
+      :root:not([data-theme="light"]) .bottom-tabs,
+      :root:not([data-theme="light"]) .top-bar,
+      :root:not([data-theme="light"]) .search-and-filter {
+        background: var(--surface);
+        border-color: var(--border);
+        color: var(--text);
+      }
+      :root:not([data-theme="light"]) input,
+      :root:not([data-theme="light"]) textarea,
+      :root:not([data-theme="light"]) select {
+        color: var(--text);
+      }
     }

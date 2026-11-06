@@ -152,6 +152,38 @@ export function initHubController() {
     let lastRenderedChatSessionId = '';
     let lastRenderedStripKey = '';
     let lastRenderedListKey = '';
+    let lastRenderedSettingsKey = '';
+    let lastRenderedFilesKey = '';
+
+    // 外观主题偏好 (#14)：system | light | dark
+    let themePref = localStorage.getItem('dsh_theme_pref') || 'system';
+    function applyTheme(pref = themePref) {
+      themePref = pref || 'system';
+      const root = document.documentElement;
+      if (themePref === 'dark') {
+        root.setAttribute('data-theme', 'dark');
+      } else if (themePref === 'light') {
+        root.setAttribute('data-theme', 'light');
+      } else {
+        root.removeAttribute('data-theme');
+      }
+      const isDarkEffective =
+        themePref === 'dark' ||
+        (themePref === 'system' &&
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches);
+      const metaTheme = document.querySelector('meta[name="theme-color"]');
+      if (metaTheme) {
+        metaTheme.setAttribute('content', isDarkEffective ? '#0f172a' : '#ffffff');
+      }
+    }
+    function setThemePreference(nextPref) {
+      try { localStorage.setItem('dsh_theme_pref', nextPref); } catch {}
+      applyTheme(nextPref);
+      lastRenderedSettingsKey = '';
+      renderAll();
+    }
+    applyTheme(themePref);
 
     // 置顶与已读记录（使用 v4 基线，完美对齐原型图的视觉层次）
     let pinnedMap = {};
@@ -232,22 +264,38 @@ export function initHubController() {
       for (const h of hubState.hosts || []) {
         if (currentHostId && currentHostId !== 'ALL_HOSTS' && h.hostId !== currentHostId) continue;
         const tasks = h.bridgeState?.tasks || [];
-        const approvals = h.bridgeState?.approvals || [];
+        const settledMap = window.__dshSettledApprovals || {};
+        const approvals = (h.bridgeState?.approvals || []).filter(a => !a?.code || !settledMap[a.code]);
         for (const t of tasks) {
           const ts = t.updatedAt || t.lastActivity || 0;
           const pendingApp = approvals.find(a => a.agentId === t.id);
           const baseTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
+          const queuedCmds = (h.pendingCommands || []).filter(
+            c => c && c.agentId === t.id && (c.type === 'prompt' || c.type === 'steer')
+          );
           const optimisticList = (window.__dshOptimisticMsgs && window.__dshOptimisticMsgs[t.id]) || [];
           const nowMs = Date.now();
           const remainingOpt = [];
           for (const opt of optimisticList) {
             if (nowMs - opt.time >= 15000) continue;
-            if (baseTranscript.some(m => m.role === 'user' && m.text === opt.text)) {
-              // 已落盘同步，从乐观缓存移除，确保后续在电脑端「撤回」时不会被前端重新塞回
+            if (
+              baseTranscript.some(m => m.role === 'user' && m.text === opt.text) ||
+              queuedCmds.some(c => c.text === opt.text)
+            ) {
+              // 已落盘同步或已进入服务端排队列表，从乐观缓存移除
               continue;
             }
             remainingOpt.push(opt);
             baseTranscript.push({ role: 'user', text: opt.text, time: opt.time });
+          }
+          for (const qc of queuedCmds) {
+            baseTranscript.push({
+              role: 'user',
+              text: qc.text,
+              time: qc.createdAt || nowMs,
+              queuedCmdId: qc.id,
+              expiresAt: qc.expiresAt || 0,
+            });
           }
           if (window.__dshOptimisticMsgs && window.__dshOptimisticMsgs[t.id]) {
             window.__dshOptimisticMsgs[t.id] = remainingOpt;
@@ -256,6 +304,7 @@ export function initHubController() {
           const lastMsg = transcript.length > 0 ? transcript[transcript.length - 1] : null;
           const project = t.project || (t.cwd ? t.cwd.split('/').filter(Boolean).pop() : '默认工作区') || '默认工作区';
           const status = pendingApp ? 'approval' : (t.status || 'idle');
+          const queuedCount = queuedCmds.length;
           const harness = t.harness || (String(t.id || '').startsWith('agy-ide:') ? 'antigravity-ide' : 'dsh');
           const harnessLabel = t.harnessLabel || (harness === 'antigravity-ide' ? 'Antigravity IDE' : 'DeepSeek Harness');
 
@@ -299,6 +348,7 @@ export function initHubController() {
             lastInterruptedAt,
             approvalObj: pendingApp || null,
             changedFiles,
+            queuedCount,
             msgCount: Number(t.messageCount) || transcript.length || 0,
             updatedAt: ts,
             timeLabel: formatTime(ts),
@@ -537,10 +587,11 @@ export function initHubController() {
 
       // 仅当在线电脑存在真实待确认授权时显示顶部黄色授权横幅，无授权时顶部保持干净
       let pendingAppInfo = null;
+      const settledMap = window.__dshSettledApprovals || {};
       for (const h of hubState.hosts || []) {
         if (h.online === false) continue;
         if (currentHostId && currentHostId !== 'ALL_HOSTS' && h.hostId !== currentHostId) continue;
-        const app = (h.bridgeState?.approvals || [])[0];
+        const app = (h.bridgeState?.approvals || []).find(a => !a?.code || !settledMap[a.code]);
         if (app) { pendingAppInfo = { app, host: h }; break; }
       }
 
@@ -560,9 +611,9 @@ export function initHubController() {
         ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.promptTitle || ''}`
         : '';
       const rowsSig = filtered
-        .map(s => `${s.id}:${s.status}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`)
+        .map(s => `${s.id}:${s.status}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`)
         .join('|');
-      const listKey = `${currentProject}:${q}:${showHostTag ? 1 : 0}:${bannerKey}#${rowsSig}`;
+      const listKey = `${(hubState.hosts || []).length}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${bannerKey}#${rowsSig}`;
       if (listKey === lastRenderedListKey && viewport.querySelector('.session-list')) return;
       lastRenderedListKey = listKey;
       const prevScrollTop = viewport.scrollTop;
@@ -586,6 +637,8 @@ export function initHubController() {
         if (s.status === 'approval') {
           rowStateClass = 'row-state-approval';
           statusHtml = `<span class="badge-approval">⏳ 待你授权</span>`;
+        } else if (s.queuedCount > 0) {
+          statusHtml = `<span class="badge-approval" style="background:var(--amber-soft);color:#b45309;">⏳ ${s.queuedCount} 条排队</span>`;
         } else if (s.status === 'running') {
           rowStateClass = 'row-state-running';
           statusHtml = `<span class="badge-running">● 运行中</span>`;
@@ -627,13 +680,63 @@ export function initHubController() {
         `;
       }).join('');
 
+      let emptyStateHtml = '';
+      if (!rowsHtml) {
+        const hostsCount = (hubState.hosts || []).length;
+        const currentTk = getToken();
+        const onboardingCmd = `git clone https://github.com/oscarka/deepseekharness-remotecontrol.git ~/deepseekharness-remote && cd ~/deepseekharness-remote && ./connect-host.sh "我的Mac" "${currentTk}"`;
+        if (hostsCount === 0) {
+          emptyStateHtml = `
+            <div style="padding:36px 20px;text-align:center;max-width:340px;margin:0 auto;">
+              <div style="font-size:32px;margin-bottom:8px;">💻</div>
+              <div style="font-size:15.5px;font-weight:700;color:var(--text);margin-bottom:6px;">先把你的电脑接进来</div>
+              <div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:14px;">
+                1. 复制下方专属接入命令<br/>
+                2. 在 Mac / Linux 终端粘贴运行<br/>
+                3. 自动同步本机 DeepSeek Harness 与 Antigravity IDE 会话
+              </div>
+              <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+                <button class="pill-action-btn primary" onclick="copyCodeText('${encodeURIComponent(onboardingCmd)}')">📋 复制一键接入命令</button>
+                <button class="pill-action-btn" onclick="openTurboGuideSheet()">⚡ 查看接入指南</button>
+              </div>
+              <div style="margin-top:12px;font-size:11.5px;color:var(--muted);">
+                💡 iPhone 请用 Safari 点底部「分享 → 添加到主屏幕」开启锁屏推送
+              </div>
+            </div>
+          `;
+        } else if (allSessions.length === 0) {
+          emptyStateHtml = `
+            <div style="padding:40px 20px;text-align:center;">
+              <div style="font-size:30px;margin-bottom:8px;">✨</div>
+              <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px;">电脑已接入，还没有对话记录</div>
+              <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px;">点击下方按钮直接在远程电脑上启动第一个任务</div>
+              <button class="pill-action-btn primary" onclick="openNewTaskSheet()">＋ 新建远程对话</button>
+            </div>
+          `;
+        } else {
+          emptyStateHtml = `
+            <div style="padding:44px 20px;text-align:center;">
+              <div style="font-size:14px;color:var(--muted);margin-bottom:12px;">🔍 暂无匹配的对话记录</div>
+              <button class="pill-action-btn" onclick="resetSessionFilters()">↺ 清除筛选条件</button>
+            </div>
+          `;
+        }
+      }
+
       viewport.innerHTML = `
         ${liveBannerHtml}
         <div class="session-list">
-          ${rowsHtml || `<div style="padding:48px 20px;text-align:center;color:#94a3b8;font-size:14px;">暂无匹配的对话记录</div>`}
+          ${rowsHtml || emptyStateHtml}
         </div>
       `;
       viewport.scrollTop = prevScrollTop;
+    }
+
+    function resetSessionFilters() {
+      currentProject = 'ALL';
+      clearSearch();
+      renderProjectStrip();
+      renderSessionList();
     }
 
     // ==================== 5. 二级全屏对话视图（含 DOM 增量比对防打断） ====================
@@ -749,7 +852,7 @@ export function initHubController() {
       // DOM Diffing：如果会话内容和状态没变，不重绘 #chatMessages，保留用户展开的思考过程与滚动位置！
       const trSig = s.transcript
         .slice(-6)
-        .map(m => `${m.role}:${(m.text || '').length}:${(m.text || '').slice(-32)}:${(m.thinking || '').length}:${(m.tools || []).length}:${m.waitingForInput ? 1 : 0}`)
+        .map(m => `${m.role}:${m.queuedCmdId || ''}:${(m.text || '').length}:${(m.text || '').slice(-32)}:${(m.thinking || '').length}:${(m.tools || []).length}:${m.waitingForInput ? 1 : 0}`)
         .join('|');
       const chatKey = `${s.id}:${s.status}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ''}:${(s.changedFiles || []).length}`;
       if (chatKey === lastRenderedChatKey) return;
@@ -772,7 +875,10 @@ export function initHubController() {
 
       const bubblesHtml = msgs.map((m, msgIdx) => {
         if (m.role === 'user') {
-          return `<div class="bubble user">${esc(m.text)}</div>`;
+          const queuedBadge = m.queuedCmdId
+            ? `<div class="queued-cmd-pill"><span>⏳ 排队中（电脑上线后执行）</span><button class="cancel-queued-btn" onclick="event.stopPropagation(); cancelQueuedCommand('${esc(m.queuedCmdId)}')">✕ 取消</button></div>`
+            : '';
+          return `<div class="bubble user"><div>${esc(m.text)}</div>${queuedBadge}</div>`;
         }
         const thinkId = `think-${msgIdx}`;
         const thought = m.thinking
@@ -1005,8 +1111,29 @@ export function initHubController() {
       if (document.visibilityState === 'hidden') {
         persistComposerDraft();
         stopVoiceInput();
+      } else if (document.visibilityState === 'visible') {
+        fetchState();
+        if (!sseConnected || Date.now() - lastSseEventAt > 15000) {
+          connectSSE();
+        }
       }
     });
+
+    async function cancelQueuedCommand(cmdId) {
+      if (!cmdId) return;
+      try {
+        const res = await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`, { method: 'DELETE' });
+        const data = await res.json().catch(() => ({}));
+        if (data?.ok) {
+          showToast('🗑️ 已取消排队中的指令');
+        } else {
+          showToast('⚠️ ' + (data?.error || '该指令已执行或不存在'));
+        }
+      } catch (err) {
+        showToast('❌ 取消失败：' + (err?.message || err));
+      }
+      fetchState();
+    }
 
     async function sendPromptToActiveSession() {
       stopVoiceInput();
@@ -1015,7 +1142,7 @@ export function initHubController() {
       if (!text || !activeSessionId) return;
       const found = findSessionGlobal(activeSessionId);
       if (!found) return;
-      const { session: s } = found;
+      const { session: s, host } = found;
       input.value = '';
       try { localStorage.removeItem(composerDraftKey(composerSessionId || activeSessionId)); } catch {}
       autoGrowComposer();
@@ -1028,7 +1155,10 @@ export function initHubController() {
       renderActiveChatStage();
 
       const cmdType = s.status === 'running' ? 'steer' : 'prompt';
-      showToast(cmdType === 'steer' ? '⚡ 已发送实时插话' : '📨 已发送指令');
+      const isHostActivelyOnline = Boolean(host && host.online !== false && host.activelyConnected !== false);
+      if (isHostActivelyOnline) {
+        showToast(cmdType === 'steer' ? '⚡ 已发送实时插话' : '📨 已发送指令');
+      }
       let dispatchRes = null;
       try {
         dispatchRes = await dispatchHostCommand(s.hostId, {
@@ -1052,6 +1182,10 @@ export function initHubController() {
           autoGrowComposer();
         }
         return;
+      }
+
+      if (dispatchRes.queued) {
+        showToast('⏳ 电脑当前休眠/离线，指令已排队（10分钟内上线自动执行，可随时取消）');
       }
 
       setTimeout(fetchState, 250);
@@ -1103,6 +1237,11 @@ export function initHubController() {
     }
 
     async function sendApprovalDecision(hostId, code, allow, optionIndex = 1) {
+      window.__dshSettledApprovals = window.__dshSettledApprovals || {};
+      if (code) {
+        window.__dshSettledApprovals[code] = Date.now();
+      }
+      renderApp();
       const optLabel = optionIndex === 2
         ? '✅ 已批准并在当前会话始终允许'
         : optionIndex === 3
@@ -1114,6 +1253,7 @@ export function initHubController() {
       await dispatchHostCommand(hostId, {
         type: 'approval',
         code,
+        agentId: activeSessionId || undefined,
         allow: Boolean(allow),
         optionIndex: Number(optionIndex) || (allow ? 1 : 4),
       });
@@ -1133,6 +1273,28 @@ export function initHubController() {
       await requestDirList(found.session.hostId, found.session.id, fileProjectCwd, '', true);
     }
 
+    const previewTextCache = new Map();
+    async function ensureTextPreviewLoaded(hostId, preview) {
+      if (!preview || preview.content !== undefined || !preview.hasBlob || previewKind(preview) !== 'text') return;
+      const cacheKey = `${hostId}:${preview.at}`;
+      if (previewTextCache.has(cacheKey)) {
+        preview.content = previewTextCache.get(cacheKey);
+        return;
+      }
+      previewTextCache.set(cacheKey, '正在按需加载大文本预览…');
+      try {
+        const res = await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/file-preview?at=${encodeURIComponent(preview.at || 0)}&format=json`);
+        const data = await res.json().catch(() => ({}));
+        const content = data?.preview?.content ?? '（预览已过期，请重新点击文件加载）';
+        previewTextCache.set(cacheKey, content);
+        preview.content = content;
+        renderAll();
+        renderFilePanes();
+      } catch {
+        previewTextCache.delete(cacheKey);
+      }
+    }
+
     function renderInChatFileDrawerBody() {
       const found = findSessionGlobal(activeSessionId);
       if (!found) return;
@@ -1147,6 +1309,7 @@ export function initHubController() {
         && filePreviewLoading.drawer;
 
       if (previewLoading) {
+        body.dataset.dshDrawerListKey = '';
         const loadingName = String(filePreviewLoading.relPath || '').split('/').filter(Boolean).pop() || '文件';
         body.innerHTML = `
           <div class="breadcrumbs-bar" style="justify-content:space-between;">
@@ -1162,8 +1325,10 @@ export function initHubController() {
       }
 
       if (preview && preview._showInDrawer) {
+        body.dataset.dshDrawerListKey = '';
+        void ensureTextPreviewLoaded(host.hostId, preview);
         const kind = previewKind(preview);
-        const previewKey = `${preview.at || 0}:${preview.relPath || ''}:${kind}`;
+        const previewKey = `${preview.at || 0}:${preview.relPath || ''}:${kind}:${(preview.content || '').length}`;
         if (body.dataset.dshPreviewKey === previewKey && body.querySelector('.file-preview-body')) return;
         body.dataset.dshPreviewKey = previewKey;
         const lines = String(preview.content || '').split('\n');
@@ -1195,10 +1360,15 @@ export function initHubController() {
         return;
       }
 
+      body.dataset.dshPreviewKey = '';
       const entries = listing?.entries || [];
       const loadingDir = fileLoading && fileLoading.hostId === host.hostId && fileLoading.drawer;
       const rootCwd = listing?.rootCwd || fileProjectCwd;
       const activeSubDir = loadingDir ? (fileLoading.subDir || '') : (listing?.subDir || '');
+      const drawerListKey = `${host.hostId}:${rootCwd}:${activeSubDir}:${loadingDir ? 1 : 0}:${listing?.at || 0}:${entries.length}`;
+      if (body.dataset.dshDrawerListKey === drawerListKey && body.querySelector('.breadcrumbs-bar')) return;
+      body.dataset.dshDrawerListKey = drawerListKey;
+      const prevScrollTop = body.scrollTop;
       const crumbs = buildBreadcrumbSegments(activeSubDir);
       const hostId = esc(host.hostId);
       const sessionId = esc(found.session.id);
@@ -1227,6 +1397,7 @@ export function initHubController() {
           `).join('') || `<div style="padding:36px;text-align:center;color:#94a3b8;">正在同步目录文件列表...</div>`)}
         </div>
       `;
+      body.scrollTop = prevScrollTop;
     }
 
     function backFromDrawerPreview() {
@@ -1409,9 +1580,11 @@ export function initHubController() {
       }
 
       if (preview && preview._showInMain) {
+        container.dataset.dshFilesListKey = '';
+        void ensureTextPreviewLoaded(host.hostId, preview);
         const kind = previewKind(preview);
         // 图片/长文件在每次 2 秒轮询里都重建 DOM 会卡顿，内容没变就复用
-        const previewKey = `${preview.at || 0}:${preview.relPath || ''}:${kind}`;
+        const previewKey = `${preview.at || 0}:${preview.relPath || ''}:${kind}:${(preview.content || '').length}`;
         if (container.dataset.dshPreviewKey === previewKey && container.querySelector('.file-preview-body')) return;
         container.dataset.dshPreviewKey = previewKey;
         const lines = String(preview.content || '').split('\n');
@@ -1446,11 +1619,16 @@ export function initHubController() {
         return;
       }
 
+      container.dataset.dshPreviewKey = '';
       const listing = host.lastFsListing;
       const entries = listing?.entries || [];
       const loadingDir = fileLoading && fileLoading.hostId === host.hostId && !fileLoading.drawer;
       const rootCwd = listing?.rootCwd || fileProjectCwd;
       const activeSubDir = loadingDir ? (fileLoading.subDir || '') : (listing?.subDir || '');
+      const filesListKey = `${host.hostId}:${fileProjectCwd}:${rootCwd}:${activeSubDir}:${loadingDir ? 1 : 0}:${listing?.at || 0}:${entries.length}:${projects.map(p => p.cwd).join(',')}`;
+      if (container.dataset.dshFilesListKey === filesListKey && container.querySelector('.breadcrumbs-bar')) return;
+      container.dataset.dshFilesListKey = filesListKey;
+      const prevScrollTop = container.scrollTop;
       const crumbs = buildBreadcrumbSegments(activeSubDir);
 
       const projectPillsHtml = `
@@ -1489,6 +1667,7 @@ export function initHubController() {
       `).join('') || `<div style="padding:36px;text-align:center;color:#94a3b8;">点击上方项目胶囊加载远程目录...</div>`);
 
       container.innerHTML = projectPillsHtml + breadcrumbHtml + `<div>${listHtml}</div>`;
+      container.scrollTop = prevScrollTop;
     }
 
     function closeMainFilePreview(hostId) {
@@ -1687,27 +1866,174 @@ export function initHubController() {
 
     async function shareTargetSession() {
       if (!actionTargetSession) return;
+      const targetHost = (hubState.hosts || []).find(h => h.hostId === actionTargetHostId);
+      if (!targetHost || !targetHost.online) {
+        showToast('⚠️ 该电脑当前离线，无法生成端到端加密分享');
+        return;
+      }
+      const targetTitle = actionTargetSession.title || '会话回放';
       closeSheet('taskActionSheet');
-      showToast('🔒 正在生成端到端加密回放链接...');
+      showToast('🔒 正在请求电脑加密并上传回放（约 1~5 秒）...');
       const out = await dispatchHostCommand(actionTargetHostId, {
         type: 'share_session',
         agentId: actionTargetSession.id,
       });
       const cmdId = out?.command?.id;
       if (!cmdId) return;
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 16; i++) {
         await new Promise(r => setTimeout(r, 600));
-        const res = await (await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`)).json();
-        if (res.ready && res.result?.shareUrl) {
+        const res = await (await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`)).json().catch(() => ({}));
+        if (res.ready && res.result) {
+          if (res.result.ok === false || !res.result.shareUrl) {
+            showToast('❌ 分享生成失败：' + (res.result.error || '无法读取加密载荷'));
+            return;
+          }
           const fullUrl = res.result.shareUrl.startsWith('http')
             ? res.result.shareUrl
             : location.origin + res.result.shareUrl;
-          navigator.clipboard?.writeText(fullUrl);
-          showToast('🔗 加密链接已复制到剪贴板！');
+          void fetchState();
+          // 异步等待后 iOS Safari 的用户激活手势已失效，直接弹出结果卡片让用户以新鲜点击手势一键复制
+          openShareResultSheet({
+            url: fullUrl,
+            title: targetTitle,
+            shareId: res.result.shareId || '',
+          });
           return;
         }
       }
-      showToast('✅ 分享已生成，可在设置页查看');
+      void fetchState();
+      showToast('⏳ 电脑仍在处理加密分享，稍后可在「设置 → 加密分享记录」查看');
+    }
+
+    function openShareResultSheet({ url, title = '端到端加密回放', shareId = '' } = {}) {
+      const body = document.getElementById('shareResultBody');
+      if (!body || !url) return;
+      body.innerHTML = `
+        <div style="font-size:13px;color:var(--text-secondary);line-height:1.55;margin-bottom:10px;">
+          会话 <strong>${esc(title)}</strong> 已完成 AES-256-GCM 端到端加密。<br/>
+          <span style="font-size:11.5px;color:var(--muted);">🔐 解密密钥仅保存在链接 <code>#key=</code> 锚点中，云端服务器无法解密原始内容。</span>
+        </div>
+        <input
+          type="text"
+          readonly
+          value="${esc(url)}"
+          onclick="this.select()"
+          style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--subtle);color:var(--text);font-family:var(--mono);font-size:12px;margin-bottom:12px;outline:none;"
+        />
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button
+            class="primary-block-btn"
+            style="margin-top:0;flex:1;"
+            onclick="copyCodeText('${encodeURIComponent(url)}', '🔗 加密分享链接已复制到剪贴板！')"
+          >
+            📋 复制加密链接
+          </button>
+          <a
+            href="${esc(url)}"
+            target="_blank"
+            rel="noopener"
+            class="choice-chip"
+            style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;padding:0 16px;font-weight:700;"
+          >
+            🌐 打开预览
+          </a>
+        </div>
+      `;
+      openSheet('shareResultSheet');
+    }
+
+    async function deleteShareRecord(shareId) {
+      if (!shareId) return;
+      try {
+        await apiFetch(`/api/shares/${encodeURIComponent(shareId)}`, { method: 'DELETE' });
+        showToast('🗑️ 已销毁该加密分享记录');
+        lastRenderedSettingsKey = '';
+        void fetchState();
+      } catch (err) {
+        showToast('❌ 删除失败: ' + ((err && err.message) || err));
+      }
+    }
+
+    let pairingCountdownTimer = null;
+    async function openPairingCodeSheet() {
+      openSheet('pairingCodeSheet');
+      await generateNewPairingCode();
+    }
+
+    function closePairingCodeSheet() {
+      if (pairingCountdownTimer) {
+        clearInterval(pairingCountdownTimer);
+        pairingCountdownTimer = null;
+      }
+      closeSheet('pairingCodeSheet');
+    }
+
+    async function generateNewPairingCode() {
+      if (pairingCountdownTimer) {
+        clearInterval(pairingCountdownTimer);
+        pairingCountdownTimer = null;
+      }
+      const body = document.getElementById('pairingCodeBody');
+      if (!body) return;
+      body.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted);">正在生成 6 位免密配对码…</div>`;
+      try {
+        const res = await apiFetch('/api/pairing/create', {
+          method: 'POST',
+          body: JSON.stringify({ ttlMs: 180000 }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok || !data.code) {
+          body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--red);">❌ 生成失败：${esc(data.error || '请稍后重试')}</div>`;
+          return;
+        }
+        const codeStr = String(data.code);
+        const expiresAt = Number(data.expiresAt || (Date.now() + 180000));
+        const renderCountdown = () => {
+          const remainSec = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+          const timerEl = document.getElementById('pairingCodeTimerText');
+          if (timerEl) {
+            timerEl.textContent = remainSec > 0
+              ? `⏳ 有效期剩余 ${remainSec} 秒（一次性使用）`
+              : '⚠️ 该配对码已过期，请点击下方重新生成';
+            timerEl.style.color = remainSec > 0 ? 'var(--primary)' : 'var(--red)';
+          }
+          if (remainSec <= 0 && pairingCountdownTimer) {
+            clearInterval(pairingCountdownTimer);
+            pairingCountdownTimer = null;
+          }
+        };
+        body.innerHTML = `
+          <div style="text-align:center;padding:8px 4px 14px;">
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+              在新手机打开总控台网址，直接在解锁框输入以下 <strong>6 位数字配对码</strong> 即可免输长密码登录：
+            </div>
+            <div
+              style="font-family:var(--mono);font-size:34px;font-weight:800;letter-spacing:8px;padding:16px 12px;border-radius:14px;background:var(--primary-soft);color:var(--primary);border:1px solid var(--border);user-select:all;"
+            >${esc(codeStr)}</div>
+            <div id="pairingCodeTimerText" style="margin-top:10px;font-size:12.5px;font-weight:600;color:var(--primary);"></div>
+            <div style="display:flex;gap:8px;margin-top:14px;">
+              <button
+                class="primary-block-btn"
+                style="margin-top:0;flex:1;"
+                onclick="copyCodeText('${encodeURIComponent(codeStr)}', '📋 6 位配对码已复制')"
+              >
+                📋 复制配对码
+              </button>
+              <button
+                class="choice-chip"
+                style="padding:0 16px;font-weight:600;"
+                onclick="generateNewPairingCode()"
+              >
+                🔄 重新生成
+              </button>
+            </div>
+          </div>
+        `;
+        renderCountdown();
+        pairingCountdownTimer = setInterval(renderCountdown, 1000);
+      } catch (err) {
+        body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--red);">❌ 生成失败：${esc((err && err.message) || String(err))}</div>`;
+      }
     }
 
     async function jumpToSessionFiles(hostId, agentId, cwd) {
@@ -1742,10 +2068,55 @@ export function initHubController() {
     // ==================== 11. 设备与设置 Tab (双机状态看板 + 跨机迁移向导 + 密码管理) ====================
     function renderSettingsTab() {
       const hosts = hubState.hosts || [];
+      const shares = hubState.shares || [];
+      const buildInfo = hubState.build || {};
       const currentTk = getToken();
       const onboardingCmd = `git clone https://github.com/oscarka/deepseekharness-remotecontrol.git ~/deepseekharness-remote && cd ~/deepseekharness-remote && ./connect-host.sh "新电脑名称" "${currentTk}"`;
 
-      document.getElementById('mainViewport').innerHTML = `
+      // 内容签名去抖 (#4)：当设置页数据未发生变化时跳过整页 innerHTML 重建，并保留滚动位置
+      const settingsSignature = JSON.stringify({
+        themePref,
+        tokenTail: currentTk.slice(-4),
+        pushCount: (hubState.pushSubscriptions || []).length,
+        build: buildInfo.uiBuild || buildInfo.version || '',
+        hosts: hosts.map(h => ({
+          id: h.hostId,
+          name: h.hostName,
+          online: h.online,
+          isFeishuActive: h.isFeishuActive,
+          remoteActive: h.remoteActive,
+          taskCount: (h.bridgeState?.tasks || []).length,
+          runningCount: h.runningCount || 0,
+          totalBytes: h.totalBytes || 0,
+          turbo: h.bridgeState?.turbo?.engineLabel || '',
+          shareUrl: h.lastShareResult?.shareUrl || '',
+        })),
+        shares: shares.map(s => ({ id: s.shareId, at: s.createdAt })),
+      });
+      const viewport = document.getElementById('mainViewport');
+      if (!viewport) return;
+      if (settingsSignature === lastRenderedSettingsKey && viewport.querySelector('.settings-wrap')) {
+        void refreshPushStatus();
+        return;
+      }
+      const prevScrollTop = viewport.scrollTop;
+      lastRenderedSettingsKey = settingsSignature;
+
+      // 收集各台电脑最近一次生成的含 #key= 的完整分享链接
+      const latestShareResults = hosts
+        .filter(h => h.lastShareResult && h.lastShareResult.shareUrl)
+        .map(h => {
+          const rawUrl = h.lastShareResult.shareUrl;
+          const fullUrl = rawUrl.startsWith('http') ? rawUrl : location.origin + rawUrl;
+          return {
+            hostName: h.hostName,
+            shareId: h.lastShareResult.shareId || '',
+            fullUrl,
+            at: h.lastShareResult.at || 0,
+          };
+        });
+
+      viewport.innerHTML = `
         <div class="settings-wrap">
           <div>
             <div class="settings-group-title">已接入电脑实时看板 (${hosts.length} 台设备)</div>
@@ -1757,9 +2128,9 @@ export function initHubController() {
                       <div style="font-size:15.5px;font-weight:700;display:flex;align-items:center;gap:6px;">
                         <span class="status-dot ${h.online ? '' : 'offline'}"></span>
                         <span>${esc(h.hostName)}</span>
-                        <span style="font-size:11.5px;color:#64748b;font-weight:500;">(${esc(h.platform || 'macOS')} ${esc(h.arch || '')})</span>
+                        <span style="font-size:11.5px;color:var(--muted);font-weight:500;">(${esc(h.platform || 'macOS')} ${esc(h.arch || '')})</span>
                       </div>
-                      <div style="font-size:11.5px;color:#64748b;margin-top:3px;">
+                      <div style="font-size:11.5px;color:var(--muted);margin-top:3px;">
                         🔒 指纹 ${esc(h.fingerprint || '已锁定')} · ${h.online ? '实时在线' : '离线 (' + formatTime(h.lastSeen) + ')'}
                       </div>
                     </div>
@@ -1781,20 +2152,37 @@ export function initHubController() {
                       <span class="metric-val">${formatBytes(h.totalBytes)}</span>
                     </div>
                   </div>
-                  <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;color:#475569;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--hairline);">
+                  <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--text-secondary);padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--hairline);">
                     <span>⚡ 同步引擎：<strong>${esc(h.bridgeState?.turbo?.engineLabel || '🐢 标准轮询 (可升级)')}</strong></span>
                     <button class="pill-action-btn primary" style="padding:4px 10px;font-size:11.5px;" onclick="openTurboGuideSheet()">
                       ${h.bridgeState?.turbo?.enabled ? '⚡ 极速详情' : '🚀 一键提速'}
                     </button>
                   </div>
-                  <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:#475569;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--text-secondary);">
                     <span>飞书远程完成/异常卡片通知</span>
                     <button class="pill-action-btn ${h.remoteActive ? 'primary' : ''}" style="padding:4px 10px;font-size:11.5px;" onclick="toggleHostRemoteMode('${esc(h.hostId)}', ${!h.remoteActive})">
                       ${h.remoteActive ? '🔔 已开启' : '🔕 已关闭'}
                     </button>
                   </div>
                 </div>
-              `).join('') || `<div style="padding:24px;text-align:center;color:#94a3b8;">暂未检测到在线电脑</div>`}
+              `).join('') || `<div style="padding:24px;text-align:center;color:var(--muted);">暂未检测到在线电脑</div>`}
+            </div>
+          </div>
+
+          <div>
+            <div class="settings-group-title">外观与显示模式</div>
+            <div class="settings-card">
+              <div class="settings-item">
+                <div>
+                  <div class="settings-item-title">深色 / 浅色主题</div>
+                  <div class="settings-item-desc">夜间弱光下使用深色模式更护眼，默认跟随手机系统自动切换</div>
+                </div>
+                <div class="theme-seg-group">
+                  <button class="theme-seg-btn ${themePref === 'system' ? 'active' : ''}" onclick="setThemePreference('system')">跟随系统</button>
+                  <button class="theme-seg-btn ${themePref === 'light' ? 'active' : ''}" onclick="setThemePreference('light')">☀️ 浅色</button>
+                  <button class="theme-seg-btn ${themePref === 'dark' ? 'active' : ''}" onclick="setThemePreference('dark')">🌙 深色</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1813,8 +2201,42 @@ export function initHubController() {
                   <div class="settings-item-title">接入新电脑（含你的私密认证密钥）</div>
                   <div class="settings-item-desc">公开 GitHub 仓库不含密码，点击复制带密钥的专属接入命令</div>
                 </div>
-                <button class="pill-action-btn" onclick="copyCodeText('${encodeURIComponent(onboardingCmd)}')">📋 复制专属命令</button>
+                <button class="pill-action-btn" onclick="copyCodeText('${encodeURIComponent(onboardingCmd)}', '📋 专属接入命令已复制')">📋 复制专属命令</button>
               </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="settings-group-title">端到端加密分享记录 (${shares.length})</div>
+            <div class="settings-card">
+              ${latestShareResults.map(item => `
+                <div class="settings-item" style="flex-direction:column;align-items:stretch;gap:8px;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div class="settings-item-title">🔐 最近生成（来自 ${esc(item.hostName)}）</div>
+                    <span style="font-size:11.5px;color:var(--muted);">${formatTime(item.at)}</span>
+                  </div>
+                  <div style="font-size:11.5px;color:var(--muted);font-family:var(--mono);word-break:break-all;background:var(--subtle);padding:6px 8px;border-radius:8px;">
+                    ${esc(item.fullUrl)}
+                  </div>
+                  <div style="display:flex;gap:8px;">
+                    <button class="pill-action-btn primary" onclick="copyCodeText('${encodeURIComponent(item.fullUrl)}', '🔗 加密分享链接已复制')">📋 复制完整解密链接</button>
+                    <a href="${esc(item.fullUrl)}" target="_blank" rel="noopener" class="pill-action-btn" style="text-decoration:none;display:inline-flex;align-items:center;">🌐 打开</a>
+                  </div>
+                </div>
+              `).join('')}
+              ${shares.length ? shares.slice(0, 8).map(s => `
+                <div class="settings-item">
+                  <div>
+                    <div class="settings-item-title">${esc(s.title || '加密会话回放')}</div>
+                    <div class="settings-item-desc">来自 ${esc(s.hostName || s.hostId || '远端电脑')} · ${formatTime(s.createdAt)} · ${formatBytes(s.sizeBytes || 0)}</div>
+                  </div>
+                  <button class="pill-action-btn" style="color:var(--red);" onclick="deleteShareRecord('${esc(s.shareId)}')">🗑️ 销毁</button>
+                </div>
+              `).join('') : `
+                <div class="settings-item">
+                  <div class="settings-item-desc">暂无加密分享记录。可在任意会话右上角「⋯ → 生成 AES-256 端到端加密回放链接」创建。</div>
+                </div>
+              `}
             </div>
           </div>
 
@@ -1827,7 +2249,7 @@ export function initHubController() {
                 <div id="pushLocalStatus" style="margin-top:9px;font-size:12.5px;font-weight:600;color:var(--primary);">
                   正在检测本机推送状态…
                 </div>
-                <div id="pushDeviceList" style="margin-top:4px;font-size:12px;color:#64748b;line-height:1.55;"></div>
+                <div id="pushDeviceList" style="margin-top:4px;font-size:12px;color:var(--muted);line-height:1.55;"></div>
                 <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
                   <button class="pill-action-btn primary" onclick="subscribeIphonePush()">📲 开启推送</button>
                   <button class="pill-action-btn" onclick="sendTestPush()">🔔 测试</button>
@@ -1845,6 +2267,13 @@ export function initHubController() {
             <div class="settings-card">
               <div class="settings-item">
                 <div>
+                  <div class="settings-item-title">添加新手机（6 位免密配对码）</div>
+                  <div class="settings-item-desc">生成 3 分钟有效的一次性 6 位数字配对码，新手机免输长密码直接解锁</div>
+                </div>
+                <button class="pill-action-btn primary" onclick="openPairingCodeSheet()">📱 生成配对码</button>
+              </div>
+              <div class="settings-item">
+                <div>
                   <div class="settings-item-title">修改总控台访问密码</div>
                   <div class="settings-item-desc">随时更换访问密钥，防止未授权访问</div>
                 </div>
@@ -1859,8 +2288,18 @@ export function initHubController() {
               </div>
             </div>
           </div>
+
+          <div
+            style="text-align:center;padding:8px 12px 18px;font-size:11.5px;color:var(--muted);cursor:pointer;user-select:none;"
+            onclick="copyCodeText('${encodeURIComponent(`DSH Hub v${buildInfo.version || '0.2.0'} (${buildInfo.uiBuild || 'dev'}) · started ${buildInfo.startedAt ? new Date(buildInfo.startedAt).toISOString() : ''}`)}', '📋 版本信息已复制')"
+          >
+            DSH 远控总控台 v${esc(buildInfo.version || '0.2.0')} · 构建 <code>${esc(buildInfo.uiBuild || 'dev')}</code>${buildInfo.startedAt ? ' · 云端启动于 ' + formatTime(buildInfo.startedAt) : ''}
+          </div>
         </div>
       `;
+      if (prevScrollTop > 0) {
+        viewport.scrollTop = prevScrollTop;
+      }
       void refreshPushStatus();
     }
 
@@ -2302,10 +2741,85 @@ export function initHubController() {
       renderSessionList();
     }
 
-    function copyCodeText(encoded) {
+    async function copyText(text, { successMessage = '📋 已复制到剪贴板', title = '📋 复制内容' } = {}) {
+      const value = String(text ?? '');
+      if (!value) return false;
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(value);
+          showToast(successMessage);
+          return true;
+        }
+      } catch {}
+      // 同步 execCommand('copy') 兜底
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = value;
+        ta.setAttribute('readonly', 'readonly');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, value.length);
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) {
+          showToast(successMessage);
+          return true;
+        }
+      } catch {}
+      openCopyFallbackSheet(value, title);
+      return false;
+    }
+
+    function openCopyFallbackSheet(text, title = '📋 复制内容') {
+      const titleEl = document.getElementById('copyFallbackTitle');
+      if (titleEl) titleEl.textContent = title;
+      const ta = document.getElementById('copyFallbackTextarea');
+      if (ta) {
+        ta.value = String(text ?? '');
+      }
+      openSheet('copyFallbackSheet');
+      setTimeout(() => {
+        try {
+          ta?.focus();
+          ta?.select();
+        } catch {}
+      }, 80);
+    }
+
+    async function retryCopyFromFallbackSheet() {
+      const ta = document.getElementById('copyFallbackTextarea');
+      const val = ta ? ta.value : '';
+      if (!val) return;
+      try {
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, val.length);
+      } catch {}
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          await navigator.clipboard.writeText(val);
+          closeSheet('copyFallbackSheet');
+          showToast('📋 已复制到剪贴板');
+          return;
+        } catch {}
+      }
+      try {
+        if (document.execCommand('copy')) {
+          closeSheet('copyFallbackSheet');
+          showToast('📋 已复制到剪贴板');
+          return;
+        }
+      } catch {}
+      showToast('请长按上方选中文本并点「拷贝」');
+    }
+
+    function copyCodeText(encoded, successMessage = '📋 已复制到剪贴板') {
       const text = decodeURIComponent(encoded);
-      navigator.clipboard?.writeText(text);
-      showToast('📋 已复制到剪贴板');
+      void copyText(text, { successMessage });
     }
 
     function openTurboGuideSheet() {
@@ -2750,6 +3264,17 @@ export function initHubController() {
       } catch {}
     }
 
+    function setConnectionBanner(disconnected, message = '') {
+      const banner = document.getElementById('connectionStatusBanner');
+      if (!banner) return;
+      if (disconnected) {
+        banner.textContent = message || '⚠️ 网络连接中断，正在自动重连… 点此立即重试';
+        banner.style.display = 'flex';
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+
     function applyHubState(nextState) {
       preservePreviewUiState(nextState);
       hubState = nextState;
@@ -2759,6 +3284,7 @@ export function initHubController() {
         const res = await apiFetch('/api/state');
         const data = await res.json();
         if (data.ok) {
+          setConnectionBanner(false);
           applyHubState(data);
           renderAll();
           flushPendingDeepLink();
@@ -2768,6 +3294,9 @@ export function initHubController() {
         return { ok: false, error: data.error || '服务端返回异常' };
       } catch (err) {
         const message = err && err.message ? err.message : String(err);
+        if (message !== 'Unauthorized') {
+          setConnectionBanner(true);
+        }
         return { ok: false, unauthorized: message === 'Unauthorized', error: message };
       }
     }
@@ -2788,14 +3317,21 @@ export function initHubController() {
         sseSource.onopen = () => {
           sseConnected = true;
           lastSseEventAt = Date.now();
+          setConnectionBanner(false);
         };
         sseSource.onerror = () => {
           sseConnected = false;
         };
+        sseSource.addEventListener('ping', () => {
+          sseConnected = true;
+          lastSseEventAt = Date.now();
+          setConnectionBanner(false);
+        });
         sseSource.addEventListener('state', evt => {
           try {
             sseConnected = true;
             lastSseEventAt = Date.now();
+            setConnectionBanner(false);
             const data = JSON.parse(evt.data);
             if (data.ok) {
               applyHubState(data);
@@ -2807,6 +3343,35 @@ export function initHubController() {
       } catch {}
     }
 
+    function manualReconnectNow() {
+      setConnectionBanner(true, '🔄 正在重新连接总控台…');
+      connectSSE();
+      void fetchState();
+    }
+
+    // 切回前台 / 网络恢复时立即刷新并重连 SSE (#11)
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          void fetchState();
+          if (!sseConnected || Date.now() - lastSseEventAt > 15000) {
+            connectSSE();
+          }
+        }
+      });
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        setConnectionBanner(false);
+        connectSSE();
+        void fetchState();
+      });
+      window.addEventListener('offline', () => {
+        sseConnected = false;
+        setConnectionBanner(true, '⚠️ 当前手机网络已断开，恢复网络后将自动重连');
+      });
+    }
+
     Object.assign(window, {
       getToken,
       authHeaders,
@@ -2815,6 +3380,8 @@ export function initHubController() {
       lockAndLogout,
       dismissLiveBanner,
       setPreviewMode,
+      applyTheme,
+      setThemePreference,
       esc,
       cleanPreviewText,
       formatTime,
@@ -2826,6 +3393,7 @@ export function initHubController() {
       renderAll,
       renderProjectStrip,
       renderSessionList,
+      resetSessionFilters,
       openChat,
       rawCloseChat,
       closeMobileChat,
@@ -2855,6 +3423,7 @@ export function initHubController() {
       stopVoiceInput,
       toggleVoiceInput,
       sendPromptToActiveSession,
+      cancelQueuedCommand,
       sendQuickFollowup,
       stopActiveSession,
       sendApprovalDecision,
@@ -2889,6 +3458,11 @@ export function initHubController() {
       togglePinTargetSession,
       saveInlineRename,
       shareTargetSession,
+      openShareResultSheet,
+      deleteShareRecord,
+      openPairingCodeSheet,
+      closePairingCodeSheet,
+      generateNewPairingCode,
       jumpToSessionFiles,
       deleteTargetSession,
       renderSettingsTab,
@@ -2913,6 +3487,9 @@ export function initHubController() {
       closeSheet,
       onSearchInput,
       clearSearch,
+      copyText,
+      openCopyFallbackSheet,
+      retryCopyFromFallbackSheet,
       copyCodeText,
       openTurboGuideSheet,
       requestHostAxPermission,
@@ -2935,6 +3512,8 @@ export function initHubController() {
       preservePreviewUiState,
       tryOpenDeepLinkTarget,
       flushPendingDeepLink,
+      setConnectionBanner,
+      manualReconnectNow,
       applyHubState,
       fetchState,
       connectSSE,
@@ -2945,10 +3524,10 @@ export function initHubController() {
     setupInstallHint();
     fetchState();
     connectSSE();
-    // 仅当 SSE 断开或超过 8s 未收到实时流时，才降级使用轮询兜底，避免双重刷新引起屏幕抖动
+    // 服务端每 10s 发送 event: ping，仅当 SSE 断开或超过 15s 未收到任何事件时才降级轮询兜底
     setInterval(() => {
-      if (!sseConnected || (Date.now() - lastSseEventAt > 8000)) {
+      if (!sseConnected || (Date.now() - lastSseEventAt > 15000)) {
         fetchState();
       }
-    }, 3000);
+    }, 5000);
 }

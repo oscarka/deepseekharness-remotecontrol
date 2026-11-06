@@ -62,3 +62,4 @@ export function shouldDismissVerticalSwipe({
   if (dy >= threshold) return true;
   return dy / Math.max(1, durationMs || 1) >= minVelocity;
 }
+

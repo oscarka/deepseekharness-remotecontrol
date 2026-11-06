@@ -185,3 +185,4 @@ export function renderMarkdown(rawText: string): string {
 export function formatAssistantText(rawText: string): string {
   return renderMarkdown(rawText);
 }
+

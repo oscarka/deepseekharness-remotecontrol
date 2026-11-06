@@ -4,21 +4,30 @@ import { dirname } from 'node:path'
 import { generateOrLoadVapidKeys, sendWebPushNotification } from './web-push.js'
 
 const ONLINE_TTL_MS = 30 * 60_000
+const ACTIVE_HEARTBEAT_WINDOW_MS = 90_000
+const DEFAULT_COMMAND_TTL_MS = 10 * 60_000
+const INLINE_TEXT_PREVIEW_MAX_CHARS = 16_384
+const FILE_PREVIEW_BLOB_TTL_MS = 10 * 60_000
+const PAIRING_RATE_WINDOW_MS = 60_000
+const PAIRING_MAX_FAILS_PER_WINDOW = 10
 const MAX_SNAPSHOTS = 15
 const MAX_SHARES = 50
 const PAIRING_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 export class HubCore {
-  constructor({ stateFile = '', now = () => Date.now(), pushFetch = globalThis.fetch } = {}) {
+  constructor({ stateFile = '', now = () => Date.now(), pushFetch = globalThis.fetch, buildInfo = null } = {}) {
     this.stateFile = stateFile
     this.now = now
     this.pushFetch = pushFetch
+    this.buildInfo = buildInfo
     this.activeHostId = ''
     this.hosts = new Map()
     this.snapshots = new Map()
     this.migrations = new Map()
     this.shares = new Map()
     this.pairingCodes = new Map()
+    this.pairingFailBuckets = new Map()
+    this.filePreviewBlobs = new Map()
     this.signalingMailboxes = new Map()
     this.commandResultsById = new Map()
     this.totalCommandsExecuted = 0
@@ -91,6 +100,86 @@ export class HubCore {
     }
   }
 
+  sanitizeFilePreviewForState(hostId, preview) {
+    if (!preview || typeof preview !== 'object') return null
+    const at = Number(preview.at) || this.now()
+    const hasBinaryOrLarge =
+      Boolean(preview.dataBase64) ||
+      (typeof preview.content === 'string' && preview.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS)
+
+    if (hasBinaryOrLarge) {
+      const existing = this.filePreviewBlobs.get(hostId)
+      if (!existing || existing.at !== at || (preview.dataBase64 && !existing.dataBase64)) {
+        this.filePreviewBlobs.set(hostId, {
+          at,
+          agentId: preview.agentId || '',
+          relPath: preview.relPath || '',
+          name: preview.name || '',
+          ext: preview.ext || '',
+          size: Number(preview.size) || 0,
+          kind: preview.kind || 'binary',
+          mime: preview.mime || preview.mimeType || 'application/octet-stream',
+          content: preview.content,
+          dataBase64: preview.dataBase64,
+          expiresAt: this.now() + FILE_PREVIEW_BLOB_TTL_MS,
+        })
+      }
+    }
+
+    const sanitized = {
+      at,
+      agentId: preview.agentId || '',
+      relPath: preview.relPath || '',
+      name: preview.name || '',
+      ext: preview.ext || '',
+      size: Number(preview.size) || 0,
+      kind: preview.kind || 'text',
+      mime: preview.mime || preview.mimeType || 'text/plain',
+      hasBlob: Boolean(hasBinaryOrLarge || preview.hasBlob || this.filePreviewBlobs.get(hostId)?.at === at),
+      previewUrl: `/api/hosts/${encodeURIComponent(hostId)}/file-preview?at=${at}`,
+    }
+
+    if (!hasBinaryOrLarge && typeof preview.content === 'string') {
+      sanitized.content = preview.content
+    }
+    return sanitized
+  }
+
+  getFilePreviewBlob(hostId, expectedAt = null) {
+    const cleanHostId = String(hostId ?? '').trim()
+    if (!cleanHostId) return null
+    const blob = this.filePreviewBlobs.get(cleanHostId)
+    if (blob) {
+      if (blob.expiresAt && this.now() > blob.expiresAt) {
+        this.filePreviewBlobs.delete(cleanHostId)
+        return null
+      }
+      if (expectedAt !== null && expectedAt !== undefined && expectedAt !== '' && Number(expectedAt) !== blob.at) {
+        return null
+      }
+      return blob
+    }
+    const host = this.hosts.get(cleanHostId)
+    const preview = host?.lastFilePreview
+    if (!preview) return null
+    if (expectedAt !== null && expectedAt !== undefined && expectedAt !== '' && Number(expectedAt) !== Number(preview.at)) {
+      return null
+    }
+    return preview
+  }
+
+  clearFilePreview(hostId) {
+    const cleanHostId = String(hostId ?? '').trim()
+    this.filePreviewBlobs.delete(cleanHostId)
+    const host = this.hosts.get(cleanHostId)
+    if (host) {
+      host.lastFilePreview = null
+      void this.persist()
+      this.emitStateChange('preview_cleared')
+    }
+    return { ok: true }
+  }
+
   async persist() {
     if (!this.stateFile) return
     try {
@@ -101,8 +190,15 @@ export class HubCore {
         pushSubscriptions: [...this.pushSubscriptions.values()],
         hosts: [...this.hosts.values()].map(h => ({
           ...h,
+          lastFilePreview: h.lastFilePreview ? this.sanitizeFilePreviewForState(h.hostId, h.lastFilePreview) : null,
           commands: h.commands ?? [],
-          recentResults: (h.recentResults ?? []).slice(-15),
+          recentResults: (h.recentResults ?? []).slice(-15).map(r => {
+            if (r && (r.dataBase64 || (typeof r.content === 'string' && r.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS))) {
+              const { dataBase64, content, ...rest } = r
+              return { ...rest, hasBlob: true }
+            }
+            return r
+          }),
         })),
         snapshots: [...this.snapshots.values()],
         shares: [...this.shares.values()],
@@ -165,20 +261,47 @@ export class HubCore {
   }
 
   getFullState() {
+    const now = this.now()
     const summaryById = new Map(this.getHostsSummary().map(item => [item.hostId, item]))
     const hosts = [...this.hosts.values()].map(host => {
       const summary = summaryById.get(host.hostId) ?? {}
+      const sanitizedPreview = host.lastFilePreview
+        ? this.sanitizeFilePreviewForState(host.hostId, host.lastFilePreview)
+        : null
+      if (sanitizedPreview && host.lastFilePreview?.dataBase64) {
+        host.lastFilePreview = sanitizedPreview
+      }
+      const activeCommands = (host.commands ?? []).filter(c => !c.expiresAt || now <= c.expiresAt)
       return {
         ...summary,
+        activelyConnected: Boolean(host.lastSeen && now - host.lastSeen <= ACTIVE_HEARTBEAT_WINDOW_MS),
         identity: host.identity ?? null,
         trust: host.trust ?? { status: 'unpinned', pinnedPublicKey: '', pinnedFingerprint: '' },
         dshStats: host.dshStats ?? {},
         bridgeState: host.bridgeState ?? { tasks: [], approvals: [], workspaces: [] },
         lastFsListing: host.lastFsListing ?? null,
-        lastFilePreview: host.lastFilePreview ?? null,
+        lastFilePreview: sanitizedPreview,
         lastShareResult: host.lastShareResult ?? null,
-        pendingCommandsCount: (host.commands ?? []).length,
-        recentResults: (host.recentResults ?? []).slice(-10).reverse(),
+        pendingCommandsCount: activeCommands.length,
+        pendingCommands: activeCommands.map(c => ({
+          id: c.id,
+          type: c.type,
+          agentId: c.agentId || '',
+          text: c.text || '',
+          createdAt: c.createdAt || now,
+          expiresAt: c.expiresAt || 0,
+          queued: Boolean(c.queued),
+        })),
+        recentResults: (host.recentResults ?? [])
+          .slice(-10)
+          .reverse()
+          .map(r => {
+            if (r && (r.dataBase64 || (typeof r.content === 'string' && r.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS))) {
+              const { dataBase64, content, ...rest } = r
+              return { ...rest, hasBlob: true }
+            }
+            return r
+          }),
       }
     })
     const snapshots = [...this.snapshots.values()]
@@ -193,7 +316,8 @@ export class HubCore {
       .slice(0, 10)
     const shares = this.listShares()
     return {
-      now: this.now(),
+      now,
+      ...(this.buildInfo ? { build: this.buildInfo } : {}),
       activeHostId: this.activeHostId,
       vapidPublicKey: this.vapidKeys.publicKey,
       pushSubscriptions: this.listPushSubscriptions(),
@@ -478,15 +602,19 @@ export class HubCore {
     if (Array.isArray(payload.commandResults) && payload.commandResults.length > 0) {
       for (const res of payload.commandResults) {
         this.totalCommandsExecuted += 1
-        record.recentResults.push(res)
+        this.onCommandResult(hostId, res)
+        const lightRes =
+          res && (res.dataBase64 || (typeof res.content === 'string' && res.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS))
+            ? (({ dataBase64, content, ...rest }) => ({ ...rest, hasBlob: true }))(res)
+            : res
+        record.recentResults.push(lightRes)
         if (res?.id) {
-          this.commandResultsById.set(res.id, { hostId, ...res })
+          this.commandResultsById.set(res.id, { hostId, ...lightRes })
           if (this.commandResultsById.size > 300) {
             const oldest = this.commandResultsById.keys().next().value
             this.commandResultsById.delete(oldest)
           }
         }
-        this.onCommandResult(hostId, res)
       }
       if (record.recentResults.length > 25) {
         record.recentResults.splice(0, record.recentResults.length - 25)
@@ -513,7 +641,27 @@ export class HubCore {
 
     const hasCommandActivity = (Array.isArray(payload.commandResults) && payload.commandResults.length > 0)
       || record.commands.length > 0
-    const commands = record.commands.splice(0)
+    const rawCommands = record.commands.splice(0)
+    const commands = []
+    for (const cmd of rawCommands) {
+      if (cmd?.expiresAt && now > cmd.expiresAt) {
+        const expiredRes = {
+          id: cmd.id,
+          type: cmd.type,
+          agentId: cmd.agentId || '',
+          ok: false,
+          expired: true,
+          error: '指令排队已超时（超过 10 分钟未上线），已自动丢弃未执行',
+          at: now,
+        }
+        record.recentResults.push(expiredRes)
+        if (cmd.id) {
+          this.commandResultsById.set(cmd.id, { hostId, ...expiredRes })
+        }
+        continue
+      }
+      commands.push(cmd)
+    }
     const nextFingerprint = this.computeHostFingerprint(record)
     const stateChanged = hasCommandActivity || nextFingerprint !== record._lastFingerprint
     if (stateChanged || now - (record._lastBroadcastAt || 0) >= 12_000) {
@@ -608,19 +756,40 @@ export class HubCore {
     return entry
   }
 
-  exchangePairingCode(code) {
+  exchangePairingCode(code, { clientKey = 'global' } = {}) {
+    const now = this.now()
+    const bucketKey = String(clientKey || 'global').trim() || 'global'
+    const bucket = (this.pairingFailBuckets.get(bucketKey) || []).filter(ts => now - ts < PAIRING_RATE_WINDOW_MS)
+    if (bucket.length >= PAIRING_MAX_FAILS_PER_WINDOW) {
+      this.pairingFailBuckets.set(bucketKey, bucket)
+      return { ok: false, rateLimited: true, error: '尝试次数过多，请 1 分钟后再试' }
+    }
+
+    const recordFail = () => {
+      bucket.push(now)
+      this.pairingFailBuckets.set(bucketKey, bucket)
+    }
+
     const clean = String(code ?? '').trim().toUpperCase()
-    if (!clean) return { ok: false, error: '配对码不能为空' }
+    if (!clean) {
+      recordFail()
+      return { ok: false, error: '配对码不能为空' }
+    }
     const entry = this.pairingCodes.get(clean)
-    if (!entry) return { ok: false, error: '配对码无效或已使用' }
+    if (!entry) {
+      recordFail()
+      return { ok: false, error: '配对码无效或已使用' }
+    }
     this.pairingCodes.delete(clean)
-    if (this.now() > entry.expiresAt) {
+    if (now > entry.expiresAt) {
+      recordFail()
       return { ok: false, error: '配对码已过期' }
     }
+    this.pairingFailBuckets.delete(bucketKey)
     return {
       ok: true,
       hostId: entry.hostId || this.activeHostId,
-      pairedAt: this.now(),
+      pairedAt: now,
     }
   }
 
@@ -801,6 +970,7 @@ export class HubCore {
   queueCommand(hostId, commandPayload = {}) {
     const cleanHostId = String(hostId ?? '').trim()
     if (!cleanHostId) return { ok: false, error: 'hostId is required' }
+    const now = this.now()
     let host = this.hosts.get(cleanHostId)
     if (!host) {
       host = {
@@ -821,14 +991,63 @@ export class HubCore {
     if (host.trust?.status === 'revoked') {
       return { ok: false, error: `Host ${cleanHostId} is revoked` }
     }
+    const ageMs = host.lastSeen ? now - host.lastSeen : Infinity
+    const isActivelyOnline = Boolean(host.lastSeen && ageMs <= ACTIVE_HEARTBEAT_WINDOW_MS)
+    const cmdType = String(commandPayload.type ?? '').trim()
+    const isInteractivePrompt = cmdType === 'prompt' || cmdType === 'steer'
+    const ttlMs = Number(commandPayload.ttlMs) > 0 ? Number(commandPayload.ttlMs) : DEFAULT_COMMAND_TTL_MS
+    const expiresAt =
+      commandPayload.expiresAt !== undefined
+        ? Number(commandPayload.expiresAt)
+        : isInteractivePrompt
+          ? now + ttlMs
+          : 0
+
     const cmd = {
       id: commandPayload.id || `cmd-${randomBytes(4).toString('hex')}`,
-      createdAt: this.now(),
+      createdAt: now,
+      queued: !isActivelyOnline,
+      ...(expiresAt > 0 ? { expiresAt } : {}),
       ...commandPayload,
     }
     host.commands.push(cmd)
     void this.persist()
-    return { ok: true, command: cmd }
+    this.emitStateChange('command_queued')
+    return {
+      ok: true,
+      queued: !isActivelyOnline,
+      hostOnline: isActivelyOnline,
+      hostLastSeenAgeMs: Number.isFinite(ageMs) ? ageMs : null,
+      command: cmd,
+    }
+  }
+
+  cancelCommand(cmdId) {
+    const targetId = String(cmdId ?? '').trim()
+    if (!targetId) return { ok: false, error: 'cmdId is required' }
+    const now = this.now()
+    for (const host of this.hosts.values()) {
+      const idx = (host.commands ?? []).findIndex(c => c?.id === targetId)
+      if (idx !== -1) {
+        const [removed] = host.commands.splice(idx, 1)
+        const cancelledRes = {
+          id: targetId,
+          type: removed?.type || '',
+          agentId: removed?.agentId || '',
+          ok: false,
+          cancelled: true,
+          error: '已取消排队中的指令',
+          at: now,
+        }
+        host.recentResults = host.recentResults ?? []
+        host.recentResults.push(cancelledRes)
+        this.commandResultsById.set(targetId, { hostId: host.hostId, ...cancelledRes })
+        void this.persist()
+        this.emitStateChange('command_cancelled')
+        return { ok: true, cancelled: true, commandId: targetId, hostId: host.hostId }
+      }
+    }
+    return { ok: false, error: '该指令已执行或不存在' }
   }
 
   getCommandResult(cmdId) {
@@ -963,18 +1182,19 @@ export class HubCore {
           entries: res.entries,
         }
       } else if (res.type === 'read_file' && res.ok) {
-        host.lastFilePreview = {
-          at: this.now(),
+        const at = this.now()
+        host.lastFilePreview = this.sanitizeFilePreviewForState(hostId, {
+          at,
           agentId: res.agentId || '',
           relPath: res.relPath,
           name: res.name,
           ext: res.ext,
           size: res.size,
           kind: res.kind,
-          mime: res.mime,
+          mime: res.mime || res.mimeType,
           content: res.content,
           dataBase64: res.dataBase64,
-        }
+        })
       } else if (res.type === 'share_session' && res.ok) {
         host.lastShareResult = {
           at: this.now(),
