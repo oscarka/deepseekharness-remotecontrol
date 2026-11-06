@@ -16,6 +16,9 @@ import {
 const execFileAsync = promisify(execFile)
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from './migration.js'
+import { decorateTaskMetadata, HarnessRouter } from './harness-router.js'
+import { ClaudeAdapter } from './harnesses/claude-adapter.js'
+import { CodexAdapter } from './harnesses/codex-adapter.js'
 import { safeError } from './redact.js'
 import { extractSessionTranscript, loadDiskSessionsFromDshHome, loadOrCreateHostIdentity, renameDiskSession } from './workspace-ops.js'
 
@@ -27,7 +30,18 @@ import { extractSessionTranscript, loadDiskSessionsFromDshHome, loadOrCreateHost
  * - Executing Web UI commands (prompt, steer, new_session, rename/delete_session, list/read_file, share_session, stop, approve/deny, snapshot export/import, safe wipe)
  */
 export class HubAgent {
-  constructor({ config, bridge, transport, audit, logger, fetchImpl = globalThis.fetch, execImpl = undefined }) {
+  constructor({
+    config,
+    bridge,
+    transport,
+    audit,
+    logger,
+    fetchImpl = globalThis.fetch,
+    execImpl = undefined,
+    bootId = `boot-${randomBytes(6).toString('hex')}`,
+    bootEpochMs = Date.now(),
+    harnessRouter = undefined,
+  }) {
     this.config = config
     this.bridge = bridge
     this.transport = transport
@@ -35,6 +49,26 @@ export class HubAgent {
     this.logger = logger
     this.fetch = fetchImpl
     this.execImpl = execImpl
+    this.bootId = bootId
+    this.bootEpochMs = bootEpochMs
+    this.heartbeatSeq = 0
+    this.harnessRouter = harnessRouter || new HarnessRouter()
+    if (!harnessRouter && this.shouldLoadExternalHarnesses()) {
+      this.harnessRouter.registerAdapter(
+        new CodexAdapter({
+          codexHome: this.config?.codexHome || undefined,
+          maxSessions: this.config?.maxCodexSessions || 10,
+          execImpl: this.execImpl,
+        }),
+      )
+      this.harnessRouter.registerAdapter(
+        new ClaudeAdapter({
+          claudeHome: this.config?.claudeHome || undefined,
+          maxSessions: this.config?.maxClaudeSessions || 8,
+          execImpl: this.execImpl,
+        }),
+      )
+    }
     this.timer = null
     this.polling = false
     this.disposed = false
@@ -43,6 +77,7 @@ export class HubAgent {
     this.cachedStats = null
     this.cachedDiskSessions = []
     this.cachedAgySessions = []
+    this.cachedExternalSessions = []
     this.cachedPushSubscriptions = []
     this.settledAgyApprovals = new Set()
     this.recentAgyApprovals = new Map()
@@ -114,6 +149,14 @@ export class HubAgent {
     return Boolean(this.config.dshHome && resolve(this.config.dshHome) === resolve(defaultDshHome))
   }
 
+  shouldLoadExternalHarnesses() {
+    if (this.config?.enableExternalHarnesses === false) return false
+    if (this.config?.enableExternalHarnesses === true) return true
+    if (this.config?.codexHome || this.config?.claudeHome) return true
+    const defaultDshHome = join(homedir(), '.dsh')
+    return Boolean(this.config?.dshHome && resolve(this.config.dshHome) === resolve(defaultDshHome))
+  }
+
   async refreshDshStats(force = false) {
     const now = Date.now()
     try {
@@ -171,6 +214,14 @@ export class HubAgent {
       } else {
         this.cachedAgySessions = []
       }
+      if (this.harnessRouter && this.harnessRouter.adapters.size > 0) {
+        this.cachedExternalSessions = await this.harnessRouter.listExternalSessions({
+          dshHome: this.config.dshHome,
+          now,
+        })
+      } else {
+        this.cachedExternalSessions = []
+      }
     } catch (error) {
       this.logger?.warn?.(`dsh-feishu: inspectDshHome failed: ${safeError(error)}`)
       if (!this.cachedStats) {
@@ -227,19 +278,26 @@ export class HubAgent {
     this.inflightTick = new Promise(resolve => { resolveInflight = resolve })
     let executedAny = false
     try {
+      // Stamp snapshot capture time & monotonic sequence BEFORE reading disk/RPC so out-of-order slow captures are detected
+      const capturedAt = Date.now()
+      const seq = ++this.heartbeatSeq
+      const syncMeta = {
+        bootId: this.bootId,
+        bootEpochMs: this.bootEpochMs,
+        seq,
+        capturedAt,
+      }
       const identity = await this.ensureIdentity()
       const dshStats = await this.refreshDshStats(false)
       const bridgeState = this.bridge.getSnapshotState()
       for (const t of bridgeState.tasks || []) {
-        if (!t.harness) {
-          t.harness = 'dsh'
-          t.harnessLabel = 'DeepSeek Harness'
-        }
+        decorateTaskMetadata(t, { isLiveDsh: true, now: capturedAt })
       }
       const existingIds = new Set((bridgeState.tasks || []).map(t => t.id))
       const wsSet = new Set(Array.isArray(bridgeState.workspaces) ? bridgeState.workspaces : [])
       if (Array.isArray(this.cachedDiskSessions) && this.cachedDiskSessions.length > 0) {
         for (const ds of this.cachedDiskSessions) {
+          decorateTaskMetadata(ds, { isLiveDsh: false, now: capturedAt })
           if (!existingIds.has(ds.id)) {
             bridgeState.tasks.push(ds)
             existingIds.add(ds.id)
@@ -251,6 +309,7 @@ export class HubAgent {
         if (!Array.isArray(bridgeState.approvals)) bridgeState.approvals = []
         const existingCodes = new Set(bridgeState.approvals.map(a => a.code))
         for (const agySess of this.cachedAgySessions) {
+          decorateTaskMetadata(agySess, { isLiveDsh: false, now: capturedAt })
           if (!existingIds.has(agySess.id)) {
             bridgeState.tasks.push(agySess)
             existingIds.add(agySess.id)
@@ -276,6 +335,16 @@ export class HubAgent {
           }
         }
       }
+      if (Array.isArray(this.cachedExternalSessions) && this.cachedExternalSessions.length > 0) {
+        for (const extSess of this.cachedExternalSessions) {
+          decorateTaskMetadata(extSess, { isLiveDsh: false, now: capturedAt })
+          if (!existingIds.has(extSess.id)) {
+            bridgeState.tasks.push(extSess)
+            existingIds.add(extSess.id)
+          }
+          if (extSess.cwd) wsSet.add(extSess.cwd)
+        }
+      }
       bridgeState.taskCount = (bridgeState.tasks || []).length
       bridgeState.runningCount = (bridgeState.tasks || []).filter(t => t.status === 'running').length
       bridgeState.workspaces = [...wsSet]
@@ -298,6 +367,7 @@ export class HubAgent {
           platform: process.platform,
           arch: process.arch,
           identity,
+          syncMeta,
           dshStats,
           bridgeState,
           commandResults: resultsToSend,
@@ -582,6 +652,7 @@ export class HubAgent {
           const agent = this.bridge.agents.get(targetId)
             || (this.cachedDiskSessions || []).find(s => s.id === targetId)
             || (this.cachedAgySessions || []).find(s => s.id === targetId)
+            || (this.cachedExternalSessions || []).find(s => s.id === targetId)
           if (!agent) return { ok: false, error: '找不到该任务会话' }
           return await this.createEncryptedShare(agent)
         }
@@ -593,6 +664,7 @@ export class HubAgent {
           }
           const diskSession = (this.cachedDiskSessions || []).find(s => s.id === targetId)
             || (this.cachedAgySessions || []).find(s => s.id === targetId)
+            || (this.cachedExternalSessions || []).find(s => s.id === targetId)
           if (!diskSession) return { ok: false, error: '找不到该任务会话' }
           const renamed = await renameDiskSession(this.config.dshHome, targetId, cmd.title)
           if (renamed.ok) {
@@ -615,6 +687,18 @@ export class HubAgent {
               message: `已从总控台隐藏 Antigravity IDE 会话 (${toRawConversationId(targetId).slice(0, 8)})`,
             }
           }
+          const extAdapter = this.harnessRouter?.getAdapter(targetId)
+          if (extAdapter) {
+            if (typeof extAdapter.deleteSession === 'function') {
+              await extAdapter.deleteSession({ sessionId: targetId })
+            }
+            this.cachedExternalSessions = (this.cachedExternalSessions || []).filter(s => s.id !== targetId)
+            return {
+              ok: true,
+              agentId: targetId,
+              message: `已从总控台隐藏 ${extAdapter.label || extAdapter.id} 会话`,
+            }
+          }
           const res = await this.bridge.executeHubCommand(cmd)
           this.cachedDiskSessions = (this.cachedDiskSessions || []).filter(s => s.id !== targetId)
           await this.refreshDshStats(true)
@@ -625,6 +709,7 @@ export class HubAgent {
           const targetId = String(cmd.agentId ?? '')
           const diskSession = (this.cachedDiskSessions || []).find(s => s.id === targetId)
             || (this.cachedAgySessions || []).find(s => s.id === targetId)
+            || (this.cachedExternalSessions || []).find(s => s.id === targetId)
           const enrichedCmd = (!cmd.cwd && diskSession?.cwd)
             ? { ...cmd, cwd: diskSession.cwd }
             : cmd
@@ -673,6 +758,15 @@ export class HubAgent {
               decision: effectiveType === 'approve' ? 'allowed-once' : 'rejected',
             }
           }
+          const extAdapter = this.harnessRouter?.getAdapter(cmd.agentId)
+          if (extAdapter && typeof extAdapter.resolveApproval === 'function') {
+            return await extAdapter.resolveApproval({
+              sessionId: cmd.agentId,
+              code,
+              allow: effectiveType === 'approve',
+              optionIndex: cmd.optionIndex,
+            })
+          }
           return await this.bridge.executeHubCommand({ ...cmd, type: effectiveType })
         }
         case 'prompt':
@@ -712,6 +806,28 @@ export class HubAgent {
             }
             return res
           }
+          const extAdapter = this.harnessRouter?.getAdapter(targetId)
+          if (extAdapter) {
+            const extSess = (this.cachedExternalSessions || []).find(s => s.id === targetId)
+            if (extSess?.controlMode === 'observe-only') {
+              return {
+                ok: false,
+                error: `该 ${extAdapter.label || extAdapter.id} 会话当前正在电脑独立终端运行中（只读观测模式），请等待回合结束后再从手机续聊`,
+              }
+            }
+            if (type === 'stop' && typeof extAdapter.stopSession === 'function') {
+              return await extAdapter.stopSession({ sessionId: targetId, cwd: extSess?.cwd || cmd.cwd })
+            }
+            if ((type === 'prompt' || type === 'steer') && typeof extAdapter.sendPrompt === 'function') {
+              return await extAdapter.sendPrompt({
+                sessionId: targetId,
+                text: cmd.text,
+                cwd: extSess?.cwd || cmd.cwd,
+                mode: type,
+                execImpl: this.execImpl,
+              })
+            }
+          }
           const bridgeRes = await this.bridge.executeHubCommand(cmd)
           if (!bridgeRes?.ok && bridgeRes?.error === '找不到该任务会话') {
             const isHistoricalDsh = (this.cachedDiskSessions || []).some(s => s.id === targetId)
@@ -735,6 +851,15 @@ export class HubAgent {
               },
               { execImpl: this.execImpl },
             )
+          }
+          const extAdapter = this.harnessRouter?.getAdapter(cmd.harness)
+          if (extAdapter && typeof extAdapter.createSession === 'function') {
+            return await extAdapter.createSession({
+              title: cmd.title,
+              prompt: cmd.prompt || cmd.text,
+              cwd: cmd.cwd,
+              execImpl: this.execImpl,
+            })
           }
           return await this.bridge.executeHubCommand(cmd)
         }

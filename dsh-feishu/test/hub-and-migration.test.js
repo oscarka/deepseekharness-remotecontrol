@@ -6,7 +6,11 @@ import { join } from 'node:path'
 import { FeishuBridge } from '../lib/bridge.js'
 import { resolveConfig } from '../lib/config.js'
 import { HubAgent } from '../lib/hub-agent.js'
-import { executeAntigravityIdeAction, loadAntigravityIdeSessions, parseAntigravityTranscript } from '../lib/antigravity-ide.js'
+import { acquireDaemonLock } from '../lib/daemon-lock.js'
+import { HarnessRouter } from '../lib/harness-router.js'
+import { ClaudeAdapter } from '../lib/harnesses/claude-adapter.js'
+import { CodexAdapter } from '../lib/harnesses/codex-adapter.js'
+import { applyStateHysteresis, executeAntigravityIdeAction, loadAntigravityIdeSessions, parseAntigravityTranscript } from '../lib/antigravity-ide.js'
 import { checkAccessibilityPermission, fastScanBrainDirs, getTurboNativeBinaryPath } from '../../dsh-turbo/index.js'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from '../lib/migration.js'
 import { createHubServer } from '../../hub/server.js'
@@ -1987,6 +1991,519 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   const controllerSrc = await readFile(new URL('../../hub/web/src/controller.js', import.meta.url), 'utf8')
   assert.doesNotMatch(controllerSrc, /\brenderApp\s*\(/)
 })
+
+test('Phase 1A & 1B Stability Suite: daemon lockfile, server-authoritative approval settling/failed ledger, syncMeta bootEpoch anti-rollback, 5s stateMeta hysteresis, and HarnessRouter observe-only protection', async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-phase1-'))
+  try {
+    // 1. Daemon Lockfile (`acquireDaemonLock`): wx atomic lock, contention refusal, stale cleanup, and --replace handover
+    const alivePids = new Set([10001])
+    const killedSignals = []
+    const isAliveMock = pid => alivePids.has(Number(pid))
+    const killMock = (pid, sig) => {
+      killedSignals.push({ pid: Number(pid), sig })
+      if (sig === 'SIGTERM' || sig === 'SIGKILL') {
+        alivePids.delete(Number(pid))
+      }
+    }
+
+    const lock1 = await acquireDaemonLock({
+      dshHome: tmpDir,
+      hostId: 'mac-lock-test',
+      pid: 10001,
+      bootId: 'boot-10001',
+      isAliveImpl: isAliveMock,
+      killImpl: killMock,
+    })
+    assert.equal(lock1.acquired, true)
+
+    // Second instance without `replace` must be refused while 10001 is alive
+    const lock2 = await acquireDaemonLock({
+      dshHome: tmpDir,
+      hostId: 'mac-lock-test',
+      pid: 10002,
+      bootId: 'boot-10002',
+      replace: false,
+      isAliveImpl: isAliveMock,
+      killImpl: killMock,
+    })
+    assert.equal(lock2.acquired, false)
+    assert.equal(lock2.reason, 'ALREADY_RUNNING')
+    assert.equal(lock2.existing.pid, 10001)
+
+    // Third instance with `replace: true` sends SIGTERM to 10001 and takes over
+    alivePids.add(10003)
+    const lock3 = await acquireDaemonLock({
+      dshHome: tmpDir,
+      hostId: 'mac-lock-test',
+      pid: 10003,
+      bootId: 'boot-10003',
+      replace: true,
+      isAliveImpl: isAliveMock,
+      killImpl: killMock,
+    })
+    assert.equal(lock3.acquired, true)
+    assert.equal(lock3.replacedPid, 10001)
+    assert.ok(killedSignals.some(k => k.pid === 10001 && k.sig === 'SIGTERM'))
+
+    // Old lock1.release() must NOT delete lock3's lockfile because bootId changed
+    assert.equal(lock1.release(), false)
+    assert.equal(lock3.release(), true)
+
+    // 2. Server-Authoritative Approval Ledger (`settling` -> `failed` -> retry `settling` -> `settled`)
+    let nowMs = 1_700_000_000_000
+    const hub = new HubCore({ now: () => nowMs })
+    const hostId = 'mac-ledger'
+    const baseApproval = {
+      code: 'AGY-LEDGER-1',
+      agentId: 'agy-ide:conv-1',
+      toolName: 'run_command',
+      promptTitle: 'Allow git commit?',
+      reason: 'git commit -m test',
+    }
+    hub.handleHeartbeat({
+      hostId,
+      hostName: 'Mac Ledger',
+      syncMeta: { bootId: 'boot-a', bootEpochMs: nowMs, seq: 1, capturedAt: nowMs },
+      bridgeState: {
+        tasks: [
+          {
+            id: 'agy-ide:conv-1',
+            title: '提交代码',
+            status: 'approval',
+            turnState: 'approval',
+            pendingApproval: baseApproval,
+            transcript: [{ role: 'user', text: '提交' }],
+          },
+        ],
+        approvals: [baseApproval],
+      },
+    })
+
+    // User clicks Approve on mobile -> enters `settling` state (45s TTL)
+    const queuedApprove = hub.queueCommand(hostId, {
+      type: 'approval',
+      code: 'AGY-LEDGER-1',
+      agentId: 'agy-ide:conv-1',
+      allow: true,
+      optionIndex: 1,
+    })
+    assert.equal(queuedApprove.ok, true)
+
+    let state = hub.getFullState()
+    let hostView = state.hosts.find(h => h.hostId === hostId)
+    assert.equal(hostView.bridgeState.approvals.length, 1)
+    assert.equal(hostView.bridgeState.approvals[0].settling, true)
+    assert.equal(hostView.bridgeState.approvals[0].settlingDecision, 'approve')
+    assert.equal(hostView.bridgeState.tasks[0].pendingApproval.settling, true)
+
+    // Host sends a heartbeat BEFORE executing the approval (snapshot still has AGY-LEDGER-1) -> must stay `settling: true`, no bounce-back!
+    nowMs += 1500
+    const hbPull = hub.handleHeartbeat({
+      hostId,
+      hostName: 'Mac Ledger',
+      syncMeta: { bootId: 'boot-a', bootEpochMs: nowMs - 1500, seq: 2, capturedAt: nowMs },
+      bridgeState: {
+        tasks: [
+          {
+            id: 'agy-ide:conv-1',
+            title: '提交代码',
+            status: 'approval',
+            turnState: 'approval',
+            pendingApproval: baseApproval,
+            transcript: [{ role: 'user', text: '提交' }],
+          },
+        ],
+        approvals: [baseApproval],
+      },
+    })
+    assert.equal(hbPull.commands.length, 1)
+    state = hub.getFullState()
+    hostView = state.hosts.find(h => h.hostId === hostId)
+    assert.equal(hostView.bridgeState.approvals[0].settling, true)
+
+    // Suppose host reports failure (`ok: false`) -> transitions to `failed` with visible `lastError`
+    nowMs += 500
+    hub.handleHeartbeat({
+      hostId,
+      hostName: 'Mac Ledger',
+      syncMeta: { bootId: 'boot-a', bootEpochMs: nowMs - 2000, seq: 3, capturedAt: nowMs },
+      commandResults: [
+        {
+          id: queuedApprove.command.id,
+          type: 'approval',
+          code: 'AGY-LEDGER-1',
+          ok: false,
+          error: 'Connect-RPC 端口未响应',
+        },
+      ],
+      bridgeState: {
+        tasks: [
+          {
+            id: 'agy-ide:conv-1',
+            title: '提交代码',
+            status: 'approval',
+            turnState: 'approval',
+            pendingApproval: baseApproval,
+            transcript: [{ role: 'user', text: '提交' }],
+          },
+        ],
+        approvals: [baseApproval],
+      },
+    })
+    state = hub.getFullState()
+    hostView = state.hosts.find(h => h.hostId === hostId)
+    assert.equal(hostView.bridgeState.approvals[0].settling, false)
+    assert.equal(hostView.bridgeState.approvals[0].lastError, 'Connect-RPC 端口未响应')
+
+    // User retries Approve -> host reports `ok: true` -> settled & removed even if snapshot momentarily still carries it
+    const retryApprove = hub.queueCommand(hostId, {
+      type: 'approval',
+      code: 'AGY-LEDGER-1',
+      agentId: 'agy-ide:conv-1',
+      allow: true,
+      optionIndex: 1,
+    })
+    nowMs += 500
+    hub.handleHeartbeat({
+      hostId,
+      hostName: 'Mac Ledger',
+      syncMeta: { bootId: 'boot-a', bootEpochMs: nowMs - 2500, seq: 4, capturedAt: nowMs },
+      commandResults: [
+        {
+          id: retryApprove.command.id,
+          type: 'approval',
+          code: 'AGY-LEDGER-1',
+          ok: true,
+        },
+      ],
+      bridgeState: {
+        tasks: [
+          {
+            id: 'agy-ide:conv-1',
+            title: '提交代码',
+            status: 'approval',
+            turnState: 'approval',
+            pendingApproval: baseApproval,
+            transcript: [{ role: 'user', text: '提交' }],
+          },
+        ],
+        approvals: [baseApproval],
+      },
+    })
+    state = hub.getFullState()
+    hostView = state.hosts.find(h => h.hostId === hostId)
+    assert.equal(hostView.bridgeState.approvals.length, 0)
+    assert.equal(hostView.bridgeState.tasks[0].pendingApproval, null)
+    assert.equal(hostView.bridgeState.tasks[0].status, 'running')
+
+    // 3. Anti-Rollback `syncMeta`: out-of-order seq ignored, daemon restart with new bootId accepted
+    const staleHb = hub.handleHeartbeat({
+      hostId,
+      hostName: 'Mac Ledger',
+      syncMeta: { bootId: 'boot-a', bootEpochMs: nowMs - 2500, seq: 3, capturedAt: nowMs - 500 },
+      bridgeState: {
+        tasks: [{ id: 'stale-task', title: '旧包不应覆盖' }],
+        approvals: [],
+      },
+    })
+    assert.equal(staleHb.staleSnapshotIgnored, true)
+    assert.equal(hub.getFullState().hosts.find(h => h.hostId === hostId).bridgeState.tasks[0].id, 'agy-ide:conv-1')
+
+    // Daemon restarts (`boot-b`, `seq: 1`, newer `bootEpochMs`) -> must be accepted!
+    nowMs += 2000
+    const restartHb = hub.handleHeartbeat({
+      hostId,
+      hostName: 'Mac Ledger',
+      syncMeta: { bootId: 'boot-b', bootEpochMs: nowMs, seq: 1, capturedAt: nowMs },
+      bridgeState: {
+        tasks: [{ id: 'fresh-after-restart', title: '重启后新任务', status: 'idle' }],
+        approvals: [],
+      },
+    })
+    assert.equal(restartHb.staleSnapshotIgnored, false)
+    assert.equal(
+      hub.getFullState().hosts.find(h => h.hostId === hostId).bridgeState.tasks[0].id,
+      'fresh-after-restart',
+    )
+
+    // 4. 5-second Hysteresis Window (`applyStateHysteresis`)
+    const hCache = new Map()
+    const tHigh = 10_000
+    const highSession = applyStateHysteresis(
+      {
+        id: 'agy-ide:hyst-1',
+        status: 'approval',
+        turnState: 'approval',
+        statusLabel: '⏳ 待审批',
+        lastStepIndex: 4,
+        transcript: [{ role: 'user', text: 'test' }],
+        pendingApproval: { code: 'AGY-HYST-4' },
+        stateMeta: { source: 'ls-rpc', observedAt: tHigh, confidence: 'high' },
+      },
+      hCache,
+      tHigh,
+    )
+    assert.equal(highSession.status, 'approval')
+
+    // 2.5s later (within 5s window), low-confidence mtime-decay tries to flip it to idle -> blocked!
+    const lowWithinWindow = applyStateHysteresis(
+      {
+        id: 'agy-ide:hyst-1',
+        status: 'idle',
+        turnState: 'idle',
+        statusLabel: '已完成',
+        lastStepIndex: 4,
+        transcript: [{ role: 'user', text: 'test' }],
+        pendingApproval: null,
+        stateMeta: { source: 'mtime-decay', observedAt: tHigh + 2500, confidence: 'low' },
+      },
+      hCache,
+      tHigh + 2500,
+    )
+    assert.equal(lowWithinWindow.status, 'approval')
+    assert.equal(lowWithinWindow.pendingApproval?.code, 'AGY-HYST-4')
+    assert.equal(lowWithinWindow.stateMeta.hysteresisProtected, true)
+
+    // 6s later (past 5s window), low-confidence decay is allowed to settle to idle
+    const lowAfterWindow = applyStateHysteresis(
+      {
+        id: 'agy-ide:hyst-1',
+        status: 'idle',
+        turnState: 'idle',
+        statusLabel: '已完成',
+        lastStepIndex: 4,
+        transcript: [{ role: 'user', text: 'test' }],
+        pendingApproval: null,
+        stateMeta: { source: 'mtime-decay', observedAt: tHigh + 6000, confidence: 'low' },
+      },
+      hCache,
+      tHigh + 6000,
+    )
+    assert.equal(lowAfterWindow.status, 'idle')
+
+    // 5. Thin `HarnessRouter`: `observe-only` vs `idle-resumable` external adapter routing
+    const router = new HarnessRouter()
+    const promptedExternal = []
+    router.registerAdapter({
+      id: 'codex',
+      label: 'Codex CLI',
+      icon: '🧠',
+      async listSessions() {
+        return [
+          {
+            id: 'codex:active-tty-1',
+            harness: 'codex',
+            harnessLabel: 'Codex CLI',
+            controlMode: 'observe-only',
+            title: '终端正在运行的 Codex',
+            status: 'running',
+            cwd: '/Users/dev/proj',
+            transcript: [{ role: 'user', text: '跑测试' }],
+          },
+          {
+            id: 'codex:idle-2',
+            harness: 'codex',
+            harnessLabel: 'Codex CLI',
+            controlMode: 'idle-resumable',
+            title: '空闲可续跑的 Codex',
+            status: 'idle',
+            cwd: '/Users/dev/proj',
+            transcript: [{ role: 'user', text: '已完成任务' }],
+          },
+        ]
+      },
+      async sendPrompt({ sessionId, text }) {
+        promptedExternal.push({ sessionId, text })
+        return { ok: true, sessionId, message: '已通过 codex exec resume 续跑' }
+      },
+    })
+
+    const { fetchAdapter } = createHubServer({ hub, token: 'router-token' })
+    const config = resolveConfig({
+      appId: APP_ID,
+      allowedOpenIds: [USER],
+      hostId: 'mac-router',
+      hostName: 'Mac Router',
+      hubUrl: 'https://dsh-router.example.run.app',
+      hubToken: 'router-token',
+      dshHome: tmpDir,
+      enableAntigravityIde: false,
+      auditFile: '',
+      controlChatFile: '',
+      remoteStateFile: '',
+    })
+    const bridge = new FeishuBridge({
+      config,
+      agents: { list: () => [], get: () => undefined },
+      transport: makeMockTransport(),
+    })
+    const hubAgent = new HubAgent({
+      config,
+      bridge,
+      transport: null,
+      fetchImpl: fetchAdapter,
+      harnessRouter: router,
+    })
+    await hubAgent.tick()
+
+    const observeRes = await hubAgent.handleHubCommand({
+      type: 'prompt',
+      agentId: 'codex:active-tty-1',
+      text: '试图插手独立终端',
+    })
+    assert.equal(observeRes.ok, false)
+    assert.match(observeRes.error, /只读观测模式/)
+
+    const resumeRes = await hubAgent.handleHubCommand({
+      type: 'prompt',
+      agentId: 'codex:idle-2',
+      text: '继续优化代码',
+    })
+    assert.equal(resumeRes.ok, true)
+    assert.equal(promptedExternal.length, 1)
+    assert.equal(promptedExternal[0].sessionId, 'codex:idle-2')
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
+test('Phase 2: CodexAdapter & ClaudeAdapter parse real JSONL schemas, detect controlMode, and resume via CLI', async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-phase2-adapters-'))
+  try {
+    const codexHome = join(tmpDir, '.codex')
+    const codexDayDir = join(codexHome, 'sessions', '2026', '05', '22')
+    await mkdir(codexDayDir, { recursive: true })
+    const fakeCodexBin = join(tmpDir, 'fake-codex')
+    await writeFile(fakeCodexBin, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+
+    const codexUuid = '019e4ec0-4edb-75c2-89c3-376ce1028246'
+    await writeFile(
+      join(codexHome, 'session_index.jsonl'),
+      JSON.stringify({
+        id: codexUuid,
+        thread_name: '明确 AI Agent Hosting 边界',
+        updated_at: '2026-05-22T08:15:23.726204Z',
+      }) + '\n',
+      'utf8',
+    )
+    const codexRolloutLines = [
+      JSON.stringify({
+        timestamp: '2026-05-22T08:14:46.306Z',
+        type: 'session_meta',
+        payload: { id: codexUuid, cwd: '/Users/dev/my-webapp', model_provider: 'openai' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-05-22T08:15:08.279Z',
+        type: 'event_msg',
+        payload: { type: 'user_message', message: '看看内容，理解一下我要做什么' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-05-22T08:15:26.824Z',
+        type: 'event_msg',
+        payload: { type: 'agent_message', message: '我理解你要做的是面向中国 AI 开发者的 Agent 一键发布平台。' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-05-22T08:15:26.863Z',
+        type: 'event_msg',
+        payload: { type: 'task_complete', turn_id: 'turn-1' },
+      }),
+    ]
+    await writeFile(
+      join(codexDayDir, `rollout-2026-05-22T16-14-46-${codexUuid}.jsonl`),
+      codexRolloutLines.join('\n') + '\n',
+      'utf8',
+    )
+
+    const claudeHome = join(tmpDir, '.claude')
+    const claudeProjDir = join(claudeHome, 'projects', '-Users-dev-agent-demo')
+    await mkdir(claudeProjDir, { recursive: true })
+    const fakeClaudeBin = join(tmpDir, 'fake-claude')
+    await writeFile(fakeClaudeBin, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+
+    const claudeUuid = '7417154f-5cf2-498b-bdcf-380337e11411'
+    const claudeLines = [
+      JSON.stringify({
+        type: 'user',
+        sessionId: claudeUuid,
+        cwd: '/Users/dev/agent-demo',
+        timestamp: '2026-05-15T01:09:33.930Z',
+        message: { role: 'user', content: '当前请求:\n写一个完整的Python数据分析脚本' },
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        sessionId: claudeUuid,
+        cwd: '/Users/dev/agent-demo',
+        timestamp: '2026-05-15T01:10:12.108Z',
+        message: {
+          role: 'assistant',
+          model: 'claude-sonnet-4-6',
+          content: [
+            { type: 'thinking', thinking: '先设计 CSV 解析与统计模块' },
+            { type: 'tool_use', name: 'write_file', input: { path: '/Users/dev/agent-demo/data_analysis.py' } },
+            { type: 'text', text: '脚本已创建：data_analysis.py' },
+          ],
+        },
+      }),
+    ]
+    await writeFile(join(claudeProjDir, `${claudeUuid}.jsonl`), claudeLines.join('\n') + '\n', 'utf8')
+
+    const executedCmds = []
+    const mockExec = async (bin, args) => {
+      if (bin === 'ps') return { stdout: '' }
+      executedCmds.push({ bin, args })
+      return { stdout: '{"ok":true}\n' }
+    }
+
+    const codexAdapter = new CodexAdapter({
+      codexHome,
+      binaryPath: fakeCodexBin,
+      execImpl: mockExec,
+    })
+    const claudeAdapter = new ClaudeAdapter({
+      claudeHome,
+      binaryPath: fakeClaudeBin,
+      execImpl: mockExec,
+    })
+
+    const codexSessions = await codexAdapter.listSessions()
+    assert.equal(codexSessions.length, 1)
+    assert.equal(codexSessions[0].id, `codex:${codexUuid}`)
+    assert.equal(codexSessions[0].title, '明确 AI Agent Hosting 边界')
+    assert.equal(codexSessions[0].controlMode, 'idle-resumable')
+    assert.equal(codexSessions[0].cwd, '/Users/dev/my-webapp')
+    assert.equal(codexSessions[0].transcript.length, 2)
+
+    const claudeSessions = await claudeAdapter.listSessions()
+    assert.equal(claudeSessions.length, 1)
+    assert.equal(claudeSessions[0].id, `claude:${claudeUuid}`)
+    assert.equal(claudeSessions[0].title, '写一个完整的Python数据分析脚本')
+    assert.equal(claudeSessions[0].controlMode, 'idle-resumable')
+    assert.equal(claudeSessions[0].transcript.length, 2)
+    assert.deepEqual(claudeSessions[0].transcript[1].tools, ['write_file'])
+
+    const codexRes = await codexAdapter.sendPrompt({
+      sessionId: `codex:${codexUuid}`,
+      text: '补充 Dockerfile 示例',
+      cwd: '/Users/dev/my-webapp',
+    })
+    assert.equal(codexRes.ok, true)
+    assert.equal(executedCmds[0].bin, fakeCodexBin)
+    assert.deepEqual(executedCmds[0].args.slice(0, 4), ['exec', 'resume', codexUuid, '补充 Dockerfile 示例'])
+
+    const claudeRes = await claudeAdapter.sendPrompt({
+      sessionId: `claude:${claudeUuid}`,
+      text: '增加箱线图支持',
+      cwd: '/Users/dev/agent-demo',
+    })
+    assert.equal(claudeRes.ok, true)
+    assert.equal(executedCmds[1].bin, fakeClaudeBin)
+    assert.deepEqual(executedCmds[1].args, ['--resume', claudeUuid, '-p', '增加箱线图支持'])
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
+
 
 
 
