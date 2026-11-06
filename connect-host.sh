@@ -143,6 +143,11 @@ fi
 
 # 停止旧的后台同步进程（如果有）
 PID_FILE="$DSH_DIR/hub-daemon.pid"
+PLIST_DIR="$HOME/Library/LaunchAgents"
+PLIST_FILE="$PLIST_DIR/com.dsh.remotecontrol.plist"
+if [ -f "$PLIST_FILE" ]; then
+  launchctl unload "$PLIST_FILE" >/dev/null 2>&1 || true
+fi
 if [ -f "$PID_FILE" ]; then
   OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
   if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
@@ -154,13 +159,68 @@ fi
 # 先执行一次同步验证
 if [ "$USE_ELECTRON_NODE" = "1" ]; then
   ELECTRON_RUN_AS_NODE=1 "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" --once
-  nohup env ELECTRON_RUN_AS_NODE=1 "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" < /dev/null > "$DSH_DIR/hub-daemon.log" 2>&1 &
 else
   "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" --once
-  nohup "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" < /dev/null > "$DSH_DIR/hub-daemon.log" 2>&1 &
 fi
-NEW_PID=$!
-echo "$NEW_PID" > "$PID_FILE"
+
+# 在 macOS 上优先注册 LaunchAgent 常驻守护（开机自启 + 异常自动拉起 + 脱离终端生命周期）
+LAUNCHD_OK=0
+if [ "$(uname -s)" = "Darwin" ] && mkdir -p "$PLIST_DIR" 2>/dev/null; then
+  cat > "$PLIST_FILE" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.dsh.remotecontrol</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${NODE_BIN}</string>
+    <string>${SCRIPT_DIR}/dsh-feishu/daemon.mjs</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>${HOME}</string>
+    <key>DSH_HOME</key>
+    <string>${DSH_DIR}</string>
+    <key>ELECTRON_RUN_AS_NODE</key>
+    <string>${USE_ELECTRON_NODE}</string>
+  </dict>
+  <key>WorkingDirectory</key>
+  <string>${SCRIPT_DIR}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${DSH_DIR}/hub-daemon.log</string>
+  <key>StandardErrorPath</key>
+  <string>${DSH_DIR}/hub-daemon.log</string>
+</dict>
+</plist>
+EOF
+  if launchctl load -w "$PLIST_FILE" >/dev/null 2>&1; then
+    sleep 0.6
+    NEW_PID="$(pgrep -f "dsh-feishu/daemon.mjs" | tail -n 1 || true)"
+    if [ -n "$NEW_PID" ]; then
+      echo "$NEW_PID" > "$PID_FILE"
+      LAUNCHD_OK=1
+    fi
+  fi
+fi
+
+if [ "$LAUNCHD_OK" != "1" ]; then
+  if [ "$USE_ELECTRON_NODE" = "1" ]; then
+    nohup env ELECTRON_RUN_AS_NODE=1 "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" < /dev/null > "$DSH_DIR/hub-daemon.log" 2>&1 &
+  else
+    nohup "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" < /dev/null > "$DSH_DIR/hub-daemon.log" 2>&1 &
+  fi
+  NEW_PID=$!
+  echo "$NEW_PID" > "$PID_FILE"
+fi
 
 echo ""
 echo "🎉 接入成功！后台守护进程已启动 (PID: ${NEW_PID}，日志: ${DSH_DIR}/hub-daemon.log)"

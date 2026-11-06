@@ -134,7 +134,7 @@ export function initHubController() {
 
     // ==================== 2. 全局状态与持久化偏好 ====================
     let hubState = { hosts: [], activeHostId: '', migrations: [], shares: [], pushSubscriptions: [] };
-    let currentHostId = '';
+    let currentHostId = 'ALL_HOSTS';
     let currentProject = 'ALL';
     let currentTab = 'chats';
     let searchQuery = '';
