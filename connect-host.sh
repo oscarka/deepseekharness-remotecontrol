@@ -21,6 +21,7 @@ EXISTING_HOST_NAME=""
 EXISTING_APP_ID=""
 EXISTING_APP_SECRET=""
 EXISTING_OPEN_IDS=""
+EXISTING_HARNESSES=""
 if [ -f "$ENV_FILE" ]; then
   EXISTING_TOKEN="$(grep -E '^FEISHU_HUB_TOKEN=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   EXISTING_HOST_ID="$(grep -E '^FEISHU_HOST_ID=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
@@ -28,6 +29,7 @@ if [ -f "$ENV_FILE" ]; then
   EXISTING_APP_ID="$(grep -E '^FEISHU_APP_ID=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   EXISTING_APP_SECRET="$(grep -E '^FEISHU_APP_SECRET=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   EXISTING_OPEN_IDS="$(grep -E '^FEISHU_ALLOWED_OPEN_IDS=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+  EXISTING_HARNESSES="$(grep -E '^FEISHU_ENABLED_HARNESSES=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 fi
 
 # 支持 --name / --token / --id 具名参数与位置参数两种调用方式
@@ -95,6 +97,7 @@ FEISHU_HUB_TOKEN=${HUB_TOKEN}
 FEISHU_APP_ID=${FEISHU_APP_ID:-$EXISTING_APP_ID}
 FEISHU_APP_SECRET=${FEISHU_APP_SECRET:-$EXISTING_APP_SECRET}
 FEISHU_ALLOWED_OPEN_IDS=${FEISHU_ALLOWED_OPEN_IDS:-$EXISTING_OPEN_IDS}
+FEISHU_ENABLED_HARNESSES=${FEISHU_ENABLED_HARNESSES:-${EXISTING_HARNESSES:-dsh,antigravity-ide,codex,claude}}
 EOF
 chmod 600 "$ENV_FILE"
 

@@ -54,20 +54,27 @@ export class HubAgent {
     this.heartbeatSeq = 0
     this.harnessRouter = harnessRouter || new HarnessRouter()
     if (!harnessRouter && this.shouldLoadExternalHarnesses()) {
-      this.harnessRouter.registerAdapter(
-        new CodexAdapter({
-          codexHome: this.config?.codexHome || undefined,
-          maxSessions: this.config?.maxCodexSessions || 10,
-          execImpl: this.execImpl,
-        }),
-      )
-      this.harnessRouter.registerAdapter(
-        new ClaudeAdapter({
-          claudeHome: this.config?.claudeHome || undefined,
-          maxSessions: this.config?.maxClaudeSessions || 8,
-          execImpl: this.execImpl,
-        }),
-      )
+      const enabledSet = Array.isArray(this.config?.enabledHarnesses)
+        ? new Set(this.config.enabledHarnesses.map(s => String(s).toLowerCase()))
+        : null
+      if (!enabledSet || enabledSet.has('codex')) {
+        this.harnessRouter.registerAdapter(
+          new CodexAdapter({
+            codexHome: this.config?.codexHome || undefined,
+            maxSessions: this.config?.maxCodexSessions || 10,
+            execImpl: this.execImpl,
+          }),
+        )
+      }
+      if (!enabledSet || enabledSet.has('claude') || enabledSet.has('claude-code')) {
+        this.harnessRouter.registerAdapter(
+          new ClaudeAdapter({
+            claudeHome: this.config?.claudeHome || undefined,
+            maxSessions: this.config?.maxClaudeSessions || 8,
+            execImpl: this.execImpl,
+          }),
+        )
+      }
     }
     this.timer = null
     this.polling = false
@@ -143,6 +150,10 @@ export class HubAgent {
 
   shouldLoadAntigravityIde() {
     if (this.config.enableAntigravityIde === false) return false
+    if (Array.isArray(this.config?.enabledHarnesses)) {
+      const set = new Set(this.config.enabledHarnesses.map(s => String(s).toLowerCase()))
+      if (!set.has('antigravity-ide') && !set.has('agy') && !set.has('ide')) return false
+    }
     if (this.config.enableAntigravityIde === true) return true
     if (Array.isArray(this.config.antigravityBrainDirs) && this.config.antigravityBrainDirs.length > 0) return true
     const defaultDshHome = join(homedir(), '.dsh')

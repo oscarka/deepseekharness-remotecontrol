@@ -133,6 +133,12 @@ export async function loadSettings(config, env = process.env) {
   const hubToken = String(env.FEISHU_HUB_TOKEN || config.hubToken || fileValues.FEISHU_HUB_TOKEN || '').trim()
   const localWebPort = clampInt(env.FEISHU_WEB_PORT || config.localWebPort || fileValues.FEISHU_WEB_PORT, 0, 65535, 0)
   const dshHome = expandHome(env.FEISHU_DSH_HOME || env.DSH_HOME || fileValues.FEISHU_DSH_HOME || config.dshHome || '~/.dsh')
+  const rawHarnesses = String(env.FEISHU_ENABLED_HARNESSES || fileValues.FEISHU_ENABLED_HARNESSES || '').trim()
+  const enabledHarnesses = rawHarnesses
+    ? rawHarnesses.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+    : (Array.isArray(config.enabledHarnesses) ? config.enabledHarnesses : null)
+  const codexHome = expandHome(env.FEISHU_CODEX_HOME || fileValues.FEISHU_CODEX_HOME || config.codexHome || '')
+  const claudeHome = expandHome(env.FEISHU_CLAUDE_HOME || fileValues.FEISHU_CLAUDE_HOME || config.claudeHome || '')
 
   if (!appId && !hubUrl) throw new Error('Feishu App ID is missing: set it in the profile config, FEISHU_APP_ID, or the secret file')
   if (appId && !appSecret) throw new Error('Feishu App Secret is missing: set FEISHU_APP_SECRET or add it to the secret file')
@@ -148,6 +154,9 @@ export async function loadSettings(config, env = process.env) {
     hubToken,
     localWebPort,
     dshHome,
+    ...(enabledHarnesses ? { enabledHarnesses } : {}),
+    ...(codexHome ? { codexHome } : {}),
+    ...(claudeHome ? { claudeHome } : {}),
   }
 }
 
