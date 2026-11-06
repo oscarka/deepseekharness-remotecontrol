@@ -25,7 +25,7 @@ const DEFAULTS = {
   hostName: '',
   hubUrl: '',
   hubToken: '',
-  hubPollMs: 2000,
+  hubPollMs: 1200,
   localWebPort: 0,
   dshHome: '~/.dsh',
 }
@@ -64,7 +64,7 @@ export function resolveConfig(raw = {}) {
   config.hostId = String(process.env.FEISHU_HOST_ID || config.hostId || sanitizeHostId(config.hostName) || defaultHost).trim()
   config.hubUrl = String(process.env.FEISHU_HUB_URL || config.hubUrl || '').trim().replace(/\/+$/, '')
   config.hubToken = String(process.env.FEISHU_HUB_TOKEN || config.hubToken || '').trim()
-  config.hubPollMs = clampInt(config.hubPollMs, 300, 30_000, 2000)
+  config.hubPollMs = clampInt(config.hubPollMs, 300, 30_000, 1200)
   config.localWebPort = clampInt(process.env.FEISHU_WEB_PORT || config.localWebPort, 0, 65535, 0)
   config.dshHome = expandHome(process.env.FEISHU_DSH_HOME || process.env.DSH_HOME || config.dshHome || '~/.dsh')
   return config

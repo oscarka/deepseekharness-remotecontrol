@@ -36,9 +36,11 @@ export class HubCore {
   }
 
   emitStateChange(event = 'state') {
+    if (this.sseListeners.size === 0) return
+    const fullState = this.getFullState()
     for (const listener of this.sseListeners) {
       try {
-        listener(event, this.getFullState())
+        listener(event, fullState)
       } catch {
         // ignore listener error
       }
@@ -491,9 +493,17 @@ export class HubCore {
       this.detectAndTriggerWebPush(hostId, hostName, payload.bridgeState)
     }
 
+    const hasCommandActivity = (Array.isArray(payload.commandResults) && payload.commandResults.length > 0)
+      || record.commands.length > 0
     const commands = record.commands.splice(0)
-    void this.persist()
-    this.emitStateChange('heartbeat')
+    const nextFingerprint = this.computeHostFingerprint(record)
+    const stateChanged = hasCommandActivity || nextFingerprint !== record._lastFingerprint
+    if (stateChanged || now - (record._lastBroadcastAt || 0) >= 12_000) {
+      record._lastFingerprint = nextFingerprint
+      record._lastBroadcastAt = now
+      void this.persist()
+      this.emitStateChange('heartbeat')
+    }
 
     return {
       ok: true,
@@ -502,6 +512,22 @@ export class HubCore {
       commands,
       hostsSummary: this.getHostsSummary(),
     }
+  }
+
+  computeHostFingerprint(record) {
+    const b = record?.bridgeState ?? {}
+    const tasksSig = Array.isArray(b.tasks)
+      ? b.tasks
+          .map(t => {
+            const tr = Array.isArray(t.transcript) ? t.transcript : []
+            const last = tr.at(-1)
+            return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.lastOutput || ''}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}`
+          })
+          .join('|')
+      : ''
+    const appSig = Array.isArray(b.approvals) ? b.approvals.map(a => `${a.code}:${a.promptTitle || ''}`).join('|') : ''
+    const fsSig = `${record?.lastFsListing?.at || 0}:${record?.lastFilePreview?.at || 0}:${record?.lastShareResult?.at || 0}`
+    return `${record?.hostName || ''}:${record?.trust?.status || ''}:${Boolean(b.remoteActive)}:${Boolean(b.feishuConnected)}:${tasksSig}#${appSig}#${fsSig}`
   }
 
   manageHostTrust(hostId, { action = 'pin' } = {}) {

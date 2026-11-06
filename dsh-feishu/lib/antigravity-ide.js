@@ -225,8 +225,11 @@ export function parseAntigravityTranscript(jsonlText, {
   settledApprovals = new Set(),
   maxMessages = 40,
   now = Date.now(),
+  liveStepCount = null,
+  liveLastUserInputStepIndex = null,
+  liveStatus = '',
 } = {}) {
-  const lines = String(jsonlText ?? '')
+  const rawLines = String(jsonlText ?? '')
     .split('\n')
     .map(l => l.trim())
     .filter(Boolean)
@@ -238,6 +241,48 @@ export function parseAntigravityTranscript(jsonlText, {
       }
     })
     .filter(Boolean)
+
+  if (rawLines.length === 0) return null
+
+  // Antigravity's transcript.jsonl is append-only. When a user reverts ("撤回") to an earlier
+  // step and continues, a new line with a smaller/equal `step_index` is appended at the end.
+  // Roll back any superseded steps whose `step_index >= step.step_index`.
+  const lines = []
+  for (const step of rawLines) {
+    if (typeof step.step_index === 'number') {
+      while (
+        lines.length > 0
+        && typeof lines[lines.length - 1].step_index === 'number'
+        && lines[lines.length - 1].step_index >= step.step_index
+      ) {
+        lines.pop()
+      }
+    }
+    lines.push(step)
+  }
+
+  // When the user clicks "撤回" in Antigravity IDE and hasn't sent a replacement prompt yet,
+  // `transcript.jsonl` on disk is not truncated yet, but LanguageServer's in-memory summary
+  // immediately reflects the reverted `stepCount` and `lastUserInputStepIndex`.
+  if (liveStatus !== 'CASCADE_RUN_STATUS_RUNNING') {
+    if (typeof liveStepCount === 'number' && Number.isFinite(liveStepCount) && liveStepCount > 0) {
+      while (
+        lines.length > 0
+        && typeof lines[lines.length - 1].step_index === 'number'
+        && lines[lines.length - 1].step_index >= liveStepCount
+      ) {
+        lines.pop()
+      }
+    }
+    if (typeof liveLastUserInputStepIndex === 'number' && Number.isFinite(liveLastUserInputStepIndex) && liveLastUserInputStepIndex >= 0) {
+      const revertedUserIdx = lines.findIndex(
+        s => s.type === 'USER_INPUT' && typeof s.step_index === 'number' && s.step_index > liveLastUserInputStepIndex,
+      )
+      if (revertedUserIdx > 0) {
+        lines.length = revertedUserIdx
+      }
+    }
+  }
 
   if (lines.length === 0) return null
 
@@ -334,9 +379,9 @@ export function parseAntigravityTranscript(jsonlText, {
         }
       }
 
-      // Filter silent read-only steps that have no user-facing content, unless it's the very last step
+      // Filter silent read-only steps or pure thinking-only steps that have no user-facing content, unless it's the very last step
       const allSilent = tools.length > 0 && tools.every(t => SILENT_TOOLS.has(t.name))
-      if (allSilent && !rawContent && i < lines.length - 1) {
+      if ((allSilent || tools.length === 0) && !rawContent && i < lines.length - 1) {
         continue
       }
       if (!rawContent && !rawThinking && tools.length === 0) {
@@ -677,20 +722,32 @@ export async function loadAntigravityIdeSessions({
   // Sort by mtime descending and only parse top (maxSessions * 2) candidates for fast I/O
   candidateFiles.sort((a, b) => b.mtimeMs - a.mtimeMs)
   const topCandidates = candidateFiles.slice(0, Math.max(maxSessions * 2, 30))
-  const nativeMetaMap = await loadAntigravityMetadataForCandidates(brainDirs, topCandidates)
+  const [nativeMetaMap, liveSummariesMap] = await Promise.all([
+    loadAntigravityMetadataForCandidates(brainDirs, topCandidates),
+    loadLiveTrajectorySummaries(),
+  ])
 
   const settledKey = settledApprovals ? [...settledApprovals].join(',') : ''
   const sessions = []
   for (const item of topCandidates) {
     try {
       const nativeMeta = nativeMetaMap.get(item.convId)
+      const liveSummary = liveSummariesMap.get(item.convId)
+      const liveStepCount = liveSummary?.stepCount !== undefined ? Number(liveSummary.stepCount) : null
+      const liveLastUserInputStepIndex = liveSummary?.lastUserInputStepIndex !== undefined
+        ? Number(liveSummary.lastUserInputStepIndex)
+        : null
+      const liveStatus = String(liveSummary?.status || '')
+      const liveTitle = String(liveSummary?.summary || '').trim()
+      const effectiveNativeTitle = nativeMeta?.title || liveTitle || ''
       const sessionId = `${AGY_IDE_PREFIX}${item.convId}`
       const customTitle = customTitles[sessionId] || customTitles[item.convId] || ''
-      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${customTitle}:${nativeMeta?.title || ''}:${settledKey}`
+      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${customTitle}:${effectiveNativeTitle}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}`
       const cached = sessionParseCache.get(item.convId)
       if (cached && cached.cacheKey === cacheKey && cached.session) {
         // Recompute dynamic running/idle status against current `now` while skipping disk read & JSONL parse
-        const isRecentlyActive = Boolean(cached.session.isMidTurn) && (now - cached.session.lastActivity <= 90_000)
+        const isRecentlyActive = liveStatus === 'CASCADE_RUN_STATUS_RUNNING'
+          || (Boolean(cached.session.isMidTurn) && (now - cached.session.lastActivity <= 90_000) && liveStatus !== 'CASCADE_RUN_STATUS_IDLE')
         const status = cached.session.pendingApproval
           ? 'approval'
           : isRecentlyActive
@@ -726,11 +783,14 @@ export async function loadAntigravityIdeSessions({
         conversationId: item.convId,
         mtimeMs: item.mtimeMs,
         customTitles,
-        nativeTitle: nativeMeta?.title || '',
+        nativeTitle: effectiveNativeTitle,
         nativeWorkspace: nativeMeta?.workspace || null,
         settledApprovals,
         maxMessages,
         now,
+        liveStepCount,
+        liveLastUserInputStepIndex,
+        liveStatus,
       })
       if (parsed) {
         sessionParseCache.set(item.convId, { cacheKey, session: parsed })
@@ -748,17 +808,7 @@ export async function loadAntigravityIdeSessions({
   // If any session has a pendingApproval, check if the command is ALREADY approved and running on the computer
   const pendingSessions = sessions.filter(s => s.pendingApproval?.commandLine)
   if (pendingSessions.length > 0) {
-    let psNorm = ''
-    try {
-      const { stdout } = await execFileAsync('ps', ['-ax', '-o', 'command='], { timeout: 1200 })
-      psNorm = String(stdout || '')
-        .split('\n')
-        .filter(line => !line.includes('ps -ax -o command='))
-        .map(line => line.replace(/\s+/g, ' ').trim())
-        .join('\n')
-    } catch {
-      psNorm = ''
-    }
+    const psNorm = await getCachedRunningCommandsSnapshot()
 
     if (psNorm) {
       for (const s of pendingSessions) {
@@ -793,6 +843,85 @@ export async function loadAntigravityIdeSessions({
   return sessions.slice(0, maxSessions)
 }
 
+let cachedPsNorm = ''
+let cachedPsNormAt = 0
+
+async function getCachedRunningCommandsSnapshot() {
+  const now = Date.now()
+  if (cachedPsNorm && now - cachedPsNormAt < 2500) {
+    return cachedPsNorm
+  }
+  try {
+    const { stdout } = await execFileAsync('ps', ['-ax', '-o', 'command='], { timeout: 1200 })
+    cachedPsNorm = String(stdout || '')
+      .split('\n')
+      .filter(line => !line.includes('ps -ax -o command='))
+      .map(line => line.replace(/\s+/g, ' ').trim())
+      .join('\n')
+    cachedPsNormAt = now
+  } catch {
+    cachedPsNorm = ''
+  }
+  return cachedPsNorm
+}
+
+let cachedLiveSummaries = new Map()
+let cachedLiveSummariesAt = 0
+
+async function loadLiveTrajectorySummaries() {
+  const now = Date.now()
+  if (now - cachedLiveSummariesAt < 700) {
+    return cachedLiveSummaries
+  }
+  cachedLiveSummariesAt = now
+  const map = new Map()
+  if (typeof globalThis.fetch !== 'function') return map
+  try {
+    const hubs = await discoverAntigravityHubInstances()
+    await Promise.all(
+      hubs.map(async hub => {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 450)
+        timer.unref?.()
+        try {
+          const resp = await globalThis.fetch(
+            `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetAllCascadeTrajectories`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-codeium-csrf-token': hub.csrfToken,
+              },
+              body: JSON.stringify({}),
+              signal: controller.signal,
+            },
+          )
+          if (!resp.ok) return
+          const data = await resp.json().catch(() => null)
+          const summaries = data?.trajectorySummaries
+          if (!summaries || typeof summaries !== 'object') return
+          for (const [cid, sum] of Object.entries(summaries)) {
+            if (cid && sum && typeof sum === 'object') {
+              map.set(cid, sum)
+            }
+          }
+        } catch {
+          // ignore unreachable hub port
+        } finally {
+          clearTimeout(timer)
+        }
+      }),
+    )
+  } catch {
+    // ignore discovery error
+  }
+  cachedLiveSummaries = map
+  return map
+}
+
+let cachedRawHubInstances = null
+let cachedRawHubInstancesAt = 0
+
 /**
  * Discover running Antigravity IDE LanguageServer (`agy --hub --hub-port=<PORT> --csrf_token=<TOKEN>`
  * as well as standalone `Antigravity.app` `language_server --csrf_token <TOKEN>`) instances.
@@ -824,72 +953,79 @@ export async function discoverAntigravityHubInstances({
   }
 
   if (execImpl === execFileAsync) {
-    try {
-      const { stdout } = await execFileAsync('ps', ['-ax', '-o', 'pid=,command='], { timeout: 2000 })
-      const standalonePids = []
-      for (const rawLine of String(stdout || '').split('\n')) {
-        const line = rawLine.trim()
-        if (!line) continue
-        const pidMatch = line.match(/^(\d+)\s+(.*)$/)
-        const pid = pidMatch ? pidMatch[1] : ''
-        const cmdLine = pidMatch ? pidMatch[2] : line
+    const now = Date.now()
+    if (cachedRawHubInstances && now - cachedRawHubInstancesAt < 10_000) {
+      for (const inst of cachedRawHubInstances) addInstance(inst)
+    } else {
+      try {
+        const { stdout } = await execFileAsync('ps', ['-ax', '-o', 'pid=,command='], { timeout: 2000 })
+        const standalonePids = []
+        for (const rawLine of String(stdout || '').split('\n')) {
+          const line = rawLine.trim()
+          if (!line) continue
+          const pidMatch = line.match(/^(\d+)\s+(.*)$/)
+          const pid = pidMatch ? pidMatch[1] : ''
+          const cmdLine = pidMatch ? pidMatch[2] : line
 
-        if (cmdLine.includes('--hub') && cmdLine.includes('--hub-port=') && cmdLine.includes('--csrf_token=')) {
-          const portMatch = cmdLine.match(/--hub-port=(\d+)/)
-          const csrfMatch = cmdLine.match(/--csrf_token=([^\s]+)/)
-          const dirs = [...cmdLine.matchAll(/--add-dir=([^\s]+)/g)].map(m => m[1])
-          const binMatch = cmdLine.match(/^(\S+\/agy)\b/)
-          if (portMatch && csrfMatch) {
-            addInstance({
-              address: `127.0.0.1:${portMatch[1]}`,
-              port: Number(portMatch[1]),
-              csrfToken: csrfMatch[1],
-              addDir: dirs[0] || '',
-              addDirs: dirs,
-              binPath: binMatch ? binMatch[1] : '',
-              kind: 'agy-hub',
-            })
+          if (cmdLine.includes('--hub') && cmdLine.includes('--hub-port=') && cmdLine.includes('--csrf_token=')) {
+            const portMatch = cmdLine.match(/--hub-port=(\d+)/)
+            const csrfMatch = cmdLine.match(/--csrf_token=([^\s]+)/)
+            const dirs = [...cmdLine.matchAll(/--add-dir=([^\s]+)/g)].map(m => m[1])
+            const binMatch = cmdLine.match(/^(\S+\/agy)\b/)
+            if (portMatch && csrfMatch) {
+              addInstance({
+                address: `127.0.0.1:${portMatch[1]}`,
+                port: Number(portMatch[1]),
+                csrfToken: csrfMatch[1],
+                addDir: dirs[0] || '',
+                addDirs: dirs,
+                binPath: binMatch ? binMatch[1] : '',
+                kind: 'agy-hub',
+              })
+            }
+            continue
           }
-          continue
+
+          if (cmdLine.includes('language_server') && cmdLine.includes('--csrf_token') && pid) {
+            const csrfMatch = cmdLine.match(/--csrf_token[= ]([^\s]+)/)
+            const binMatch = cmdLine.match(/^(\S+\/language_server)\b/)
+            if (csrfMatch) {
+              standalonePids.push({
+                pid,
+                csrfToken: csrfMatch[1],
+                binPath: binMatch ? binMatch[1] : '',
+              })
+            }
+          }
         }
 
-        if (cmdLine.includes('language_server') && cmdLine.includes('--csrf_token') && pid) {
-          const csrfMatch = cmdLine.match(/--csrf_token[= ]([^\s]+)/)
-          const binMatch = cmdLine.match(/^(\S+\/language_server)\b/)
-          if (csrfMatch) {
-            standalonePids.push({
-              pid,
-              csrfToken: csrfMatch[1],
-              binPath: binMatch ? binMatch[1] : '',
-            })
+        for (const lsProc of standalonePids) {
+          try {
+            const { stdout: lsofOut } = await execFileAsync(
+              'lsof',
+              ['-Pan', '-p', lsProc.pid, '-iTCP', '-sTCP:LISTEN'],
+              { timeout: 1500 },
+            )
+            // LanguageServer HTTP port is typically the second listening port after the gRPC port; collect first 3 loopback ports
+            const ports = [...String(lsofOut || '').matchAll(/127\.0\.0\.1:(\d+)/g)].map(m => Number(m[1]))
+            for (const p of ports.slice(0, 3)) {
+              addInstance({
+                address: `127.0.0.1:${p}`,
+                port: p,
+                csrfToken: lsProc.csrfToken,
+                binPath: lsProc.binPath,
+                kind: 'ls-standalone',
+              })
+            }
+          } catch {
+            // ignore lsof failure
           }
         }
+        cachedRawHubInstances = instances.map(inst => ({ ...inst }))
+        cachedRawHubInstancesAt = now
+      } catch {
+        // ignore ps failure
       }
-
-      for (const lsProc of standalonePids) {
-        try {
-          const { stdout: lsofOut } = await execFileAsync(
-            'lsof',
-            ['-Pan', '-p', lsProc.pid, '-iTCP', '-sTCP:LISTEN'],
-            { timeout: 1500 },
-          )
-          // LanguageServer HTTP port is typically the second listening port after the gRPC port; collect first 3 loopback ports
-          const ports = [...String(lsofOut || '').matchAll(/127\.0\.0\.1:(\d+)/g)].map(m => Number(m[1]))
-          for (const p of ports.slice(0, 3)) {
-            addInstance({
-              address: `127.0.0.1:${p}`,
-              port: p,
-              csrfToken: lsProc.csrfToken,
-              binPath: lsProc.binPath,
-              kind: 'ls-standalone',
-            })
-          }
-        } catch {
-          // ignore lsof failure
-        }
-      }
-    } catch {
-      // ignore ps failure
     }
   }
 
