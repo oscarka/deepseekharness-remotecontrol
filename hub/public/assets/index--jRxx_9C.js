@@ -1206,8 +1206,15 @@ function initHubController() {
 		for (const h of hubState.hosts || []) {
 			if (currentHostId && currentHostId !== "ALL_HOSTS" && h.hostId !== currentHostId) continue;
 			const tasks = h.bridgeState?.tasks || [];
-			const settledMap = window.__dshSettledApprovals || {};
-			const approvals = (h.bridgeState?.approvals || []).filter((a) => !a?.code || !settledMap[a.code]);
+			const localSettling = window.__dshSettlingApprovals || {};
+			const approvals = (h.bridgeState?.approvals || []).map((a) => {
+				if (a?.code && localSettling[a.code] && Date.now() - localSettling[a.code].at < 45e3 && !a.lastError) return {
+					...a,
+					settling: true,
+					settlingDecision: localSettling[a.code].decision
+				};
+				return a;
+			});
 			for (const t of tasks) {
 				const ts = t.updatedAt || t.lastActivity || 0;
 				const pendingApp = approvals.find((a) => a.agentId === t.id);
@@ -1247,8 +1254,9 @@ function initHubController() {
 				const project = t.project || (t.cwd ? t.cwd.split("/").filter(Boolean).pop() : "默认工作区") || "默认工作区";
 				const status = pendingApp ? "approval" : t.status || "idle";
 				const queuedCount = queuedCmds.length;
-				const harness = t.harness || (String(t.id || "").startsWith("agy-ide:") ? "antigravity-ide" : "dsh");
-				const harnessLabel = t.harnessLabel || (harness === "antigravity-ide" ? "Antigravity IDE" : "DeepSeek Harness");
+				const rawIdStr = String(t.id || "");
+				const harness = t.harness || (rawIdStr.startsWith("agy-ide:") ? "antigravity-ide" : rawIdStr.startsWith("codex:") ? "codex" : rawIdStr.startsWith("claude:") ? "claude" : "dsh");
+				const harnessLabel = t.harnessLabel || (harness === "antigravity-ide" ? "Antigravity IDE" : harness === "codex" ? "Codex" : harness === "claude" ? "Claude Code" : "DeepSeek Harness");
 				let lastConclusionAt = Number(t.lastConclusionAt) || 0;
 				if (!lastConclusionAt && status === "idle" && lastMsg?.role === "assistant" && Boolean(lastMsg?.text) && (!lastMsg.tools || lastMsg.tools.length === 0)) lastConclusionAt = ts;
 				const lastInterruptedAt = Number(t.lastInterruptedAt) || 0;
@@ -1261,6 +1269,9 @@ function initHubController() {
 					hostName: h.hostName || h.hostId,
 					harness,
 					harnessLabel,
+					controlMode: t.controlMode || "managed",
+					stateMeta: t.stateMeta || null,
+					sessionRev: t.sessionRev || "",
 					title: t.title || "未命名会话",
 					project,
 					cwd: t.cwd || "",
@@ -1426,17 +1437,22 @@ function initHubController() {
 		const activeCount = sessions.filter((s) => s.status === "running" || s.status === "approval").length;
 		const unreadCount = sessions.filter((s) => s.hasUnreadConclusion || s.isUnreadInterrupted).length;
 		const agyCount = sessions.filter((s) => s.harness === "antigravity-ide").length;
-		const dshCount = sessions.filter((s) => s.harness !== "antigravity-ide").length;
+		const codexCount = sessions.filter((s) => s.harness === "codex").length;
+		const claudeCount = sessions.filter((s) => s.harness === "claude").length;
+		const dshCount = sessions.filter((s) => s.harness === "dsh").length;
 		const counts = {};
 		for (const s of sessions) counts[s.project] = (counts[s.project] || 0) + 1;
 		const projects = Object.keys(counts);
 		const strip = document.getElementById("projectStrip");
-		const stripKey = `${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${dshCount}:${projects.map((p) => `${p}:${counts[p]}`).join(",")}`;
+		const stripKey = `${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${claudeCount}:${dshCount}:${projects.map((p) => `${p}:${counts[p]}`).join(",")}`;
 		if (stripKey === lastRenderedStripKey && strip.children.length > 0) return;
 		lastRenderedStripKey = stripKey;
 		const prevScrollLeft = strip.scrollLeft;
 		const smartPills = [`<button class="filter-pill smart-pill ${currentProject === "SMART_ACTIVE" ? "active" : ""}" onclick="selectProject('SMART_ACTIVE')">🟢 运行中 <span class="count">${activeCount}</span></button>`, `<button class="filter-pill smart-pill ${currentProject === "SMART_UNREAD" ? "active" : ""}" onclick="selectProject('SMART_UNREAD')">🔵 已出结论 <span class="count">${unreadCount}</span></button>`];
-		if (agyCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_DSH" ? "active" : ""}" onclick="selectProject('HARNESS_DSH')">🟣 DSH <span class="count">${dshCount}</span></button>`, `<button class="filter-pill smart-pill ${currentProject === "HARNESS_AGY_IDE" ? "active" : ""}" onclick="selectProject('HARNESS_AGY_IDE')">⚡ IDE <span class="count">${agyCount}</span></button>`);
+		if (agyCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_AGY_IDE" ? "active" : ""}" onclick="selectProject('HARNESS_AGY_IDE')">⚡ IDE <span class="count">${agyCount}</span></button>`);
+		if (codexCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_CODEX" ? "active" : ""}" onclick="selectProject('HARNESS_CODEX')">🧠 Codex <span class="count">${codexCount}</span></button>`);
+		if (claudeCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_CLAUDE" ? "active" : ""}" onclick="selectProject('HARNESS_CLAUDE')">✴️ Claude <span class="count">${claudeCount}</span></button>`);
+		if (dshCount > 0 && (agyCount > 0 || codexCount > 0 || claudeCount > 0)) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_DSH" ? "active" : ""}" onclick="selectProject('HARNESS_DSH')">🟣 DSH <span class="count">${dshCount}</span></button>`);
 		strip.innerHTML = [
 			`<button class="filter-pill ${currentProject === "ALL" ? "active" : ""}" onclick="selectProject('ALL')">全部 <span class="count">${sessions.length}</span></button>`,
 			...smartPills,
@@ -1448,14 +1464,18 @@ function initHubController() {
 		const viewport = document.getElementById("mainViewport");
 		const allSessions = Array.isArray(sessionsArg) ? sessionsArg : getNormalizedSessions();
 		let pendingAppInfo = null;
-		const settledMap = window.__dshSettledApprovals || {};
+		const localSettling = window.__dshSettlingApprovals || {};
 		for (const h of hubState.hosts || []) {
 			if (h.online === false) continue;
 			if (currentHostId && currentHostId !== "ALL_HOSTS" && h.hostId !== currentHostId) continue;
-			const app = (h.bridgeState?.approvals || []).find((a) => !a?.code || !settledMap[a.code]);
-			if (app) {
+			const appRaw = (h.bridgeState?.approvals || [])[0];
+			if (appRaw) {
 				pendingAppInfo = {
-					app,
+					app: appRaw.code && localSettling[appRaw.code] && Date.now() - localSettling[appRaw.code].at < 45e3 && !appRaw.lastError ? {
+						...appRaw,
+						settling: true,
+						settlingDecision: localSettling[appRaw.code].decision
+					} : appRaw,
 					host: h
 				};
 				break;
@@ -1465,21 +1485,25 @@ function initHubController() {
 		const filtered = allSessions.filter((s) => {
 			if (currentProject === "SMART_ACTIVE" && s.status !== "running" && s.status !== "approval") return false;
 			if (currentProject === "SMART_UNREAD" && !s.hasUnreadConclusion && !s.isUnreadInterrupted) return false;
-			if (currentProject === "HARNESS_DSH" && s.harness === "antigravity-ide") return false;
+			if (currentProject === "HARNESS_DSH" && s.harness !== "dsh") return false;
 			if (currentProject === "HARNESS_AGY_IDE" && s.harness !== "antigravity-ide") return false;
+			if (currentProject === "HARNESS_CODEX" && s.harness !== "codex") return false;
+			if (currentProject === "HARNESS_CLAUDE" && s.harness !== "claude") return false;
 			if (![
 				"ALL",
 				"SMART_ACTIVE",
 				"SMART_UNREAD",
 				"HARNESS_DSH",
-				"HARNESS_AGY_IDE"
+				"HARNESS_AGY_IDE",
+				"HARNESS_CODEX",
+				"HARNESS_CLAUDE"
 			].includes(currentProject) && s.project !== currentProject) return false;
 			if (!q) return true;
 			return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || s.lastPreview.toLowerCase().includes(q);
 		});
 		const showHostTag = currentHostId === "ALL_HOSTS" && (hubState.hosts || []).length > 1;
-		const bannerKey = pendingAppInfo ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.promptTitle || ""}` : "";
-		const rowsSig = filtered.map((s) => `${s.id}:${s.status}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`).join("|");
+		const bannerKey = pendingAppInfo ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.promptTitle || ""}:${pendingAppInfo.app.settling ? 1 : 0}:${pendingAppInfo.app.lastError || ""}` : "";
+		const rowsSig = filtered.map((s) => `${s.id}:${s.status}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`).join("|");
 		const listKey = `${(hubState.hosts || []).length}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${bannerKey}#${rowsSig}`;
 		if (listKey === lastRenderedListKey && viewport.querySelector(".session-list")) return;
 		lastRenderedListKey = listKey;
@@ -1487,12 +1511,16 @@ function initHubController() {
 		const liveBannerHtml = pendingAppInfo ? `
         <div class="live-activity-bar">
           <div class="live-activity-left" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">
-            <div class="live-activity-title">⏳ [${esc(pendingAppInfo.host.hostName)}] ${esc(pendingAppInfo.app.project ? `${pendingAppInfo.app.project} / ` : "")}${esc(pendingAppInfo.app.title || "等待你批准工具执行")}</div>
-            <div class="live-activity-desc">${esc(pendingAppInfo.app.promptTitle || pendingAppInfo.app.reason || "")}</div>
+            <div class="live-activity-title">⏳ [${esc(pendingAppInfo.host.hostName)}] ${esc(pendingAppInfo.app.project ? `${pendingAppInfo.app.project} / ` : "")}${esc(pendingAppInfo.app.settling ? "正在同步审批到电脑端..." : pendingAppInfo.app.title || "等待你批准工具执行")}</div>
+            <div class="live-activity-desc" ${pendingAppInfo.app.lastError ? "style=\"color:#ef4444;font-weight:600;\"" : ""}>${esc(pendingAppInfo.app.lastError ? `⚠️ ${pendingAppInfo.app.lastError}` : pendingAppInfo.app.promptTitle || pendingAppInfo.app.reason || "")}</div>
           </div>
           <div class="live-activity-actions">
-            <button class="mini-approve-btn" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', true, 1, '${esc(pendingAppInfo.app.agentId || "")}')">✓ 允许</button>
-            <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false, 4, '${esc(pendingAppInfo.app.agentId || "")}')">拒绝</button>
+            ${pendingAppInfo.app.settling ? `
+              <button class="mini-approve-btn" disabled style="opacity:0.65;cursor:not-allowed;">⏳ 处理中...</button>
+            ` : `
+              <button class="mini-approve-btn" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', true, 1, '${esc(pendingAppInfo.app.agentId || "")}')">✓ 允许</button>
+              <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false, 4, '${esc(pendingAppInfo.app.agentId || "")}')">拒绝</button>
+            `}
           </div>
         </div>
       ` : "";
@@ -1501,7 +1529,7 @@ function initHubController() {
 			let statusHtml = `<span class="session-time">${esc(s.timeLabel)}</span>`;
 			if (s.status === "approval") {
 				rowStateClass = "row-state-approval";
-				statusHtml = `<span class="badge-approval">⏳ 待你授权</span>`;
+				statusHtml = s.approvalObj?.settling ? `<span class="badge-approval">⏳ 同步电脑中...</span>` : s.approvalObj?.lastError ? `<span class="badge-interrupted">⚠️ 审批待重试</span>` : `<span class="badge-approval">⏳ 待你授权</span>`;
 			} else if (s.queuedCount > 0) statusHtml = `<span class="badge-approval" style="background:var(--amber-soft);color:#b45309;">⏳ ${s.queuedCount} 条排队</span>`;
 			else if (s.status === "running") {
 				rowStateClass = "row-state-running";
@@ -1515,9 +1543,9 @@ function initHubController() {
 			}
 			const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : "";
 			const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag">${esc(s.hostName)}</span>` : "";
-			const harnessTagHtml = s.harness === "antigravity-ide" ? `<span class="harness-mini-tag agy">⚡ IDE</span>` : "";
+			const harnessTagHtml = s.harness === "antigravity-ide" ? `<span class="harness-mini-tag agy">⚡ IDE</span>` : s.harness === "codex" ? `<span class="harness-mini-tag agy">🧠 Codex</span>` : s.harness === "claude" ? `<span class="harness-mini-tag agy">✴️ Claude</span>` : "";
 			const rolePrefix = s.status === "running" ? "" : s.lastRole === "user" ? "🧑 我: " : "🤖 ";
-			const displayTitle = s.harness === "antigravity-ide" && s.project && !s.title.startsWith(s.project) ? `${s.project} / ${s.title}` : s.title;
+			const displayTitle = s.harness !== "dsh" && s.project && !s.title.startsWith(s.project) ? `${s.project} / ${s.title}` : s.title;
 			return `
           <div class="session-row ${rowStateClass} ${s.pinned ? "pinned-row" : ""} ${s.id === activeSessionId ? "selected-desktop" : ""}" onclick="openChat('${esc(s.id)}')">
             <div class="session-main">
@@ -1640,10 +1668,11 @@ function initHubController() {
 		const found = findSessionGlobal(activeSessionId);
 		if (!found) return;
 		const { session: s } = found;
-		const chatHeaderTitle = s.harness === "antigravity-ide" && s.project && !s.title.startsWith(s.project) ? `${s.project} / ${s.title}` : s.title;
+		const chatHeaderTitle = s.harness !== "dsh" && s.project && !s.title.startsWith(s.project) ? `${s.project} / ${s.title}` : s.title;
 		document.getElementById("chatTitle").textContent = chatHeaderTitle;
-		const harnessPrefix = s.harness === "antigravity-ide" ? "⚡ Antigravity IDE · " : "";
-		document.getElementById("chatSub").textContent = `${harnessPrefix}📁 ${s.project} · 💻 ${s.hostName} (${s.msgCount} 条对话)`;
+		const harnessPrefix = s.harness === "antigravity-ide" ? "⚡ Antigravity IDE · " : s.harness === "codex" ? "🧠 Codex · " : s.harness === "claude" ? "✴️ Claude Code · " : "";
+		const modeTag = s.controlMode === "observe-only" ? " · 👀 仅观测" : s.controlMode === "idle-resumable" ? " · 🔵 可续聊" : "";
+		document.getElementById("chatSub").textContent = `${harnessPrefix}📁 ${s.project} · 💻 ${s.hostName} (${s.msgCount} 条对话)${modeTag}`;
 		let otherApproval = null;
 		for (const h of hubState.hosts || []) {
 			const app = (h.bridgeState?.approvals || []).find((a) => a.agentId !== s.id);
@@ -1664,13 +1693,17 @@ function initHubController() {
         `;
 		} else alertBar.style.display = "none";
 		switchComposerSession(s.id);
-		const composerKey = `${s.id}:${s.status}`;
+		const composerKey = `${s.id}:${s.status}:${s.controlMode || ""}`;
 		if (composerKey !== lastRenderedComposerKey) {
 			lastRenderedComposerKey = composerKey;
 			const runningBar = document.getElementById("runningControlBar");
 			const chatInput = document.getElementById("globalPromptInput");
 			const sendBtn = document.getElementById("chatSendBtn");
-			if (s.status === "running") {
+			if (s.controlMode === "observe-only") {
+				runningBar.classList.remove("show");
+				chatInput.placeholder = "👀 当前会话为只读观测模式（或正在电脑独立终端运行）";
+				sendBtn.textContent = "发送";
+			} else if (s.status === "running") {
 				runningBar.classList.add("show");
 				chatInput.placeholder = "⚡ 实时插话 (Steer)：补充指令将立即注入...";
 				sendBtn.textContent = "⚡ 插话";
@@ -1681,7 +1714,7 @@ function initHubController() {
 			}
 		}
 		const trSig = s.transcript.slice(-6).map((m) => `${m.role}:${m.queuedCmdId || ""}:${m.expiredCmdId || ""}:${(m.text || "").length}:${(m.text || "").slice(-32)}:${(m.thinking || "").length}:${(m.tools || []).length}:${m.waitingForInput ? 1 : 0}`).join("|");
-		const chatKey = `${s.id}:${s.status}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ""}:${(s.changedFiles || []).length}`;
+		const chatKey = `${s.id}:${s.status}:${s.sessionRev || ""}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${(s.changedFiles || []).length}`;
 		if (chatKey === lastRenderedChatKey) return;
 		lastRenderedChatKey = chatKey;
 		selectedAgyOptionIndex = 1;
@@ -1752,6 +1785,7 @@ function initHubController() {
         </div>
       ` : "";
 		const isAgyApproval = s.approvalObj && (s.approvalObj.harness === "antigravity-ide" || Array.isArray(s.approvalObj.options));
+		const approvalStatusNoticeHtml = s.approvalObj?.lastError ? `<div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:rgba(239,68,68,0.14);border:1px solid rgba(239,68,68,0.35);color:#ef4444;font-size:12px;font-weight:600;">⚠️ ${esc(s.approvalObj.lastError)}</div>` : s.approvalObj?.settling ? `<div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--amber-soft);color:#d97706;font-size:12px;font-weight:600;">⏳ 正在同步到电脑端执行审批（最长等待 45 秒）...</div>` : "";
 		const approvalCardHtml = s.approvalObj ? isAgyApproval ? `
         <div class="agy-approval-card">
           <div class="agy-approval-header">
@@ -1760,6 +1794,7 @@ function initHubController() {
           </div>
           <div class="agy-approval-subtitle">${esc(s.approvalObj.subtitle || "the auto-run safety check did not reach a decision")}</div>
           ${s.approvalObj.commandLine ? `<div class="agy-approval-cmd">${esc(s.approvalObj.commandLine)}</div>` : `<div class="agy-approval-cmd">${esc(s.approvalObj.reason || "")}</div>`}
+          ${approvalStatusNoticeHtml}
           <div class="agy-approval-options">
             ${(s.approvalObj.options && s.approvalObj.options.length > 0 ? s.approvalObj.options : [
 			{
@@ -1779,24 +1814,25 @@ function initHubController() {
 				label: "No (tell the agent what to do instead)"
 			}
 		]).map((opt) => `
-              <button type="button" class="agy-approval-opt ${opt.index === 1 ? "selected" : ""}" data-opt-idx="${opt.index}" onclick="selectAgyApprovalOption(${opt.index})" ondblclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', ${opt.index !== 4}, ${opt.index})">
+              <button type="button" class="agy-approval-opt ${opt.index === 1 ? "selected" : ""}" data-opt-idx="${opt.index}" ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="selectAgyApprovalOption(${opt.index})" ondblclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', ${opt.index !== 4}, ${opt.index})"`}>
                 <span class="agy-opt-num">${opt.index}</span>
                 <span>${esc(opt.label)}</span>
               </button>
             `).join("")}
           </div>
           <div class="agy-approval-footer">
-            <button type="button" class="agy-btn-skip" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false, 4)">Skip</button>
-            <button type="button" class="agy-btn-submit" onclick="submitAgyApproval('${esc(s.hostId)}', '${esc(s.approvalObj.code)}')">Submit <span>↵</span></button>
+            <button type="button" class="agy-btn-skip" ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false, 4)"`}>Skip</button>
+            <button type="button" class="agy-btn-submit" ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="submitAgyApproval('${esc(s.hostId)}', '${esc(s.approvalObj.code)}')"`}>${s.approvalObj.settling ? "⏳ 处理中..." : "Submit <span>↵</span>"}</button>
           </div>
         </div>
       ` : `
         <div class="inline-approval-card">
           <div class="inline-approval-title">⏳ 等待你确认工具调用：${esc(s.approvalObj.toolName)}</div>
           <div class="inline-approval-cmd">${esc(s.approvalObj.reason || "请求执行权限")}</div>
+          ${approvalStatusNoticeHtml}
           <div class="inline-approval-btns">
-            <button style="background:#10b981;color:#fff;" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', true, 1)">✅ 允许执行</button>
-            <button style="background:#fee2e2;color:#dc2626;" onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false, 4)">✕ 拒绝</button>
+            <button style="background:#10b981;color:#fff;${s.approvalObj.settling ? "opacity:0.6;cursor:not-allowed;" : ""}" ${s.approvalObj.settling ? "disabled" : `onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', true, 1)"`}>${s.approvalObj.settling ? "⏳ 正在同步..." : "✅ 允许执行"}</button>
+            <button style="background:#fee2e2;color:#dc2626;${s.approvalObj.settling ? "opacity:0.6;cursor:not-allowed;" : ""}" ${s.approvalObj.settling ? "disabled" : `onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false, 4)"`}>✕ 拒绝</button>
           </div>
         </div>
       ` : "";
@@ -2023,10 +2059,13 @@ function initHubController() {
 		setTimeout(fetchState, 800);
 	}
 	async function sendApprovalDecision(hostId, code, allow, optionIndex = 1, explicitAgentId = "") {
-		window.__dshSettledApprovals = window.__dshSettledApprovals || {};
-		if (code) window.__dshSettledApprovals[code] = Date.now();
+		window.__dshSettlingApprovals = window.__dshSettlingApprovals || {};
+		if (code) window.__dshSettlingApprovals[code] = {
+			at: Date.now(),
+			decision: allow ? "approve" : "deny"
+		};
 		renderAll();
-		showToast(optionIndex === 2 ? "✅ 已批准并在当前会话始终允许" : optionIndex === 3 ? "✅ 已批准并始终允许该命令" : allow ? "✅ 已发送批准指令 (Option 1)" : "已拒绝/跳过该工具执行");
+		showToast(optionIndex === 2 ? "⏳ 正在同步：批准并在当前会话始终允许" : optionIndex === 3 ? "⏳ 正在同步：批准并始终允许该命令" : allow ? "⏳ 正在同步批准指令到电脑端..." : "⏳ 正在同步拒绝指令到电脑端...");
 		await dispatchHostCommand(hostId, {
 			type: "approval",
 			code,

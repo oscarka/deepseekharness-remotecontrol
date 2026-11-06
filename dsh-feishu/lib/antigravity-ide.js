@@ -626,17 +626,46 @@ export function parseAntigravityTranscript(jsonlText, {
           ? '🔵 已出结论'
           : '已完成'
 
+  const lastStepIndex = typeof lastStep.step_index === 'number' ? lastStep.step_index : lines.length - 1
+  const stateSource = hasLiveSummary
+    ? 'ls-rpc'
+    : (isConcludedStep || isErrorStep || Boolean(pendingApproval))
+      ? 'jsonl-tail'
+      : 'mtime-decay'
+  const stateConfidence = stateSource === 'ls-rpc'
+    ? 'high'
+    : stateSource === 'jsonl-tail'
+      ? 'medium'
+      : 'low'
+  const stateMeta = {
+    source: stateSource,
+    observedAt: now,
+    confidence: stateConfidence,
+  }
+  const sessionRev = `${transcript.length}:${lastStepIndex}:${status}:${turnState}:${pendingApproval?.code || ''}`
+
   return {
     id: sessionId,
     rawId: conversationId,
     shortId: String(conversationId).slice(0, 8),
     harness: 'antigravity-ide',
     harnessLabel: 'Antigravity IDE',
+    controlMode: hasLiveSummary ? 'managed' : 'idle-resumable',
+    capabilities: {
+      canCreateSession: true,
+      canPrompt: true,
+      canSteer: true,
+      canStop: true,
+      canApprove: true,
+    },
     title,
     status,
     turnState,
     isMidTurn,
     statusLabel,
+    lastStepIndex,
+    sessionRev,
+    stateMeta,
     project,
     cwd: cwd || process.cwd(),
     lastActivity,
@@ -659,6 +688,59 @@ export function parseAntigravityTranscript(jsonlText, {
         }
       : null,
   }
+}
+
+const CONFIDENCE_RANK = { low: 1, medium: 2, high: 3 }
+const highConfidenceSessionStates = new Map()
+
+/**
+ * 5-second hysteresis protection window:
+ * Prevents a low-confidence heuristic (`ps-heuristic` / `mtime-decay`) from overriding a recent
+ * high-confidence (`ls-rpc`) state observation within `windowMs` (default 5000ms).
+ */
+export function applyStateHysteresis(session, stateCache = highConfidenceSessionStates, now = Date.now(), windowMs = 5000) {
+  if (!session || !session.id) return session
+  const meta = session.stateMeta || { source: 'unknown', observedAt: now, confidence: 'low' }
+  const curRank = CONFIDENCE_RANK[meta.confidence] || 1
+  const prev = stateCache.get(session.id)
+
+  if (curRank >= 3) {
+    stateCache.set(session.id, {
+      status: session.status,
+      turnState: session.turnState,
+      statusLabel: session.statusLabel,
+      pendingApproval: session.pendingApproval,
+      stateMeta: { ...meta, observedAt: now },
+      recordedAt: now,
+    })
+    if (stateCache.size > 200) {
+      const oldest = stateCache.keys().next().value
+      stateCache.delete(oldest)
+    }
+    return session
+  }
+
+  if (prev && curRank === 1 && now - prev.recordedAt <= windowMs) {
+    const restoredApproval = prev.pendingApproval || null
+    const restoredStatus = prev.status
+    const restoredTurnState = prev.turnState
+    const restoredSessionRev = `${session.transcript?.length || 0}:${session.lastStepIndex ?? -1}:${restoredStatus}:${restoredTurnState}:${restoredApproval?.code || ''}`
+    return {
+      ...session,
+      status: restoredStatus,
+      turnState: restoredTurnState,
+      statusLabel: prev.statusLabel,
+      pendingApproval: restoredApproval,
+      sessionRev: restoredSessionRev,
+      stateMeta: {
+        ...prev.stateMeta,
+        hysteresisProtected: true,
+        ignoredLowConfidenceSource: meta.source,
+      },
+    }
+  }
+
+  return session
 }
 
 /**
@@ -939,6 +1021,11 @@ export async function loadAntigravityIdeSessions({
           || (subNeedle.length >= 10 && psNorm.includes(subNeedle))
 
         if (alreadyRunning) {
+          const prevHigh = highConfidenceSessionStates.get(s.id)
+          if (prevHigh && now - prevHigh.recordedAt <= 5000 && prevHigh.pendingApproval) {
+            // Protected by 5s high-confidence hysteresis window: do not let ps substring override recent ls-rpc waiting state
+            continue
+          }
           if (settledApprovals && typeof settledApprovals.add === 'function') {
             settledApprovals.add(s.pendingApproval.code)
           }
@@ -946,6 +1033,12 @@ export async function loadAntigravityIdeSessions({
           s.status = 'running'
           s.turnState = 'running'
           s.statusLabel = '🟢 运行中'
+          s.stateMeta = {
+            source: 'ps-heuristic',
+            observedAt: now,
+            confidence: 'low',
+          }
+          s.sessionRev = `${s.transcript?.length || 0}:${s.lastStepIndex ?? -1}:${s.status}:${s.turnState}:`
           if (Array.isArray(s.transcript) && s.transcript.length > 0) {
             s.transcript[s.transcript.length - 1] = {
               ...s.transcript[s.transcript.length - 1],
@@ -958,8 +1051,9 @@ export async function loadAntigravityIdeSessions({
     }
   }
 
-  sessions.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0))
-  return sessions.slice(0, maxSessions)
+  const stabilized = sessions.map(s => applyStateHysteresis(s, highConfidenceSessionStates, now))
+  stabilized.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0))
+  return stabilized.slice(0, maxSessions)
 }
 
 let cachedPsNorm = ''

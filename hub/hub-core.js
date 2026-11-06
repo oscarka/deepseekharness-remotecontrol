@@ -13,6 +13,8 @@ const PAIRING_MAX_FAILS_PER_WINDOW = 10
 const MAX_SNAPSHOTS = 15
 const MAX_SHARES = 50
 const PAIRING_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const APPROVAL_SETTLING_TTL_MS = 45_000
+const APPROVAL_SETTLED_COOL_MS = 15_000
 
 export class HubCore {
   constructor({ stateFile = '', now = () => Date.now(), pushFetch = globalThis.fetch, buildInfo = null } = {}) {
@@ -30,6 +32,7 @@ export class HubCore {
     this.filePreviewBlobs = new Map()
     this.signalingMailboxes = new Map()
     this.commandResultsById = new Map()
+    this.approvalLedger = new Map()
     this.totalCommandsExecuted = 0
     this.vapidKeys = generateOrLoadVapidKeys()
     this.pushSubscriptions = new Map()
@@ -300,6 +303,82 @@ export class HubCore {
     }
   }
 
+  reconcileBridgeStateApprovals(hostId, bridgeState, now = this.now()) {
+    if (!bridgeState || typeof bridgeState !== 'object') {
+      return { tasks: [], approvals: [], workspaces: [] }
+    }
+    const prefix = `${hostId}:`
+    for (const [k, entry] of this.approvalLedger.entries()) {
+      if (!k.startsWith(prefix)) continue
+      if (entry.status === 'settling' && now > entry.expiresAt) {
+        entry.status = 'failed'
+        entry.failedAt = now
+        entry.error = '等待电脑端执行审批超时（45s），请重试'
+        entry.expiresAt = now + 60_000
+      } else if ((entry.status === 'settled' || entry.status === 'failed') && now > entry.expiresAt) {
+        this.approvalLedger.delete(k)
+      }
+    }
+
+    const decorateApproval = app => {
+      if (!app || !app.code) return app
+      const code = String(app.code).trim().toUpperCase()
+      const entry = this.approvalLedger.get(`${hostId}:${code}`)
+      if (!entry) return app
+      if (entry.status === 'settled') return null
+      if (entry.status === 'settling') {
+        return {
+          ...app,
+          settling: true,
+          settlingDecision: entry.decision,
+          settlingOptionIndex: entry.optionIndex,
+          settlingAt: entry.requestedAt,
+          actionId: entry.actionId,
+          lastError: '',
+        }
+      }
+      if (entry.status === 'failed') {
+        return {
+          ...app,
+          settling: false,
+          lastError: entry.error || '电脑端执行审批失败',
+          failedAt: entry.failedAt,
+          actionId: entry.actionId,
+        }
+      }
+      return app
+    }
+
+    const approvals = Array.isArray(bridgeState.approvals)
+      ? bridgeState.approvals.map(decorateApproval).filter(Boolean)
+      : []
+
+    const tasks = Array.isArray(bridgeState.tasks)
+      ? bridgeState.tasks.map(t => {
+          if (!t?.pendingApproval?.code) return t
+          const decorated = decorateApproval(t.pendingApproval)
+          if (!decorated) {
+            return {
+              ...t,
+              pendingApproval: null,
+              status: t.status === 'approval' ? 'running' : t.status,
+              turnState: t.turnState === 'approval' ? 'running' : t.turnState,
+            }
+          }
+          if (decorated !== t.pendingApproval) {
+            return { ...t, pendingApproval: decorated }
+          }
+          return t
+        })
+      : []
+
+    return {
+      ...bridgeState,
+      tasks,
+      approvals,
+    }
+  }
+
   getFullState() {
     const now = this.now()
     let prunedAnyHost = false
@@ -316,13 +395,19 @@ export class HubCore {
         host.lastFilePreview = sanitizedPreview
       }
       const activeCommands = host.commands ?? []
+      const reconciledBridgeState = this.reconcileBridgeStateApprovals(
+        host.hostId,
+        host.bridgeState ?? { tasks: [], approvals: [], workspaces: [] },
+        now,
+      )
       return {
         ...summary,
         activelyConnected: Boolean(host.lastSeen && now - host.lastSeen <= ACTIVE_HEARTBEAT_WINDOW_MS),
+        syncMeta: host.syncMeta ?? null,
         identity: host.identity ?? null,
         trust: host.trust ?? { status: 'unpinned', pinnedPublicKey: '', pinnedFingerprint: '' },
         dshStats: host.dshStats ?? {},
-        bridgeState: host.bridgeState ?? { tasks: [], approvals: [], workspaces: [] },
+        bridgeState: reconciledBridgeState,
         lastFsListing: host.lastFsListing ?? null,
         lastFilePreview: sanitizedPreview,
         lastShareResult: host.lastShareResult ?? null,
@@ -594,6 +679,25 @@ export class HubCore {
       }
     }
 
+    const incomingSync = payload.syncMeta && typeof payload.syncMeta === 'object' ? payload.syncMeta : null
+    let isStaleSnapshot = false
+    if (incomingSync && record?.syncMeta) {
+      const prevSync = record.syncMeta
+      if (incomingSync.bootId && prevSync.bootId && incomingSync.bootId === prevSync.bootId) {
+        if (Number(incomingSync.seq) > 0 && Number(prevSync.seq) > 0 && Number(incomingSync.seq) < Number(prevSync.seq)) {
+          isStaleSnapshot = true
+        }
+      } else if (incomingSync.bootId && prevSync.bootId && incomingSync.bootId !== prevSync.bootId) {
+        if (
+          Number(incomingSync.bootEpochMs) > 0 &&
+          Number(prevSync.bootEpochMs) > 0 &&
+          Number(incomingSync.bootEpochMs) < Number(prevSync.bootEpochMs)
+        ) {
+          isStaleSnapshot = true
+        }
+      }
+    }
+
     if (!record) {
       const trust = incomingIdentity?.publicKey
         ? {
@@ -609,6 +713,14 @@ export class HubCore {
         platform: payload.platform || '',
         arch: payload.arch || '',
         identity: incomingIdentity,
+        syncMeta: incomingSync
+          ? {
+              bootId: String(incomingSync.bootId || ''),
+              bootEpochMs: Number(incomingSync.bootEpochMs) || now,
+              seq: Number(incomingSync.seq) || 0,
+              capturedAt: Number(incomingSync.capturedAt) || now,
+            }
+          : null,
         trust,
         lastSeen: now,
         dshStats: payload.dshStats ?? {},
@@ -633,8 +745,18 @@ export class HubCore {
           }
         }
       }
-      if (payload.dshStats) record.dshStats = payload.dshStats
-      if (payload.bridgeState) record.bridgeState = payload.bridgeState
+      if (!isStaleSnapshot) {
+        if (incomingSync) {
+          record.syncMeta = {
+            bootId: String(incomingSync.bootId || ''),
+            bootEpochMs: Number(incomingSync.bootEpochMs) || now,
+            seq: Number(incomingSync.seq) || 0,
+            capturedAt: Number(incomingSync.capturedAt) || now,
+          }
+        }
+        if (payload.dshStats) record.dshStats = payload.dshStats
+        if (payload.bridgeState) record.bridgeState = payload.bridgeState
+      }
     }
 
     if (!this.activeHostId) {
@@ -682,7 +804,21 @@ export class HubCore {
       }
     }
 
-    if (payload.bridgeState) {
+    if (payload.bridgeState && !isStaleSnapshot) {
+      const liveCodes = new Set(
+        Array.isArray(payload.bridgeState.approvals)
+          ? payload.bridgeState.approvals.map(a => String(a?.code || '').trim().toUpperCase()).filter(Boolean)
+          : [],
+      )
+      const prefix = `${hostId}:`
+      for (const [k, entry] of this.approvalLedger.entries()) {
+        if (!k.startsWith(prefix)) continue
+        if (entry.status === 'settling' && entry.pulledByHost && !liveCodes.has(entry.code)) {
+          entry.status = 'settled'
+          entry.settledAt = now
+          entry.expiresAt = now + APPROVAL_SETTLED_COOL_MS
+        }
+      }
       this.detectAndTriggerWebPush(hostId, hostName, payload.bridgeState)
     }
 
@@ -690,6 +826,16 @@ export class HubCore {
       || record.commands.length > 0
     this.pruneExpiredCommands(record, now)
     const commands = record.commands.splice(0)
+    for (const cmd of commands) {
+      if (cmd?.type === 'approve' || cmd?.type === 'deny' || cmd?.type === 'approval') {
+        const code = String(cmd.code || '').trim().toUpperCase()
+        const entry = code ? this.approvalLedger.get(`${hostId}:${code}`) : null
+        if (entry) {
+          entry.pulledByHost = true
+          entry.pulledAt = now
+        }
+      }
+    }
     const nextFingerprint = this.computeHostFingerprint(record)
     const stateChanged = hasCommandActivity || nextFingerprint !== record._lastFingerprint
     if (stateChanged || now - (record._lastBroadcastAt || 0) >= 12_000) {
@@ -701,6 +847,7 @@ export class HubCore {
 
     return {
       ok: true,
+      staleSnapshotIgnored: isStaleSnapshot,
       activeHostId: this.activeHostId,
       shouldConnectFeishu: this.activeHostId === hostId,
       commands,
@@ -710,17 +857,19 @@ export class HubCore {
   }
 
   computeHostFingerprint(record) {
-    const b = record?.bridgeState ?? {}
+    const b = this.reconcileBridgeStateApprovals(record?.hostId || '', record?.bridgeState ?? {})
     const tasksSig = Array.isArray(b.tasks)
       ? b.tasks
           .map(t => {
             const tr = Array.isArray(t.transcript) ? t.transcript : []
             const last = tr.at(-1)
-            return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.lastOutput || ''}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}`
+            return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${t.lastOutput || ''}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}`
           })
           .join('|')
       : ''
-    const appSig = Array.isArray(b.approvals) ? b.approvals.map(a => `${a.code}:${a.promptTitle || ''}`).join('|') : ''
+    const appSig = Array.isArray(b.approvals)
+      ? b.approvals.map(a => `${a.code}:${a.promptTitle || ''}:${Boolean(a.settling)}:${a.lastError || ''}`).join('|')
+      : ''
     const fsSig = `${record?.lastFsListing?.at || 0}:${record?.lastFilePreview?.at || 0}:${record?.lastShareResult?.at || 0}`
     return `${record?.hostName || ''}:${record?.trust?.status || ''}:${Boolean(b.remoteActive)}:${Boolean(b.feishuConnected)}:${tasksSig}#${appSig}#${fsSig}`
   }
@@ -1050,6 +1199,29 @@ export class HubCore {
       ...(expiresAt > 0 ? { expiresAt } : {}),
       ...commandPayload,
     }
+    if (cmdType === 'approve' || cmdType === 'deny' || cmdType === 'approval') {
+      let code = String(commandPayload.code ?? '').trim().toUpperCase()
+      if (!code && commandPayload.agentId && Array.isArray(host.bridgeState?.approvals)) {
+        const matched = host.bridgeState.approvals.find(a => a?.agentId === commandPayload.agentId)
+        if (matched?.code) code = String(matched.code).trim().toUpperCase()
+      }
+      if (code) {
+        const decision = cmdType === 'approval' ? (commandPayload.allow !== false ? 'approve' : 'deny') : cmdType
+        this.approvalLedger.set(`${cleanHostId}:${code}`, {
+          actionId: cmd.id,
+          hostId: cleanHostId,
+          agentId: String(commandPayload.agentId || ''),
+          code,
+          decision,
+          optionIndex: Number(commandPayload.optionIndex) || 1,
+          status: 'settling',
+          pulledByHost: false,
+          requestedAt: now,
+          expiresAt: now + APPROVAL_SETTLING_TTL_MS,
+          error: '',
+        })
+      }
+    }
     host.commands.push(cmd)
     void this.persist()
     this.emitStateChange('command_queued')
@@ -1211,7 +1383,33 @@ export class HubCore {
   }
 
   onCommandResult(hostId, res = {}) {
+    const now = this.now()
     const host = this.hosts.get(hostId)
+    if (res.type === 'approve' || res.type === 'deny' || res.type === 'approval' || res.code) {
+      const code = String(res.code || '').trim().toUpperCase()
+      let ledgerEntry = code ? this.approvalLedger.get(`${hostId}:${code}`) : null
+      if (!ledgerEntry && res.id) {
+        for (const entry of this.approvalLedger.values()) {
+          if (entry.hostId === hostId && entry.actionId === res.id) {
+            ledgerEntry = entry
+            break
+          }
+        }
+      }
+      if (ledgerEntry) {
+        if (res.ok !== false) {
+          ledgerEntry.status = 'settled'
+          ledgerEntry.settledAt = now
+          ledgerEntry.expiresAt = now + APPROVAL_SETTLED_COOL_MS
+          ledgerEntry.error = ''
+        } else {
+          ledgerEntry.status = 'failed'
+          ledgerEntry.failedAt = now
+          ledgerEntry.expiresAt = now + 60_000
+          ledgerEntry.error = String(res.error || res.message || '电脑端执行审批失败')
+        }
+      }
+    }
     if (host) {
       if (res.type === 'list_files' && res.ok) {
         host.lastFsListing = {
