@@ -385,7 +385,7 @@
     }
     .filter-pill.active {
       background: var(--text);
-      color: #fff;
+      color: var(--surface);
       font-weight: 600;
     }
     .filter-pill.smart-pill {
@@ -1865,6 +1865,8 @@
     }
     :root[data-theme="dark"] .sheet-panel,
     :root[data-theme="dark"] .chat-fullscreen,
+    :root[data-theme="dark"] .chat-navbar,
+    :root[data-theme="dark"] #scrollBottomBtn,
     :root[data-theme="dark"] .composer-bar,
     :root[data-theme="dark"] .bottom-tabs,
     :root[data-theme="dark"] .top-bar,
@@ -1896,6 +1898,8 @@
       }
       :root:not([data-theme="light"]) .sheet-panel,
       :root:not([data-theme="light"]) .chat-fullscreen,
+      :root:not([data-theme="light"]) .chat-navbar,
+      :root:not([data-theme="light"]) #scrollBottomBtn,
       :root:not([data-theme="light"]) .composer-bar,
       :root:not([data-theme="light"]) .bottom-tabs,
       :root:not([data-theme="light"]) .top-bar,
