@@ -185,3 +185,4 @@ export async function acquireDaemonLock({
     release: () => false,
   }
 }
+

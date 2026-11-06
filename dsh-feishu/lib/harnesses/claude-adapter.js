@@ -315,6 +315,39 @@ export class ClaudeAdapter {
     return results
   }
 
+  async createSession({ prompt, cwd, execImpl } = {}) {
+    const text = String(prompt || '').trim()
+    if (!text) return { ok: false, error: '请输入新建任务的指令内容' }
+    const bin = this.binaryPath || findClaudeBinary()
+    const runExec = execImpl || this.execImpl
+    if (!bin && !runExec) {
+      return { ok: false, error: '当前电脑未检测到 claude CLI 可执行文件' }
+    }
+    const args = ['-p', text]
+    if (runExec) {
+      await runExec(bin || 'claude', args, { cwd: cwd || undefined, timeout: 60_000 })
+      return {
+        ok: true,
+        harness: 'claude',
+        message: '已在电脑端启动新的 Claude Code 任务',
+      }
+    }
+    const child = this.spawnImpl(bin, args, {
+      cwd: cwd && existsSync(cwd) ? cwd : homedir(),
+      stdio: 'ignore',
+      detached: false,
+    })
+    const runKey = `new-${Date.now()}`
+    this.activeRuns.set(runKey, child)
+    child.on('exit', () => this.activeRuns.delete(runKey))
+    child.on('error', () => this.activeRuns.delete(runKey))
+    return {
+      ok: true,
+      harness: 'claude',
+      message: '已在电脑端启动新的 Claude Code 后台任务',
+    }
+  }
+
   async sendPrompt({ sessionId, text, cwd, execImpl } = {}) {
     const rawId = toRawClaudeId(sessionId)
     const prompt = String(text || '').trim()
