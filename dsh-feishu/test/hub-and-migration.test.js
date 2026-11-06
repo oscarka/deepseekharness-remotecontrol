@@ -1428,6 +1428,18 @@ test('antigravity-ide revert rollback & HubCore heartbeat deduplication', () => 
   assert.equal(sseEmissions, 2) // State changed -> immediately broadcast
 })
 
+test('Voice input button, binary file preview card, and push notification deep-link routing work in index.html', async () => {
+  const html = await readFile(new URL('../../hub/public/index.html', import.meta.url), 'utf8')
+  assert.match(html, /id="chatVoiceBtn"/)
+  assert.match(html, /id="newTaskVoiceBtn"/)
+  assert.match(html, /function toggleVoiceInput\(/)
+  assert.match(html, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/)
+  assert.match(html, /kind === 'binary'/)
+  assert.match(html, /function tryOpenDeepLinkTarget\(/)
+  assert.match(html, /NOTIFICATION_CLICK/)
+})
+
+
 
 
 

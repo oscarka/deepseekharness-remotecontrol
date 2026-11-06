@@ -1333,6 +1333,54 @@
       cursor: pointer;
       flex-shrink: 0;
     }
+    .voice-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--subtle);
+      color: var(--text);
+      font-size: 17px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all 0.16s ease;
+    }
+    .voice-btn:hover {
+      background: #e2e8f0;
+    }
+    .voice-btn.recording {
+      background: var(--red-soft);
+      border-color: #f87171;
+      color: var(--red);
+      animation: voicePulse 1.2s infinite ease-in-out;
+    }
+    .voice-pill-btn {
+      border: 1px solid #bfdbfe;
+      background: var(--primary-soft);
+      color: var(--primary);
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.16s ease;
+    }
+    .voice-pill-btn.recording {
+      background: var(--red-soft);
+      border-color: #f87171;
+      color: var(--red);
+      animation: voicePulse 1.2s infinite ease-in-out;
+    }
+    @keyframes voicePulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.25); }
+      50% { transform: scale(1.06); box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+    }
 
     /* ==================== 7. 文件浏览器 ==================== */
     .breadcrumbs-bar {
@@ -1804,6 +1852,7 @@
       </div>
 
       <div class="chat-composer" id="chatComposerBar">
+        <button type="button" class="voice-btn" id="chatVoiceBtn" title="语音输入（点击说话，再点停止）" aria-label="语音输入" onclick="toggleVoiceInput('globalPromptInput', 'chatVoiceBtn')">🎤</button>
         <textarea class="chat-input" id="globalPromptInput" rows="1" placeholder="发指令继续对话..." autocorrect="on" autocapitalize="sentences" spellcheck="true" oninput="onComposerInput()" onkeydown="onComposerKeydown(event)"></textarea>
         <button class="send-btn" id="chatSendBtn" onclick="sendPromptToActiveSession()">发送</button>
       </div>
@@ -1839,13 +1888,16 @@
         <div class="form-label">3. 选择项目文件夹（免手敲路径）</div>
         <div class="chip-selector" id="newTaskProjectChips"></div>
 
-        <div class="form-label">4. 任务指令（或点选下方快捷指令）</div>
+        <div class="form-label" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>4. 任务指令（或点选下方快捷指令）</span>
+          <button type="button" class="voice-pill-btn" id="newTaskVoiceBtn" onclick="toggleVoiceInput('newTaskInput', 'newTaskVoiceBtn')">🎤 语音输入</button>
+        </div>
         <div class="chip-selector" style="margin-bottom:6px;">
           <button class="choice-chip" onclick="fillQuickPrompt('帮我检查当前项目的定时任务和运行日志是否正常')">🔍 检查运行状态</button>
           <button class="choice-chip" onclick="fillQuickPrompt('运行单元测试并修复所有报错')">🧪 跑测试修 Bug</button>
           <button class="choice-chip" onclick="fillQuickPrompt('查看 git status 并总结最近的代码改动')">📦 总结代码改动</button>
         </div>
-        <textarea class="new-task-textarea" id="newTaskInput" placeholder="输入你想让电脑执行的任务..."></textarea>
+        <textarea class="new-task-textarea" id="newTaskInput" placeholder="输入你想让电脑执行的任务..." autocorrect="on" autocapitalize="sentences" spellcheck="true"></textarea>
 
         <button class="primary-block-btn" onclick="submitNewTask()">🚀 立即在电脑上启动任务</button>
       </div>
@@ -1905,9 +1957,14 @@
     // ==================== 1. 认证与安全 Token 管理（自动清除 URL 尾巴防止截图泄露） ====================
     const urlParams = new URLSearchParams(location.search);
     const queryToken = (urlParams.get('token') || '').trim();
-    if (queryToken) {
-      localStorage.setItem('dsh_hub_token', queryToken);
+    let pendingDeepLinkHostId = (urlParams.get('host') || '').trim();
+    let pendingDeepLinkTaskId = (urlParams.get('task') || urlParams.get('session') || '').trim();
+    if (queryToken || pendingDeepLinkHostId || pendingDeepLinkTaskId) {
+      if (queryToken) localStorage.setItem('dsh_hub_token', queryToken);
       urlParams.delete('token');
+      urlParams.delete('host');
+      urlParams.delete('task');
+      urlParams.delete('session');
       const cleanSearch = urlParams.toString();
       const cleanUrl = location.pathname + (cleanSearch ? '?' + cleanSearch : '') + location.hash;
       try { history.replaceState(null, '', cleanUrl); } catch {}
@@ -2553,7 +2610,6 @@
       );
       try { localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap)); } catch {}
       lastRenderedChatKey = ''; // 切换会话时强制渲染
-      lastRenderedChatSessionId = ''; // 打开会话先看到最新消息
       renderActiveChatStage();
       renderProjectStrip();
       renderSessionList();
@@ -3076,6 +3132,114 @@
       if (document.visibilityState === 'hidden') persistComposerDraft();
     });
 
+    // ---- 语音输入：Web Speech API 实时听写 + 手机键盘原生听写兜底 ----
+    let activeVoiceRecognition = null;
+    let activeVoiceInputId = '';
+    let activeVoiceBtnId = '';
+
+    function setVoiceBtnRecording(btnId, recording) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      btn.classList.toggle('recording', Boolean(recording));
+      if (btn.classList.contains('voice-pill-btn')) {
+        btn.textContent = recording ? '🔴 听写中 (点此停止)' : '🎤 语音输入';
+      } else {
+        btn.textContent = recording ? '⏹' : '🎤';
+      }
+    }
+
+    function stopVoiceInput() {
+      const rec = activeVoiceRecognition;
+      const btnId = activeVoiceBtnId;
+      activeVoiceRecognition = null;
+      activeVoiceInputId = '';
+      activeVoiceBtnId = '';
+      if (btnId) setVoiceBtnRecording(btnId, false);
+      if (rec) {
+        try { rec.stop(); } catch {}
+      }
+    }
+
+    function toggleVoiceInput(targetInputId = 'globalPromptInput', btnId = 'chatVoiceBtn') {
+      const input = document.getElementById(targetInputId);
+      if (!input) return;
+
+      if (activeVoiceRecognition && activeVoiceInputId === targetInputId) {
+        stopVoiceInput();
+        showToast('⏹ 已停止语音输入');
+        return;
+      }
+      if (activeVoiceRecognition) {
+        stopVoiceInput();
+      }
+
+      const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognitionCtor) {
+        input.focus();
+        showToast('🎙️ 已唤起输入法，请点手机键盘右下角「🎤 麦克风」直接语音输入');
+        return;
+      }
+
+      try {
+        const recognition = new SpeechRecognitionCtor();
+        recognition.lang = (navigator.language && navigator.language.startsWith('zh')) ? navigator.language : 'zh-CN';
+        recognition.interimResults = true;
+        recognition.continuous = false;
+        recognition.maxAlternatives = 1;
+
+        const baseText = input.value || '';
+        let finalTranscript = '';
+
+        activeVoiceRecognition = recognition;
+        activeVoiceInputId = targetInputId;
+        activeVoiceBtnId = btnId;
+        setVoiceBtnRecording(btnId, true);
+        showToast('🎙️ 请说话，正在实时语音转文字（再点一次停止）');
+
+        recognition.onresult = (event) => {
+          let interim = '';
+          for (let i = event.resultIndex; i < event.results.length; i += 1) {
+            const seg = event.results[i][0]?.transcript || '';
+            if (event.results[i].isFinal) {
+              finalTranscript += seg;
+            } else {
+              interim += seg;
+            }
+          }
+          input.value = baseText + finalTranscript + interim;
+          if (targetInputId === 'globalPromptInput') {
+            onComposerInput();
+          }
+        };
+
+        recognition.onerror = (event) => {
+          const errCode = event?.error || '';
+          stopVoiceInput();
+          if (errCode === 'not-allowed' || errCode === 'service-not-allowed') {
+            input.focus();
+            showToast('🎙️ 未授予浏览器麦克风权限，可直接点手机键盘右下角「🎤」语音输入');
+          } else if (errCode && errCode !== 'aborted' && errCode !== 'no-speech') {
+            showToast('⚠️ 语音识别结束：' + errCode);
+          }
+        };
+
+        recognition.onend = () => {
+          if (activeVoiceRecognition === recognition) {
+            stopVoiceInput();
+          }
+          if (targetInputId === 'globalPromptInput') {
+            onComposerInput();
+          }
+        };
+
+        recognition.start();
+      } catch {
+        stopVoiceInput();
+        input.focus();
+        showToast('🎙️ 已聚焦输入框，请使用键盘右下角「🎤 麦克风」语音输入');
+      }
+    }
+
     async function sendPromptToActiveSession() {
       const input = document.getElementById('globalPromptInput');
       const text = input.value.trim();
@@ -3265,9 +3429,15 @@
                <img src="${imagePreviewSrc(preview)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:46vh;object-fit:contain;border-radius:8px;" />
                <div style="font-size:12px;color:#94a3b8;">${esc(formatBytes(preview.size))} · 长按图片可保存到相册</div>
              </div>`
-          : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
-               ${numberedHtml}
-             </div>`;
+          : kind === 'binary'
+            ? `<div class="file-preview-body" style="padding:32px 16px;background:#0f172a;color:#94a3b8;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
+                 <div style="font-size:32px;">📦</div>
+                 <div style="font-size:14px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
+                 <div style="font-size:12.5px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
+               </div>`
+            : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
+                 ${numberedHtml}
+               </div>`;
         body.innerHTML = `
           <div class="breadcrumbs-bar" style="justify-content:space-between;">
             <button class="back-btn" style="padding:0;font-size:13px;" onclick="backFromDrawerPreview()">‹ 返回目录</button>
@@ -3514,15 +3684,21 @@
                <img src="${imagePreviewSrc(preview)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;" />
                <div style="font-size:12px;color:#94a3b8;">${esc(formatBytes(preview.size))} · 长按图片可保存到相册</div>
              </div>`
-          : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:calc(100% - 44px);overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;">
-               ${numberedHtml}
-             </div>`;
+          : kind === 'binary'
+            ? `<div class="file-preview-body" style="padding:36px 16px;background:#0f172a;color:#94a3b8;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
+                 <div style="font-size:36px;">📦</div>
+                 <div style="font-size:14.5px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
+                 <div style="font-size:13px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
+               </div>`
+            : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:calc(100% - 44px);overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;">
+                 ${numberedHtml}
+               </div>`;
         container.innerHTML = `
           <div class="breadcrumbs-bar" style="justify-content:space-between;">
             <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="closeMainFilePreview('${esc(host.hostId)}')">‹ 返回文件列表</button>
             <span style="font-weight:700;color:var(--text);">${esc(preview.name)}</span>
             <div style="display:flex;gap:6px;">
-              ${kind === 'image' ? '' : `<button class="icon-pill-btn" onclick="copyCodeText('${encodeURIComponent(preview.content || '')}')">📋 复制</button>`}
+              ${kind !== 'text' ? '' : `<button class="icon-pill-btn" onclick="copyCodeText('${encodeURIComponent(preview.content || '')}')">📋 复制</button>`}
               <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="askAiAboutFile('${esc(host.hostId)}', '${esc(fileProjectCwd)}', '${esc(preview.relPath || preview.name)}')">💬 让 AI 分析</button>
             </div>
           </div>
@@ -4757,6 +4933,55 @@
       }
     }
 
+    function tryOpenDeepLinkTarget({ hostId, agentId } = {}) {
+      const targetTaskId = String(agentId || '').trim();
+      const targetHostId = String(hostId || '').trim();
+      if (targetHostId && (hubState.hosts || []).some(h => h.hostId === targetHostId)) {
+        if (currentHostId !== 'ALL_HOSTS' && currentHostId !== targetHostId) {
+          currentHostId = targetHostId;
+        }
+      }
+      if (targetTaskId) {
+        const found = findSessionGlobal(targetTaskId);
+        if (found) {
+          if (currentTab !== 'chats') switchTab('chats');
+          openChat(found.session.id);
+          return true;
+        }
+        return false;
+      }
+      if (targetHostId && (hubState.hosts || []).some(h => h.hostId === targetHostId)) {
+        currentHostId = targetHostId;
+        renderAll();
+        return true;
+      }
+      return false;
+    }
+
+    function flushPendingDeepLink() {
+      if (!pendingDeepLinkHostId && !pendingDeepLinkTaskId) return;
+      if (tryOpenDeepLinkTarget({ hostId: pendingDeepLinkHostId, agentId: pendingDeepLinkTaskId })) {
+        pendingDeepLinkHostId = '';
+        pendingDeepLinkTaskId = '';
+      }
+    }
+
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker) {
+      try {
+        navigator.serviceWorker.addEventListener('message', (event) => {
+          const msg = event?.data;
+          if (msg && msg.type === 'NOTIFICATION_CLICK' && msg.data) {
+            const { hostId, agentId } = msg.data;
+            if (!tryOpenDeepLinkTarget({ hostId, agentId })) {
+              pendingDeepLinkHostId = String(hostId || '').trim();
+              pendingDeepLinkTaskId = String(agentId || '').trim();
+              fetchState();
+            }
+          }
+        });
+      } catch {}
+    }
+
     function applyHubState(nextState) {
       preservePreviewUiState(nextState);
       hubState = nextState;
@@ -4768,6 +4993,7 @@
         if (data.ok) {
           applyHubState(data);
           renderAll();
+          flushPendingDeepLink();
           return { ok: true };
         }
         return { ok: false, error: data.error || '服务端返回异常' };
@@ -4805,6 +5031,7 @@
             if (data.ok) {
               applyHubState(data);
               renderAll();
+              flushPendingDeepLink();
             }
           } catch {}
         });
