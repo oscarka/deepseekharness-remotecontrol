@@ -162,10 +162,50 @@ export class HubCore {
     const host = this.hosts.get(cleanHostId)
     const preview = host?.lastFilePreview
     if (!preview) return null
+    if (preview.hasBlob && !preview.dataBase64 && typeof preview.content !== 'string') {
+      return null
+    }
     if (expectedAt !== null && expectedAt !== undefined && expectedAt !== '' && Number(expectedAt) !== Number(preview.at)) {
       return null
     }
     return preview
+  }
+
+  pruneExpiredCommands(record, now = this.now()) {
+    if (!record || !Array.isArray(record.commands) || record.commands.length === 0) return false
+    const kept = []
+    let prunedAny = false
+    for (const cmd of record.commands) {
+      if (cmd?.expiresAt && now > cmd.expiresAt) {
+        prunedAny = true
+        const expiredRes = {
+          id: cmd.id,
+          commandId: cmd.id,
+          type: cmd.type,
+          agentId: cmd.agentId || '',
+          text: cmd.text || cmd.prompt || '',
+          createdAt: cmd.createdAt || now,
+          ok: false,
+          expired: true,
+          error: '指令排队已超时（超过 10 分钟未上线），已自动丢弃未执行',
+          at: now,
+        }
+        record.recentResults = record.recentResults ?? []
+        record.recentResults.push(expiredRes)
+        if (record.recentResults.length > 25) {
+          record.recentResults.splice(0, record.recentResults.length - 25)
+        }
+        if (cmd.id) {
+          this.commandResultsById.set(cmd.id, { hostId: record.hostId, ...expiredRes })
+        }
+        continue
+      }
+      kept.push(cmd)
+    }
+    if (prunedAny) {
+      record.commands = kept
+    }
+    return prunedAny
   }
 
   clearFilePreview(hostId) {
@@ -262,8 +302,12 @@ export class HubCore {
 
   getFullState() {
     const now = this.now()
+    let prunedAnyHost = false
     const summaryById = new Map(this.getHostsSummary().map(item => [item.hostId, item]))
     const hosts = [...this.hosts.values()].map(host => {
+      if (this.pruneExpiredCommands(host, now)) {
+        prunedAnyHost = true
+      }
       const summary = summaryById.get(host.hostId) ?? {}
       const sanitizedPreview = host.lastFilePreview
         ? this.sanitizeFilePreviewForState(host.hostId, host.lastFilePreview)
@@ -271,7 +315,7 @@ export class HubCore {
       if (sanitizedPreview && host.lastFilePreview?.dataBase64) {
         host.lastFilePreview = sanitizedPreview
       }
-      const activeCommands = (host.commands ?? []).filter(c => !c.expiresAt || now <= c.expiresAt)
+      const activeCommands = host.commands ?? []
       return {
         ...summary,
         activelyConnected: Boolean(host.lastSeen && now - host.lastSeen <= ACTIVE_HEARTBEAT_WINDOW_MS),
@@ -315,6 +359,9 @@ export class HubCore {
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 10)
     const shares = this.listShares()
+    if (prunedAnyHost) {
+      void this.persist()
+    }
     return {
       now,
       ...(this.buildInfo ? { build: this.buildInfo } : {}),
@@ -641,27 +688,8 @@ export class HubCore {
 
     const hasCommandActivity = (Array.isArray(payload.commandResults) && payload.commandResults.length > 0)
       || record.commands.length > 0
-    const rawCommands = record.commands.splice(0)
-    const commands = []
-    for (const cmd of rawCommands) {
-      if (cmd?.expiresAt && now > cmd.expiresAt) {
-        const expiredRes = {
-          id: cmd.id,
-          type: cmd.type,
-          agentId: cmd.agentId || '',
-          ok: false,
-          expired: true,
-          error: '指令排队已超时（超过 10 分钟未上线），已自动丢弃未执行',
-          at: now,
-        }
-        record.recentResults.push(expiredRes)
-        if (cmd.id) {
-          this.commandResultsById.set(cmd.id, { hostId, ...expiredRes })
-        }
-        continue
-      }
-      commands.push(cmd)
-    }
+    this.pruneExpiredCommands(record, now)
+    const commands = record.commands.splice(0)
     const nextFingerprint = this.computeHostFingerprint(record)
     const stateChanged = hasCommandActivity || nextFingerprint !== record._lastFingerprint
     if (stateChanged || now - (record._lastBroadcastAt || 0) >= 12_000) {
@@ -894,6 +922,7 @@ export class HubCore {
       .sort((a, b) => b.createdAt - a.createdAt)
       .map(s => ({
         id: s.id,
+        shareId: s.id,
         title: s.title,
         hostId: s.hostId,
         hostName: s.hostName,
@@ -910,7 +939,18 @@ export class HubCore {
 
   deleteShare(shareId) {
     const ok = this.shares.delete(shareId)
+    for (const host of this.hosts.values()) {
+      if (
+        host.lastShareResult &&
+        (host.lastShareResult.shareId === shareId ||
+          host.lastShareResult.id === shareId ||
+          String(host.lastShareResult.shareUrl || '').includes(shareId))
+      ) {
+        host.lastShareResult = null
+      }
+    }
     void this.persist()
+    this.emitStateChange('share_deleted')
     return { ok }
   }
 

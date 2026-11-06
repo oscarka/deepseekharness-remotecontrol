@@ -462,7 +462,7 @@ function Sheets() {
 		id: "hostSheet",
 		onClick: closeIfBackdrop("hostSheet")
 	}, /* @__PURE__ */ k("div", { class: "sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", { class: "sheet-title" }, /* @__PURE__ */ k("span", null, "切换遥控的电脑"), /* @__PURE__ */ k("span", {
-		style: "font-size:12px;color:#64748b;font-weight:500;",
+		style: "font-size:12px;color:var(--muted);font-weight:500;",
 		id: "hostSheetCountLabel"
 	})), /* @__PURE__ */ k("div", { id: "hostOptionList" }))), /* @__PURE__ */ k("div", {
 		class: "sheet-backdrop",
@@ -470,7 +470,7 @@ function Sheets() {
 		onClick: closeIfBackdrop("newTaskSheet")
 	}, /* @__PURE__ */ k("div", { class: "sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", { class: "sheet-title" }, /* @__PURE__ */ k("span", null, "✨ 新建远程对话任务"), /* @__PURE__ */ k("button", {
 		type: "button",
-		style: "border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;",
+		style: "border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;",
 		onClick: () => window.closeSheet?.("newTaskSheet")
 	}, "✕")), /* @__PURE__ */ k("div", { class: "form-label" }, "1. 选择执行电脑"), /* @__PURE__ */ k("div", {
 		class: "chip-selector",
@@ -538,7 +538,7 @@ function Sheets() {
 		style: "padding:0 16px 8px;margin:0;border-bottom:1px solid var(--border);"
 	}, /* @__PURE__ */ k("span", { id: "inChatFileTitle" }, "📂 当前项目文件速览"), /* @__PURE__ */ k("button", {
 		type: "button",
-		style: "border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;",
+		style: "border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;",
 		onClick: () => window.closeMobileFile?.()
 	}, "✕")), /* @__PURE__ */ k("div", {
 		id: "inChatFileBody",
@@ -549,7 +549,7 @@ function Sheets() {
 		onClick: closeIfBackdrop("mobileSettingsSheet")
 	}, /* @__PURE__ */ k("div", { class: "sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", { class: "sheet-title" }, /* @__PURE__ */ k("span", null, "📦 跨电脑一键迁移向导"), /* @__PURE__ */ k("button", {
 		type: "button",
-		style: "border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;",
+		style: "border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;",
 		onClick: () => window.closeSheet?.("mobileSettingsSheet")
 	}, "✕")), /* @__PURE__ */ k("div", { id: "migrateWizardBody" }))), /* @__PURE__ */ k("div", {
 		class: "sheet-backdrop",
@@ -560,7 +560,7 @@ function Sheets() {
 		style: "max-height:86dvh;overflow-y:auto;"
 	}, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", { class: "sheet-title" }, /* @__PURE__ */ k("span", null, "⚡ 极速实时同步 (Rust + SSE) 指南"), /* @__PURE__ */ k("button", {
 		type: "button",
-		style: "border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;",
+		style: "border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;",
 		onClick: () => window.closeSheet?.("turboGuideSheet")
 	}, "✕")), /* @__PURE__ */ k("div", { id: "turboGuideBody" }))), /* @__PURE__ */ k("div", {
 		class: "sheet-backdrop",
@@ -1213,12 +1213,13 @@ function initHubController() {
 				const pendingApp = approvals.find((a) => a.agentId === t.id);
 				const baseTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
 				const queuedCmds = (h.pendingCommands || []).filter((c) => c && c.agentId === t.id && (c.type === "prompt" || c.type === "steer"));
+				const expiredCmds = (h.recentResults || []).filter((r) => r && r.expired && (r.type === "prompt" || r.type === "steer") && r.agentId === t.id && r.text);
 				const optimisticList = window.__dshOptimisticMsgs && window.__dshOptimisticMsgs[t.id] || [];
 				const nowMs = Date.now();
 				const remainingOpt = [];
 				for (const opt of optimisticList) {
 					if (nowMs - opt.time >= 15e3) continue;
-					if (baseTranscript.some((m) => m.role === "user" && m.text === opt.text) || queuedCmds.some((c) => c.text === opt.text)) continue;
+					if (baseTranscript.some((m) => m.role === "user" && m.text === opt.text) || queuedCmds.some((c) => c.text === opt.text) || expiredCmds.some((ec) => ec.text === opt.text)) continue;
 					remainingOpt.push(opt);
 					baseTranscript.push({
 						role: "user",
@@ -1226,6 +1227,13 @@ function initHubController() {
 						time: opt.time
 					});
 				}
+				for (const ec of expiredCmds) if (nowMs - (ec.at || 0) <= 18e5) baseTranscript.push({
+					role: "user",
+					text: ec.text,
+					time: ec.createdAt || ec.at || nowMs,
+					expiredCmdId: ec.id,
+					expiredError: ec.error || "电脑超过 10 分钟未上线，该指令已超时未执行"
+				});
 				for (const qc of queuedCmds) baseTranscript.push({
 					role: "user",
 					text: qc.text,
@@ -1483,8 +1491,8 @@ function initHubController() {
             <div class="live-activity-desc">${esc(pendingAppInfo.app.promptTitle || pendingAppInfo.app.reason || "")}</div>
           </div>
           <div class="live-activity-actions">
-            <button class="mini-approve-btn" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', true, 1)">✓ 允许</button>
-            <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false, 4)">拒绝</button>
+            <button class="mini-approve-btn" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', true, 1, '${esc(pendingAppInfo.app.agentId || "")}')">✓ 允许</button>
+            <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false, 4, '${esc(pendingAppInfo.app.agentId || "")}')">拒绝</button>
           </div>
         </div>
       ` : "";
@@ -1672,7 +1680,7 @@ function initHubController() {
 				sendBtn.textContent = "发送";
 			}
 		}
-		const trSig = s.transcript.slice(-6).map((m) => `${m.role}:${m.queuedCmdId || ""}:${(m.text || "").length}:${(m.text || "").slice(-32)}:${(m.thinking || "").length}:${(m.tools || []).length}:${m.waitingForInput ? 1 : 0}`).join("|");
+		const trSig = s.transcript.slice(-6).map((m) => `${m.role}:${m.queuedCmdId || ""}:${m.expiredCmdId || ""}:${(m.text || "").length}:${(m.text || "").slice(-32)}:${(m.thinking || "").length}:${(m.tools || []).length}:${m.waitingForInput ? 1 : 0}`).join("|");
 		const chatKey = `${s.id}:${s.status}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ""}:${(s.changedFiles || []).length}`;
 		if (chatKey === lastRenderedChatKey) return;
 		lastRenderedChatKey = chatKey;
@@ -1687,22 +1695,22 @@ function initHubController() {
 			text: s.rawLastPreview || s.lastPreview
 		}]).map((m, msgIdx) => {
 			if (m.role === "user") {
-				const queuedBadge = m.queuedCmdId ? `<div class="queued-cmd-pill"><span>⏳ 排队中（电脑上线后执行）</span><button class="cancel-queued-btn" onclick="event.stopPropagation(); cancelQueuedCommand('${esc(m.queuedCmdId)}')">✕ 取消</button></div>` : "";
+				const queuedBadge = m.queuedCmdId ? `<div class="queued-cmd-pill"><span>⏳ 排队中（电脑上线后执行）</span><button class="cancel-queued-btn" onclick="event.stopPropagation(); cancelQueuedCommand('${esc(m.queuedCmdId)}')">✕ 取消</button></div>` : m.expiredCmdId ? `<div class="queued-cmd-pill" style="background:rgba(239,68,68,0.18);color:#fecaca;"><span>⚠️ 电脑超过 10 分钟未上线，该指令已超时未执行</span></div>` : "";
 				return `<div class="bubble user"><div>${esc(m.text)}</div>${queuedBadge}</div>`;
 			}
 			const thinkId = `think-${msgIdx}`;
 			const thought = m.thinking ? `<details class="thought-box thinking-details" data-detail-id="${thinkId}" ${openDetailIds.has(thinkId) ? "open" : ""}><summary>💭 思考过程 (点击展开)</summary><div style="margin-top:6px;white-space:pre-wrap;">${esc(m.thinking)}</div></details>` : "";
 			if (m.isToolStepOnly) {
 				const toolOut = (m.tools || []).map((t) => t.commandLine || t.summary || "").filter(Boolean).join("\n");
-				const waitText = m.waitingForInput ? `<div style="margin-top:6px;font-size:12.5px;color:#64748b;">Waiting for user input.</div>` : "";
+				const waitText = m.waitingForInput ? `<div style="margin-top:6px;font-size:12.5px;color:var(--muted);">Waiting for user input.</div>` : "";
 				const stepToolId = `tool-step-${msgIdx}`;
 				return `
             <div class="bubble assistant" style="padding:10px 14px;">
               ${thought}
               <details class="tool-chip-details" data-detail-id="${stepToolId}" ${openDetailIds.has(stepToolId) ? "open" : ""} style="border:none;background:transparent;">
-                <summary style="padding:2px 0;font-size:13px;color:#334155;">
+                <summary style="padding:2px 0;font-size:13px;color:var(--text-secondary);">
                   <span>${esc(m.text)}</span>
-                  <span style="color:#94a3b8;font-size:11px;">›</span>
+                  <span style="color:var(--muted);font-size:11px;">›</span>
                 </summary>
                 ${toolOut ? `<div class="tool-chip-output" style="margin-top:6px;border-radius:6px;">${esc(toolOut)}</div>` : ""}
               </details>
@@ -2014,15 +2022,15 @@ function initHubController() {
 		setTimeout(fetchState, 250);
 		setTimeout(fetchState, 800);
 	}
-	async function sendApprovalDecision(hostId, code, allow, optionIndex = 1) {
+	async function sendApprovalDecision(hostId, code, allow, optionIndex = 1, explicitAgentId = "") {
 		window.__dshSettledApprovals = window.__dshSettledApprovals || {};
 		if (code) window.__dshSettledApprovals[code] = Date.now();
-		renderApp();
+		renderAll();
 		showToast(optionIndex === 2 ? "✅ 已批准并在当前会话始终允许" : optionIndex === 3 ? "✅ 已批准并始终允许该命令" : allow ? "✅ 已发送批准指令 (Option 1)" : "已拒绝/跳过该工具执行");
 		await dispatchHostCommand(hostId, {
 			type: "approval",
 			code,
-			agentId: activeSessionId || void 0,
+			agentId: explicitAgentId || activeSessionId || void 0,
 			allow: Boolean(allow),
 			optionIndex: Number(optionIndex) || (allow ? 1 : 4)
 		});
@@ -2089,7 +2097,7 @@ function initHubController() {
 			body.dataset.dshPreviewKey = previewKey;
 			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
 			const previewBodyHtml = kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-               <img src="${imagePreviewSrc(preview)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:46vh;object-fit:contain;border-radius:8px;" />
+               <img src="${imagePreviewSrc(preview)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:46vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回目录重新点击文件加载';" />
                <div style="font-size:12px;color:#94a3b8;">${esc(formatBytes(preview.size))} · 长按图片可保存到相册</div>
              </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:32px 16px;background:#0f172a;color:#94a3b8;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
                  <div style="font-size:32px;">📦</div>
@@ -2305,7 +2313,7 @@ function initHubController() {
 			container.dataset.dshPreviewKey = previewKey;
 			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
 			const previewBodyHtml = kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-               <img src="${imagePreviewSrc(preview)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;" />
+               <img src="${imagePreviewSrc(preview)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回文件列表重新点击加载';" />
                <div style="font-size:12px;color:#94a3b8;">${esc(formatBytes(preview.size))} · 长按图片可保存到相册</div>
              </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:36px 16px;background:#0f172a;color:#94a3b8;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
                  <div style="font-size:36px;">📦</div>
@@ -2336,7 +2344,10 @@ function initHubController() {
 		const filesListKey = `${host.hostId}:${fileProjectCwd}:${rootCwd}:${activeSubDir}:${loadingDir ? 1 : 0}:${listing?.at || 0}:${entries.length}:${projects.map((p) => p.cwd).join(",")}`;
 		if (container.dataset.dshFilesListKey === filesListKey && container.querySelector(".breadcrumbs-bar")) return;
 		container.dataset.dshFilesListKey = filesListKey;
-		const prevScrollTop = container.scrollTop;
+		const dirNavKey = `${host.hostId}:${rootCwd}:${activeSubDir}`;
+		const sameDirAsBefore = container.dataset.dshDirNavKey === dirNavKey;
+		container.dataset.dshDirNavKey = dirNavKey;
+		const prevScrollTop = sameDirAsBefore ? container.scrollTop : 0;
 		const crumbs = buildBreadcrumbSegments(activeSubDir);
 		const projectPillsHtml = `
         <div class="filter-strip" style="border-bottom:1px solid var(--hairline);">
@@ -2494,12 +2505,12 @@ function initHubController() {
 		if (!s) return;
 		document.getElementById("actionSheetTitle").innerHTML = `
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(s.title)}</span>
-        <button style="border:none;background:transparent;color:#64748b;font-size:18px;cursor:pointer;" onclick="closeSheet('taskActionSheet')">✕</button>
+        <button style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;" onclick="closeSheet('taskActionSheet')">✕</button>
       `;
 		document.getElementById("actionSheetBody").innerHTML = `
         <div style="margin-bottom:10px;display:flex;gap:6px;">
-          <input id="renameInlineInput" value="${esc(s.title)}" style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid #cbd5e1;font-size:15px;outline:none;" />
-          <button style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:0 14px;font-weight:600;cursor:pointer;" onclick="saveInlineRename()">保存标题</button>
+          <input id="renameInlineInput" value="${esc(s.title)}" style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--subtle);color:var(--text);font-size:15px;outline:none;" />
+          <button style="background:var(--primary);color:#fff;border:none;border-radius:10px;padding:0 14px;font-weight:600;cursor:pointer;" onclick="saveInlineRename()">保存标题</button>
         </div>
         <button class="action-item" onclick="togglePinTargetSession()">
           ${s.pinned ? "📌 取消置顶此对话" : "📌 置顶此对话（固定在列表最顶部）"}
@@ -2537,8 +2548,8 @@ function initHubController() {
 	async function shareTargetSession() {
 		if (!actionTargetSession) return;
 		const targetHost = (hubState.hosts || []).find((h) => h.hostId === actionTargetHostId);
-		if (!targetHost || !targetHost.online) {
-			showToast("⚠️ 该电脑当前离线，无法生成端到端加密分享");
+		if (!targetHost || !targetHost.online || targetHost.activelyConnected === false) {
+			showToast("⚠️ 该电脑当前离线或休眠，无法生成端到端加密分享");
 			return;
 		}
 		const targetTitle = actionTargetSession.title || "会话回放";
@@ -2664,7 +2675,7 @@ function initHubController() {
 			body.innerHTML = `
           <div style="text-align:center;padding:8px 4px 14px;">
             <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
-              在新手机打开总控台网址，直接在解锁框输入以下 <strong>6 位数字配对码</strong> 即可免输长密码登录：
+              在新手机打开总控台网址，直接在解锁框输入以下 <strong>6 位字母/数字配对码</strong> 即可免输长密码登录：
             </div>
             <div
               style="font-family:var(--mono);font-size:34px;font-weight:800;letter-spacing:8px;padding:16px 12px;border-radius:14px;background:var(--primary-soft);color:var(--primary);border:1px solid var(--border);user-select:all;"
@@ -2745,7 +2756,7 @@ function initHubController() {
 				shareUrl: h.lastShareResult?.shareUrl || ""
 			})),
 			shares: shares.map((s) => ({
-				id: s.shareId,
+				id: s.id || s.shareId,
 				at: s.createdAt
 			}))
 		});
@@ -2881,7 +2892,7 @@ function initHubController() {
                     <div class="settings-item-title">${esc(s.title || "加密会话回放")}</div>
                     <div class="settings-item-desc">来自 ${esc(s.hostName || s.hostId || "远端电脑")} · ${formatTime(s.createdAt)} · ${formatBytes(s.sizeBytes || 0)}</div>
                   </div>
-                  <button class="pill-action-btn" style="color:var(--red);" onclick="deleteShareRecord('${esc(s.shareId)}')">🗑️ 销毁</button>
+                  <button class="pill-action-btn" style="color:var(--red);" onclick="deleteShareRecord('${esc(s.id || s.shareId)}')">🗑️ 销毁</button>
                 </div>
               `).join("") : `
                 <div class="settings-item">
@@ -2919,7 +2930,7 @@ function initHubController() {
               <div class="settings-item">
                 <div>
                   <div class="settings-item-title">添加新手机（6 位免密配对码）</div>
-                  <div class="settings-item-desc">生成 3 分钟有效的一次性 6 位数字配对码，新手机免输长密码直接解锁</div>
+                  <div class="settings-item-desc">生成 3 分钟有效的一次性 6 位字母/数字配对码，新手机免输长密码直接解锁</div>
                 </div>
                 <button class="pill-action-btn primary" onclick="openPairingCodeSheet()">📱 生成配对码</button>
               </div>
@@ -3136,14 +3147,14 @@ function initHubController() {
 		body.innerHTML = `
         <div class="form-label">1. 选择迁移方向</div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-          <div style="flex:1;padding:10px 12px;border-radius:12px;background:var(--subtle);text-align:center;font-weight:700;font-size:14px;">
+          <div style="flex:1;padding:10px 12px;border-radius:12px;background:var(--subtle);border:1px solid var(--border);text-align:center;font-weight:700;font-size:14px;color:var(--text);">
             💻 ${esc(srcObj?.hostName || migSource)}
-            <div style="font-size:11px;color:#64748b;font-weight:400;margin-top:2px;">源电脑</div>
+            <div style="font-size:11px;color:var(--muted);font-weight:400;margin-top:2px;">源电脑</div>
           </div>
           <button class="pill-action-btn" onclick="swapMigrateHosts()">⇄ 互换</button>
-          <div style="flex:1;padding:10px 12px;border-radius:12px;background:var(--primary-soft);border:1px solid #bfdbfe;text-align:center;font-weight:700;font-size:14px;color:var(--primary);">
+          <div style="flex:1;padding:10px 12px;border-radius:12px;background:var(--primary-soft);border:1px solid var(--border);text-align:center;font-weight:700;font-size:14px;color:var(--primary);">
             💻 ${esc(dstObj?.hostName || migTarget)}
-            <div style="font-size:11px;color:#3b82f6;font-weight:400;margin-top:2px;">目标电脑</div>
+            <div style="font-size:11px;color:var(--primary);font-weight:400;margin-top:2px;">目标电脑</div>
           </div>
         </div>
 
@@ -3270,17 +3281,17 @@ function initHubController() {
 		const list = document.getElementById("hostOptionList");
 		list.innerHTML = [`<div class="host-option ${currentHostId === "ALL_HOSTS" ? "selected" : ""}" onclick="selectHost('ALL_HOSTS')">
           <div>
-            <div style="font-weight:700;font-size:15px;">🌐 全部电脑汇总</div>
-            <div style="font-size:12.5px;color:#64748b;margin-top:2px;">一屏混排查看 ${hosts.length} 台电脑共 ${totalCount} 条会话</div>
+            <div style="font-weight:700;font-size:15px;color:var(--text);">🌐 全部电脑汇总</div>
+            <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">一屏混排查看 ${hosts.length} 台电脑共 ${totalCount} 条会话</div>
           </div>
-          <span style="font-size:13px;font-weight:600;color:#2563eb;">${currentHostId === "ALL_HOSTS" ? "当前视图 ✓" : "切换 ›"}</span>
+          <span style="font-size:13px;font-weight:600;color:var(--primary);">${currentHostId === "ALL_HOSTS" ? "当前视图 ✓" : "切换 ›"}</span>
         </div>`, ...hosts.map((h) => `
           <div class="host-option ${h.hostId === currentHostId ? "selected" : ""}" onclick="selectHost('${esc(h.hostId)}')">
             <div>
-              <div style="font-weight:700;font-size:15px;">${h.online ? "🟢" : "⚪"} ${esc(h.hostName)}</div>
-              <div style="font-size:12.5px;color:#64748b;margin-top:2px;">${(h.bridgeState?.tasks || []).length} 条会话 · ${h.isFeishuActive ? "🎯 飞书当前主控" : h.online ? "在线待命" : "离线"}</div>
+              <div style="font-weight:700;font-size:15px;color:var(--text);">${h.online ? "🟢" : "⚪"} ${esc(h.hostName)}</div>
+              <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${(h.bridgeState?.tasks || []).length} 条会话 · ${h.isFeishuActive ? "🎯 飞书当前主控" : h.online ? "在线待命" : "离线"}</div>
             </div>
-            <span style="font-size:13px;font-weight:600;color:#2563eb;">${h.hostId === currentHostId ? "当前设备 ✓" : "切换 ›"}</span>
+            <span style="font-size:13px;font-weight:600;color:var(--primary);">${h.hostId === currentHostId ? "当前设备 ✓" : "切换 ›"}</span>
           </div>
         `)].join("");
 		openSheet("hostSheet");
@@ -3403,7 +3414,7 @@ function initHubController() {
 		const body = document.getElementById("turboGuideBody");
 		const oneStepCmd = `git clone https://github.com/oscarka/deepseekharness-remotecontrol.git ~/deepseekharness-remote && cd ~/deepseekharness-remote && ./connect-host.sh "电脑名称" "${currentTk}"`;
 		body.innerHTML = `
-        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px;margin-bottom:14px;font-size:13px;color:#166534;line-height:1.5;">
+        <div style="background:var(--green-soft);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:14px;font-size:13px;color:var(--text);line-height:1.5;">
           <strong>🦀 Rust 原生极速引擎 + 双向 SSE 实时流 (dsh-turbo)</strong><br/>
           对 DeepSeek Harness / Antigravity IDE / Codex 本体 <strong>100% 零改动</strong>，通过只读监听日志文件末尾字节与 macOS 原生 CGEvent 按键注入，将延迟从 3~10 秒压至 <strong>&lt;200ms</strong>。
         </div>
@@ -3417,13 +3428,13 @@ function initHubController() {
 			return `
               <div style="border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--subtle);">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-                  <strong style="font-size:14px;">${h.online ? "🟢" : "⚪"} ${esc(h.hostName)}</strong>
-                  <span style="font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:${isTurbo ? "#dcfce7" : "#fef3c7"};color:${isTurbo ? "#15803d" : "#b45309"};">
+                  <strong style="font-size:14px;color:var(--text);">${h.online ? "🟢" : "⚪"} ${esc(h.hostName)}</strong>
+                  <span style="font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:${isTurbo ? "var(--green-soft)" : "var(--amber-soft)"};color:${isTurbo ? "var(--green)" : "var(--amber)"};">
                     ${esc(tb?.engineLabel || "🐢 标准轮询模式")}
                   </span>
                 </div>
-                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">
-                  辅助功能遥控权限：${axOk ? "<span style=\"color:#16a34a;font-weight:600;\">✅ 已授权 (支持 1ms 审批点击)</span>" : "<span style=\"color:#d97706;font-weight:600;\">⚠️ 待开启或待升级</span>"}
+                <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">
+                  辅助功能遥控权限：${axOk ? "<span style=\"color:var(--green);font-weight:600;\">✅ 已授权 (支持 1ms 审批点击)</span>" : "<span style=\"color:var(--amber);font-weight:600;\">⚠️ 待开启或待升级</span>"}
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                   <button class="pill-action-btn primary" style="font-size:12px;padding:5px 11px;" onclick="upgradeHostTurbo('${esc(h.hostId)}')">
@@ -3435,21 +3446,21 @@ function initHubController() {
                 </div>
               </div>
             `;
-		}).join("") || `<div style="padding:14px;text-align:center;color:#94a3b8;font-size:13px;">暂未检测到已接入的电脑</div>`}
+		}).join("") || `<div style="padding:14px;text-align:center;color:var(--muted);font-size:13px;">暂未检测到已接入的电脑</div>`}
         </div>
 
         <div class="form-label">2. 如何让手机遥控最流畅最快（3 步指南）</div>
-        <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px;color:#334155;line-height:1.55;margin-bottom:14px;">
-          <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid var(--border);">
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px;color:var(--text-secondary);line-height:1.55;margin-bottom:14px;">
+          <div style="padding:10px 12px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);color:var(--text);">
             <strong>① 一步命令接入（自动启用 Rust 加速 + 免二次安装）</strong><br/>
             新电脑只需运行一次 <code>./connect-host.sh</code>，脚本会自动寻找系统或 IDE 内置运行时、挂载 <code>dsh-turbo</code> 预编译 Rust 加速模块，并自动弹出 macOS 辅助功能授权框。<br/>
             <button class="pill-action-btn" style="margin-top:6px;font-size:11.5px;padding:4px 10px;" onclick="copyCodeText('${encodeURIComponent(oneStepCmd)}')">📋 复制一键满血接入命令</button>
           </div>
-          <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid var(--border);">
+          <div style="padding:10px 12px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);color:var(--text);">
             <strong>② 勾选 macOS「辅助功能」权限</strong><br/>
             若手机点审批时电脑未自动按下回车，点上方「🔓 在电脑弹出辅助功能授权框」，在电脑弹出的「系统设置 → 隐私与安全性 → 辅助功能」中打开开关即可。
           </div>
-          <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid var(--border);">
+          <div style="padding:10px 12px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);color:var(--text);">
             <strong>③ iPhone Safari 添加到主屏幕 + 开启锁屏推送</strong><br/>
             在 Safari 点底部「分享 → 添加到主屏幕」，从桌面独立图标打开并开启锁屏推送，获得原生 App 级全屏帧率与锁屏秒级提醒。
           </div>
@@ -3883,12 +3894,6 @@ function initHubController() {
 		connectSSE();
 		fetchState();
 	}
-	if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => {
-		if (document.visibilityState === "visible") {
-			fetchState();
-			if (!sseConnected || Date.now() - lastSseEventAt > 15e3) connectSSE();
-		}
-	});
 	if (typeof window !== "undefined") {
 		window.addEventListener("online", () => {
 			setConnectionBanner(false);

@@ -519,6 +519,54 @@ export function parseAntigravityTranscript(jsonlText, {
     }
   }
 
+  // Fallback: if LanguageServer live summary explicitly reports a waiting step (`CORTEX_STEP_STATUS_WAITING`)
+  // even after a GENERIC tool output line from a parallel tool call, surface the pending approval.
+  if (hasLiveSummary && !pendingApproval && Array.isArray(liveWaitingSteps) && liveWaitingSteps.length > 0) {
+    const activeLiveWaiting = liveWaitingSteps[liveWaitingSteps.length - 1]
+    const livePermSpec = activeLiveWaiting?.step?.requestedInteraction?.permission
+      || (activeLiveWaiting?.step?.requestedInteraction?.interaction?.case === 'permission'
+        ? activeLiveWaiting.step.requestedInteraction.interaction.value
+        : null)
+    const waitingStepIndex = activeLiveWaiting?.step?.metadata?.sourceTrajectoryStepInfo?.stepIndex
+      ?? activeLiveWaiting?.stepIndex
+      ?? lines.length
+    const waitingTrajectoryId = activeLiveWaiting?.step?.metadata?.sourceTrajectoryStepInfo?.trajectoryId
+      || conversationId
+    const code = `AGY-${String(conversationId).slice(0, 6).toUpperCase()}-${waitingStepIndex}`
+    if (!settledApprovals.has(code)) {
+      const targetCmd = String(livePermSpec?.resource?.target || '').trim()
+      const actDesc = String(livePermSpec?.actionDescription || 'command execution').trim()
+      const lowerAct = actDesc ? actDesc.charAt(0).toLowerCase() + actDesc.slice(1) : 'command execution'
+      const firstSub = (targetCmd.split(/\s*(?:&&|\|\||;|\n)\s*/)[0] || targetCmd).trim()
+      const persistLabel = String(livePermSpec?.suggestedPersistPattern || firstSub || targetCmd).trim()
+      pendingApproval = {
+        code,
+        stepIndex: waitingStepIndex,
+        waitingStepIndex,
+        trajectoryId: waitingTrajectoryId,
+        permissionAction: livePermSpec?.resource?.action || 'unsandboxed',
+        permissionTarget: targetCmd,
+        suggestedPersistPattern: livePermSpec?.suggestedPersistPattern || '',
+        persistSuggestionType: livePermSpec?.persistSuggestionType || '',
+        harness: 'antigravity-ide',
+        toolName: livePermSpec?.resource?.action ? `permission (${livePermSpec.resource.action})` : 'run_command (BypassSandbox)',
+        promptTitle: `Allow ${lowerAct}?`,
+        subtitle: String(livePermSpec?.reason || 'the auto-run safety check did not reach a decision'),
+        commandLine: targetCmd || '请求宿主机终端执行权限',
+        firstSubcommand: firstSub,
+        options: [
+          { index: 1, label: 'Yes, allow this time' },
+          { index: 2, label: persistLabel ? `Yes, and always allow '${persistLabel}' in this conversation` : 'Yes, and always allow in this conversation' },
+          { index: 3, label: persistLabel ? `Yes, and always allow '${persistLabel}'` : 'Yes, and always allow' },
+          { index: 4, label: 'No (tell the agent what to do instead)' },
+        ],
+        reason: `${actDesc ? `${actDesc}: ` : ''}${targetCmd || '请求宿主机终端执行权限'}`.slice(0, 2000),
+        createdAt: lastActivity || now,
+        expiresAt: (lastActivity || now) + 10 * 60 * 1000,
+      }
+    }
+  }
+
   if (transcript.length === 0) return null
 
   const sessionId = `${AGY_IDE_PREFIX}${conversationId}`
@@ -599,6 +647,7 @@ export function parseAntigravityTranscript(jsonlText, {
     runningSummary: runningSummary || lastOutput,
     queuedSteers: [],
     changedFiles,
+    hasLiveSummary: Boolean(hasLiveSummary),
     transcript: transcript.slice(-maxMessages),
     pendingApproval: pendingApproval
       ? {
@@ -875,8 +924,8 @@ export async function loadAntigravityIdeSessions({
     }
   }
 
-  // If any session has a pendingApproval, check if the command is ALREADY approved and running on the computer
-  const pendingSessions = sessions.filter(s => s.pendingApproval?.commandLine)
+  // If any session has a pendingApproval without live LanguageServer summary, check if the command is ALREADY approved and running on the computer
+  const pendingSessions = sessions.filter(s => s.pendingApproval?.commandLine && !s.hasLiveSummary)
   if (pendingSessions.length > 0) {
     const psNorm = await getCachedRunningCommandsSnapshot()
 
@@ -951,7 +1000,7 @@ async function loadLiveTrajectorySummaries({ minFreshAt = 0 } = {}) {
     await Promise.all(
       hubs.map(async hub => {
         const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), 450)
+        const timer = setTimeout(() => controller.abort(), 900)
         timer.unref?.()
         try {
           const resp = await globalThis.fetch(
@@ -1022,84 +1071,104 @@ export async function discoverAntigravityHubInstances({
     })
   }
 
-  if (execImpl === execFileAsync) {
-    const now = Date.now()
-    if (cachedRawHubInstances && now - cachedRawHubInstancesAt < 10_000) {
-      for (const inst of cachedRawHubInstances) addInstance(inst)
-    } else {
-      try {
-        const { stdout } = await execFileAsync('ps', ['-ax', '-o', 'pid=,command='], { timeout: 2000 })
-        const standalonePids = []
-        for (const rawLine of String(stdout || '').split('\n')) {
-          const line = rawLine.trim()
-          if (!line) continue
-          const pidMatch = line.match(/^(\d+)\s+(.*)$/)
-          const pid = pidMatch ? pidMatch[1] : ''
-          const cmdLine = pidMatch ? pidMatch[2] : line
+  const isDefaultExec = execImpl === execFileAsync
+  const now = Date.now()
+  if (isDefaultExec && cachedRawHubInstances && cachedRawHubInstances.length > 0 && now - cachedRawHubInstancesAt < 10_000) {
+    for (const inst of cachedRawHubInstances) addInstance(inst)
+  } else if (typeof execImpl === 'function') {
+    try {
+      const { stdout } = await execImpl('ps', ['-ax', '-o', 'pid=,command='], { timeout: 2500 })
+      const standalonePids = []
+      for (const rawLine of String(stdout || '').split('\n')) {
+        const line = rawLine.trim()
+        if (!line) continue
+        const pidMatch = line.match(/^(\d+)\s+(.*)$/)
+        const pid = pidMatch ? pidMatch[1] : '0'
+        const cmdLine = pidMatch ? pidMatch[2] : line
 
-          if (cmdLine.includes('--hub') && cmdLine.includes('--hub-port=') && cmdLine.includes('--csrf_token=')) {
-            const portMatch = cmdLine.match(/--hub-port=(\d+)/)
-            const csrfMatch = cmdLine.match(/--csrf_token=([^\s]+)/)
-            const dirs = [...cmdLine.matchAll(/--add-dir=([^\s]+)/g)].map(m => m[1])
-            const binMatch = cmdLine.match(/^(\S+\/agy)\b/)
-            if (portMatch && csrfMatch) {
-              addInstance({
-                address: `127.0.0.1:${portMatch[1]}`,
-                port: Number(portMatch[1]),
-                csrfToken: csrfMatch[1],
-                addDir: dirs[0] || '',
-                addDirs: dirs,
-                binPath: binMatch ? binMatch[1] : '',
-                kind: 'agy-hub',
-              })
-            }
-            continue
+        if (cmdLine.includes('--hub') && cmdLine.includes('--hub-port=') && cmdLine.includes('--csrf_token=')) {
+          const portMatch = cmdLine.match(/--hub-port=(\d+)/)
+          const csrfMatch = cmdLine.match(/--csrf_token=([^\s]+)/)
+          const dirs = [...cmdLine.matchAll(/--add-dir=([^\s]+)/g)].map(m => m[1])
+          const binMatch = cmdLine.match(/^(\S+\/agy)\b/)
+          if (portMatch && csrfMatch) {
+            addInstance({
+              address: `127.0.0.1:${portMatch[1]}`,
+              port: Number(portMatch[1]),
+              csrfToken: csrfMatch[1],
+              addDir: dirs[0] || '',
+              addDirs: dirs,
+              binPath: binMatch ? binMatch[1] : '',
+              kind: 'agy-hub',
+            })
           }
-
-          if (cmdLine.includes('language_server') && cmdLine.includes('--csrf_token') && pid) {
-            const csrfMatch = cmdLine.match(/--csrf_token[= ]([^\s]+)/)
-            const binMatch = cmdLine.match(/^(\S+\/language_server)\b/)
-            if (csrfMatch) {
-              standalonePids.push({
-                pid,
-                csrfToken: csrfMatch[1],
-                binPath: binMatch ? binMatch[1] : '',
-              })
-            }
-          }
+          continue
         }
 
-        for (const lsProc of standalonePids) {
+        if (cmdLine.includes('language_server') && cmdLine.includes('--csrf_token') && pid) {
+          const csrfMatch = cmdLine.match(/--csrf_token[= ]([^\s]+)/)
+          const binMatch = cmdLine.match(/^(\S+\/language_server[^\s]*)/)
+          if (csrfMatch) {
+            standalonePids.push({
+              pid,
+              csrfToken: csrfMatch[1],
+              binPath: binMatch ? binMatch[1] : '',
+            })
+          }
+        }
+      }
+
+      for (const lsProc of standalonePids) {
+        try {
+          let lsofRes
           try {
-            const { stdout: lsofOut } = await execFileAsync(
+            lsofRes = await execImpl(
               'lsof',
               ['-Pan', '-p', lsProc.pid, '-iTCP', '-sTCP:LISTEN'],
-              { timeout: 1500 },
+              { timeout: 3500 },
             )
-            // LanguageServer HTTP port is typically the second listening port after the gRPC port; collect first 3 loopback ports
-            const ports = [...String(lsofOut || '').matchAll(/127\.0\.0\.1:(\d+)/g)].map(m => Number(m[1]))
-            for (const p of ports.slice(0, 3)) {
-              addInstance({
-                address: `127.0.0.1:${p}`,
-                port: p,
-                csrfToken: lsProc.csrfToken,
-                binPath: lsProc.binPath,
-                kind: 'ls-standalone',
-              })
+          } catch (lsofErr) {
+            if (isDefaultExec && lsofErr?.code === 'ENOENT') {
+              lsofRes = await execImpl(
+                '/usr/sbin/lsof',
+                ['-Pan', '-p', lsProc.pid, '-iTCP', '-sTCP:LISTEN'],
+                { timeout: 3500 },
+              )
+            } else {
+              throw lsofErr
             }
-          } catch {
-            // ignore lsof failure
           }
+          const lsofOut = lsofRes?.stdout
+          const ports = [
+            ...new Set(
+              [...String(lsofOut || '').matchAll(/(?:127\.0\.0\.1|localhost|\*|\[::1\]):(\d+)/g)]
+                .map(m => Number(m[1]))
+                .filter(Boolean),
+            ),
+          ]
+          for (const p of ports.slice(0, 8)) {
+            addInstance({
+              address: `127.0.0.1:${p}`,
+              port: p,
+              csrfToken: lsProc.csrfToken,
+              binPath: lsProc.binPath,
+              kind: 'ls-standalone',
+            })
+          }
+        } catch {
+          // ignore lsof failure
         }
+      }
+      if (isDefaultExec && instances.length > 0) {
         cachedRawHubInstances = instances.map(inst => ({ ...inst }))
         cachedRawHubInstancesAt = now
-      } catch {
-        // ignore ps failure
       }
+    } catch {
+      // ignore ps failure
     }
   }
 
-  if (process.env.ANTIGRAVITY_LS_ADDRESS && process.env.ANTIGRAVITY_CSRF_TOKEN) {
+  if ((isDefaultExec || instances.length === 0) && process.env.ANTIGRAVITY_LS_ADDRESS && process.env.ANTIGRAVITY_CSRF_TOKEN) {
     addInstance({
       address: process.env.ANTIGRAVITY_LS_ADDRESS,
       csrfToken: process.env.ANTIGRAVITY_CSRF_TOKEN,
@@ -1329,7 +1398,40 @@ export async function executeAntigravityIdeAction(action, {
 
             const liveSummary = targetConvId ? summaries[targetConvId] : null
             const waitingSteps = Array.isArray(liveSummary?.waitingSteps) ? liveSummary.waitingSteps : []
-            const waitingEntry = waitingSteps[waitingSteps.length - 1] || null
+            let waitingEntry = waitingSteps[waitingSteps.length - 1] || null
+
+            if (!waitingEntry && targetConvId && sumResp?.ok) {
+              try {
+                const stepsResp = await fetchImpl(
+                  `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetCascadeTrajectorySteps`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'x-codeium-csrf-token': hub.csrfToken,
+                    },
+                    body: JSON.stringify({ cascadeId: targetConvId, stepOffset: 0 }),
+                  },
+                )
+                if (stepsResp?.ok) {
+                  const stepsData = await stepsResp.json().catch(() => null)
+                  const stepsList = Array.isArray(stepsData?.steps) ? stepsData.steps : []
+                  for (let idx = stepsList.length - 1; idx >= 0; idx -= 1) {
+                    const st = stepsList[idx]
+                    if (st?.status === 'CORTEX_STEP_STATUS_WAITING' || st?.requestedInteraction) {
+                      waitingEntry = {
+                        stepIndex: st?.metadata?.sourceTrajectoryStepInfo?.stepIndex ?? idx,
+                        step: st,
+                      }
+                      break
+                    }
+                  }
+                }
+              } catch {
+                // ignore step probe failure
+              }
+            }
+
             const stepIndex =
               waitingEntry?.step?.metadata?.sourceTrajectoryStepInfo?.stepIndex ??
               waitingEntry?.stepIndex ??
@@ -1345,9 +1447,12 @@ export async function executeAntigravityIdeAction(action, {
 
             if (Number.isInteger(stepIndex) && stepIndex >= 0 && targetConvId) {
               const reqInt = waitingEntry?.step?.requestedInteraction || null
-              const permReq = reqInt?.permission || null
-              const runCmdReq = reqInt?.runCommand || null
-              const filePermReq = reqInt?.filePermission || null
+              const permReq = reqInt?.permission
+                || (reqInt?.interaction?.case === 'permission' ? reqInt.interaction.value : null)
+              const runCmdReq = reqInt?.runCommand
+                || (reqInt?.interaction?.case === 'runCommand' ? reqInt.interaction.value : null)
+              const filePermReq = reqInt?.filePermission
+                || (reqInt?.interaction?.case === 'filePermission' ? reqInt.interaction.value : null)
 
               const interaction = {
                 trajectoryId: trajectoryId || targetConvId,
@@ -1368,7 +1473,7 @@ export async function executeAntigravityIdeAction(action, {
                 }
               } else if (filePermReq && !permReq) {
                 const scope = !allow
-                  ? 'PERMISSION_SCOPE_UNSPECIFIED'
+                  ? 'PERMISSION_SCOPE_ONCE'
                   : optionIndex === 2
                     ? 'PERMISSION_SCOPE_CONVERSATION'
                     : optionIndex === 3
@@ -1381,7 +1486,7 @@ export async function executeAntigravityIdeAction(action, {
                 }
               } else {
                 const scope = !allow
-                  ? 'PERMISSION_SCOPE_UNSPECIFIED'
+                  ? 'PERMISSION_SCOPE_ONCE'
                   : optionIndex === 2
                     ? 'PERMISSION_SCOPE_CONVERSATION'
                     : optionIndex === 3
@@ -1389,26 +1494,39 @@ export async function executeAntigravityIdeAction(action, {
                       : 'PERMISSION_SCOPE_ONCE'
                 const allowPatterns = []
                 if (allow && (optionIndex === 2 || optionIndex === 3)) {
+                  const permAction = String(
+                    permReq?.resource?.action ||
+                      action?.pendingApproval?.permissionAction ||
+                      'unsandboxed',
+                  ).trim() || 'unsandboxed'
+                  const rawTarget = String(
+                    permReq?.resource?.target ||
+                      action?.pendingApproval?.permissionTarget ||
+                      action?.pendingApproval?.commandLine ||
+                      action?.pendingApproval?.command ||
+                      '',
+                  ).trim()
                   const suggested = String(
                     permReq?.suggestedPersistPattern || action?.pendingApproval?.suggestedPersistPattern || '',
                   ).trim()
-                  const cmdLine = String(
-                    action?.pendingApproval?.commandLine || action?.pendingApproval?.command || '',
-                  ).trim()
+                  const wrapGrant = pat => (/^[a-z_]+\([\s\S]*\)$/i.test(pat) ? pat : `${permAction}(${pat})`)
                   if (suggested) {
-                    allowPatterns.push(suggested)
-                  } else if (cmdLine) {
-                    const firstTokens = cmdLine.split(/\s+/).slice(0, 2).join(' ')
-                    if (firstTokens) allowPatterns.push(`unsandboxed(${firstTokens} *)`)
+                    allowPatterns.push(wrapGrant(suggested))
+                  } else if (rawTarget) {
+                    allowPatterns.push(wrapGrant(rawTarget))
                   }
                 }
                 interaction.permission = {
                   allow,
                   scope,
-                  persistGrants: {
-                    allow: allowPatterns,
-                    deny: [],
-                  },
+                  ...(allowPatterns.length > 0
+                    ? {
+                        persistGrants: {
+                          allow: allowPatterns,
+                          deny: [],
+                        },
+                      }
+                    : {}),
                 }
               }
 
