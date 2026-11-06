@@ -24,6 +24,7 @@ export class HubCore {
     this.totalCommandsExecuted = 0
     this.vapidKeys = generateOrLoadVapidKeys()
     this.pushSubscriptions = new Map()
+    this.unsubscribedEndpoints = new Set()
     this.pushedApprovalCodes = new Set()
     this.hostTaskStates = new Map()
     this.pushHistory = []
@@ -235,6 +236,7 @@ export class HubCore {
       updatedAt: this.now(),
       lastSentAt: existing?.lastSentAt || 0,
     }
+    this.unsubscribedEndpoints.delete(endpoint)
     this.pushSubscriptions.set(endpoint, record)
     void this.persist()
     this.emitStateChange('push_subscribed')
@@ -253,6 +255,7 @@ export class HubCore {
     const target = String(idOrEndpoint ?? '').trim()
     if (!target) return { ok: false }
     if (this.pushSubscriptions.has(target)) {
+      this.unsubscribedEndpoints.add(target)
       this.pushSubscriptions.delete(target)
       void this.persist()
       this.emitStateChange('push_unsubscribed')
@@ -260,6 +263,7 @@ export class HubCore {
     }
     for (const [ep, sub] of this.pushSubscriptions) {
       if (sub.id === target) {
+        this.unsubscribedEndpoints.add(ep)
         this.pushSubscriptions.delete(ep)
         void this.persist()
         this.emitStateChange('push_unsubscribed')
@@ -489,6 +493,20 @@ export class HubCore {
       }
     }
 
+    if (Array.isArray(payload.pushSubscriptionsBackup) && payload.pushSubscriptionsBackup.length > 0) {
+      for (const sub of payload.pushSubscriptionsBackup) {
+        if (
+          sub?.endpoint &&
+          sub?.keys?.p256dh &&
+          sub?.keys?.auth &&
+          !this.pushSubscriptions.has(sub.endpoint) &&
+          !this.unsubscribedEndpoints.has(sub.endpoint)
+        ) {
+          this.pushSubscriptions.set(sub.endpoint, sub)
+        }
+      }
+    }
+
     if (payload.bridgeState) {
       this.detectAndTriggerWebPush(hostId, hostName, payload.bridgeState)
     }
@@ -511,6 +529,7 @@ export class HubCore {
       shouldConnectFeishu: this.activeHostId === hostId,
       commands,
       hostsSummary: this.getHostsSummary(),
+      pushSubscriptionsBackup: [...this.pushSubscriptions.values()],
     }
   }
 
