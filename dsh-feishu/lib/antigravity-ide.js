@@ -537,15 +537,27 @@ async function loadAntigravityMetadataForCandidates(brainDirs, candidates) {
     try {
       const pbBuf = await readFile(join(agyRoot, 'agyhub_summaries_proto.pb'))
       const pbStr = pbBuf.toString('utf8')
+      const fileUriNeedle = Buffer.from('file:///')
       for (const item of candidates) {
-        const idx = pbStr.indexOf(item.convId)
-        if (idx === -1) continue
-        const slice = pbStr.slice(idx, idx + 600)
+        const bufIdx = pbBuf.indexOf(item.convId)
+        if (bufIdx === -1) continue
+        const subBuf = pbBuf.subarray(bufIdx, Math.min(pbBuf.length, bufIdx + 650))
+        const slice = pbStr.slice(pbStr.indexOf(item.convId), pbStr.indexOf(item.convId) + 600)
         const existing = metaMap.get(item.convId) || { title: '', workspace: null }
-        const wsMatch = slice.match(/file:\/\/(\/Users\/[^"\r\n\x00-\x1f]+|\/home\/[^"\r\n\x00-\x1f]+)/)
-        if (wsMatch && !existing.workspace) {
-          const ws = inferWorkspaceFromPath(wsMatch[1])
-          if (ws) existing.workspace = ws
+        const uriRel = subBuf.indexOf(fileUriNeedle)
+        if (uriRel > 0 && !existing.workspace) {
+          const uriLen = subBuf[uriRel - 1]
+          let extractedPath = ''
+          if (uriLen >= 9 && uriLen < 180 && uriRel + uriLen <= subBuf.length) {
+            extractedPath = subBuf.subarray(uriRel + 7, uriRel + uriLen).toString('utf8')
+          } else {
+            const wsMatch = slice.match(/file:\/\/(\/Users\/[^"\r\n\x00-\x1f]+|\/home\/[^"\r\n\x00-\x1f]+)/)
+            if (wsMatch) extractedPath = wsMatch[1].replace(/B[\x20-\x7e].*$/, '')
+          }
+          if (extractedPath) {
+            const ws = inferWorkspaceFromPath(extractedPath)
+            if (ws) existing.workspace = ws
+          }
         }
         const titleMatch = slice.match(/\n\$([^\x00-\x1f\r\n]{2,90})/)
         if (titleMatch && !existing.title) {
@@ -782,7 +794,8 @@ export async function loadAntigravityIdeSessions({
 }
 
 /**
- * Discover running Antigravity IDE LanguageServer (`agy --hub --hub-port=<PORT> --csrf_token=<TOKEN>`) instances.
+ * Discover running Antigravity IDE LanguageServer (`agy --hub --hub-port=<PORT> --csrf_token=<TOKEN>`
+ * as well as standalone `Antigravity.app` `language_server --csrf_token <TOKEN>`) instances.
  * Prioritizes the instance whose `--add-dir` matches `preferredCwd`.
  */
 export async function discoverAntigravityHubInstances({
@@ -792,18 +805,92 @@ export async function discoverAntigravityHubInstances({
   const instances = []
   const seenAddresses = new Set()
 
-  const addInstance = ({ address, port, csrfToken, addDir = '', binPath = '' }) => {
-    const normAddr = String(address || (port ? `127.0.0.1:${port}` : '')).trim()
+  const addInstance = ({ address, port, csrfToken, addDir = '', addDirs = [], binPath = '', kind = 'agy-hub' }) => {
+    const rawAddr = String(address || (port ? `127.0.0.1:${port}` : '')).trim()
+    const normAddr = rawAddr.replace(/^localhost:/i, '127.0.0.1:')
     const token = String(csrfToken || '').trim()
     if (!normAddr || !token || seenAddresses.has(normAddr)) return
     seenAddresses.add(normAddr)
+    const cleanDirs = [...new Set([...(Array.isArray(addDirs) ? addDirs : []), addDir].map(d => String(d || '').trim()).filter(Boolean))]
     instances.push({
       address: normAddr,
       port: Number(port) || Number(normAddr.split(':')[1]) || 0,
       csrfToken: token,
-      addDir: String(addDir || '').trim(),
+      addDir: cleanDirs[0] || '',
+      addDirs: cleanDirs,
       binPath: String(binPath || '').trim(),
+      kind,
     })
+  }
+
+  if (execImpl === execFileAsync) {
+    try {
+      const { stdout } = await execFileAsync('ps', ['-ax', '-o', 'pid=,command='], { timeout: 2000 })
+      const standalonePids = []
+      for (const rawLine of String(stdout || '').split('\n')) {
+        const line = rawLine.trim()
+        if (!line) continue
+        const pidMatch = line.match(/^(\d+)\s+(.*)$/)
+        const pid = pidMatch ? pidMatch[1] : ''
+        const cmdLine = pidMatch ? pidMatch[2] : line
+
+        if (cmdLine.includes('--hub') && cmdLine.includes('--hub-port=') && cmdLine.includes('--csrf_token=')) {
+          const portMatch = cmdLine.match(/--hub-port=(\d+)/)
+          const csrfMatch = cmdLine.match(/--csrf_token=([^\s]+)/)
+          const dirs = [...cmdLine.matchAll(/--add-dir=([^\s]+)/g)].map(m => m[1])
+          const binMatch = cmdLine.match(/^(\S+\/agy)\b/)
+          if (portMatch && csrfMatch) {
+            addInstance({
+              address: `127.0.0.1:${portMatch[1]}`,
+              port: Number(portMatch[1]),
+              csrfToken: csrfMatch[1],
+              addDir: dirs[0] || '',
+              addDirs: dirs,
+              binPath: binMatch ? binMatch[1] : '',
+              kind: 'agy-hub',
+            })
+          }
+          continue
+        }
+
+        if (cmdLine.includes('language_server') && cmdLine.includes('--csrf_token') && pid) {
+          const csrfMatch = cmdLine.match(/--csrf_token[= ]([^\s]+)/)
+          const binMatch = cmdLine.match(/^(\S+\/language_server)\b/)
+          if (csrfMatch) {
+            standalonePids.push({
+              pid,
+              csrfToken: csrfMatch[1],
+              binPath: binMatch ? binMatch[1] : '',
+            })
+          }
+        }
+      }
+
+      for (const lsProc of standalonePids) {
+        try {
+          const { stdout: lsofOut } = await execFileAsync(
+            'lsof',
+            ['-Pan', '-p', lsProc.pid, '-iTCP', '-sTCP:LISTEN'],
+            { timeout: 1500 },
+          )
+          // LanguageServer HTTP port is typically the second listening port after the gRPC port; collect first 3 loopback ports
+          const ports = [...String(lsofOut || '').matchAll(/127\.0\.0\.1:(\d+)/g)].map(m => Number(m[1]))
+          for (const p of ports.slice(0, 3)) {
+            addInstance({
+              address: `127.0.0.1:${p}`,
+              port: p,
+              csrfToken: lsProc.csrfToken,
+              binPath: lsProc.binPath,
+              kind: 'ls-standalone',
+            })
+          }
+        } catch {
+          // ignore lsof failure
+        }
+      }
+    } catch {
+      // ignore ps failure
+    }
   }
 
   if (process.env.ANTIGRAVITY_LS_ADDRESS && process.env.ANTIGRAVITY_CSRF_TOKEN) {
@@ -813,43 +900,160 @@ export async function discoverAntigravityHubInstances({
     })
   }
 
-  if (execImpl === execFileAsync) {
-    try {
-      const { stdout } = await execFileAsync('ps', ['-ax', '-o', 'command='], { timeout: 2000 })
-      for (const rawLine of String(stdout || '').split('\n')) {
-        const line = rawLine.trim()
-        if (!line.includes('--hub') || !line.includes('--hub-port=') || !line.includes('--csrf_token=')) {
-          continue
-        }
-        const portMatch = line.match(/--hub-port=(\d+)/)
-        const csrfMatch = line.match(/--csrf_token=([^\s]+)/)
-        const dirMatch = line.match(/--add-dir=([^\s]+)/)
-        const binMatch = line.match(/^(\S+\/agy)\b/)
-        if (portMatch && csrfMatch) {
-          addInstance({
-            address: `127.0.0.1:${portMatch[1]}`,
-            port: Number(portMatch[1]),
-            csrfToken: csrfMatch[1],
-            addDir: dirMatch ? dirMatch[1] : '',
-            binPath: binMatch ? binMatch[1] : '',
-          })
-        }
-      }
-    } catch {
-      // ignore ps failure
-    }
-  }
-
   const targetCwd = String(preferredCwd || '').trim()
   if (targetCwd && instances.length > 1) {
-    instances.sort((a, b) => {
-      const aMatch = a.addDir && (a.addDir === targetCwd || targetCwd.startsWith(a.addDir + '/') || a.addDir.startsWith(targetCwd + '/')) ? 1 : 0
-      const bMatch = b.addDir && (b.addDir === targetCwd || targetCwd.startsWith(b.addDir + '/') || b.addDir.startsWith(targetCwd + '/')) ? 1 : 0
-      return bMatch - aMatch
-    })
+    const matchesDir = inst => {
+      const dirs = Array.isArray(inst.addDirs) && inst.addDirs.length > 0 ? inst.addDirs : (inst.addDir ? [inst.addDir] : [])
+      return dirs.some(d => d === targetCwd || targetCwd.startsWith(d + '/') || d.startsWith(targetCwd + '/')) ? 1 : 0
+    }
+    instances.sort((a, b) => matchesDir(b) - matchesDir(a))
   }
 
   return instances
+}
+
+function buildCleanAgentApiEnv(hub) {
+  const env = { ...process.env }
+  for (const k of [
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'ALL_PROXY',
+    'all_proxy',
+    'RPC_PROXY_DEST_OVERRIDE',
+    'RPC_PROXY_HEADER_AS_EXTENSION',
+  ]) {
+    delete env[k]
+  }
+  if (hub?.address) env.ANTIGRAVITY_LS_ADDRESS = hub.address
+  if (hub?.csrfToken) env.ANTIGRAVITY_CSRF_TOKEN = hub.csrfToken
+  return env
+}
+
+async function resolveCascadeConfigForHub(hub, rawConvId, fetchImpl, peerTrajectoryIds = []) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-codeium-csrf-token': hub.csrfToken,
+  }
+  const candidateIds = [...new Set([rawConvId, ...peerTrajectoryIds].filter(Boolean))]
+  for (const cid of candidateIds) {
+    try {
+      const resp = await fetchImpl(
+        `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetCascadeTrajectorySteps`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ cascadeId: cid, stepOffset: 0 }),
+        },
+      )
+      if (!resp.ok) continue
+      const data = await resp.json().catch(() => ({}))
+      const steps = Array.isArray(data?.steps) ? data.steps : []
+      for (let i = steps.length - 1; i >= 0; i -= 1) {
+        const ui = steps[i]?.userInput
+        if (ui?.userConfig?.plannerConfig?.planModel) {
+          return {
+            cascadeConfig: ui.userConfig,
+            customAgentSpec: ui.userAgentSpec || undefined,
+          }
+        }
+      }
+    } catch {
+      // try next trajectory
+    }
+  }
+
+  let planModel = 'MODEL_PLACEHOLDER_M417'
+  try {
+    const resp = await fetchImpl(
+      `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetCascadeModelConfigData`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({}),
+      },
+    )
+    if (resp.ok) {
+      const data = await resp.json().catch(() => ({}))
+      const firstModel = data?.clientModelConfigs?.[0]?.modelOrAlias?.model
+      if (firstModel) planModel = firstModel
+    }
+  } catch {
+    // use default placeholder model
+  }
+
+  return {
+    cascadeConfig: {
+      plannerConfig: {
+        planModel,
+        useAiCredits: true,
+        supportsLatexRendering: true,
+        toolConfig: {
+          runCommand: {
+            autoCommandConfig: {
+              autoExecutionPolicy: 'CASCADE_COMMANDS_AUTO_EXECUTION_AUTO',
+            },
+          },
+          antigravityBrowser: {
+            enableBrowserSubagentWebview: false,
+          },
+          notifyUser: {},
+        },
+      },
+      executorConfig: {
+        useCoreDirect: true,
+      },
+      conversationHistoryConfig: {},
+    },
+    customAgentSpec: {
+      builtinAgent: {
+        defaultAgent: {
+          isGoogle: false,
+          isInteractive: true,
+          surface: 'AGENT_SURFACE_HUB',
+        },
+      },
+    },
+  }
+}
+
+async function probeHubsForTrajectory(hubs, rawConvId, fetchImpl) {
+  const probed = []
+  for (const hub of hubs) {
+    try {
+      const resp = await fetchImpl(
+        `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetAllCascadeTrajectories`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-codeium-csrf-token': hub.csrfToken,
+          },
+          body: JSON.stringify({}),
+        },
+      )
+      if (!resp.ok) continue
+      const data = await resp.json().catch(() => null)
+      if (!data || typeof data !== 'object') continue
+      const summaries = data.trajectorySummaries && typeof data.trajectorySummaries === 'object'
+        ? data.trajectorySummaries
+        : {}
+      const trajectoryIds = Object.keys(summaries)
+      probed.push({
+        ...hub,
+        hasTargetTrajectory: Boolean(rawConvId && summaries[rawConvId]),
+        trajectoryIds,
+      })
+    } catch {
+      // If mock fetchImpl doesn't handle GetAllCascadeTrajectories, still keep hub as fallback candidate
+    }
+  }
+  if (probed.length === 0) {
+    return hubs.map(h => ({ ...h, hasTargetTrajectory: true, trajectoryIds: [] }))
+  }
+  probed.sort((a, b) => Number(b.hasTargetTrajectory) - Number(a.hasTargetTrajectory))
+  return probed
 }
 
 /**
@@ -1006,21 +1210,44 @@ export async function executeAntigravityIdeAction(action, {
 
     const hubs = await discoverAntigravityHubInstances({ execImpl, preferredCwd })
 
-    // Strategy 1A: Direct Connect-RPC `SendUserCascadeMessage` to running Antigravity LanguageServer
+    // Strategy 1A: Direct Connect-RPC `SendUserCascadeMessage` (with LoadTrajectory + inherited cascadeConfig)
     if (rawConvId && typeof fetchImpl === 'function' && hubs.length > 0) {
-      for (const hub of hubs) {
+      const orderedHubs = await probeHubsForTrajectory(hubs, rawConvId, fetchImpl)
+      for (const hub of orderedHubs) {
         try {
+          const headers = {
+            'Content-Type': 'application/json',
+            'x-codeium-csrf-token': hub.csrfToken,
+          }
+          if (!hub.hasTargetTrajectory) {
+            await fetchImpl(
+              `http://${hub.address}/exa.language_server_pb.LanguageServerService/LoadTrajectory`,
+              {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ cascadeId: rawConvId }),
+              },
+            ).catch(() => {})
+          }
+          const { cascadeConfig, customAgentSpec } = await resolveCascadeConfigForHub(
+            hub,
+            rawConvId,
+            fetchImpl,
+            hub.trajectoryIds || [],
+          )
           const resp = await fetchImpl(
             `http://${hub.address}/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage`,
             {
               method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-codeium-csrf-token': hub.csrfToken,
-              },
+              headers,
               body: JSON.stringify({
                 cascadeId: rawConvId,
                 items: [{ text }],
+                cascadeConfig,
+                customAgentSpec,
+                ...(type === 'steer'
+                  ? { deliveryStrategy: 'MESSAGE_DELIVERY_STRATEGY_NEXT_INVOCATION' }
+                  : {}),
               }),
             },
           )
@@ -1049,12 +1276,8 @@ export async function executeAntigravityIdeAction(action, {
     ]
     const uniqueBins = [...new Set(agentApiCandidates)]
     const envTargets = hubs.length > 0
-      ? hubs.map(h => ({
-          ...process.env,
-          ANTIGRAVITY_LS_ADDRESS: h.address,
-          ANTIGRAVITY_CSRF_TOKEN: h.csrfToken,
-        }))
-      : [undefined]
+      ? hubs.map(h => buildCleanAgentApiEnv(h))
+      : [buildCleanAgentApiEnv(null)]
 
     for (const binPath of uniqueBins) {
       try {
@@ -1118,6 +1341,71 @@ export async function executeAntigravityIdeAction(action, {
     const promptText = String(action?.prompt ?? action?.text ?? '').trim()
     const title = String(action?.title ?? '').trim() || (promptText ? promptText.slice(0, 36) : 'Antigravity 新对话')
     const hubs = await discoverAntigravityHubInstances({ execImpl, preferredCwd })
+
+    // Strategy 1A: Direct Connect-RPC `StartCascade` + `SendUserCascadeMessage`
+    if (typeof fetchImpl === 'function' && hubs.length > 0) {
+      const orderedHubs = await probeHubsForTrajectory(hubs, '', fetchImpl)
+      for (const hub of orderedHubs) {
+        try {
+          const headers = {
+            'Content-Type': 'application/json',
+            'x-codeium-csrf-token': hub.csrfToken,
+          }
+          const wsUri = preferredCwd
+            ? `file://${preferredCwd}`
+            : (hub.addDir ? `file://${hub.addDir}` : '')
+          const startResp = await fetchImpl(
+            `http://${hub.address}/exa.language_server_pb.LanguageServerService/StartCascade`,
+            {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                source: 'CORTEX_TRAJECTORY_SOURCE_CASCADE_CLIENT',
+                trajectoryType: 'CORTEX_TRAJECTORY_TYPE_CASCADE',
+                workspaceUris: wsUri ? [wsUri] : [],
+              }),
+            },
+          )
+          if (startResp.ok) {
+            const startData = await startResp.json().catch(() => ({}))
+            const newCascadeId = startData?.cascadeId
+            if (newCascadeId) {
+              if (promptText) {
+                const { cascadeConfig, customAgentSpec } = await resolveCascadeConfigForHub(
+                  hub,
+                  newCascadeId,
+                  fetchImpl,
+                  hub.trajectoryIds || [],
+                )
+                await fetchImpl(
+                  `http://${hub.address}/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage`,
+                  {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                      cascadeId: newCascadeId,
+                      items: [{ text: promptText }],
+                      cascadeConfig,
+                      customAgentSpec,
+                    }),
+                  },
+                )
+              }
+              return {
+                ok: true,
+                agentId: `${AGY_IDE_PREFIX}${newCascadeId}`,
+                title,
+                method: 'connect-rpc',
+                message: `⚡ 已在 Antigravity IDE 创建新对话「${title}」`,
+              }
+            }
+          }
+        } catch {
+          // Try next hub or Strategy 1B
+        }
+      }
+    }
+
     const agentApiCandidates = [
       ...hubs.map(h => h.binPath).filter(Boolean),
       join(home, '.gemini', 'antigravity', 'bin', 'agentapi'),
@@ -1125,12 +1413,8 @@ export async function executeAntigravityIdeAction(action, {
     ]
     const uniqueBins = [...new Set(agentApiCandidates)]
     const envTargets = hubs.length > 0
-      ? hubs.map(h => ({
-          ...process.env,
-          ANTIGRAVITY_LS_ADDRESS: h.address,
-          ANTIGRAVITY_CSRF_TOKEN: h.csrfToken,
-        }))
-      : [undefined]
+      ? hubs.map(h => buildCleanAgentApiEnv(h))
+      : [buildCleanAgentApiEnv(null)]
 
     for (const binPath of uniqueBins) {
       try {

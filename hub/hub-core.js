@@ -754,10 +754,27 @@ export class HubCore {
   }
 
   queueCommand(hostId, commandPayload = {}) {
-    const host = this.hosts.get(hostId)
-    if (!host) return { ok: false, error: `Host not found: ${hostId}` }
+    const cleanHostId = String(hostId ?? '').trim()
+    if (!cleanHostId) return { ok: false, error: 'hostId is required' }
+    let host = this.hosts.get(cleanHostId)
+    if (!host) {
+      host = {
+        hostId: cleanHostId,
+        hostName: cleanHostId,
+        platform: '',
+        arch: '',
+        identity: null,
+        trust: { status: 'unpinned', pinnedPublicKey: '', pinnedFingerprint: '' },
+        lastSeen: 0,
+        dshStats: {},
+        bridgeState: { tasks: [], approvals: [], workspaces: [] },
+        commands: [],
+        recentResults: [],
+      }
+      this.hosts.set(cleanHostId, host)
+    }
     if (host.trust?.status === 'revoked') {
-      return { ok: false, error: `Host ${hostId} is revoked` }
+      return { ok: false, error: `Host ${cleanHostId} is revoked` }
     }
     const cmd = {
       id: commandPayload.id || `cmd-${randomBytes(4).toString('hex')}`,

@@ -1289,12 +1289,15 @@ test('antigravity-ide Connect-RPC prompt delivery & merged Web UI Markdown/UX he
 
     assert.equal(res.ok, true)
     assert.equal(res.method, 'connect-rpc')
-    assert.equal(rpcCalls.length, 1)
-    assert.match(rpcCalls[0].url, /SendUserCascadeMessage$/)
-    assert.equal(rpcCalls[0].init.headers['x-codeium-csrf-token'], 'test-csrf-token-123')
-    const sentBody = JSON.parse(rpcCalls[0].init.body)
+    assert.ok(rpcCalls.some(c => /LoadTrajectory$/.test(c.url)))
+    const sendCall = rpcCalls.find(c => /SendUserCascadeMessage$/.test(c.url))
+    assert.ok(sendCall)
+    assert.equal(sendCall.init.headers['x-codeium-csrf-token'], 'test-csrf-token-123')
+    const sentBody = JSON.parse(sendCall.init.body)
     assert.equal(sentBody.cascadeId, '5ce97dab-7b27-4285-9b3f-f8d35fc6f541')
     assert.deepEqual(sentBody.items, [{ text: '测试输入框直接发送指令' }])
+    assert.ok(sentBody.cascadeConfig?.plannerConfig?.planModel)
+    assert.ok(sentBody.customAgentSpec?.builtinAgent?.defaultAgent)
   } finally {
     if (prevAddr === undefined) delete process.env.ANTIGRAVITY_LS_ADDRESS
     else process.env.ANTIGRAVITY_LS_ADDRESS = prevAddr
@@ -1311,6 +1314,8 @@ test('antigravity-ide Connect-RPC prompt delivery & merged Web UI Markdown/UX he
   assert.match(indexHtml, /function shouldDismissHorizontalSwipe\(/)
   assert.match(indexHtml, /row-state-running/)
   assert.match(indexHtml, /row-state-conclusion/)
+  assert.doesNotMatch(indexHtml, /renderChatMessages\(/)
+  assert.match(indexHtml, /data\?\.ready/)
 })
 
 

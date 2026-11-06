@@ -1,4 +1,18 @@
 #!/usr/bin/env node
+for (const k of [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'ALL_PROXY',
+  'all_proxy',
+  'RPC_PROXY_DEST_OVERRIDE',
+  'RPC_PROXY_HEADER_AS_EXTENSION',
+  'ANTIGRAVITY_LS_ADDRESS',
+  'ANTIGRAVITY_CSRF_TOKEN',
+]) {
+  delete process.env[k]
+}
 import { resolveConfig, loadSettings } from './lib/config.js'
 import { FeishuBridge } from './lib/bridge.js'
 import { HubAgent } from './lib/hub-agent.js'
