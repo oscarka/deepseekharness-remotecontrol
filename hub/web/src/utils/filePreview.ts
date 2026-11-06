@@ -9,6 +9,8 @@ export interface FilePreviewData {
   mime?: string;
   dataBase64?: string;
   content?: string;
+  hasBlob?: boolean;
+  previewUrl?: string;
   _showInDrawer?: boolean;
   _showInMain?: boolean;
 }
@@ -16,13 +18,24 @@ export interface FilePreviewData {
 // 文件预览统一按 kind 分流：图片走 <img>，文本才逐行编号，二进制给提示
 export function previewKind(preview: FilePreviewData | null | undefined): 'none' | 'image' | 'binary' | 'text' {
   if (!preview) return 'none';
-  if (preview.kind === 'image' && preview.dataBase64) return 'image';
+  if (preview.kind === 'image' && (preview.dataBase64 || preview.previewUrl || preview.hasBlob)) return 'image';
   if (preview.kind === 'binary') return 'binary';
   return 'text';
 }
 
 export function imagePreviewSrc(preview: FilePreviewData): string {
-  return `data:${preview.mime || 'image/png'};base64,${preview.dataBase64}`;
+  if (preview.dataBase64) {
+    return `data:${preview.mime || 'image/png'};base64,${preview.dataBase64}`;
+  }
+  if (preview.previewUrl) {
+    let tk = '';
+    try {
+      tk = localStorage.getItem('dsh_hub_token') || '';
+    } catch {}
+    const sep = preview.previewUrl.includes('?') ? '&' : '?';
+    return tk ? `${preview.previewUrl}${sep}token=${encodeURIComponent(tk)}` : preview.previewUrl;
+  }
+  return '';
 }
 
 // 把 "src/lib/a.ts" 拆成 [{name:'src',path:'src'},{name:'lib',path:'src/lib'},...]
@@ -42,3 +55,4 @@ export function fileLoadingSpinnerHtml(text: string): string {
     <div>${esc(text)}</div>
   </div>`;
 }
+

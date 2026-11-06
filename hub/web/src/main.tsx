@@ -8,3 +8,4 @@ if (root) {
   render(<App />, root);
   initHubController();
 }
+

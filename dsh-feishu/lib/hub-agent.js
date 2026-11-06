@@ -626,15 +626,28 @@ export class HubAgent {
           const effectiveType = type === 'approval' ? (cmd.allow !== false ? 'approve' : 'deny') : type
           if (code.startsWith('AGY-')) {
             this.settledAgyApprovals.add(code)
+            let matchedSession = null
+            let matchedApproval = null
             for (const s of this.cachedAgySessions || []) {
-              if (s.pendingApproval?.code === code) {
-                s.pendingApproval = null
-                s.status = 'idle'
-                s.statusLabel = '已完成'
+              if (s.pendingApproval?.code === code || (cmd.agentId && s.id === cmd.agentId)) {
+                matchedSession = s
+                if (s.pendingApproval?.code === code) {
+                  matchedApproval = s.pendingApproval
+                  s.pendingApproval = null
+                  s.status = effectiveType === 'approve' ? 'running' : 'idle'
+                  s.statusLabel = effectiveType === 'approve' ? '🟢 运行中' : '已完成'
+                }
               }
             }
             const res = await executeAntigravityIdeAction(
-              { type: effectiveType, code, optionIndex: cmd.optionIndex },
+              {
+                type: effectiveType,
+                code,
+                optionIndex: cmd.optionIndex,
+                agentId: matchedSession?.id || cmd.agentId,
+                cwd: matchedSession?.cwd || cmd.cwd,
+                pendingApproval: matchedApproval,
+              },
               { execImpl: this.execImpl },
             )
             return {

@@ -36,6 +36,17 @@ export function TopBar() {
         </button>
       </header>
 
+      {/* 断线重连状态细条 (#11) */}
+      <div
+        id="connectionStatusBanner"
+        class="connection-status-banner"
+        style="display:none;"
+        onClick={() => (window as any).manualReconnectNow?.()}
+      >
+        <span>⚠️ 网络连接中断，正在自动重连…</span>
+        <span style="text-decoration:underline;margin-left:6px;font-weight:700;">点此立即重试</span>
+      </div>
+
       {/* 2. 搜索框 + 智能状态/项目筛选条 */}
       <div class="search-and-filter" id="searchAndFilterBox">
         <div class="search-box-wrap">
@@ -61,3 +72,4 @@ export function TopBar() {
     </Fragment>
   );
 }
+

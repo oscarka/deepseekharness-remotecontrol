@@ -1,5 +1,6 @@
 import { createServer } from 'node:http'
 import { timingSafeEqual } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -7,7 +8,27 @@ import { HubCore } from './hub-core.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const INDEX_HTML_PATH = join(__dirname, 'public', 'index.html')
+const PACKAGE_JSON_PATH = join(__dirname, '..', 'package.json')
 const MAX_BODY_BYTES = 50 * 1024 * 1024 // 50 MiB for snapshot uploads
+
+function resolveBuildInfo(startedAt = Date.now()) {
+  let version = '0.2.0'
+  let uiBuild = 'dev'
+  try {
+    const pkg = JSON.parse(readFileSync(PACKAGE_JSON_PATH, 'utf8'))
+    if (pkg?.version) version = String(pkg.version)
+  } catch {
+    // ignore missing package.json
+  }
+  try {
+    const html = readFileSync(INDEX_HTML_PATH, 'utf8')
+    const m = /assets\/index-([A-Za-z0-9_-]+)\.js/.exec(html)
+    if (m?.[1]) uiBuild = m[1]
+  } catch {
+    // ignore missing index.html
+  }
+  return { version, uiBuild, startedAt }
+}
 
 export function createHubServer({
   hub = new HubCore({ stateFile: process.env.HUB_STATE_FILE || '' }),
@@ -15,6 +36,8 @@ export function createHubServer({
   logger = console,
 } = {}) {
   let expectedToken = String(token ?? '').trim()
+  const buildInfo = resolveBuildInfo(hub.now ? hub.now() : Date.now())
+  hub.buildInfo = buildInfo
 
   function checkAuth(headers = {}, urlObj) {
     if (!expectedToken) return true
@@ -42,7 +65,9 @@ export function createHubServer({
       return {
         status: 200,
         json: {
+          ok: true,
           status: 'ok',
+          build: buildInfo,
           activeHostId: hub.activeHostId,
           hostsCount: hub.hosts.size,
           snapshotsCount: hub.snapshots.size,
@@ -53,6 +78,8 @@ export function createHubServer({
 
     if (method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
       const html = await readFile(INDEX_HTML_PATH, 'utf8')
+      const m = /assets\/index-([A-Za-z0-9_-]+)\.js/.exec(html)
+      if (m?.[1]) buildInfo.uiBuild = m[1]
       return {
         status: 200,
         headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
@@ -201,8 +228,11 @@ export function createHubServer({
 
     // One-Time Pairing Code Exchange (allows mobile QR scan / 6-digit code login without typing HUB_TOKEN)
     if (method === 'POST' && pathname === '/api/pairing/exchange') {
-      const outcome = hub.exchangePairingCode(body.code)
-      if (!outcome.ok) return { status: 401, json: outcome }
+      const clientKey =
+        String(headers['x-forwarded-for'] ?? headers['X-Forwarded-For'] ?? '').split(',')[0].trim() ||
+        'global'
+      const outcome = hub.exchangePairingCode(body.code, { clientKey })
+      if (!outcome.ok) return { status: outcome.rateLimited ? 429 : 401, json: outcome }
       return {
         status: 200,
         json: {
@@ -289,7 +319,58 @@ export function createHubServer({
         return { status: outcome.ok ? 200 : 404, json: outcome }
       }
 
+      const hostPreviewMatch = /^\/api\/hosts\/([^/]+)\/file-preview$/.exec(pathname)
+      if (hostPreviewMatch) {
+        const hostId = decodeURIComponent(hostPreviewMatch[1])
+        if (method === 'DELETE') {
+          return { status: 200, json: hub.clearFilePreview(hostId) }
+        }
+        if (method === 'GET') {
+          const expectedAt = urlObj.searchParams.get('at')
+          const format = urlObj.searchParams.get('format')
+          const blob = hub.getFilePreviewBlob(hostId, expectedAt)
+          if (!blob) {
+            return { status: 404, json: { ok: false, error: '文件预览已过期或不存在，请重新点击文件加载' } }
+          }
+          if (format === 'json') {
+            return { status: 200, json: { ok: true, preview: blob } }
+          }
+          if (blob.dataBase64) {
+            const buf = Buffer.from(blob.dataBase64, 'base64')
+            return {
+              status: 200,
+              headers: {
+                'content-type': blob.mime || 'application/octet-stream',
+                'content-length': String(buf.length),
+                'cache-control': 'private, max-age=300',
+              },
+              buffer: buf,
+            }
+          }
+          return {
+            status: 200,
+            headers: {
+              'content-type': 'text/plain; charset=utf-8',
+              'cache-control': 'private, max-age=300',
+            },
+            body: String(blob.content ?? ''),
+          }
+        }
+      }
+
+      const cmdCancelMatch = /^\/api\/commands\/([^/]+)\/cancel$/.exec(pathname)
+      if (method === 'POST' && cmdCancelMatch) {
+        const cmdId = decodeURIComponent(cmdCancelMatch[1])
+        const outcome = hub.cancelCommand(cmdId)
+        return { status: outcome.ok ? 200 : 404, json: outcome }
+      }
+
       const cmdResultMatch = /^\/api\/commands\/([^/]+)$/.exec(pathname)
+      if (method === 'DELETE' && cmdResultMatch) {
+        const cmdId = decodeURIComponent(cmdResultMatch[1])
+        const outcome = hub.cancelCommand(cmdId)
+        return { status: outcome.ok ? 200 : 404, json: outcome }
+      }
       if (method === 'GET' && cmdResultMatch) {
         const cmdId = decodeURIComponent(cmdResultMatch[1])
         const result = hub.getCommandResult(cmdId)
@@ -305,7 +386,7 @@ export function createHubServer({
 
       if (method === 'POST' && pathname === '/api/pairing/create') {
         const pairing = hub.createPairingCode(body)
-        return { status: 200, json: { ok: true, pairing } }
+        return { status: 200, json: { ok: true, pairing, code: pairing.code, expiresAt: pairing.expiresAt } }
       }
 
       // W3C Web Push + VAPID Endpoints for iPhone (iOS 16.4+) / Android Home Screen App
@@ -456,8 +537,8 @@ export function createHubServer({
           sendEvent(stateData)
         })
         const keepAlive = setInterval(() => {
-          res.write(': ping\n\n')
-        }, 20_000)
+          res.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
+        }, 10_000)
         keepAlive.unref?.()
         req.on('close', () => {
           clearInterval(keepAlive)

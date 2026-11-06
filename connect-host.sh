@@ -30,15 +30,43 @@ if [ -f "$ENV_FILE" ]; then
   EXISTING_OPEN_IDS="$(grep -E '^FEISHU_ALLOWED_OPEN_IDS=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 fi
 
+# 支持 --name / --token / --id 具名参数与位置参数两种调用方式
+POS_ARGS=()
+OPT_NAME=""
+OPT_TOKEN=""
+OPT_ID=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --name)
+      OPT_NAME="${2:-}"
+      shift 2 || shift
+      ;;
+    --token)
+      OPT_TOKEN="${2:-}"
+      shift 2 || shift
+      ;;
+    --id)
+      OPT_ID="${2:-}"
+      shift 2 || shift
+      ;;
+    *)
+      POS_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
 # 第一参数：电脑显示名称，例如 ./connect-host.sh "mac-mini" "你的访问密钥"
 DEFAULT_NAME="$(scutil --get ComputerName 2>/dev/null || hostname -s 2>/dev/null || hostname)"
-HOST_NAME="${1:-${FEISHU_HOST_NAME:-${EXISTING_HOST_NAME:-$DEFAULT_NAME}}}"
+if [ "$EXISTING_HOST_NAME" = "--name" ]; then EXISTING_HOST_NAME=""; fi
+if [ "$EXISTING_HOST_ID" = "--id" ]; then EXISTING_HOST_ID=""; fi
+HOST_NAME="${OPT_NAME:-${POS_ARGS[0]:-${FEISHU_HOST_NAME:-${EXISTING_HOST_NAME:-$DEFAULT_NAME}}}}"
 
 # 第二参数（可选）：总控台访问密钥 HUB_TOKEN（绝不硬编码在公开代码库中！）
-ARG_TOKEN="${2:-}"
+ARG_TOKEN="${OPT_TOKEN:-${POS_ARGS[1]:-}}"
 
 # 第三参数（可选）：自定义 Host ID
-RAW_HOST_ID="${3:-${FEISHU_HOST_ID:-${EXISTING_HOST_ID:-$(hostname -s 2>/dev/null || hostname)}}}"
+RAW_HOST_ID="${OPT_ID:-${POS_ARGS[2]:-${FEISHU_HOST_ID:-${EXISTING_HOST_ID:-$(hostname -s 2>/dev/null || hostname)}}}}"
 HOST_ID="$(echo "$RAW_HOST_ID" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-_')"
 if [ -z "$HOST_ID" ]; then
   HOST_ID="mac-$(date +%s)"

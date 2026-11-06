@@ -198,6 +198,100 @@ export function Sheets() {
           <div id="turboGuideBody"></div>
         </div>
       </div>
+
+      {/* 抽屉 7：端到端加密分享链接结果卡片 (#2) */}
+      <div
+        class="sheet-backdrop"
+        id="shareResultSheet"
+        onClick={closeIfBackdrop('shareResultSheet')}
+      >
+        <div class="sheet-panel">
+          <div class="sheet-handle"></div>
+          <div class="sheet-title">
+            <span>🔗 端到端加密分享已生成</span>
+            <button
+              type="button"
+              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;"
+              onClick={() => (window as any).closeSheet?.('shareResultSheet')}
+            >
+              ✕
+            </button>
+          </div>
+          <div id="shareResultBody"></div>
+        </div>
+      </div>
+
+      {/* 抽屉 8：6 位手机免密配对码弹窗 (#6) */}
+      <div
+        class="sheet-backdrop"
+        id="pairingCodeSheet"
+        onClick={closeIfBackdrop('pairingCodeSheet')}
+      >
+        <div class="sheet-panel">
+          <div class="sheet-handle"></div>
+          <div class="sheet-title">
+            <span>📱 添加新手机（6 位配对码）</span>
+            <button
+              type="button"
+              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;"
+              onClick={() => (window as any).closePairingCodeSheet?.()}
+            >
+              ✕
+            </button>
+          </div>
+          <div id="pairingCodeBody"></div>
+        </div>
+      </div>
+
+      {/* 抽屉 9：剪贴板复制兜底面板 (#12) */}
+      <div
+        class="sheet-backdrop"
+        id="copyFallbackSheet"
+        onClick={closeIfBackdrop('copyFallbackSheet')}
+      >
+        <div class="sheet-panel">
+          <div class="sheet-handle"></div>
+          <div class="sheet-title">
+            <span id="copyFallbackTitle">📋 复制内容</span>
+            <button
+              type="button"
+              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;"
+              onClick={() => (window as any).closeSheet?.('copyFallbackSheet')}
+            >
+              ✕
+            </button>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+            当前浏览器限制自动写入剪贴板，请点下方按钮或长按文本框全选复制：
+          </div>
+          <textarea
+            id="copyFallbackTextarea"
+            readonly
+            class="new-task-textarea"
+            style="min-height:92px;font-family:var(--mono);font-size:12px;margin-bottom:10px;"
+            onClick={e => (e.currentTarget as HTMLTextAreaElement).select()}
+          ></textarea>
+          <div style="display:flex;gap:8px;">
+            <button
+              type="button"
+              class="primary-block-btn"
+              style="margin-top:0;flex:1;"
+              onClick={() => (window as any).retryCopyFromFallbackSheet?.()}
+            >
+              📋 点击复制
+            </button>
+            <button
+              type="button"
+              class="choice-chip"
+              style="padding:0 16px;"
+              onClick={() => (window as any).closeSheet?.('copyFallbackSheet')}
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>
     </Fragment>
   );
 }
+

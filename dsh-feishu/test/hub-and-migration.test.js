@@ -1594,6 +1594,345 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
   assert.ok(toasts.some(t => t.includes('已关闭语音输入')))
 })
 
+test('antigravity-ide approval sync & RPC: suppresses false-positive pendingApproval when computer auto-approved, annotates sandbox retry, and approves via HandleCascadeUserInteraction RPC', async () => {
+  const convId = '5ce97dab-7b27-4285-9b3f-f8d35fc6f541'
+  const nowIso = new Date().toISOString()
+  const lines = [
+    JSON.stringify({
+      step_index: 1,
+      type: 'USER_INPUT',
+      status: 'DONE',
+      created_at: nowIso,
+      content: '<USER_REQUEST>\n提交并推送代码\n</USER_REQUEST>',
+    }),
+    // 1) Sandboxed attempt that fails with Operation not permitted
+    JSON.stringify({
+      step_index: 2,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: nowIso,
+      thinking: '先尝试沙盒内 git add',
+      tool_calls: [
+        {
+          id: 'tc-sandbox-1',
+          name: 'run_command',
+          arguments: {
+            CommandLine: 'git add connect-host.sh',
+            BypassSandbox: false,
+            toolSummary: 'Stage LaunchAgent daemon',
+          },
+        },
+      ],
+    }),
+    JSON.stringify({
+      step_index: 3,
+      type: 'GENERIC',
+      status: 'DONE',
+      created_at: nowIso,
+      content:
+        "Exit code 128\nfatal: Unable to create '/Users/dev/deepseekharness-remote/.git/index.lock': Operation not permitted",
+    }),
+    // 2) Unsandboxed retry (BypassSandbox: true) currently executing or waiting
+    JSON.stringify({
+      step_index: 4,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: nowIso,
+      thinking: '切换 BypassSandbox: true 重新执行 git add',
+      tool_calls: [
+        {
+          id: 'tc-unsandboxed-2',
+          name: 'run_command',
+          arguments: {
+            CommandLine: 'git add connect-host.sh',
+            BypassSandbox: true,
+            toolSummary: 'Stage LaunchAgent daemon',
+          },
+        },
+      ],
+    }),
+  ].join('\n')
+
+  // Case A: Computer ALREADY auto-approved `git add` ("Always allow"), so LanguageServer liveSummary has waitingSteps: []
+  const autoApprovedParsed = parseAntigravityTranscript(lines, {
+    conversationId: convId,
+    mtimeMs: Date.now(),
+    hasLiveSummary: true,
+    liveWaitingSteps: [],
+  })
+  assert.equal(autoApprovedParsed.pendingApproval, null)
+  assert.equal(autoApprovedParsed.status, 'running')
+  // Verify the sandboxed step (index 1 in transcript) is clearly annotated as a sandbox probe retry
+  const sandboxMsg = autoApprovedParsed.transcript.find(
+    m => m.role === 'assistant' && m.thinking.includes('先尝试沙盒内 git add'),
+  )
+  assert.ok(sandboxMsg)
+  assert.ok(sandboxMsg.toolCalls[0].command.includes('🛡️ 沙盒模式试探受限 (Operation not permitted)'))
+
+  // Case B: Computer is genuinely waiting for approval in LanguageServer (`waitingSteps` is non-empty)
+  const waitingParsed = parseAntigravityTranscript(lines, {
+    conversationId: convId,
+    mtimeMs: Date.now(),
+    hasLiveSummary: true,
+    liveWaitingSteps: [
+      {
+        stepIndex: 6,
+        step: {
+          status: 'CORTEX_STEP_STATUS_WAITING',
+          metadata: {
+            sourceTrajectoryStepInfo: {
+              trajectoryId: 'traj-998877',
+              stepIndex: 6,
+              cascadeId: convId,
+            },
+          },
+          requestedInteraction: {
+            permission: {
+              resource: {
+                action: 'PERMISSION_ACTION_EXECUTE',
+                target: 'git add connect-host.sh',
+              },
+              persistSuggestionType: 'PERSIST_SUGGESTION_TYPE_ALLOW_BINARY',
+              suggestedPersistPattern: 'unsandboxed(git add *)',
+            },
+          },
+        },
+      },
+    ],
+  })
+  assert.ok(waitingParsed.pendingApproval)
+  assert.equal(waitingParsed.status, 'approval')
+  assert.equal(waitingParsed.pendingApproval.waitingStepIndex, 6)
+  assert.equal(waitingParsed.pendingApproval.trajectoryId, 'traj-998877')
+  assert.equal(waitingParsed.pendingApproval.suggestedPersistPattern, 'unsandboxed(git add *)')
+
+  // Case C: Mobile user taps Approve (Option 3: Always allow) -> calls HandleCascadeUserInteraction Connect-RPC directly
+  const rpcCalls = []
+  const res = await executeAntigravityIdeAction(
+    {
+      type: 'approve',
+      agentId: `agy-ide:${convId}`,
+      optionIndex: 3,
+      pendingApproval: waitingParsed.pendingApproval,
+    },
+    {
+      execImpl: async (bin, args) => {
+        if (bin === 'ps') {
+          return {
+            stdout:
+              '/Applications/Antigravity.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm --csrf_token test-csrf-999\n',
+          }
+        }
+        if (bin === 'lsof') {
+          return {
+            stdout: 'language_ 12345 cc 10u IPv4 0x123 0t0 TCP 127.0.0.1:59123 (LISTEN)\n',
+          }
+        }
+        return { stdout: '' }
+      },
+      fetchImpl: async (url, init) => {
+        const body = init?.body ? JSON.parse(init.body) : {}
+        rpcCalls.push({ url: String(url), body })
+        if (String(url).endsWith('/GetAllCascadeTrajectories')) {
+          return new Response(
+            JSON.stringify({
+              trajectorySummaries: {
+                [convId]: {
+                  trajectoryId: 'traj-998877',
+                  status: 'CASCADE_RUN_STATUS_WAITING_FOR_USER',
+                  waitingSteps: [
+                    {
+                      stepIndex: 6,
+                      step: {
+                        metadata: {
+                          sourceTrajectoryStepInfo: {
+                            trajectoryId: 'traj-998877',
+                            stepIndex: 6,
+                            cascadeId: convId,
+                          },
+                        },
+                        requestedInteraction: {
+                          permission: {
+                            suggestedPersistPattern: 'unsandboxed(git add *)',
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        if (String(url).endsWith('/HandleCascadeUserInteraction')) {
+          return new Response(JSON.stringify({}), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+        return new Response('not found', { status: 404 })
+      },
+    },
+  )
+
+  assert.equal(res.ok, true)
+  assert.equal(res.engine, 'connect-rpc')
+  const handleCall = rpcCalls.find(c => c.url.endsWith('/HandleCascadeUserInteraction'))
+  assert.ok(handleCall)
+  assert.equal(handleCall.body.cascadeId, convId)
+  assert.equal(handleCall.body.interaction.trajectoryId, 'traj-998877')
+  assert.equal(handleCall.body.interaction.stepIndex, 6)
+  assert.equal(handleCall.body.interaction.permission.allow, true)
+  assert.equal(handleCall.body.interaction.permission.scope, 'PERMISSION_SCOPE_GLOBAL')
+  assert.deepEqual(handleCall.body.interaction.permission.persistGrants.allow, ['unsandboxed(git add *)'])
+})
+
+test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from getFullState & streamed via /file-preview, offline command queueing/cancel/TTL, pairing rate-limit, and build metadata', async () => {
+  const hub = new HubCore({ token: 'mobile-ux-token' })
+  const { fetchAdapter } = createHubServer({ hub, token: 'mobile-ux-token' })
+  const hubUrl = 'https://dsh-mobile-ux.example.run.app'
+  const authHeaders = {
+    'content-type': 'application/json',
+    authorization: 'Bearer mobile-ux-token',
+  }
+
+  // 1. Verify /healthz and /api/state expose build metadata (#13)
+  const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
+  assert.equal(healthRes.ok, true)
+  assert.equal(healthRes.build.version, '0.2.0')
+  assert.ok(healthRes.build.uiBuild)
+  assert.ok(healthRes.build.startedAt > 0)
+
+  // 2. Verify 5MB image preview does not bloat /api/state and streams cleanly via /api/hosts/:hostId/file-preview (#3)
+  const fake5MbBuf = Buffer.alloc(5 * 1024 * 1024, 0x89)
+  const fake5MbBase64 = fake5MbBuf.toString('base64')
+  await fetchAdapter(`${hubUrl}/api/heartbeat`, {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({
+      hostId: 'mac-studio',
+      hostName: 'Mac Studio',
+      commandResults: [
+        {
+          commandId: 'cmd-img-5mb',
+          type: 'read_file',
+          ok: true,
+          relPath: 'assets/hero-5mb.png',
+          mimeType: 'image/png',
+          size: fake5MbBuf.length,
+          dataBase64: fake5MbBase64,
+        },
+      ],
+    }),
+  })
+
+  const stateRes = await fetchAdapter(`${hubUrl}/api/state`, { headers: authHeaders })
+  const stateRawText = await stateRes.text()
+  // /api/state payload must stay lightweight (<100KB) even after a 5MB image preview
+  assert.ok(stateRawText.length < 100_000, `Expected /api/state < 100KB, got ${stateRawText.length} bytes`)
+  const stateJson = JSON.parse(stateRawText)
+  const hostState = stateJson.hosts.find(h => h.hostId === 'mac-studio')
+  assert.equal(hostState.lastFilePreview.hasBlob, true)
+  assert.equal(hostState.lastFilePreview.dataBase64, undefined)
+  assert.match(hostState.lastFilePreview.previewUrl, /\/api\/hosts\/mac-studio\/file-preview\?at=/)
+
+  // Fetch the binary image from /api/hosts/mac-studio/file-preview
+  const imgRes = await fetchAdapter(`${hubUrl}${hostState.lastFilePreview.previewUrl}`, {
+    headers: { authorization: 'Bearer mobile-ux-token' },
+  })
+  assert.equal(imgRes.status, 200)
+  assert.equal(imgRes.headers.get('content-type'), 'image/png')
+  assert.match(imgRes.headers.get('cache-control') || '', /max-age=300/)
+  const streamedBuf = Buffer.from(await imgRes.arrayBuffer())
+  assert.equal(streamedBuf.length, fake5MbBuf.length)
+
+  // Clear preview blob
+  const delPreviewRes = await (
+    await fetchAdapter(`${hubUrl}/api/hosts/mac-studio/file-preview`, {
+      method: 'DELETE',
+      headers: authHeaders,
+    })
+  ).json()
+  assert.equal(delPreviewRes.ok, true)
+
+  // 3. Offline command queueing, cancellation, and TTL expiration (#1)
+  // Mark host as last seen 5 minutes ago (offline)
+  hub.hosts.get('mac-studio').lastSeen = Date.now() - 5 * 60_000
+  const queuedCmdRes = await (
+    await fetchAdapter(`${hubUrl}/api/hosts/mac-studio/command`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        type: 'prompt',
+        agentId: 'task-offline-1',
+        text: '重构登录页面',
+      }),
+    })
+  ).json()
+  assert.equal(queuedCmdRes.ok, true)
+  assert.equal(queuedCmdRes.command.queued, true)
+  assert.ok(queuedCmdRes.command.expiresAt > Date.now())
+
+  const stateWithQueued = await (await fetchAdapter(`${hubUrl}/api/state`, { headers: authHeaders })).json()
+  const pendingCmds = stateWithQueued.hosts.find(h => h.hostId === 'mac-studio').pendingCommands
+  assert.equal(pendingCmds.length, 1)
+  assert.equal(pendingCmds[0].id, queuedCmdRes.command.id)
+
+  // Cancel the queued command from mobile UI before host wakes up
+  const cancelRes = await (
+    await fetchAdapter(`${hubUrl}/api/commands/${queuedCmdRes.command.id}`, {
+      method: 'DELETE',
+      headers: authHeaders,
+    })
+  ).json()
+  assert.equal(cancelRes.ok, true)
+  assert.equal(cancelRes.commandId, queuedCmdRes.command.id)
+
+  const stateAfterCancel = await (await fetchAdapter(`${hubUrl}/api/state`, { headers: authHeaders })).json()
+  assert.equal(stateAfterCancel.hosts.find(h => h.hostId === 'mac-studio').pendingCommands.length, 0)
+
+  // Queue another command and simulate TTL expiration before host heartbeat
+  const { command: expiredCmd } = hub.queueCommand('mac-studio', {
+    type: 'prompt',
+    agentId: 'task-offline-1',
+    text: '过期指令不应被执行',
+  })
+  expiredCmd.expiresAt = Date.now() - 1000
+  const hbAfterWake = hub.handleHeartbeat({
+    hostId: 'mac-studio',
+    hostName: 'Mac Studio',
+  })
+  assert.equal(hbAfterWake.commands.length, 0)
+
+  // 4. Pairing code creation & exchange brute-force rate limiting (#6)
+  const pairCreate = await (
+    await fetchAdapter(`${hubUrl}/api/pairing/create`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({ ttlMs: 180_000 }),
+    })
+  ).json()
+  assert.equal(pairCreate.ok, true)
+  assert.match(pairCreate.code, /^[A-Z0-9]{6}$/)
+
+  for (let i = 0; i < 10; i += 1) {
+    const badRes = await fetchAdapter(`${hubUrl}/api/pairing/exchange`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.99' },
+      body: JSON.stringify({ code: '000000' }),
+    })
+    assert.equal(badRes.status, 401)
+  }
+  const rateLimitedRes = await fetchAdapter(`${hubUrl}/api/pairing/exchange`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.99' },
+    body: JSON.stringify({ code: pairCreate.code }),
+  })
+  assert.equal(rateLimitedRes.status, 429)
+})
+
+
 
 
 
