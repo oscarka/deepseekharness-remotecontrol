@@ -1058,7 +1058,7 @@ function initHubController() {
 		shares: [],
 		pushSubscriptions: []
 	};
-	let currentHostId = "";
+	let currentHostId = "ALL_HOSTS";
 	let currentProject = "ALL";
 	let currentTab = "chats";
 	let searchQuery = "";
