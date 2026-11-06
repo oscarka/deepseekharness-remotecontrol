@@ -220,7 +220,10 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
       const cachedEntry = dshSessionParseCache.get(zstdPath)
       if (cachedEntry && cachedEntry.cachedKey === cachedKey && cachedEntry.session) {
         const customOverride = customTitles[cachedEntry.session.id]
-        results.push(customOverride ? { ...cachedEntry.session, title: customOverride } : cachedEntry.session)
+        results.push({
+          ...cachedEntry.session,
+          ...(customOverride ? { title: customOverride } : {}),
+        })
         continue
       }
 
@@ -360,7 +363,7 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
           transcript: transcript.slice(-maxMessages),
         }
         dshSessionParseCache.set(zstdPath, { cachedKey, session: sessionObj })
-        results.push(sessionObj)
+        results.push({ ...sessionObj })
       } catch {
         // ignore unreadable session file
       }
@@ -371,6 +374,10 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
   return results.slice(0, maxSessions)
 }
 
+export function invalidateDshSessionParseCache() {
+  dshSessionParseCache.clear()
+}
+
 /**
  * Create a new agent session on the host (or initialize an empty one).
  */
@@ -379,8 +386,11 @@ export async function createNewAgentSession(agents, { cwd = process.cwd(), title
   const cleanTitle = String(title || '远程新建任务').trim()
 
   let agent = null
-  if (typeof agents.create === 'function') {
-    agent = await agents.create({ cwd: cleanCwd, title: cleanTitle })
+  if (typeof agents.createViaController === 'function') {
+    agent = await agents.createViaController({ cwd: cleanCwd, title: cleanTitle })
+  } else if (typeof agents.create === 'function') {
+    const res = await agents.create({ cwd: cleanCwd, title: cleanTitle })
+    agent = res?.agent || res
   } else if (typeof agents.spawn === 'function') {
     agent = await agents.spawn({ cwd: cleanCwd, title: cleanTitle })
   } else if (typeof agents.newSession === 'function') {

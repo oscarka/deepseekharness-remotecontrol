@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { AuditLog } from './lib/audit.js'
 import { FeishuBridge } from './lib/bridge.js'
 import { resolveConfig, loadSettings } from './lib/config.js'
+import { acquireDaemonLock } from './lib/daemon-lock.js'
 import { FeishuTransport } from './lib/feishu-transport.js'
 import { HubAgent } from './lib/hub-agent.js'
 import { safeError } from './lib/redact.js'
@@ -41,7 +42,48 @@ export function apply(ctx, rawConfig) {
   let bridge
   let transport
   let hubAgent
+  let daemonLock = null
   let stopped = false
+
+  const rawAgents = ctx.agents
+  const agentsFacade = Object.create(rawAgents || {})
+  agentsFacade.list = () => rawAgents?.list?.() ?? []
+  agentsFacade.get = id => rawAgents?.get?.(id)
+  agentsFacade.resolveOrResume = async id => {
+    const existing = rawAgents?.get?.(id)
+    if (existing) return existing
+    try {
+      const ctrl = ctx.get?.('sessionController')
+      if (ctrl && typeof ctrl.resolveAgent === 'function') {
+        const res = await ctrl.resolveAgent(id)
+        if (res?.agent) return res.agent
+      }
+    } catch (err) {
+      logger?.warn?.(`dsh-feishu: resolveOrResume(${id}) failed: ${safeError(err)}`)
+    }
+    return rawAgents?.get?.(id)
+  }
+  agentsFacade.createViaController = async ({ cwd, title }) => {
+    try {
+      const ctrl = ctx.get?.('sessionController')
+      if (ctrl && typeof ctrl.create === 'function') {
+        const res = await ctrl.create({ cwd })
+        const sessionId = res?.sessionId || res?.id
+        if (sessionId) {
+          if (title && typeof ctrl.rename === 'function') {
+            try {
+              await ctrl.rename({ sessionId, title })
+            } catch {}
+          }
+          const resolved = await agentsFacade.resolveOrResume(sessionId)
+          if (resolved) return resolved
+        }
+      }
+    } catch (err) {
+      logger?.warn?.(`dsh-feishu: createViaController failed: ${safeError(err)}`)
+    }
+    return null
+  }
 
   ctx.effect(() => {
     void (async () => {
@@ -81,7 +123,7 @@ export function apply(ctx, rawConfig) {
         }
         bridge = new FeishuBridge({
           config: effectiveConfig,
-          agents: ctx.agents,
+          agents: agentsFacade,
           transport,
           audit,
           logger,
@@ -94,12 +136,21 @@ export function apply(ctx, rawConfig) {
         }
 
         if (effectiveConfig.hubUrl) {
+          try {
+            daemonLock = await acquireDaemonLock({
+              dshHome: effectiveConfig.dshHome,
+              hostId: effectiveConfig.hostId,
+              replace: true,
+            })
+          } catch {}
           hubAgent = new HubAgent({
             config: effectiveConfig,
             bridge,
             transport,
             audit,
             logger,
+            bootId: daemonLock?.bootId,
+            bootEpochMs: daemonLock?.startedAt || Date.now(),
           })
           hubAgent.start()
         }
@@ -121,6 +172,9 @@ export function apply(ctx, rawConfig) {
 
     return () => {
       stopped = true
+      try {
+        daemonLock?.release?.()
+      } catch {}
       hubAgent?.stop()
       void bridge?.dispose()
       void transport?.stop()

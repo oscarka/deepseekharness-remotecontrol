@@ -50,11 +50,11 @@ export function decorateTaskMetadata(task, { isLiveDsh = false, now = Date.now()
           : 'DeepSeek Harness')
 
   let controlMode = task.controlMode
-  if (!controlMode) {
+  if (!controlMode || (harness === 'dsh' && controlMode === 'observe-only')) {
     if (harness === 'antigravity-ide') {
       controlMode = task.hasLiveSummary ? 'managed' : 'idle-resumable'
     } else if (harness === 'dsh') {
-      controlMode = isLiveDsh ? 'managed' : 'observe-only'
+      controlMode = isLiveDsh ? 'managed' : 'idle-resumable'
     } else {
       controlMode = 'observe-only'
     }
@@ -67,11 +67,12 @@ export function decorateTaskMetadata(task, { isLiveDsh = false, now = Date.now()
     canStop: controlMode === 'managed',
     canApprove: controlMode === 'managed',
   }
-  const capabilities = task.capabilities || {
+  const capabilities = {
     ...baseCaps,
+    ...(task.capabilities || {}),
     canPrompt: controlMode !== 'observe-only' && Boolean(baseCaps.canPrompt),
     canSteer: controlMode === 'managed' && Boolean(baseCaps.canSteer),
-    canStop: controlMode === 'managed' && Boolean(baseCaps.canStop),
+    canStop: (controlMode === 'managed' || task.status === 'running') && Boolean(baseCaps.canStop),
     canApprove: controlMode === 'managed' && Boolean(baseCaps.canApprove),
   }
 

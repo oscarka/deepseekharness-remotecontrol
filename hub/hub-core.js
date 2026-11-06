@@ -355,20 +355,35 @@ export class HubCore {
 
     const tasks = Array.isArray(bridgeState.tasks)
       ? bridgeState.tasks.map(t => {
-          if (!t?.pendingApproval?.code) return t
-          const decorated = decorateApproval(t.pendingApproval)
-          if (!decorated) {
-            return {
-              ...t,
-              pendingApproval: null,
-              status: t.status === 'approval' ? 'running' : t.status,
-              turnState: t.turnState === 'approval' ? 'running' : t.turnState,
+          let nextTask = t
+          const isDshTask =
+            nextTask?.harness === 'dsh' ||
+            (!nextTask?.harness && String(nextTask?.id || '').startsWith('session-'))
+          if (isDshTask && nextTask?.controlMode === 'observe-only') {
+            nextTask = {
+              ...nextTask,
+              controlMode: 'idle-resumable',
+              capabilities: {
+                ...(nextTask.capabilities || {}),
+                canCreateSession: true,
+                canPrompt: true,
+              },
             }
           }
-          if (decorated !== t.pendingApproval) {
-            return { ...t, pendingApproval: decorated }
+          if (!nextTask?.pendingApproval?.code) return nextTask
+          const decorated = decorateApproval(nextTask.pendingApproval)
+          if (!decorated) {
+            return {
+              ...nextTask,
+              pendingApproval: null,
+              status: nextTask.status === 'approval' ? 'running' : nextTask.status,
+              turnState: nextTask.turnState === 'approval' ? 'running' : nextTask.turnState,
+            }
           }
-          return t
+          if (decorated !== nextTask.pendingApproval) {
+            return { ...nextTask, pendingApproval: decorated }
+          }
+          return nextTask
         })
       : []
 
@@ -825,7 +840,7 @@ export class HubCore {
     const hasCommandActivity = (Array.isArray(payload.commandResults) && payload.commandResults.length > 0)
       || record.commands.length > 0
     this.pruneExpiredCommands(record, now)
-    const commands = record.commands.splice(0)
+    const commands = isStaleSnapshot ? [] : record.commands.splice(0)
     for (const cmd of commands) {
       if (cmd?.type === 'approve' || cmd?.type === 'deny' || cmd?.type === 'approval') {
         const code = String(cmd.code || '').trim().toUpperCase()

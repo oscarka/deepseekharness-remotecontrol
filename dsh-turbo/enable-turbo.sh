@@ -37,3 +37,34 @@ else
   echo "⚡ 已启用 Node FSEvents 实时加速流模式"
 fi
 
+# 3. 如果是由远端 upgrade_turbo 触发（非 connect-host.sh 初次引导），延迟热重启后台 daemon 以加载最新代码
+if [ -z "${CONNECT_HOST_RUNNING:-}" ] && [ -f "$HOME/.dsh/hub-daemon.pid" ]; then
+  (
+    sleep 3.5
+    NODE_BIN="$(command -v node 2>/dev/null || true)"
+    USE_ELECTRON_NODE=0
+    if [ -z "$NODE_BIN" ]; then
+      for dsh_app_bin in \
+        "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
+        "$HOME/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
+        "/Applications/Antigravity IDE.app/Contents/MacOS/Electron" \
+        "$HOME/Applications/Antigravity IDE.app/Contents/MacOS/Electron"; do
+        if [ -x "$dsh_app_bin" ]; then
+          NODE_BIN="$dsh_app_bin"
+          USE_ELECTRON_NODE=1
+          break
+        fi
+      done
+    fi
+    if [ -n "$NODE_BIN" ]; then
+      if [ "$USE_ELECTRON_NODE" = "1" ]; then
+        nohup env ELECTRON_RUN_AS_NODE=1 "$NODE_BIN" "$REPO_DIR/dsh-feishu/daemon.mjs" --replace < /dev/null >> "$HOME/.dsh/hub-daemon.log" 2>&1 &
+      else
+        nohup "$NODE_BIN" "$REPO_DIR/dsh-feishu/daemon.mjs" --replace < /dev/null >> "$HOME/.dsh/hub-daemon.log" 2>&1 &
+      fi
+      echo $! > "$HOME/.dsh/hub-daemon.pid"
+    fi
+  ) >/dev/null 2>&1 &
+fi
+
+
