@@ -43,6 +43,7 @@ export class HubAgent {
     this.cachedStats = null
     this.cachedDiskSessions = []
     this.cachedAgySessions = []
+    this.cachedPushSubscriptions = []
     this.settledAgyApprovals = new Set()
     this.deletedAgyIds = new Set()
     this.pendingUserPrompts = new Map()
@@ -289,6 +290,7 @@ export class HubAgent {
           dshStats,
           bridgeState,
           commandResults: resultsToSend,
+          pushSubscriptionsBackup: this.cachedPushSubscriptions,
         }),
       })
       if (!response.ok) {
@@ -298,6 +300,9 @@ export class HubAgent {
       const data = await response.json()
       if (Array.isArray(data.hostsSummary)) {
         this.fleetSummary = data.hostsSummary
+      }
+      if (Array.isArray(data.pushSubscriptionsBackup) && data.pushSubscriptionsBackup.length > 0) {
+        this.cachedPushSubscriptions = data.pushSubscriptionsBackup
       }
       await this.reconcileFeishuActiveState(data.shouldConnectFeishu !== false, data.activeHostId)
       if (Array.isArray(data.commands) && data.commands.length > 0) {

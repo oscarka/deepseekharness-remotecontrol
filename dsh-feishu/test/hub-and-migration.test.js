@@ -705,12 +705,16 @@ test('iPhone Home Screen PWA & W3C Web Push (RFC 8292 VAPID + RFC 8291 aes128gcm
   assert.match(swText, /setAppBadge/)
   assert.match(swText, /NOTIFICATION_CLICK/)
 
-  // 2. Verify VAPID ES256 JWT generation & cryptographic signature
-  const vapidKeys = generateOrLoadVapidKeys()
+  // 2. Verify deterministic VAPID ES256 key derivation & Apple-compatible JWT `sub` claim (never `.local`)
+  const vapidKeys = generateOrLoadVapidKeys(null, { seed: 'test-seed-1' })
+  const vapidKeysColdRestart = generateOrLoadVapidKeys(null, { seed: 'test-seed-1' })
+  assert.equal(vapidKeys.publicKey, vapidKeysColdRestart.publicKey)
   const { authorization, jwt } = createVapidHeaders('https://web.push.apple.com/Q1abc123', vapidKeys)
   assert.match(authorization, /^vapid t=.*, k=/)
   const verifiedPayload = verifyVapidJwt(jwt, vapidKeys)
   assert.equal(verifiedPayload.aud, 'https://web.push.apple.com')
+  assert.equal(verifiedPayload.sub, 'mailto:admin@dshtui.com')
+  assert.doesNotMatch(verifiedPayload.sub, /\.local$/i)
 
   // 3. Simulate iPhone Safari subscribing to Web Push via /api/push/subscribe
   const vapidPubRes = await (await fetchAdapter(`${hubUrl}/api/push/vapid-public-key`, { headers: authHeaders })).json()

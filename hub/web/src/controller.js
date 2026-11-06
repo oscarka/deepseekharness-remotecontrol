@@ -1865,6 +1865,66 @@ export function initHubController() {
     }
 
     // 本机是否真的订阅成功，只有浏览器自己知道；服务端登记数则代表所有设备
+    function getSubServerKeyBase64Url(sub) {
+      try {
+        const buf = sub?.options?.applicationServerKey;
+        if (!buf) return '';
+        const bytes = new Uint8Array(buf);
+        let bin = '';
+        for (let i = 0; i < bytes.length; i += 1) bin += String.fromCharCode(bytes[i]);
+        return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      } catch {
+        return '';
+      }
+    }
+
+    let pushAutoSyncInFlight = false;
+    async function ensureLocalPushSubscriptionSynced({ forceResubscribe = false } = {}) {
+      if (pushAutoSyncInFlight) return null;
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') {
+        return null;
+      }
+      if (Notification.permission !== 'granted') return null;
+      pushAutoSyncInFlight = true;
+      try {
+        await navigator.serviceWorker.register('/sw.js');
+        const reg = await navigator.serviceWorker.ready;
+        let sub = await reg.pushManager.getSubscription().catch(() => null);
+        let expectedKey = hubState.vapidPublicKey || '';
+        if (!expectedKey) {
+          const keyRes = await (await apiFetch('/api/push/vapid-public-key')).json().catch(() => ({}));
+          expectedKey = keyRes?.publicKey || '';
+        }
+        const localKey = sub ? getSubServerKeyBase64Url(sub) : '';
+        const keyMismatch = Boolean(sub && expectedKey && localKey && localKey !== expectedKey);
+        const serverEmpty = (hubState.pushSubscriptions || []).length === 0;
+
+        if (forceResubscribe || keyMismatch || (!sub && forceResubscribe)) {
+          if (sub) await sub.unsubscribe().catch(() => {});
+          if (expectedKey) {
+            sub = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(expectedKey),
+            });
+          }
+        }
+        if (sub && (forceResubscribe || keyMismatch || serverEmpty)) {
+          await apiFetch('/api/push/subscribe', {
+            method: 'POST',
+            body: JSON.stringify({
+              subscription: sub,
+              deviceName: isIosDevice() ? 'iPhone 主屏幕 App' : '浏览器 Web Push',
+            }),
+          });
+        }
+        return sub;
+      } catch {
+        return null;
+      } finally {
+        pushAutoSyncInFlight = false;
+      }
+    }
+
     let lastPushStatusAt = 0;
     async function refreshPushStatus(manual = false) {
       // 设置页每 2 秒会重绘一次，避免跟着重复查询 Service Worker
@@ -1894,9 +1954,15 @@ export function initHubController() {
       }
       try {
         const reg = await navigator.serviceWorker.getRegistration();
-        const sub = reg ? await reg.pushManager.getSubscription() : null;
+        let sub = reg ? await reg.pushManager.getSubscription() : null;
         const permission = Notification.permission;
         if (sub && permission === 'granted') {
+          const localKey = getSubServerKeyBase64Url(sub);
+          const expectedKey = hubState.vapidPublicKey || '';
+          if ((expectedKey && localKey && localKey !== expectedKey) || !subs.length) {
+            const synced = await ensureLocalPushSubscriptionSynced();
+            if (synced) sub = synced;
+          }
           statusEl.textContent = '本机：✅ 已开启锁屏推送';
           statusEl.style.color = '#059669';
         } else if (sub && permission === 'denied') {
@@ -2120,17 +2186,34 @@ export function initHubController() {
 
     async function sendTestPush() {
       try {
-        const res = await apiFetch('/api/push/test', { method: 'POST', body: JSON.stringify({}) });
-        const data = await res.json().catch(() => ({}));
-        const total = Number(data.totalSubscriptions || 0);
-        const sent = Number(data.sentCount || 0);
+        // 先确保本机订阅与当前服务端 VAPID 公钥保持同步
+        await ensureLocalPushSubscriptionSynced();
+        let res = await apiFetch('/api/push/test', { method: 'POST', body: JSON.stringify({}) });
+        let data = await res.json().catch(() => ({}));
+        let total = Number(data.totalSubscriptions || 0);
+        let sent = Number(data.sentCount || 0);
+        const firstFail = (data.results || []).find(r => r && r.ok === false);
+        // 若因历史密钥轮换导致 VapidPkHashMismatch / 403 / 0 订阅，且本机已授权通知，自动重建订阅并重试一次
+        if (
+          (!total || (!sent && firstFail && /VapidPkHashMismatch|403|410|404/i.test(String(firstFail.error || firstFail.status || '')))) &&
+          typeof Notification !== 'undefined' &&
+          Notification.permission === 'granted'
+        ) {
+          const reSub = await ensureLocalPushSubscriptionSynced({ forceResubscribe: true });
+          if (reSub) {
+            res = await apiFetch('/api/push/test', { method: 'POST', body: JSON.stringify({}) });
+            data = await res.json().catch(() => ({}));
+            total = Number(data.totalSubscriptions || 0);
+            sent = Number(data.sentCount || 0);
+          }
+        }
         if (!total) {
           showToast('⚠️ 还没有设备订阅推送，请先点「开启推送」');
           return;
         }
         if (!sent) {
           const failed = (data.results || []).find(r => r && r.ok === false);
-          showToast('⚠️ 测试推送未送达：' + ((failed && failed.error) || '推送服务返回失败'));
+          showToast('⚠️ 测试推送未送达：' + ((failed && (failed.error || ('HTTP ' + failed.status))) || '推送服务返回失败'));
           return;
         }
         showToast(`🔔 已发送测试锁屏通知（${sent}/${total} 台设备）`);
@@ -2679,6 +2762,7 @@ export function initHubController() {
           applyHubState(data);
           renderAll();
           flushPendingDeepLink();
+          void ensureLocalPushSubscriptionSynced();
           return { ok: true };
         }
         return { ok: false, error: data.error || '服务端返回异常' };

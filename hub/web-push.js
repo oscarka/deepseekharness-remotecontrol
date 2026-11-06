@@ -13,42 +13,79 @@ import {
 
 /**
  * Generate or restore VAPID ECDSA P-256 keypair for W3C Web Push (RFC 8292).
- * Zero external dependencies — uses Node.js built-in node:crypto.
+ * Uses deterministic HKDF-SHA256 derivation over a seed so Cloud Run container restarts
+ * or new revisions never rotate the VAPID keypair and never invalidate iPhone subscriptions.
  */
-export function generateOrLoadVapidKeys(existing = null) {
+export function generateOrLoadVapidKeys(existing = null, { seed = '' } = {}) {
   if (existing?.publicKey && existing?.privateJwk && existing?.publicJwk) {
     return existing
   }
-  const { publicKey, privateKey } = generateKeyPairSync('ec', {
-    namedCurve: 'prime256v1',
-  })
-  const publicJwk = publicKey.export({ format: 'jwk' })
-  const privateJwk = privateKey.export({ format: 'jwk' })
-
-  // Uncompressed 65-byte EC point (0x04 || X || Y) for browser applicationServerKey
-  const xBuf = Buffer.from(publicJwk.x, 'base64url')
-  const yBuf = Buffer.from(publicJwk.y, 'base64url')
-  const uncompressedPub = Buffer.concat([Buffer.from([0x04]), xBuf, yBuf])
-
-  return {
-    publicKey: uncompressedPub.toString('base64url'),
-    publicJwk,
-    privateJwk,
-    createdAt: Date.now(),
+  const effectiveSeed = String(
+    seed ||
+      process.env.VAPID_SECRET ||
+      process.env.HUB_TOKEN ||
+      process.env.FEISHU_HUB_TOKEN ||
+      'dsh-remotecontrol-vapid-seed-v1',
+  )
+  try {
+    const dBuf = Buffer.from(
+      hkdfSync(
+        'sha256',
+        Buffer.from(effectiveSeed, 'utf8'),
+        Buffer.from('dsh-vapid-p256-salt-v1', 'utf8'),
+        Buffer.from('vapid-p256-keypair', 'utf8'),
+        32,
+      ),
+    )
+    const ecdh = createECDH('prime256v1')
+    ecdh.setPrivateKey(dBuf)
+    const uncompressedPub = ecdh.getPublicKey()
+    const x = uncompressedPub.subarray(1, 33).toString('base64url')
+    const y = uncompressedPub.subarray(33, 65).toString('base64url')
+    const d = dBuf.toString('base64url')
+    const publicJwk = { kty: 'EC', crv: 'P-256', x, y }
+    const privateJwk = { kty: 'EC', crv: 'P-256', x, y, d }
+    // Validate key with node:crypto before returning
+    createPrivateKey({ key: privateJwk, format: 'jwk' })
+    return {
+      publicKey: uncompressedPub.toString('base64url'),
+      publicJwk,
+      privateJwk,
+      createdAt: Date.now(),
+    }
+  } catch {
+    const { publicKey, privateKey } = generateKeyPairSync('ec', {
+      namedCurve: 'prime256v1',
+    })
+    const publicJwk = publicKey.export({ format: 'jwk' })
+    const privateJwk = privateKey.export({ format: 'jwk' })
+    const xBuf = Buffer.from(publicJwk.x, 'base64url')
+    const yBuf = Buffer.from(publicJwk.y, 'base64url')
+    const uncompressedPub = Buffer.concat([Buffer.from([0x04]), xBuf, yBuf])
+    return {
+      publicKey: uncompressedPub.toString('base64url'),
+      publicJwk,
+      privateJwk,
+      createdAt: Date.now(),
+    }
   }
 }
 
 /**
  * Create RFC 8292 VAPID Authorization header (`vapid t=<jwt>, k=<pubKey>`)
  * Compatible with Apple iOS 16.4+ Web Push (web.push.apple.com), FCM, and Mozilla autopush.
+ * Note: Apple APNs strictly rejects `.local` / `.localhost` domains in `sub` with 403 BadJwtToken.
  */
-export function createVapidHeaders(endpoint, vapidKeys, subject = 'mailto:admin@dsh-hub.local') {
+export function createVapidHeaders(endpoint, vapidKeys, subject = 'mailto:admin@dshtui.com') {
   const urlObj = new URL(endpoint)
   const aud = `${urlObj.protocol}//${urlObj.host}`
   const exp = Math.floor(Date.now() / 1000) + 12 * 3600
+  const safeSubject = /\.(local|localhost|internal)$/i.test(String(subject || ''))
+    ? 'mailto:admin@dshtui.com'
+    : (subject || 'mailto:admin@dshtui.com')
 
   const headerB64 = Buffer.from(JSON.stringify({ typ: 'JWT', alg: 'ES256' })).toString('base64url')
-  const payloadB64 = Buffer.from(JSON.stringify({ aud, exp, sub: subject })).toString('base64url')
+  const payloadB64 = Buffer.from(JSON.stringify({ aud, exp, sub: safeSubject })).toString('base64url')
   const signingInput = `${headerB64}.${payloadB64}`
 
   const privKeyObj = createPrivateKey({ key: vapidKeys.privateJwk, format: 'jwk' })
@@ -205,10 +242,35 @@ export async function sendWebPushNotification(
     body,
   })
 
+  const ok = res.status >= 200 && res.status < 300
+  let reason = ''
+  if (!ok && typeof res.text === 'function') {
+    try {
+      const raw = await res.text()
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw)
+          reason = String(parsed?.reason || parsed?.message || parsed?.error || '').trim()
+        } catch {
+          reason = String(raw).trim().slice(0, 120)
+        }
+      }
+    } catch {}
+  }
+
+  const expired =
+    res.status === 404 ||
+    res.status === 410 ||
+    reason === 'Unregistered' ||
+    reason === 'BadDeviceToken' ||
+    reason === 'VapidPkHashMismatch'
+
   return {
-    ok: res.status >= 200 && res.status < 300,
+    ok,
     status: res.status,
-    expired: res.status === 404 || res.status === 410,
+    expired,
+    reason,
+    error: ok ? '' : (reason ? `HTTP ${res.status} (${reason})` : `HTTP ${res.status}`),
   }
 }
 
