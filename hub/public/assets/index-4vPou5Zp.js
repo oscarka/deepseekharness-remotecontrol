@@ -1671,7 +1671,8 @@ function initHubController() {
 		const chatHeaderTitle = s.harness !== "dsh" && s.project && !s.title.startsWith(s.project) ? `${s.project} / ${s.title}` : s.title;
 		document.getElementById("chatTitle").textContent = chatHeaderTitle;
 		const harnessPrefix = s.harness === "antigravity-ide" ? "⚡ Antigravity IDE · " : s.harness === "codex" ? "🧠 Codex · " : s.harness === "claude" ? "✴️ Claude Code · " : "";
-		const modeTag = s.controlMode === "observe-only" ? " · 👀 仅观测" : s.controlMode === "idle-resumable" ? " · 🔵 可续聊" : "";
+		const isObserveOnly = s.controlMode === "observe-only" && s.harness !== "dsh";
+		const modeTag = isObserveOnly ? " · 👀 仅观测" : s.controlMode === "idle-resumable" || s.controlMode === "observe-only" && s.harness === "dsh" ? " · 🔵 可续聊" : "";
 		document.getElementById("chatSub").textContent = `${harnessPrefix}📁 ${s.project} · 💻 ${s.hostName} (${s.msgCount} 条对话)${modeTag}`;
 		let otherApproval = null;
 		for (const h of hubState.hosts || []) {
@@ -1699,7 +1700,7 @@ function initHubController() {
 			const runningBar = document.getElementById("runningControlBar");
 			const chatInput = document.getElementById("globalPromptInput");
 			const sendBtn = document.getElementById("chatSendBtn");
-			if (s.controlMode === "observe-only") {
+			if (isObserveOnly) {
 				runningBar.classList.remove("show");
 				chatInput.disabled = true;
 				sendBtn.disabled = true;

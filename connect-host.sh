@@ -152,7 +152,7 @@ fi
 
 # 自动启用 dsh-turbo (Rust 原生加速引擎 + 辅助功能权限自检与弹窗引导)
 if [ -x "$SCRIPT_DIR/dsh-turbo/enable-turbo.sh" ]; then
-  "$SCRIPT_DIR/dsh-turbo/enable-turbo.sh" || true
+  CONNECT_HOST_RUNNING=1 "$SCRIPT_DIR/dsh-turbo/enable-turbo.sh" || true
 fi
 
 DSH_CLI="$(command -v dsh 2>/dev/null || true)"

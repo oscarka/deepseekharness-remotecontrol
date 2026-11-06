@@ -624,3 +624,83 @@ test('presented deliverables are sent even when the assistant text omits the pat
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('dsh disk sessions are idle-resumable (never observe-only) and HubCore reconciles legacy observe-only dsh tasks', async () => {
+  const { decorateTaskMetadata } = await import('../lib/harness-router.js')
+  const { HubCore } = await import('../../hub/hub-core.js')
+  const { buildDshHeadlessPatchFile } = await import('../lib/harnesses/dsh-headless-adapter.js')
+
+  const diskDshTask = decorateTaskMetadata(
+    { id: 'session-no2-test', harness: 'dsh', title: 'no2 DSH session', status: 'idle', transcript: [] },
+    { isLiveDsh: false },
+  )
+  assert.equal(diskDshTask.controlMode, 'idle-resumable')
+  assert.equal(diskDshTask.capabilities.canPrompt, true)
+
+  const cachedStaleDshTask = decorateTaskMetadata(
+    {
+      id: 'session-no2-cached',
+      harness: 'dsh',
+      controlMode: 'observe-only',
+      capabilities: { canPrompt: false },
+    },
+    { isLiveDsh: false },
+  )
+  assert.equal(cachedStaleDshTask.controlMode, 'idle-resumable')
+  assert.equal(cachedStaleDshTask.capabilities.canPrompt, true)
+
+  const hub = new HubCore({ hubToken: 'test-token' })
+  await hub.handleHeartbeat({
+    hostId: 'no2demac-mini',
+    hostName: 'no2mini',
+    syncMeta: { bootId: 'boot-new', bootEpochMs: 2000, seq: 10 },
+    bridgeState: {
+      tasks: [
+        {
+          id: 'session-legacy-observe',
+          harness: 'dsh',
+          title: 'Legacy Read-Only Task',
+          status: 'idle',
+          controlMode: 'observe-only',
+          capabilities: { canPrompt: false },
+          transcript: [],
+        },
+      ],
+      approvals: [],
+      workspaces: [],
+    },
+  })
+
+  const fullState = hub.getFullState()
+  const hostState = fullState.hosts.find(h => h.hostId === 'no2demac-mini')
+  assert.equal(hostState.bridgeState.tasks[0].controlMode, 'idle-resumable')
+  assert.equal(hostState.bridgeState.tasks[0].capabilities.canPrompt, true)
+
+  // Stale process heartbeat must not steal queued commands
+  hub.queueCommand('no2demac-mini', { type: 'prompt', sessionId: 'session-legacy-observe', text: 'hello' })
+  const staleRes = await hub.handleHeartbeat({
+    hostId: 'no2demac-mini',
+    hostName: 'no2mini',
+    syncMeta: { bootId: 'boot-old', bootEpochMs: 1000, seq: 99 },
+    bridgeState: { tasks: [], approvals: [], workspaces: [] },
+  })
+  assert.equal(staleRes.staleSnapshotIgnored, true)
+  assert.equal(staleRes.commands.length, 0)
+
+  const activeRes = await hub.handleHeartbeat({
+    hostId: 'no2demac-mini',
+    hostName: 'no2mini',
+    syncMeta: { bootId: 'boot-new', bootEpochMs: 2000, seq: 11 },
+    bridgeState: hostState.bridgeState,
+  })
+  assert.equal(activeRes.commands.length, 1)
+  assert.equal(activeRes.commands[0].text, 'hello')
+
+  const root = await mkdtemp(join(tmpdir(), 'dsh-headless-patch-'))
+  try {
+    const patchPath = buildDshHeadlessPatchFile(root)
+    assert.ok(patchPath.endsWith('headless-remote-patch.yml'))
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

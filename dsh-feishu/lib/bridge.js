@@ -778,7 +778,12 @@ export class FeishuBridge {
           }
         }
       } else if (typeof agent.steer === 'function') {
-        agent.steer({ content: [{ type: 'text', text: clean }], source: { kind: 'user' } })
+        agent.steer({
+          id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role: 'user',
+          content: [{ type: 'text', text: clean }],
+          source: { kind: 'user' },
+        })
         return {
           ok: true,
           mode: 'native-steer',
@@ -844,7 +849,12 @@ export class FeishuBridge {
     }
     this.bridgeBusy.set(agent.id, (this.bridgeBusy.get(agent.id) ?? 0) + 1)
     try {
-      agent.followup({ content: [{ type: 'text', text }], source: { kind: 'user' } })
+      agent.followup({
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role: 'user',
+        content: [{ type: 'text', text }],
+        source: { kind: 'user' },
+      })
       await agent.whenIdle()
       const reply = this.lastAssistantText(agent, before)
       if (chatId) {
@@ -894,7 +904,12 @@ export class FeishuBridge {
     }
     this.bridgeBusy.set(agent.id, (this.bridgeBusy.get(agent.id) ?? 0) + 1)
     try {
-      agent.followup({ content: [{ type: 'text', text }], source: { kind: 'user' } })
+      agent.followup({
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role: 'user',
+        content: [{ type: 'text', text }],
+        source: { kind: 'user' },
+      })
       await agent.whenIdle()
       const reply = this.lastAssistantText(agent, before)
       if (reply) {
@@ -2051,7 +2066,11 @@ export class FeishuBridge {
         }
       }
       case 'prompt': {
-        const agent = this.agents.get(String(cmd.agentId ?? ''))
+        const targetAgentId = String(cmd.agentId ?? '')
+        let agent = this.agents.get(targetAgentId)
+        if (!agent && typeof this.agents.resolveOrResume === 'function') {
+          agent = await this.agents.resolveOrResume(targetAgentId)
+        }
         if (!agent) return { ok: false, error: '找不到该任务会话' }
         if (agent.status === 'running') {
           if (cmd.allowSteer) {
@@ -2081,7 +2100,11 @@ export class FeishuBridge {
         return { ok: true, message: '指令已发送给任务' }
       }
       case 'steer': {
-        const agent = this.agents.get(String(cmd.agentId ?? ''))
+        const targetAgentId = String(cmd.agentId ?? '')
+        let agent = this.agents.get(targetAgentId)
+        if (!agent && typeof this.agents.resolveOrResume === 'function') {
+          agent = await this.agents.resolveOrResume(targetAgentId)
+        }
         if (!agent) return { ok: false, error: '找不到该任务会话' }
         return await this.steerTask(agent, cmd.text, {
           interrupt: Boolean(cmd.interrupt),
@@ -2089,7 +2112,11 @@ export class FeishuBridge {
         })
       }
       case 'rename_session': {
-        const agent = this.agents.get(String(cmd.agentId ?? ''))
+        const targetAgentId = String(cmd.agentId ?? '')
+        let agent = this.agents.get(targetAgentId)
+        if (!agent && typeof this.agents.resolveOrResume === 'function') {
+          agent = await this.agents.resolveOrResume(targetAgentId)
+        }
         if (!agent) return { ok: false, error: '找不到该任务会话' }
         const renamed = renameAgentSession(agent, cmd.title)
         if (!renamed.ok) return renamed

@@ -878,9 +878,10 @@ export function initHubController() {
           : s.harness === 'claude'
             ? '✴️ Claude Code · '
             : '';
-      const modeTag = s.controlMode === 'observe-only'
+      const isObserveOnly = s.controlMode === 'observe-only' && s.harness !== 'dsh';
+      const modeTag = isObserveOnly
         ? ' · 👀 仅观测'
-        : s.controlMode === 'idle-resumable'
+        : s.controlMode === 'idle-resumable' || (s.controlMode === 'observe-only' && s.harness === 'dsh')
           ? ' · 🔵 可续聊'
           : '';
       document.getElementById('chatSub').textContent = `${harnessPrefix}📁 ${s.project} · 💻 ${s.hostName} (${s.msgCount} 条对话)${modeTag}`;
@@ -912,7 +913,7 @@ export function initHubController() {
         const runningBar = document.getElementById('runningControlBar');
         const chatInput = document.getElementById('globalPromptInput');
         const sendBtn = document.getElementById('chatSendBtn');
-        if (s.controlMode === 'observe-only') {
+        if (isObserveOnly) {
           runningBar.classList.remove('show');
           chatInput.disabled = true;
           sendBtn.disabled = true;

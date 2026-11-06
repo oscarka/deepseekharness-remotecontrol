@@ -19,8 +19,15 @@ import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHom
 import { decorateTaskMetadata, HarnessRouter } from './harness-router.js'
 import { ClaudeAdapter } from './harnesses/claude-adapter.js'
 import { CodexAdapter } from './harnesses/codex-adapter.js'
+import { DshHeadlessRunner } from './harnesses/dsh-headless-adapter.js'
 import { safeError } from './redact.js'
-import { extractSessionTranscript, loadDiskSessionsFromDshHome, loadOrCreateHostIdentity, renameDiskSession } from './workspace-ops.js'
+import {
+  extractSessionTranscript,
+  invalidateDshSessionParseCache,
+  loadDiskSessionsFromDshHome,
+  loadOrCreateHostIdentity,
+  renameDiskSession,
+} from './workspace-ops.js'
 
 /**
  * Outbound agent that synchronizes a local DSH host with the Cloud Run Control Hub
@@ -97,6 +104,13 @@ export class HubAgent {
     this.pendingRetick = false
     this.followUpTimer = null
     this.inflightTick = null
+    this.dshHeadlessRunner = new DshHeadlessRunner({
+      dshHome: this.config?.dshHome,
+      onTurnSettled: () => {
+        invalidateDshSessionParseCache()
+        void this.refreshDshStats(true).then(() => this.tick())
+      },
+    })
   }
 
   getFleetSummary() {
@@ -177,6 +191,46 @@ export class HubAgent {
         this.lastStatsAt = now
       }
       this.cachedDiskSessions = await loadDiskSessionsFromDshHome(this.config.dshHome)
+      for (const ds of this.cachedDiskSessions) {
+        if (this.dshHeadlessRunner?.isRunning(ds.id)) {
+          ds.status = 'running'
+          ds.turnState = 'thinking'
+          ds.statusLabel = '🟢 运行中'
+          ds.controlMode = 'managed'
+          ds.runningSummary = '💭 正在后台思考与执行...'
+        }
+        const pending = this.pendingUserPrompts.get(ds.id)
+        if (!pending || pending.length === 0) continue
+        if (!Array.isArray(ds.transcript)) ds.transcript = []
+        const remaining = []
+        for (const item of pending) {
+          if (now - item.time >= 45_000) continue
+          const alreadyInTranscript = ds.transcript.some(
+            m => m.role === 'user' && String(m.text || '').trim() === item.text,
+          )
+          if (alreadyInTranscript) continue
+          remaining.push(item)
+          ds.transcript = [
+            ...ds.transcript,
+            {
+              index: ds.transcript.length,
+              role: 'user',
+              text: item.text,
+              thinking: '',
+              tools: [],
+              toolCalls: [],
+              time: item.time,
+            },
+          ]
+          ds.lastActivity = Math.max(ds.lastActivity || 0, item.time)
+          ds.updatedAt = Math.max(ds.updatedAt || 0, item.time)
+        }
+        if (remaining.length === 0) {
+          this.pendingUserPrompts.delete(ds.id)
+        } else {
+          this.pendingUserPrompts.set(ds.id, remaining)
+        }
+      }
       if (this.shouldLoadAntigravityIde()) {
         this.cachedAgySessions = await loadAntigravityIdeSessions({
           brainDirs: this.config.antigravityBrainDirs || undefined,
@@ -842,12 +896,28 @@ export class HubAgent {
           }
           const bridgeRes = await this.bridge.executeHubCommand(cmd)
           if (!bridgeRes?.ok && bridgeRes?.error === '找不到该任务会话') {
-            const isHistoricalDsh = (this.cachedDiskSessions || []).some(s => s.id === targetId)
-            if (isHistoricalDsh) {
-              return {
-                ok: false,
-                error: '该 DSH 历史会话未在桌面端运行，请切换到 ⚡ Antigravity IDE 会话或打开 DeepSeek Harness 桌面端',
+            if (type === 'stop' && this.dshHeadlessRunner?.isRunning(targetId)) {
+              return this.dshHeadlessRunner.stop(targetId)
+            }
+            const diskSess = (this.cachedDiskSessions || []).find(s => s.id === targetId)
+            if (diskSess && (type === 'prompt' || type === 'steer')) {
+              const trimmedText = String(cmd.text || '').trim()
+              const headlessRes = await this.dshHeadlessRunner.runTurn({
+                sessionId: targetId,
+                text: trimmedText,
+                cwd: diskSess.cwd || cmd.cwd,
+              })
+              if (headlessRes.ok && trimmedText) {
+                const nowTs = Date.now()
+                const list = this.pendingUserPrompts.get(targetId) || []
+                list.push({ text: trimmedText, time: nowTs })
+                this.pendingUserPrompts.set(targetId, list)
+                diskSess.status = 'running'
+                diskSess.statusLabel = '🟢 运行中'
+                diskSess.lastActivity = nowTs
+                diskSess.updatedAt = nowTs
               }
+              return headlessRes
             }
           }
           return bridgeRes
@@ -873,7 +943,16 @@ export class HubAgent {
               execImpl: this.execImpl,
             })
           }
-          return await this.bridge.executeHubCommand(cmd)
+          const bridgeNewRes = await this.bridge.executeHubCommand(cmd)
+          if (!bridgeNewRes?.ok && bridgeNewRes?.error === '当前 DSH 实例不支持动态创建会话') {
+            return await this.dshHeadlessRunner.runTurn({
+              isNew: true,
+              title: cmd.title,
+              text: cmd.prompt || cmd.text,
+              cwd: cmd.cwd || this.config?.defaultWorkspace || process.cwd(),
+            })
+          }
+          return bridgeNewRes
         }
         case 'request_ax_permission': {
           const perm = await checkAccessibilityPermission({
