@@ -2138,7 +2138,15 @@
         for (const t of tasks) {
           const ts = t.updatedAt || t.lastActivity || 0;
           const pendingApp = approvals.find(a => a.agentId === t.id);
-          const transcript = Array.isArray(t.transcript) ? t.transcript : [];
+          const baseTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
+          const optimisticList = (window.__dshOptimisticMsgs && window.__dshOptimisticMsgs[t.id]) || [];
+          const nowMs = Date.now();
+          for (const opt of optimisticList) {
+            if (nowMs - opt.time < 15000 && !baseTranscript.some(m => m.role === 'user' && m.text === opt.text)) {
+              baseTranscript.push({ role: 'user', text: opt.text, time: opt.time });
+            }
+          }
+          const transcript = baseTranscript;
           const lastMsg = transcript.length > 0 ? transcript[transcript.length - 1] : null;
           const project = t.project || (t.cwd ? t.cwd.split('/').filter(Boolean).pop() : '默认工作区') || '默认工作区';
           const status = pendingApp ? 'approval' : (t.status || 'idle');
@@ -3042,36 +3050,56 @@
       try { localStorage.removeItem(composerDraftKey(composerSessionId || activeSessionId)); } catch {}
       autoGrowComposer();
 
-      if (Array.isArray(s.transcript)) {
-        const lastEntry = s.transcript[s.transcript.length - 1];
-        if (!lastEntry || lastEntry.role !== 'user' || lastEntry.text !== text) {
-          s.transcript.push({ role: 'user', text, time: Date.now() });
-          lastRenderedChatKey = '';
-          renderChatMessages();
-        }
-      }
+      window.__dshOptimisticMsgs = window.__dshOptimisticMsgs || {};
+      const optList = window.__dshOptimisticMsgs[s.id] || [];
+      optList.push({ text, time: Date.now() });
+      window.__dshOptimisticMsgs[s.id] = optList.slice(-5);
+      lastRenderedChatKey = '';
+      renderActiveChatStage();
 
       const cmdType = s.status === 'running' ? 'steer' : 'prompt';
       showToast(cmdType === 'steer' ? '⚡ 已发送实时插话' : '📨 已发送指令');
-      const dispatchRes = await dispatchHostCommand(s.hostId, {
-        type: cmdType,
-        agentId: s.id,
-        text,
-        prompt: text,
-      });
+      let dispatchRes = null;
+      try {
+        dispatchRes = await dispatchHostCommand(s.hostId, {
+          type: cmdType,
+          agentId: s.id,
+          cwd: s.cwd || '',
+          text,
+          prompt: text,
+        });
+      } catch (err) {
+        dispatchRes = { ok: false, error: err?.message || '网络请求失败' };
+      }
+
+      if (!dispatchRes || dispatchRes.ok === false) {
+        window.__dshOptimisticMsgs[s.id] = (window.__dshOptimisticMsgs[s.id] || []).filter(item => item.text !== text);
+        lastRenderedChatKey = '';
+        renderActiveChatStage();
+        showToast('❌ ' + (dispatchRes?.error || '发送指令失败'));
+        if (input && !input.value.trim()) {
+          input.value = text;
+          autoGrowComposer();
+        }
+        return;
+      }
+
       setTimeout(fetchState, 250);
       setTimeout(fetchState, 800);
 
       const cmdId = dispatchRes?.command?.id;
       if (cmdId) {
         (async () => {
-          for (let i = 0; i < 12; i++) {
+          for (let i = 0; i < 16; i++) {
             await new Promise(r => setTimeout(r, 350));
             try {
               const res = await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`);
               const data = await res.json();
-              if (data?.command?.status === 'completed') {
+              if (data?.ready || data?.command?.status === 'completed') {
                 if (data.result && data.result.ok === false) {
+                  window.__dshOptimisticMsgs[s.id] = (window.__dshOptimisticMsgs[s.id] || []).filter(item => item.text !== text);
+                  lastRenderedChatKey = '';
+                  renderActiveChatStage();
                   showToast('❌ ' + (data.result.error || data.result.message || '发送失败'));
                   if (input && !input.value.trim()) {
                     input.value = text;

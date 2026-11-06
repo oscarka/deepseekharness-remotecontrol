@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 清理 IDE 终端可能注入的临时沙箱代理或单次 RPC 覆盖变量，确保守护进程直连云端与本机 LanguageServer
+unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy \
+  RPC_PROXY_DEST_OVERRIDE RPC_PROXY_HEADER_AS_EXTENSION \
+  ANTIGRAVITY_LS_ADDRESS ANTIGRAVITY_CSRF_TOKEN 2>/dev/null || true
+
 # 默认总控中心地址（可通过环境变量 FEISHU_HUB_URL 覆盖）
 HUB_URL="${FEISHU_HUB_URL:-https://dsh-remotecontrol-hub-339795034470.us-central1.run.app}"
 
