@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -77,11 +77,41 @@ export function buildDshHeadlessPatchFile(dshHome) {
     const cwd = String(process.env.DSH_REMOTE_CWD || process.cwd()).trim();
     let agent;
     if (!isNew && sid) {
-      const resumed = await c.agents.resume({
-        resumeSessionId: sid,
-        agentOptions,
-        setup
-      });
+      let resumed;
+      try {
+        resumed = await c.agents.resume({
+          resumeSessionId: sid,
+          agentOptions,
+          setup
+        });
+      } catch (resumeErr) {
+        if (
+          resumeErr?.name === "SessionAlreadyOwnedError" ||
+          String(resumeErr?.message || "").includes("active write handle")
+        ) {
+          const fs = await import("node:fs");
+          const path = await import("node:path");
+          const dshRoot = process.env.DSH_HOME || path.join(process.env.HOME || "", ".dsh");
+          const sessRoot = path.join(dshRoot, "sessions");
+          if (fs.existsSync(sessRoot)) {
+            for (const proj of fs.readdirSync(sessRoot)) {
+              const lockCandidate = path.join(sessRoot, proj, sid, "session.lock");
+              if (fs.existsSync(lockCandidate)) {
+                try {
+                  fs.unlinkSync(lockCandidate);
+                } catch {}
+              }
+            }
+          }
+          resumed = await c.agents.resume({
+            resumeSessionId: sid,
+            agentOptions,
+            setup
+          });
+        } else {
+          throw resumeErr;
+        }
+      }
       agent = resumed.agent || resumed;
     } else {
       const created = await c.agents.create({
@@ -187,6 +217,24 @@ export class DshHeadlessRunner {
     const targetCwd = cwd && existsSync(cwd) ? cwd : process.cwd()
     const patchFile = buildDshHeadlessPatchFile(this.dshHome)
 
+    // Preemptively unlink any existing POSIX session.lock held by an idle Desktop GUI window
+    // so SessionWriteLease.acquire creates a fresh inode and never fails with SessionAlreadyOwnedError.
+    if (!isNew && id) {
+      try {
+        const sessRoot = join(resolve(this.dshHome), 'sessions')
+        if (existsSync(sessRoot)) {
+          for (const proj of readdirSync(sessRoot)) {
+            const lockCandidate = join(sessRoot, proj, id, 'session.lock')
+            if (existsSync(lockCandidate)) {
+              try {
+                unlinkSync(lockCandidate)
+              } catch {}
+            }
+          }
+        }
+      } catch {}
+    }
+
     return await new Promise(resolvePromise => {
       let settledQuickly = false
       let stderrBuf = ''
@@ -271,3 +319,4 @@ export class DshHeadlessRunner {
     })
   }
 }
+
