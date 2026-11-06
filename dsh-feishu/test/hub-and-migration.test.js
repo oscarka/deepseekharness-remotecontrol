@@ -2514,6 +2514,36 @@ test('Phase 2: CodexAdapter & ClaudeAdapter parse real JSONL schemas, detect con
     assert.equal(claudeNewRes.ok, true)
     assert.equal(executedCmds[3].bin, fakeClaudeBin)
     assert.deepEqual(executedCmds[3].args, ['-p', '编写单元测试'])
+
+    // Verify background spawn lifecycle (managed while running -> stopSession SIGTERM -> deleteSession)
+    let killedSignal = ''
+    const spawnCodex = new CodexAdapter({
+      codexHome,
+      binaryPath: fakeCodexBin,
+      spawnImpl: () => ({
+        on() {},
+        kill(sig) {
+          killedSignal = sig
+        },
+      }),
+    })
+    const bgRes = await spawnCodex.sendPrompt({
+      sessionId: `codex:${codexUuid}`,
+      text: '后台运行长任务',
+      cwd: '/Users/cc/chinagooglerun',
+    })
+    assert.equal(bgRes.ok, true)
+    const runningList = await spawnCodex.listSessions()
+    assert.equal(runningList[0].status, 'running')
+    assert.equal(runningList[0].controlMode, 'managed')
+
+    const stopRes = await spawnCodex.stopSession({ sessionId: `codex:${codexUuid}` })
+    assert.equal(stopRes.ok, true)
+    assert.equal(killedSignal, 'SIGTERM')
+
+    await spawnCodex.deleteSession({ sessionId: `codex:${codexUuid}` })
+    const afterDelete = await spawnCodex.listSessions()
+    assert.equal(afterDelete.length, 0)
   } finally {
     await rm(tmpDir, { recursive: true, force: true })
   }
