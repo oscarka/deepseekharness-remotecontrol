@@ -2007,10 +2007,12 @@
     const overlayStack = [];
     let suppressPopstateCount = 0;
 
-    // DOM 增量比对 Key（防止 3.5s 轮询清空输入框或合上展开的 <details>）
+    // DOM 增量比对 Key（防止轮询/SSE重绘打断手势、清空输入框或合上展开的 <details>）
     let lastRenderedChatKey = '';
     let lastRenderedComposerKey = '';
     let lastRenderedChatSessionId = '';
+    let lastRenderedStripKey = '';
+    let lastRenderedListKey = '';
 
     // 置顶与已读记录（使用 v4 基线，完美对齐原型图的视觉层次）
     let pinnedMap = {};
@@ -2141,10 +2143,18 @@
           const baseTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
           const optimisticList = (window.__dshOptimisticMsgs && window.__dshOptimisticMsgs[t.id]) || [];
           const nowMs = Date.now();
+          const remainingOpt = [];
           for (const opt of optimisticList) {
-            if (nowMs - opt.time < 15000 && !baseTranscript.some(m => m.role === 'user' && m.text === opt.text)) {
-              baseTranscript.push({ role: 'user', text: opt.text, time: opt.time });
+            if (nowMs - opt.time >= 15000) continue;
+            if (baseTranscript.some(m => m.role === 'user' && m.text === opt.text)) {
+              // 已落盘同步，从乐观缓存移除，确保后续在电脑端「撤回」时不会被前端重新塞回
+              continue;
             }
+            remainingOpt.push(opt);
+            baseTranscript.push({ role: 'user', text: opt.text, time: opt.time });
+          }
+          if (window.__dshOptimisticMsgs && window.__dshOptimisticMsgs[t.id]) {
+            window.__dshOptimisticMsgs[t.id] = remainingOpt;
           }
           const transcript = baseTranscript;
           const lastMsg = transcript.length > 0 ? transcript[transcript.length - 1] : null;
@@ -2355,10 +2365,11 @@
       }
 
       const searchBox = document.getElementById('searchAndFilterBox');
+      const normalizedSessions = getNormalizedSessions();
       if (currentTab === 'chats') {
         searchBox.style.display = 'block';
-        renderProjectStrip();
-        renderSessionList();
+        renderProjectStrip(normalizedSessions);
+        renderSessionList(normalizedSessions);
       } else if (currentTab === 'files') {
         searchBox.style.display = 'none';
         renderFilesTab(document.getElementById('mainViewport'));
@@ -2373,7 +2384,7 @@
       if (activeSessionId) {
         renderActiveChatStage();
       } else if (window.innerWidth >= 769 && document.body.classList.contains('DesktopSplitMode')) {
-        const first = getNormalizedSessions()[0];
+        const first = normalizedSessions[0];
         if (first) {
           activeSessionId = first.id;
           activeSessionHostId = first.hostId;
@@ -2387,8 +2398,8 @@
       }
     }
 
-    function renderProjectStrip() {
-      const sessions = getNormalizedSessions();
+    function renderProjectStrip(sessionsArg) {
+      const sessions = Array.isArray(sessionsArg) ? sessionsArg : getNormalizedSessions();
       const activeCount = sessions.filter(s => s.status === 'running' || s.status === 'approval').length;
       const unreadCount = sessions.filter(s => s.hasUnreadConclusion || s.isUnreadInterrupted).length;
       const agyCount = sessions.filter(s => s.harness === 'antigravity-ide').length;
@@ -2400,6 +2411,10 @@
       }
       const projects = Object.keys(counts);
       const strip = document.getElementById('projectStrip');
+      const stripKey = `${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${dshCount}:${projects.map(p => `${p}:${counts[p]}`).join(',')}`;
+      if (stripKey === lastRenderedStripKey && strip.children.length > 0) return;
+      lastRenderedStripKey = stripKey;
+      const prevScrollLeft = strip.scrollLeft;
 
       const smartPills = [
         `<button class="filter-pill smart-pill ${currentProject === 'SMART_ACTIVE' ? 'active' : ''}" onclick="selectProject('SMART_ACTIVE')">🟢 运行中 <span class="count">${activeCount}</span></button>`,
@@ -2417,11 +2432,12 @@
         ...smartPills,
         ...projects.map(p => `<button class="filter-pill ${currentProject === p ? 'active' : ''}" onclick="selectProject('${esc(p)}')">${esc(p)} <span class="count">${counts[p]}</span></button>`)
       ].join('');
+      strip.scrollLeft = prevScrollLeft;
     }
 
-    function renderSessionList() {
+    function renderSessionList(sessionsArg) {
       const viewport = document.getElementById('mainViewport');
-      const allSessions = getNormalizedSessions();
+      const allSessions = Array.isArray(sessionsArg) ? sessionsArg : getNormalizedSessions();
 
       // 仅当在线电脑存在真实待确认授权时显示顶部黄色授权横幅，无授权时顶部保持干净
       let pendingAppInfo = null;
@@ -2443,6 +2459,18 @@
         return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || s.lastPreview.toLowerCase().includes(q);
       });
 
+      const showHostTag = currentHostId === 'ALL_HOSTS' && (hubState.hosts || []).length > 1;
+      const bannerKey = pendingAppInfo
+        ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.promptTitle || ''}`
+        : '';
+      const rowsSig = filtered
+        .map(s => `${s.id}:${s.status}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`)
+        .join('|');
+      const listKey = `${currentProject}:${q}:${showHostTag ? 1 : 0}:${bannerKey}#${rowsSig}`;
+      if (listKey === lastRenderedListKey && viewport.querySelector('.session-list')) return;
+      lastRenderedListKey = listKey;
+      const prevScrollTop = viewport.scrollTop;
+
       const liveBannerHtml = pendingAppInfo ? `
         <div class="live-activity-bar">
           <div class="live-activity-left" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">
@@ -2455,8 +2483,6 @@
           </div>
         </div>
       ` : '';
-
-      const showHostTag = currentHostId === 'ALL_HOSTS' && (hubState.hosts || []).length > 1;
 
       const rowsHtml = filtered.map(s => {
         let rowStateClass = '';
@@ -2511,6 +2537,7 @@
           ${rowsHtml || `<div style="padding:48px 20px;text-align:center;color:#94a3b8;font-size:14px;">暂无匹配的对话记录</div>`}
         </div>
       `;
+      viewport.scrollTop = prevScrollTop;
     }
 
     // ==================== 5. 二级全屏对话视图（含 DOM 增量比对防打断） ====================
@@ -2624,13 +2651,20 @@
       }
 
       // DOM Diffing：如果会话内容和状态没变，不重绘 #chatMessages，保留用户展开的思考过程与滚动位置！
-      const lastMsg = s.transcript[s.transcript.length - 1];
-      const chatKey = `${s.id}:${s.status}:${s.transcript.length}:${lastMsg?.text?.length || 0}:${s.approvalObj?.code || ''}:${(s.changedFiles || []).length}`;
+      const trSig = s.transcript
+        .slice(-6)
+        .map(m => `${m.role}:${(m.text || '').length}:${(m.text || '').slice(-32)}:${(m.thinking || '').length}:${(m.tools || []).length}:${m.waitingForInput ? 1 : 0}`)
+        .join('|');
+      const chatKey = `${s.id}:${s.status}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ''}:${(s.changedFiles || []).length}`;
       if (chatKey === lastRenderedChatKey) return;
       lastRenderedChatKey = chatKey;
       selectedAgyOptionIndex = 1;
 
       const box = document.getElementById('chatMessages');
+      // 保留用户手动点开的 <details>（思考过程 / 工具输出）状态，增量刷新时不会自动合上
+      const openDetailIds = new Set(
+        Array.from(box.querySelectorAll('details[open][data-detail-id]')).map(el => el.dataset.detailId)
+      );
       // 用户正往上翻旧消息时，新内容不要把他强行拉回底部，只浮出「最新消息」
       const nearBottom = box.dataset.dshSession !== String(activeSessionId)
         || (box.scrollHeight - box.scrollTop - box.clientHeight < 120);
@@ -2640,22 +2674,24 @@
         ? s.transcript
         : [{ role: 'assistant', text: s.rawLastPreview || s.lastPreview }];
 
-      const bubblesHtml = msgs.map(m => {
+      const bubblesHtml = msgs.map((m, msgIdx) => {
         if (m.role === 'user') {
           return `<div class="bubble user">${esc(m.text)}</div>`;
         }
+        const thinkId = `think-${msgIdx}`;
         const thought = m.thinking
-          ? `<details class="thought-box thinking-details"><summary>💭 思考过程 (点击展开)</summary><div style="margin-top:6px;white-space:pre-wrap;">${esc(m.thinking)}</div></details>`
+          ? `<details class="thought-box thinking-details" data-detail-id="${thinkId}" ${openDetailIds.has(thinkId) ? 'open' : ''}><summary>💭 思考过程 (点击展开)</summary><div style="margin-top:6px;white-space:pre-wrap;">${esc(m.thinking)}</div></details>`
           : '';
         if (m.isToolStepOnly) {
           const toolOut = (m.tools || []).map(t => t.commandLine || t.summary || '').filter(Boolean).join('\n');
           const waitText = m.waitingForInput
             ? `<div style="margin-top:6px;font-size:12.5px;color:#64748b;">Waiting for user input.</div>`
             : '';
+          const stepToolId = `tool-step-${msgIdx}`;
           return `
             <div class="bubble assistant" style="padding:10px 14px;">
               ${thought}
-              <details class="tool-chip-details" style="border:none;background:transparent;">
+              <details class="tool-chip-details" data-detail-id="${stepToolId}" ${openDetailIds.has(stepToolId) ? 'open' : ''} style="border:none;background:transparent;">
                 <summary style="padding:2px 0;font-size:13px;color:#334155;">
                   <span>${esc(m.text)}</span>
                   <span style="color:#94a3b8;font-size:11px;">›</span>
@@ -2667,12 +2703,13 @@
           `;
         }
         const tools = (m.tools || []).length > 0
-          ? `<div class="tool-chips">${m.tools.map(t => {
+          ? `<div class="tool-chips">${m.tools.map((t, tIdx) => {
               const tName = t.name || 'tool';
               const tSummary = t.summary || '';
               const tDetail = t.commandLine || tSummary || '执行完毕';
+              const chipId = `tool-${msgIdx}-${tIdx}`;
               return `
-                <details class="tool-chip-details">
+                <details class="tool-chip-details" data-detail-id="${chipId}" ${openDetailIds.has(chipId) ? 'open' : ''}>
                   <summary><span>🔧 ${esc(tName)} ${esc(tSummary.slice(0, 48))}</span><span style="color:#94a3b8;font-size:10.5px;">点击查看输出 ▾</span></summary>
                   <div class="tool-chip-output">${esc(tDetail)}</div>
                 </details>
@@ -4741,17 +4778,29 @@
     }
 
     let sseSource = null;
+    let sseConnected = false;
+    let lastSseEventAt = 0;
     function connectSSE() {
       if (urlParams.get('nosse') === '1') return;
       if (sseSource) {
         try { sseSource.close(); } catch {}
       }
+      sseConnected = false;
       const tk = getToken();
       const url = '/api/events' + (tk ? '?token=' + encodeURIComponent(tk) : '');
       try {
         sseSource = new EventSource(url);
+        sseSource.onopen = () => {
+          sseConnected = true;
+          lastSseEventAt = Date.now();
+        };
+        sseSource.onerror = () => {
+          sseConnected = false;
+        };
         sseSource.addEventListener('state', evt => {
           try {
+            sseConnected = true;
+            lastSseEventAt = Date.now();
             const data = JSON.parse(evt.data);
             if (data.ok) {
               applyHubState(data);
@@ -4767,7 +4816,12 @@
     setupInstallHint();
     fetchState();
     connectSSE();
-    setInterval(fetchState, 2000);
+    // 仅当 SSE 断开或超过 8s 未收到实时流时，才降级使用轮询兜底，避免双重刷新引起屏幕抖动
+    setInterval(() => {
+      if (!sseConnected || (Date.now() - lastSseEventAt > 8000)) {
+        fetchState();
+      }
+    }, 3000);
   </script>
 </body>
 </html>

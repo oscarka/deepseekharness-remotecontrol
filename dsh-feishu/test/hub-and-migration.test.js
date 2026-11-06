@@ -1316,7 +1316,118 @@ test('antigravity-ide Connect-RPC prompt delivery & merged Web UI Markdown/UX he
   assert.match(indexHtml, /row-state-conclusion/)
   assert.doesNotMatch(indexHtml, /renderChatMessages\(/)
   assert.match(indexHtml, /data\?\.ready/)
+  assert.match(indexHtml, /lastRenderedStripKey/)
+  assert.match(indexHtml, /lastRenderedListKey/)
 })
+
+test('antigravity-ide revert rollback & HubCore heartbeat deduplication', () => {
+  const convId = '99887766-5544-3322-1100-aabbccddeeff'
+  const t0 = Date.now() - 10_000
+  const steps = [
+    JSON.stringify({
+      step_index: 0,
+      type: 'USER_INPUT',
+      status: 'DONE',
+      created_at: new Date(t0).toISOString(),
+      content: '<USER_REQUEST>\n第一轮提问\n</USER_REQUEST>',
+    }),
+    JSON.stringify({
+      step_index: 1,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: new Date(t0 + 1000).toISOString(),
+      content: '第一轮回答',
+    }),
+    JSON.stringify({
+      step_index: 2,
+      type: 'USER_INPUT',
+      status: 'DONE',
+      created_at: new Date(t0 + 2000).toISOString(),
+      content: '<USER_REQUEST>\n将要被撤回的错误提问\n</USER_REQUEST>',
+    }),
+    JSON.stringify({
+      step_index: 3,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: new Date(t0 + 3000).toISOString(),
+      content: '将要被撤回的旧回答',
+    }),
+  ]
+
+  // Case A: User clicked "Revert" in Antigravity IDE (in-memory stepCount dropped to 2, disk not rewritten yet)
+  const revertedInMemory = parseAntigravityTranscript(steps.join('\n'), {
+    conversationId: convId,
+    mtimeMs: t0 + 3000,
+    now: t0 + 4000,
+    liveStepCount: 2,
+    liveLastUserInputStepIndex: 0,
+    liveStatus: 'CASCADE_RUN_STATUS_IDLE',
+  })
+  assert.equal(revertedInMemory.transcript.length, 2)
+  assert.equal(revertedInMemory.transcript[0].text, '第一轮提问')
+  assert.equal(revertedInMemory.transcript[1].text, '第一轮回答')
+
+  // Case B: User sent a new replacement message after revert (append-only transcript.jsonl has step_index dropping back to 2)
+  const stepsAfterResend = [
+    ...steps,
+    JSON.stringify({
+      step_index: 2,
+      type: 'USER_INPUT',
+      status: 'DONE',
+      created_at: new Date(t0 + 5000).toISOString(),
+      content: '<USER_REQUEST>\n撤回后重新发送的新提问\n</USER_REQUEST>',
+    }),
+    JSON.stringify({
+      step_index: 3,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: new Date(t0 + 6000).toISOString(),
+      content: '撤回后生成的新回答',
+    }),
+  ]
+  const parsedAfterResend = parseAntigravityTranscript(stepsAfterResend.join('\n'), {
+    conversationId: convId,
+    mtimeMs: t0 + 6000,
+    now: t0 + 7000,
+  })
+  assert.equal(parsedAfterResend.transcript.length, 4)
+  assert.equal(parsedAfterResend.transcript[2].text, '撤回后重新发送的新提问')
+  assert.equal(parsedAfterResend.transcript[3].text, '撤回后生成的新回答')
+  assert.ok(!parsedAfterResend.transcript.some(m => m.text.includes('将要被撤回')))
+
+  // Case C: HubCore suppresses duplicate SSE state broadcasts when heartbeat payload is unchanged
+  let currentNow = 100_000
+  const hub = new HubCore({ now: () => currentNow })
+  let sseEmissions = 0
+  hub.onStateChange(() => {
+    sseEmissions += 1
+  })
+  const basePayload = {
+    hostId: 'mac-1',
+    hostName: 'Mac 1',
+    bridgeState: {
+      tasks: [{ id: 't1', title: 'Task 1', status: 'idle', transcript: [{ role: 'user', text: 'hi' }] }],
+      approvals: [],
+    },
+  }
+  hub.handleHeartbeat(basePayload)
+  assert.equal(sseEmissions, 1)
+
+  currentNow += 1500
+  hub.handleHeartbeat(basePayload)
+  assert.equal(sseEmissions, 1) // Unchanged within 12s -> no redundant SSE broadcast
+
+  currentNow += 1500
+  hub.handleHeartbeat({
+    ...basePayload,
+    bridgeState: {
+      tasks: [{ id: 't1', title: 'Task 1', status: 'running', transcript: [{ role: 'user', text: 'hi' }] }],
+      approvals: [],
+    },
+  })
+  assert.equal(sseEmissions, 2) // State changed -> immediately broadcast
+})
+
 
 
 

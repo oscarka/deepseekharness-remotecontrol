@@ -133,33 +133,37 @@ export class HubAgent {
         for (const sess of this.cachedAgySessions) {
           const pending = this.pendingUserPrompts.get(sess.id)
           if (!pending || pending.length === 0) continue
-          const fresh = pending.filter(item => now - item.time < 20_000)
-          if (fresh.length === 0) {
-            this.pendingUserPrompts.delete(sess.id)
-            continue
-          }
-          this.pendingUserPrompts.set(sess.id, fresh)
           if (!Array.isArray(sess.transcript)) sess.transcript = []
-          for (const item of fresh) {
+          const remaining = []
+          for (const item of pending) {
+            if (now - item.time >= 20_000) continue
             const alreadyInTranscript = sess.transcript.some(
               m => m.role === 'user' && String(m.text || '').trim() === item.text,
             )
-            if (!alreadyInTranscript) {
-              sess.transcript = [
-                ...sess.transcript,
-                {
-                  index: sess.transcript.length,
-                  role: 'user',
-                  text: item.text,
-                  thinking: '',
-                  tools: [],
-                  toolCalls: [],
-                  time: item.time,
-                },
-              ]
-              sess.lastActivity = Math.max(sess.lastActivity || 0, item.time)
-              sess.updatedAt = Math.max(sess.updatedAt || 0, item.time)
+            if (alreadyInTranscript) {
+              // Once persisted into transcript.jsonl, retire from pendingUserPrompts so a subsequent revert won't re-inject it
+              continue
             }
+            remaining.push(item)
+            sess.transcript = [
+              ...sess.transcript,
+              {
+                index: sess.transcript.length,
+                role: 'user',
+                text: item.text,
+                thinking: '',
+                tools: [],
+                toolCalls: [],
+                time: item.time,
+              },
+            ]
+            sess.lastActivity = Math.max(sess.lastActivity || 0, item.time)
+            sess.updatedAt = Math.max(sess.updatedAt || 0, item.time)
+          }
+          if (remaining.length === 0) {
+            this.pendingUserPrompts.delete(sess.id)
+          } else {
+            this.pendingUserPrompts.set(sess.id, remaining)
           }
         }
       } else {
