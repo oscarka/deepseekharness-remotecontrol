@@ -1,75 +1,116 @@
-# DeepSeek Harness · 飞书遥控与全功能自托管总控中心（100% 脱离第三方服务器）
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="DSH Remote Control" width="100%" />
+</p>
 
-通过**飞书自建应用长连接**在手机端日常控制 DeepSeek Harness，并配套一个可一键部署到 **Google Cloud Run**（或本地运行）的**全功能自托管总控中心（Hub）**。
+<h1 align="center">DSH Remote Control</h1>
 
-本项目不仅实现了你独有的**飞书多电脑主从切换 + 跨电脑一键迁移/临时清空**，还**完整逆向并自研实现了 `liguobao/ds-harness-remote` (`dsh.r2049.cn`) 与 `ccch1mneyyy/dsh-Go` (`go.dshtui.com`) 闭源服务端上的全部核心能力**，让你在不把任何控制权交给第三方服务器的前提下拥有全部功能：
+<p align="center">
+  把正在运行的 AI 编码任务接到手机与飞书：看进度、批准工具调用、插话、继续。<br/>
+  纯出站长连接，不开公网端口，不经过任何第三方中继服务器。
+</p>
 
-### 核心能力一览
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3B82F6.svg" alt="License: MIT" /></a>
+  <img src="https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white" alt="Node >= 20" />
+  <img src="https://img.shields.io/badge/self--hosted-yes-0EA5E9.svg" alt="Self-hosted" />
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-22C55E.svg" alt="PRs Welcome" /></a>
+</p>
 
-1. **平时用飞书日常控制（零公网端口暴露）**：
-   - 纯出站长连接，离开电脑时发 `连接` 开启完成/异常推送与卡片审批，回来发 `断开` 恢复安静。
-   - 支持在飞书直接发 `!new <任务指令>` 远程新建会话、发 `!steer <插话>` 向运行中任务实时插话、发 `!files` 查看工作区文件、发 `!share` 生成端到端加密对话回放链接。
-2. **一个飞书机器人控制多台电脑（Active / Standby 自动协调）**：
-   - 总控台自动协调多台电脑的飞书长连接主从状态，可在 Web 页面或飞书里发 `!hosts`（或 `主机`）一键切换当前飞书控制的电脑，彻底避免多机抢消息。
-3. **跨电脑一键迁移与原机安全清空**：
-   - 在总控台网页上选择「源电脑 ➔ 目标电脑」，一键将 `~/.dsh` 会话历史与配置加密压缩迁移到新电脑、自动切换飞书控制权，并可选**自动清空源电脑上的会话数据**（保留飞书连接配置以便随时迁回）。
-4. **完整逆向并自托管实现 `dsh.r2049.cn` + `go.dshtui.com` 服务端全套功能**：
-   - **远程新建/重命名/删除会话 + 完整对话/思考/工具步骤回放**：在自建 Web 总控台直接选工作区路径新建会话，展开查看每条消息的 `💭 思考过程` 与 `🔧 工具调用步骤`。
-   - **运行中实时插话（Mid-run Steer）与打断重发（Interrupt）**：即使任务正在 `running`，也可实时注入补充指令或一键打断当前步骤重发新指令。
-   - **远程工作区文件树浏览与代码/图片安全预览**：在 Web 页面直接浏览远程电脑工作区目录、预览代码与图片（严格限制在工作区根目录内，防符号链接越界，并自动脱敏密钥）。
-   - **端到端加密（AES-256-GCM）会话分享与动画回放（替代 `go.dshtui.com/c/<id>#k=<key>`）**：在本机用随机 256 位密钥加密对话，服务端只存密文与 IV，解密密钥仅存在于 URL `#k=` 锚点中，打开 `/share/:id#k=...` 即可在浏览器本地解密并播放对话动画回放。
-   - **Ed25519 设备公钥指纹锁定（Pinning）与吊销（Revocation）**：每台电脑自动生成 `feishu-host.json` 密钥对与 12 位十六进制指纹（如 `ABCD EF01 2345`），首次连接自动锁定公钥（防伪造顶替），支持在 Web 页面一键吊销或重置设备信任。
-   - **手机 6 位配对码 / 免密链接登录 + 自托管 WebRTC 信令与 TURN 临时凭据签发**：完全脱离 `dsh.r2049.cn` 的配对与信令接口（`/api/pairing/*`、`/api/v1/signaling`、`/api/v1/turn/credentials`）。
-   - **iPhone / 安卓主屏幕全屏 PWA + Apple 原生锁屏推送（W3C Web Push + VAPID）**：支持一键添加到 iPhone 主屏幕变身独立全屏 App（底部 5 Tab 原生交互），内置零依赖 `RFC 8292 (VAPID ECDSA P-256)` + `RFC 8291 (aes128gcm)` 加密推送引擎直连苹果 `web.push.apple.com`，当任务需要工具审批、执行完成或异常时直接弹窗到 iPhone 锁屏与 Apple Watch。
+<p align="center">
+  <a href="README.en.md">English</a> · <a href="#快速开始">快速开始</a> · <a href="#功能">功能</a> · <a href="SECURITY.md">安全模型</a> · <a href="#路线图">路线图</a>
+</p>
 
 ---
 
-## 目录结构
+## 它解决什么问题
 
-```text
-deepseekharness-remotecontrol/
-├── dsh-feishu/                 # DSH 本地插件（跑在每台电脑的 DSH Desktop / dsh web 进程内）
-│   ├── index.js                # 插件入口
-│   ├── cordis.patch.yml        # DSH bundle 配置补丁
-│   ├── lib/
-│   │   ├── bridge.js           # 飞书交互卡片、审批拦截、完成推送、多机切换、Steer 队列
-│   │   ├── workspace-ops.js    # Ed25519 设备指纹、远程新建/重命名/删除会话、工作区文件树与安全预览
-│   │   ├── feishu-transport.js # 飞书 WebSocket 长连接客户端（支持 Active/Standby 动态启停）
-│   │   ├── hub-agent.js        # 与自建总控中心心跳同步、指令执行、快照收发、AES-256-GCM 加密分享
-│   │   ├── migration.js        # ~/.dsh 数据盘点、快照打包导出、恢复导入、安全清理
-│   │   ├── config.js           # 环境变量与 0600 密钥文件加载
-│   │   ├── commands.js         # 命令解析
-│   │   ├── audit.js            # 0600 JSONL 审计日志
-│   │   └── redact.js           # 敏感凭据自动脱敏
-│   └── test/                   # 单元与全链路集成测试（37 项）
-├── hub/                        # 自托管 Google Cloud Run 页面化总控中心
-│   ├── server.js               # 零外部依赖的 HTTP/REST + E2EE 回放页 + 信令/配对服务
-│   ├── hub-core.js             # 多机状态、指纹锁定/吊销、飞书主控协调、快照迁移、加密分享存储
-│   └── public/index.html       # 全功能可视化总控面板（Deepy 状态栏、文件浏览器、对话回放、迁移向导）
-├── Dockerfile                  # Cloud Run 标准容器构建文件
-└── deploy-cloudrun.sh          # 一键部署到 Google Cloud Run 脚本
+你在电脑上让 AI 跑一个重构任务，然后出门。接下来一小时内，它可能：
+
+- 卡在一个工具调用上，等你点「批准」；
+- 跑完了，但你想立刻知道结果；
+- 跑偏了，你想马上补一句「别动测试文件」。
+
+飞书机器人 + 一个自托管的总控台，把这三件事搬到手机上。**电脑不需要公网 IP，路由器不需要端口映射**——所有连接都是本机主动向外发起的。
+
+## 架构
+
+```mermaid
+flowchart LR
+    subgraph Phone["手机端"]
+        FS["飞书 App"]
+        WEB["浏览器 / PWA"]
+    end
+
+    subgraph Feishu["飞书开放平台"]
+        GW["长连接网关"]
+    end
+
+    subgraph Host["你的电脑（可多台）"]
+        PL["dsh-feishu 插件"]
+        AG["DSH / Codex / Claude"]
+        PL <--> AG
+    end
+
+    subgraph Hub["自托管 Hub（可选）"]
+        HB["Web 总控台<br/>配对 / 信令 / 加密分享"]
+    end
+
+    FS <-->|"WebSocket"| GW
+    GW <-->|"出站 WSS，无需公网端口"| PL
+    WEB <-->|"HTTPS + HUB_TOKEN"| HB
+    HB <-->|"心跳 / 指令 / 快照"| PL
+    HB -->|"Web Push（VAPID）"| APNS["APNs"]
+    APNS --> FS
 ```
 
----
+- **只要飞书**：跑 `dsh-feishu` 插件就够了，Hub 可以完全不部署。
+- **要远程建会话、多机切换、网页回放、锁屏推送**：加一个 Hub（Cloud Run 或本地都行）。
 
 ## 快速开始
 
-### 第一步：部署自托管总控中心到 Google Cloud Run（或本地运行）
+### 30 秒：先看看界面（不需要飞书）
+
+Hub 零运行时依赖，克隆下来直接跑：
 
 ```bash
-# 方式 A：一键部署到你自己的 Google Cloud Run
-export PROJECT_ID="你的-gcp-project-id"
-export REGION="asia-east1"
-export HUB_TOKEN="自定义一个强密码Token"
-./deploy-cloudrun.sh
+git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
+cd deepseekharness-remotecontrol
 
-# 方式 B：或者在本地 / 内网服务器直接启动
-HUB_TOKEN="自定义一个强密码Token" PORT=8080 npm start
+HUB_TOKEN="$(openssl rand -hex 16)" PORT=8080 npm start
+# 打开 http://localhost:8080 ，用上面这个 HUB_TOKEN 登录
 ```
 
----
+或者用 Docker：
 
-### 第二步：在每台电脑上配置 `~/.dsh/feishu.env`
+```bash
+docker build -t dsh-remote .
+docker run --rm -p 8080:8080 -e HUB_TOKEN=your-strong-token dsh-remote
+```
+
+### 10 分钟：接入飞书
+
+<details>
+<summary><b>第一步 · 创建飞书自建应用</b>（点开）</summary>
+
+1. 在[飞书开放平台](https://open.feishu.cn/)创建**企业自建应用**，启用**机器人**能力。
+2. 申请最小权限集：
+   - `im:message.p2p_msg:readonly` —— 接收单聊消息
+   - `im:message:send_as_bot` —— 以机器人身份发消息
+   - （可选）群聊 @ 消息读取权限
+3. 事件订阅：添加 `im.message.receive_v1`，订阅方式选 **长连接**（不需要回调地址）。
+4. 发布版本并等管理员审核通过，然后把机器人加进你的单聊。
+
+</details>
+
+<details>
+<summary><b>第二步 · 在电脑上装插件并写配置</b>（点开）</summary>
+
+```bash
+# 安装插件（Desktop App 用 desktop profile）
+dsh plugin --profile desktop add /path/to/deepseekharness-remotecontrol/dsh-feishu
+```
+
+创建密钥文件（权限必须是 `0600`，插件启动时会校验）：
 
 ```bash
 install -m 600 /dev/null ~/.dsh/feishu.env
@@ -78,13 +119,56 @@ FEISHU_HOST_NAME=办公Mac
 FEISHU_APP_ID=cli_xxxxxxxxxxxxxxxx
 FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 FEISHU_ALLOWED_OPEN_IDS=ou_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-FEISHU_HUB_URL=https://你的-cloud-run-服务地址.run.app
+
+# 可选：接入自托管 Hub
+FEISHU_HUB_URL=https://your-service.run.app
 FEISHU_HUB_TOKEN=你的总控台Token
 EOF
 chmod 600 ~/.dsh/feishu.env
 ```
 
----
+> 不知道自己 `open_id`？先给机器人发一条消息，它会回你；或者暂时留空 `FEISHU_ALLOWED_OPEN_IDS` 跑一次诊断后再填。
+
+</details>
+
+<details>
+<summary><b>第三步 ·（可选）部署 Hub 到 Cloud Run</b>（点开）</summary>
+
+```bash
+export PROJECT_ID="你的-gcp-project-id"
+export REGION="asia-east1"
+export HUB_TOKEN="自定义一个强密码"
+./deploy-cloudrun.sh
+```
+
+部署完成后把输出的 Service URL 填进每台电脑的 `FEISHU_HUB_URL`。
+
+</details>
+
+## 功能
+
+| 能力 | 说明 |
+| --- | --- |
+| **飞书日常控制** | `!sessions` 任务列表、`!new` 远程新建、`!steer` 运行中插话、`!files` 工作区浏览 |
+| **审批与推送** | 工具调用卡片直接批准/拒绝；完成与异常推送到飞书，或经 Web Push 弹到 iPhone 锁屏与 Apple Watch |
+| **多机主从** | 一个机器人管多台电脑，`!hosts` 一键切换当前受控主机，避免多机抢消息 |
+| **一键迁移** | 网页上选「源 ➔ 目标」，加密打包 `~/.dsh` 会话与配置，切控制权，可选清空源机 |
+| **网页总控台** | 会话回放（含思考过程与工具步骤）、文件树与安全预览、运行中打断重发 |
+| **端到端加密分享** | AES-256-GCM，密钥只存在于 URL `#k=` 片段，服务端只存密文 |
+| **设备指纹** | Ed25519 公钥锁定 + 12 位指纹，支持一键吊销与重置 |
+| **手机接入** | 6 位配对码 / 免密链接登录，自托管 WebRTC 信令与 TURN 临时凭据 |
+| **PWA** | 添加到 iPhone 主屏幕即为全屏 App，5 Tab 原生交互 |
+
+### 支持的后端
+
+| Harness | 状态 |
+| --- | --- |
+| DeepSeek Harness (DSH) | 完整支持（控制、审批、插话、会话管理） |
+| Codex | 支持（观察 + 新建任务，取决于版本） |
+| Claude Code | 支持（观察 + 新建任务，取决于版本） |
+| Antigravity IDE | 实验性 |
+
+> 各后端能力差异由 `dsh-feishu/lib/harness-router.js` 的能力矩阵决定；也可以在 `~/.dsh/feishu.env` 用 `FEISHU_ENABLED_HARNESSES=dsh,codex` 限定启用的后端。
 
 ## 飞书命令速查
 
@@ -92,21 +176,57 @@ chmod 600 ~/.dsh/feishu.env
 | --- | --- |
 | `连接` / `!connect` | 开启远程模式（2 小时有效），汇总运行中任务、待审批与离线期间完成的任务 |
 | `断开` / `!disconnect` | 退出远程模式，停止完成推送 |
-| `!sessions` | 打开任务列表卡片（点击「查看详情」可停止运行中任务，或在底部输入框直接继续已完成任务） |
-| `!new <任务指令>` | 在当前电脑工作区直接远程新建一个会话并开始执行 |
-| `!steer <补充指令>` | 向正在运行（或最近活跃）的任务实时插话或排入下一轮队列 |
-| `!files [子目录]` | 查看当前任务工作区目录下的文件列表 |
-| `!share` | 为当前任务生成端到端加密（AES-256-GCM）对话回放分享链接 |
-| `主机` / `!hosts` | 查看所有已接入电脑的状态卡片，点击按钮即可**一键把飞书切换到另一台电脑** |
-| `!host <电脑名或ID>` | 直接将飞书控制权切换到指定电脑 |
-| `!web` | 获取自托管 Web 页面总控台链接 |
-| `!approve <code>` / `!deny <code>` | 批准或拒绝工具调用（卡片上也可直接点击按钮） |
+| `!sessions` | 任务列表卡片（查看详情、停止运行中任务、继续已完成任务） |
+| `!new <任务指令>` | 在当前电脑工作区新建会话并开始执行 |
+| `!steer <补充指令>` | 向运行中的任务实时插话，或排入下一轮队列 |
+| `!files [子目录]` | 查看当前任务工作区文件 |
+| `!share` | 为当前任务生成端到端加密的对话回放链接 |
+| `!hosts` / `主机` | 查看所有已接入电脑并一键切换控制权 |
+| `!host <电脑名或ID>` | 直接切换到指定电脑 |
+| `!web` | 获取 Web 总控台链接 |
+| `!approve <code>` / `!deny <code>` | 批准或拒绝工具调用（卡片上也可直接点） |
 | `!whoami` | 查看自己的飞书 `open_id` |
 
----
+## 安全
 
-## 运行测试
+这个项目持有飞书 `App Secret`、Hub Token 和设备私钥，所以安全边界写得很明确：
+
+- **默认零入站端口**：飞书链路是纯出站长连接；Hub 是唯一对外暴露的面，且需要 `HUB_TOKEN`。
+- **密钥文件强制 `0600`**，启动时校验，不合格直接拒绝启动。
+- **白名单**：`FEISHU_ALLOWED_OPEN_IDS` 之外的发送者不会拿到任何会话信息。
+- **审计日志**：`~/.dsh/feishu-audit.jsonl`，同样 `0600`。
+- **分享加密**：服务端只见密文，解密密钥不出现在任何请求里。
+
+完整威胁模型、已知限制与密钥轮换方法见 **[SECURITY.md](SECURITY.md)**。发现漏洞请走 GitHub Security Advisories，不要开公开 issue。
+
+## 路线图
+
+- [x] 飞书长连接控制 + 审批 + 完成推送
+- [x] 自托管 Hub、多机切换、一键迁移
+- [x] E2EE 分享、设备指纹、配对码、Web Push
+- [ ] 无飞书的一键本地模式（单命令启动）
+- [ ] 演示视频与截图
+- [ ] 更多 Harness 适配与能力对齐
+- [ ] 更完整的英文文档
+
+## 参与
+
+欢迎 issue 和 PR。开始之前请读 [CONTRIBUTING.md](CONTRIBUTING.md)，尤其是「不要提交任何真实密钥」这一条。
 
 ```bash
+git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
+cd deepseekharness-remotecontrol
+
+npm install                      # 前端构建依赖
+npm --prefix dsh-feishu install  # 插件依赖（跑测试需要）
 npm test
+npm run dev                      # 调试 Web 总控台前端
 ```
+
+> Hub 本身只用了 Node 内置模块，`npm start` 不需要任何依赖。
+
+## 许可
+
+[MIT](LICENSE) © 2026 oscarka
+
+> **免责声明**：本项目为独立实现，与 DeepSeek、飞书、`dsh.r2049.cn`、`go.dshtui.com` 的运营方无隶属、合作或背书关系。请自行确认你的使用场景符合所在组织与相关服务条款的要求。
