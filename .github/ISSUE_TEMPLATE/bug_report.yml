@@ -1,0 +1,70 @@
+name: Bug report
+description: 报告一个可复现的问题 / Report a reproducible bug
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。提交前请先确认：
+        - 已经搜索过现有 issue，没有重复。
+        - **不要贴出任何真实密钥、Token、完整会话内容或你的内网地址。** 安全漏洞请走 SECURITY.md 里的私下渠道。
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 实际行为和预期行为分别是什么。
+      placeholder: 我发送了 `!sessions`，期望看到任务列表，实际只收到「无权限」。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 越具体越好，最好能稳定复现。
+      placeholder: |
+        1. 在 ~/.dsh/feishu.env 设置 ...
+        2. 启动 `npm start`
+        3. 飞书发送 ...
+        4. 看到 ...
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: 涉及的模块
+      multiple: true
+      options:
+        - dsh-feishu 插件（飞书长连接 / 命令）
+        - 审批与推送
+        - Hub 总控台（Web / API）
+        - 会话迁移
+        - E2EE 分享 / 回放
+        - 配对 / 设备指纹
+        - Web Push / PWA
+        - 文档
+        - 不确定
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本或 commit
+      description: "取 package.json 的 version，或 `git rev-parse --short HEAD`。"
+      placeholder: 0.2.0 / 4ccaff6
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 环境
+      placeholder: macOS 15.2 / Node 22.11 / DSH 版本；Hub 部署在 Cloud Run 还是本地
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志（已脱敏）
+      description: 相关的报错或日志片段。**提交前请删掉路径、Token、open_id、内网地址。**
+      render: shell
+    validations:
+      required: false
