@@ -4,8 +4,11 @@ import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { gzipSync } from 'node:zlib'
+import { promisify } from 'node:util'
+import { gzip } from 'node:zlib'
 import { HubCore } from './hub-core.js'
+
+const gzipAsync = promisify(gzip)
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const INDEX_HTML_PATH = join(__dirname, 'public', 'index.html')
@@ -359,6 +362,17 @@ export function createHubServer({
         }
       }
 
+      const sessTranscriptMatch = /^\/api\/hosts\/([^/]+)\/sessions\/([^/]+)\/transcript$/.exec(pathname)
+      if (method === 'GET' && sessTranscriptMatch) {
+        const hostId = decodeURIComponent(sessTranscriptMatch[1])
+        const agentId = decodeURIComponent(sessTranscriptMatch[2])
+        const full = hub.getSessionFullTranscript(hostId, agentId)
+        if (!full) {
+          return { status: 404, json: { ok: false, error: 'Session transcript not found' } }
+        }
+        return { status: 200, json: full }
+      }
+
       const cmdCancelMatch = /^\/api\/commands\/([^/]+)\/cancel$/.exec(pathname)
       if (method === 'POST' && cmdCancelMatch) {
         const cmdId = decodeURIComponent(cmdCancelMatch[1])
@@ -521,7 +535,7 @@ export function createHubServer({
       const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
       if (req.method === 'GET' && urlObj.pathname === '/api/events') {
         if (!checkAuth(req.headers, urlObj)) {
-          sendJson(res, 401, { ok: false, error: 'Unauthorized', authRequired: true }, req.headers)
+          await sendJson(res, 401, { ok: false, error: 'Unauthorized', authRequired: true }, req.headers)
           return
         }
         res.writeHead(200, {
@@ -560,7 +574,7 @@ export function createHubServer({
         body,
       })
       if (result.json !== undefined) {
-        sendJson(res, result.status, result.json, req.headers)
+        await sendJson(res, result.status, result.json, req.headers)
       } else if (result.buffer !== undefined) {
         res.writeHead(result.status, result.headers || {})
         res.end(result.buffer)
@@ -915,12 +929,12 @@ function renderShareReplayHtml(share) {
 </html>`
 }
 
-function sendJson(res, status, data, reqHeaders = {}) {
+async function sendJson(res, status, data, reqHeaders = {}) {
   const payload = JSON.stringify(data)
   const acceptEncoding = String(reqHeaders?.['accept-encoding'] ?? reqHeaders?.['Accept-Encoding'] ?? '')
   if (payload.length > 1024 && /\bgzip\b/i.test(acceptEncoding)) {
     try {
-      const gz = gzipSync(Buffer.from(payload, 'utf8'))
+      const gz = await gzipAsync(Buffer.from(payload, 'utf8'))
       res.writeHead(status, {
         'content-type': 'application/json; charset=utf-8',
         'content-encoding': 'gzip',

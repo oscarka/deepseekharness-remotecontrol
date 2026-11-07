@@ -933,10 +933,13 @@ export class HubAgent {
             const diskSess = (this.cachedDiskSessions || []).find(s => s.id === targetId)
             if (diskSess && (type === 'prompt' || type === 'steer')) {
               const trimmedText = effectiveText
+              const isDesktopRunning =
+                diskSess.status === 'running' && !this.dshHeadlessRunner?.isRunning(targetId)
               const headlessRes = await this.dshHeadlessRunner.runTurn({
                 sessionId: targetId,
                 text: trimmedText,
                 cwd: diskSess.cwd || cmd.cwd,
+                desktopBusy: isDesktopRunning,
               })
               if (headlessRes.ok && trimmedText) {
                 const nowTs = Date.now()
@@ -1024,6 +1027,49 @@ export class HubAgent {
             ...bridgeNewRes,
             ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),
           }
+        }
+        case 'load_full_transcript': {
+          const targetId = String(cmd.agentId || '').trim()
+          if (!targetId) return { ok: false, error: 'agentId is required' }
+          if (isAntigravityIdeSessionId(targetId)) {
+            const agySessions = await loadAntigravityIdeSessions(this.agyBrainDirs, { maxMessages: 120 })
+            const found = agySessions.find(s => s.id === targetId)
+            if (found) {
+              return {
+                ok: true,
+                agentId: targetId,
+                totalCount: found.messageCount || found.transcript?.length || 0,
+                transcript: found.transcript || [],
+              }
+            }
+          }
+          const extAdapter = this.harnessRouter?.getAdapter(targetId)
+          if (extAdapter && typeof extAdapter.listSessions === 'function') {
+            const extList = await extAdapter.listSessions({ maxMessages: 120 })
+            const found = (extList || []).find(s => s.id === targetId)
+            if (found) {
+              return {
+                ok: true,
+                agentId: targetId,
+                totalCount: found.transcript?.length || 0,
+                transcript: found.transcript || [],
+              }
+            }
+          }
+          const diskList = await loadDiskSessionsFromDshHome(this.config.dshHome, {
+            maxSessions: 80,
+            maxMessages: 120,
+          })
+          const foundDisk = diskList.find(s => s.id === targetId)
+          if (foundDisk) {
+            return {
+              ok: true,
+              agentId: targetId,
+              totalCount: foundDisk.messageCount || foundDisk.transcript?.length || 0,
+              transcript: foundDisk.transcript || [],
+            }
+          }
+          return { ok: false, error: '未找到该会话的完整历史记录' }
         }
         case 'request_ax_permission': {
           const perm = await checkAccessibilityPermission({

@@ -41,6 +41,7 @@ export class HubCore {
     this.hostTaskStates = new Map()
     this.pushHistory = []
     this.sseListeners = new Set()
+    this.fullTranscriptCache = new Map()
   }
 
   onStateChange(listener) {
@@ -85,6 +86,44 @@ export class HubCore {
               commands: h.commands ?? [],
               recentResults: h.recentResults ?? [],
             })
+          }
+        }
+      }
+      const now = this.now()
+      if (Array.isArray(data.approvalLedger)) {
+        for (const item of data.approvalLedger) {
+          const [key, entry] = Array.isArray(item)
+            ? item
+            : [item?.hostId && item?.code ? `${item.hostId}:${item.code}` : '', item]
+          if (key && entry && typeof entry === 'object' && (!entry.expiresAt || now <= entry.expiresAt)) {
+            this.approvalLedger.set(String(key), entry)
+          }
+        }
+      }
+      // Reconstruct any missing settling approval ledger entries from persisted pending commands
+      for (const h of this.hosts.values()) {
+        for (const cmd of h.commands ?? []) {
+          const cmdType = String(cmd?.type || '').trim()
+          if (cmdType === 'approve' || cmdType === 'deny' || cmdType === 'approval') {
+            const code = String(cmd.code || '').trim().toUpperCase()
+            if (!code) continue
+            const key = `${h.hostId}:${code}`
+            if (!this.approvalLedger.has(key)) {
+              const decision = cmdType === 'approval' ? (cmd.allow !== false ? 'approve' : 'deny') : cmdType
+              this.approvalLedger.set(key, {
+                actionId: cmd.id,
+                hostId: h.hostId,
+                agentId: String(cmd.agentId || ''),
+                code,
+                decision,
+                optionIndex: Number(cmd.optionIndex) || 1,
+                status: 'settling',
+                pulledByHost: false,
+                requestedAt: cmd.createdAt || now,
+                expiresAt: cmd.expiresAt || (cmd.createdAt || now) + APPROVAL_SETTLING_TTL_MS,
+                error: '',
+              })
+            }
           }
         }
       }
@@ -181,6 +220,19 @@ export class HubCore {
     for (const cmd of record.commands) {
       if (cmd?.expiresAt && now > cmd.expiresAt) {
         prunedAny = true
+        const cmdType = String(cmd.type || '').trim()
+        const isApproval = cmdType === 'approve' || cmdType === 'deny' || cmdType === 'approval'
+        if (isApproval) {
+          const code = String(cmd.code || '').trim().toUpperCase()
+          const ledgerKey = code ? `${record.hostId}:${code}` : ''
+          const entry = ledgerKey ? this.approvalLedger.get(ledgerKey) : null
+          if (entry && (!entry.actionId || entry.actionId === cmd.id) && entry.status === 'settling') {
+            entry.status = 'failed'
+            entry.failedAt = now
+            entry.error = '等待电脑端执行审批超时（45s），请重试'
+            entry.expiresAt = now + 60_000
+          }
+        }
         const expiredRes = {
           id: cmd.id,
           commandId: cmd.id,
@@ -190,7 +242,9 @@ export class HubCore {
           createdAt: cmd.createdAt || now,
           ok: false,
           expired: true,
-          error: '指令排队已超时（超过 10 分钟未上线），已自动丢弃未执行',
+          error: isApproval
+            ? '等待电脑端执行审批超时（45s），该审批指令已自动作废'
+            : '指令排队已超时（超过 10 分钟未上线），已自动丢弃未执行',
           at: now,
         }
         record.recentResults = record.recentResults ?? []
@@ -251,6 +305,7 @@ export class HubCore {
         })),
         snapshots: [...this.snapshots.values()],
         shares: [...this.shares.values()],
+        approvalLedger: [...this.approvalLedger.entries()],
       }
       await writeFile(this.stateFile, JSON.stringify(payload), 'utf8')
     } catch {
@@ -389,11 +444,30 @@ export class HubCore {
               nextTask = { ...nextTask, pendingApproval: decorated }
             }
           }
+          return nextTask
+        })
+      : []
+
+    return {
+      ...bridgeState,
+      tasks,
+      approvals,
+    }
+  }
+
+  compactBridgeStateForWire(bridgeState) {
+    if (!bridgeState || typeof bridgeState !== 'object') {
+      return { tasks: [], approvals: [], workspaces: [] }
+    }
+    const tasks = Array.isArray(bridgeState.tasks)
+      ? bridgeState.tasks.map((nextTask, taskIdx) => {
           // Server-side transcript & preview budget guard so /api/state and SSE never exceed ~1MB across all hosts
           const isTopSession = taskIdx < 8 || nextTask?.status === 'running' || nextTask?.status === 'approval'
           const maxMsgs = isTopSession ? 14 : 6
           const rawTr = Array.isArray(nextTask?.transcript) ? nextTask.transcript : []
+          const totalTranscriptCount = Math.max(Number(nextTask?.messageCount) || 0, rawTr.length)
           const slicedTr = rawTr.length > maxMsgs ? rawTr.slice(-maxMsgs) : rawTr
+          const omittedTranscriptCount = Math.max(0, totalTranscriptCount - slicedTr.length)
           const recentCutoff = Math.max(0, slicedTr.length - 4)
           const compactedTr = slicedTr.map((m, mIdx) => {
             if (!m || typeof m !== 'object') return m
@@ -430,6 +504,9 @@ export class HubCore {
               typeof nextTask?.lastOutput === 'string' && nextTask.lastOutput.length > 600
                 ? nextTask.lastOutput.slice(0, 600)
                 : nextTask?.lastOutput,
+            totalTranscriptCount,
+            omittedTranscriptCount,
+            hasMoreTranscript: omittedTranscriptCount > 0,
             transcript: compactedTr,
           }
         })
@@ -438,7 +515,28 @@ export class HubCore {
     return {
       ...bridgeState,
       tasks,
-      approvals,
+    }
+  }
+
+  getSessionFullTranscript(hostId, agentId) {
+    const cleanHostId = String(hostId ?? '').trim()
+    const cleanAgentId = String(agentId ?? '').trim()
+    if (!cleanHostId || !cleanAgentId) return null
+    const cached = this.fullTranscriptCache.get(`${cleanHostId}:${cleanAgentId}`)
+    const host = this.hosts.get(cleanHostId)
+    const liveTask = (host?.bridgeState?.tasks || []).find(t => t?.id === cleanAgentId)
+    const liveTr = Array.isArray(liveTask?.transcript) ? liveTask.transcript : []
+    const bestTr =
+      cached && Array.isArray(cached.transcript) && cached.transcript.length >= liveTr.length
+        ? cached.transcript
+        : liveTr
+    if (!liveTask && !cached) return null
+    return {
+      ok: true,
+      hostId: cleanHostId,
+      agentId: cleanAgentId,
+      totalCount: Math.max(Number(liveTask?.messageCount) || 0, Number(cached?.totalCount) || 0, bestTr.length),
+      transcript: bestTr,
     }
   }
 
@@ -458,10 +556,12 @@ export class HubCore {
         host.lastFilePreview = sanitizedPreview
       }
       const activeCommands = host.commands ?? []
-      const reconciledBridgeState = this.reconcileBridgeStateApprovals(
-        host.hostId,
-        host.bridgeState ?? { tasks: [], approvals: [], workspaces: [] },
-        now,
+      const reconciledBridgeState = this.compactBridgeStateForWire(
+        this.reconcileBridgeStateApprovals(
+          host.hostId,
+          host.bridgeState ?? { tasks: [], approvals: [], workspaces: [] },
+          now,
+        ),
       )
       return {
         ...summary,
@@ -1247,11 +1347,49 @@ export class HubCore {
     const isActivelyOnline = Boolean(host.lastSeen && ageMs <= ACTIVE_HEARTBEAT_WINDOW_MS)
     const cmdType = String(commandPayload.type ?? '').trim()
     const isInteractivePrompt = cmdType === 'prompt' || cmdType === 'steer'
-    const ttlMs = Number(commandPayload.ttlMs) > 0 ? Number(commandPayload.ttlMs) : DEFAULT_COMMAND_TTL_MS
+    const isApprovalCmd = cmdType === 'approve' || cmdType === 'deny' || cmdType === 'approval'
+
+    let resolvedApprovalCode = ''
+    if (isApprovalCmd) {
+      resolvedApprovalCode = String(commandPayload.code ?? '').trim().toUpperCase()
+      if (!resolvedApprovalCode && commandPayload.agentId && Array.isArray(host.bridgeState?.approvals)) {
+        const matched = host.bridgeState.approvals.find(a => a?.agentId === commandPayload.agentId)
+        if (matched?.code) resolvedApprovalCode = String(matched.code).trim().toUpperCase()
+      }
+      if (resolvedApprovalCode) {
+        const existingEntry = this.approvalLedger.get(`${cleanHostId}:${resolvedApprovalCode}`)
+        if (existingEntry && existingEntry.status === 'settling' && now <= existingEntry.expiresAt) {
+          const existingCmd =
+            (host.commands ?? []).find(c => c?.id === existingEntry.actionId) || {
+              id: existingEntry.actionId,
+              type: cmdType,
+              code: resolvedApprovalCode,
+              agentId: existingEntry.agentId,
+              createdAt: existingEntry.requestedAt,
+              expiresAt: existingEntry.expiresAt,
+            }
+          return {
+            ok: true,
+            deduplicated: true,
+            queued: !isActivelyOnline,
+            hostOnline: isActivelyOnline,
+            hostLastSeenAgeMs: Number.isFinite(ageMs) ? ageMs : null,
+            command: existingCmd,
+          }
+        }
+      }
+    }
+
+    const ttlMs =
+      Number(commandPayload.ttlMs) > 0
+        ? Number(commandPayload.ttlMs)
+        : isApprovalCmd
+          ? APPROVAL_SETTLING_TTL_MS
+          : DEFAULT_COMMAND_TTL_MS
     const expiresAt =
       commandPayload.expiresAt !== undefined
         ? Number(commandPayload.expiresAt)
-        : isInteractivePrompt
+        : isInteractivePrompt || isApprovalCmd
           ? now + ttlMs
           : 0
 
@@ -1261,29 +1399,23 @@ export class HubCore {
       queued: !isActivelyOnline,
       ...(expiresAt > 0 ? { expiresAt } : {}),
       ...commandPayload,
+      ...(resolvedApprovalCode ? { code: resolvedApprovalCode } : {}),
     }
-    if (cmdType === 'approve' || cmdType === 'deny' || cmdType === 'approval') {
-      let code = String(commandPayload.code ?? '').trim().toUpperCase()
-      if (!code && commandPayload.agentId && Array.isArray(host.bridgeState?.approvals)) {
-        const matched = host.bridgeState.approvals.find(a => a?.agentId === commandPayload.agentId)
-        if (matched?.code) code = String(matched.code).trim().toUpperCase()
-      }
-      if (code) {
-        const decision = cmdType === 'approval' ? (commandPayload.allow !== false ? 'approve' : 'deny') : cmdType
-        this.approvalLedger.set(`${cleanHostId}:${code}`, {
-          actionId: cmd.id,
-          hostId: cleanHostId,
-          agentId: String(commandPayload.agentId || ''),
-          code,
-          decision,
-          optionIndex: Number(commandPayload.optionIndex) || 1,
-          status: 'settling',
-          pulledByHost: false,
-          requestedAt: now,
-          expiresAt: now + APPROVAL_SETTLING_TTL_MS,
-          error: '',
-        })
-      }
+    if (isApprovalCmd && resolvedApprovalCode) {
+      const decision = cmdType === 'approval' ? (commandPayload.allow !== false ? 'approve' : 'deny') : cmdType
+      this.approvalLedger.set(`${cleanHostId}:${resolvedApprovalCode}`, {
+        actionId: cmd.id,
+        hostId: cleanHostId,
+        agentId: String(commandPayload.agentId || ''),
+        code: resolvedApprovalCode,
+        decision,
+        optionIndex: Number(commandPayload.optionIndex) || 1,
+        status: 'settling',
+        pulledByHost: false,
+        requestedAt: now,
+        expiresAt: expiresAt > 0 ? expiresAt : now + APPROVAL_SETTLING_TTL_MS,
+        error: '',
+      })
     }
     host.commands.push(cmd)
     void this.persist()
@@ -1309,6 +1441,14 @@ export class HubCore {
       const idx = (host.commands ?? []).findIndex(c => c?.id === targetId)
       if (idx !== -1) {
         const [removed] = host.commands.splice(idx, 1)
+        for (const [k, entry] of this.approvalLedger.entries()) {
+          if (
+            entry?.actionId === targetId ||
+            (removed?.code && k === `${host.hostId}:${String(removed.code).trim().toUpperCase()}`)
+          ) {
+            this.approvalLedger.delete(k)
+          }
+        }
         const cancelledRes = {
           id: targetId,
           type: removed?.type || '',
@@ -1452,15 +1592,29 @@ export class HubCore {
   onCommandResult(hostId, res = {}) {
     const now = this.now()
     const host = this.hosts.get(hostId)
+    if (res.type === 'load_full_transcript' && res.ok && res.agentId && Array.isArray(res.transcript)) {
+      this.fullTranscriptCache.set(`${hostId}:${res.agentId}`, {
+        at: now,
+        totalCount: Number(res.totalCount) || res.transcript.length,
+        transcript: res.transcript,
+      })
+    }
     if (res.type === 'approve' || res.type === 'deny' || res.type === 'approval' || res.code) {
       const code = String(res.code || '').trim().toUpperCase()
-      let ledgerEntry = code ? this.approvalLedger.get(`${hostId}:${code}`) : null
-      if (!ledgerEntry && res.id) {
+      let ledgerEntry = null
+      if (res.id) {
         for (const entry of this.approvalLedger.values()) {
           if (entry.hostId === hostId && entry.actionId === res.id) {
             ledgerEntry = entry
             break
           }
+        }
+      }
+      if (!ledgerEntry && code) {
+        const byCode = this.approvalLedger.get(`${hostId}:${code}`)
+        // Only settle by code when res.id is absent or matches the active actionId (never let a stale result settle a newer actionId)
+        if (byCode && (!res.id || !byCode.actionId || byCode.actionId === res.id)) {
+          ledgerEntry = byCode
         }
       }
       if (ledgerEntry) {

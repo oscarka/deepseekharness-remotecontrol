@@ -256,6 +256,8 @@ export function initHubController() {
     }
 
     // ==================== 3. 数据聚合与扁平化 ====================
+    const expandedTranscriptBySession = new Map();
+
     function getNormalizedSessions() {
       const list = [];
       const isChatOpenNow = document.getElementById('chatFullscreen')?.classList.contains('open')
@@ -274,7 +276,25 @@ export function initHubController() {
         for (const t of tasks) {
           const ts = t.updatedAt || t.lastActivity || 0;
           const pendingApp = approvals.find(a => a.agentId === t.id);
-          const baseTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
+          const wireTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
+          const expandedEntry = expandedTranscriptBySession.get(t.id);
+          let baseTranscript = wireTranscript;
+          if (expandedEntry && Array.isArray(expandedEntry.transcript) && expandedEntry.transcript.length > wireTranscript.length) {
+            if (wireTranscript.length === 0) {
+              baseTranscript = [...expandedEntry.transcript];
+            } else {
+              const firstWire = wireTranscript[0];
+              const matchIdx = expandedEntry.transcript.findIndex(
+                m => m && m.role === firstWire?.role && String(m.text || '').slice(0, 80) === String(firstWire?.text || '').slice(0, 80)
+              );
+              if (matchIdx > 0) {
+                baseTranscript = [...expandedEntry.transcript.slice(0, matchIdx), ...wireTranscript];
+              } else {
+                const extraCount = Math.max(0, expandedEntry.transcript.length - wireTranscript.length);
+                baseTranscript = [...expandedEntry.transcript.slice(0, extraCount), ...wireTranscript];
+              }
+            }
+          }
           const queuedCmds = (h.pendingCommands || []).filter(
             c => c && c.agentId === t.id && (c.type === 'prompt' || c.type === 'steer')
           );
@@ -362,6 +382,15 @@ export function initHubController() {
             ? t.changedFiles
             : (Array.isArray(pendingApp?.changedFiles) ? pendingApp.changedFiles : []);
 
+          const totalTranscriptCount = Math.max(
+            Number(t.totalTranscriptCount) || 0,
+            Number(t.messageCount) || 0,
+            transcript.length
+          );
+          const omittedTranscriptCount = expandedEntry
+            ? 0
+            : Math.max(0, Number(t.omittedTranscriptCount) || (totalTranscriptCount - wireTranscript.length));
+
           list.push({
             id: t.id,
             hostId: h.hostId,
@@ -369,6 +398,7 @@ export function initHubController() {
             harness,
             harnessLabel,
             controlMode: t.controlMode || 'managed',
+            capabilities: t.capabilities || null,
             stateMeta: t.stateMeta || null,
             sessionRev: t.sessionRev || '',
             title: t.title || '未命名会话',
@@ -381,7 +411,10 @@ export function initHubController() {
             approvalObj: pendingApp || null,
             changedFiles,
             queuedCount,
-            msgCount: Number(t.messageCount) || transcript.length || 0,
+            msgCount: totalTranscriptCount || transcript.length || 0,
+            totalTranscriptCount,
+            omittedTranscriptCount,
+            hasMoreTranscript: Boolean(omittedTranscriptCount > 0 || (t.hasMoreTranscript && !expandedEntry)),
             updatedAt: ts,
             timeLabel: formatTime(ts),
             pinned: Boolean(pinnedMap[t.id]),
@@ -957,10 +990,18 @@ export function initHubController() {
           sendBtn.textContent = '👀 仅观测';
         } else if (s.status === 'running') {
           runningBar.classList.add('show');
-          chatInput.disabled = false;
-          sendBtn.disabled = false;
-          chatInput.placeholder = '⚡ 实时插话 (Steer)：补充指令将立即注入...';
-          sendBtn.textContent = '⚡ 插话';
+          const canSteer = s.capabilities?.canSteer !== false && s.harness !== 'codex' && s.harness !== 'claude';
+          if (!canSteer) {
+            chatInput.disabled = true;
+            sendBtn.disabled = true;
+            chatInput.placeholder = '⏳ 当前引擎正在执行中（不支持中途插话，如需修改请点上方停止）';
+            sendBtn.textContent = '🟢 执行中';
+          } else {
+            chatInput.disabled = false;
+            sendBtn.disabled = false;
+            chatInput.placeholder = '⚡ 实时插话 (Steer)：补充指令将立即注入...';
+            sendBtn.textContent = '⚡ 插话';
+          }
         } else {
           runningBar.classList.remove('show');
           chatInput.disabled = false;
@@ -1189,9 +1230,24 @@ export function initHubController() {
         </div>
       `;
 
+      const loadEarlierHtml = s.omittedTranscriptCount > 0
+        ? `
+          <div style="display:flex;justify-content:center;margin:4px 0 10px;">
+            <button
+              type="button"
+              class="followup-pill"
+              style="font-size:12px;padding:6px 14px;"
+              onclick="loadEarlierTranscript('${esc(s.hostId)}', '${esc(s.id)}', this)"
+            >⬆️ 为保证秒开已省略前 ${s.omittedTranscriptCount} 条早先记录 · 点击加载完整历史</button>
+          </div>
+        `
+        : expandedTranscriptBySession.has(s.id)
+          ? `<div style="text-align:center;font-size:11.5px;color:var(--muted);margin:4px 0 10px;">✅ 已加载全部历史对话（共 ${s.transcript.length} 条）</div>`
+          : '';
+
       // 正在往上翻历史时，新内容到达不要把用户拽回底部
       const sessionChanged = lastRenderedChatSessionId !== s.id;
-      box.innerHTML = bubblesHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
+      box.innerHTML = loadEarlierHtml + bubblesHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
       if (sessionChanged || nearBottom) {
         box.scrollTop = box.scrollHeight;
         setScrollBottomVisible(false);
@@ -1201,6 +1257,61 @@ export function initHubController() {
         setScrollBottomVisible(true);
       }
       lastRenderedChatSessionId = s.id;
+    }
+
+    async function loadEarlierTranscript(hostId, sessionId, btnEl) {
+      if (!hostId || !sessionId) return;
+      if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.textContent = '⏳ 正在拉取完整历史对话...';
+      }
+      try {
+        const res = await apiFetch(
+          `/api/hosts/${encodeURIComponent(hostId)}/sessions/${encodeURIComponent(sessionId)}/transcript`
+        );
+        const data = await res.json();
+        if (data?.ok && Array.isArray(data.transcript) && data.transcript.length > 0) {
+          expandedTranscriptBySession.set(sessionId, {
+            transcript: data.transcript,
+            fetchedAt: Date.now(),
+          });
+          lastRenderedChatKey = '';
+          renderAll();
+          showToast(`✅ 已加载完整历史（共 ${data.transcript.length} 条）`);
+          return;
+        }
+        // 若云端缓存条数与当前一致，尝试向本机 Daemon 请求磁盘全量历史
+        const cmdRes = await dispatchHostCommand(hostId, {
+          type: 'load_full_transcript',
+          agentId: sessionId,
+          maxMessages: 200,
+        });
+        const cmdId = cmdRes?.command?.id;
+        if (cmdId) {
+          for (let i = 0; i < 12; i++) {
+            await new Promise(r => setTimeout(r, 350));
+            const pollRes = await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`);
+            const pollData = await pollRes.json();
+            if (pollData?.ready && Array.isArray(pollData?.result?.transcript)) {
+              expandedTranscriptBySession.set(sessionId, {
+                transcript: pollData.result.transcript,
+                fetchedAt: Date.now(),
+              });
+              lastRenderedChatKey = '';
+              renderAll();
+              showToast(`✅ 已从电脑加载完整历史（共 ${pollData.result.transcript.length} 条）`);
+              return;
+            }
+          }
+        }
+        showToast('ℹ️ 当前已是最新可用历史记录');
+      } catch (err) {
+        showToast('❌ 加载历史失败：' + (err?.message || err));
+      } finally {
+        if (btnEl) {
+          btnEl.disabled = false;
+        }
+      }
     }
 
     function scrollToChatBottom() {
@@ -1541,6 +1652,11 @@ export function initHubController() {
       const found = findSessionGlobal(activeSessionId);
       if (!found) return;
       const { session: s, host } = found;
+      const canSteer = s.capabilities?.canSteer !== false && s.harness !== 'codex' && s.harness !== 'claude';
+      if (s.status === 'running' && !canSteer) {
+        showToast('⏳ 当前会话正在运行且不支持中途插话，请等待完成或先点击停止');
+        return;
+      }
       const text = rawText || '请查看我上传的截图并帮我分析处理。';
       const optimisticText = pendingAttachments.length > 0
         ? `${text}\n[🖼️ 已附带 ${pendingAttachments.length} 张截图]`
@@ -1676,13 +1792,32 @@ export function initHubController() {
             ? '⏳ 正在同步批准指令到电脑端...'
             : '⏳ 正在同步拒绝指令到电脑端...';
       showToast(optLabel);
-      await dispatchHostCommand(hostId, {
-        type: 'approval',
-        code,
-        agentId: explicitAgentId || activeSessionId || undefined,
-        allow: Boolean(allow),
-        optionIndex: Number(optionIndex) || (allow ? 1 : 4),
-      });
+      try {
+        const res = await dispatchHostCommand(hostId, {
+          type: 'approval',
+          code,
+          agentId: explicitAgentId || activeSessionId || undefined,
+          allow: Boolean(allow),
+          optionIndex: Number(optionIndex) || (allow ? 1 : 4),
+        });
+        if (!res || res.ok === false) {
+          if (code && window.__dshSettlingApprovals) {
+            delete window.__dshSettlingApprovals[code];
+          }
+          lastRenderedChatKey = '';
+          renderAll();
+          showToast('❌ 审批发送失败：' + (res?.error || '请重试'));
+          return;
+        }
+      } catch (err) {
+        if (code && window.__dshSettlingApprovals) {
+          delete window.__dshSettlingApprovals[code];
+        }
+        lastRenderedChatKey = '';
+        renderAll();
+        showToast('❌ 审批发送异常：' + (err?.message || err));
+        return;
+      }
       setTimeout(fetchState, 200);
       setTimeout(fetchState, 750);
     }
@@ -3741,11 +3876,20 @@ export function initHubController() {
       preservePreviewUiState(nextState);
       hubState = nextState;
     }
+    let hasLoadedInitialState = false;
+    let lastStateFetchAt = 0;
+    let stateFetchSeq = 0;
     async function fetchState() {
+      const mySeq = ++stateFetchSeq;
       try {
         const res = await apiFetch('/api/state');
         const data = await res.json();
+        if (mySeq < stateFetchSeq) {
+          return { ok: true, superseded: true };
+        }
         if (data.ok) {
+          hasLoadedInitialState = true;
+          lastStateFetchAt = Date.now();
           setConnectionBanner(false);
           applyHubState(data);
           renderAll();
@@ -3780,6 +3924,10 @@ export function initHubController() {
           sseConnected = true;
           lastSseEventAt = Date.now();
           setConnectionBanner(false);
+          // initial=0 下 SSE 建连/断线重连只发 ping，如果尚未成功拉取状态或距上次拉取已超过 2.5s，立即补拉一次最新全量状态
+          if (!hasLoadedInitialState || Date.now() - lastStateFetchAt > 2500) {
+            void fetchState();
+          }
         };
         sseSource.onerror = () => {
           sseConnected = false;
@@ -3796,6 +3944,8 @@ export function initHubController() {
             setConnectionBanner(false);
             const data = JSON.parse(evt.data);
             if (data.ok) {
+              hasLoadedInitialState = true;
+              lastStateFetchAt = Date.now();
               applyHubState(data);
               renderAll();
               flushPendingDeepLink();
@@ -3854,6 +4004,7 @@ export function initHubController() {
       submitAgyApproval,
       copyAssistantReply,
       copyLatestAssistantReply,
+      loadEarlierTranscript,
       renderActiveChatStage,
       renderInlineMarkdown,
       renderMarkdownBlocks,

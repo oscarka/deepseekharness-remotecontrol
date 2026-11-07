@@ -348,10 +348,24 @@ export class ClaudeAdapter {
     }
   }
 
-  async sendPrompt({ sessionId, text, cwd, execImpl } = {}) {
+  async sendPrompt({ sessionId, text, cwd, mode = 'prompt', execImpl } = {}) {
     const rawId = toRawClaudeId(sessionId)
     const prompt = String(text || '').trim()
     if (!prompt) return { ok: false, error: '请输入指令内容' }
+    if (this.activeRuns.has(rawId)) {
+      return {
+        ok: false,
+        busy: true,
+        error: '该 Claude Code 会话正在后台执行上一条指令，不支持并发插话，请等待本轮完成或先点击停止',
+      }
+    }
+    if (mode === 'steer') {
+      return {
+        ok: false,
+        busy: true,
+        error: 'Claude Code CLI 不支持运行中途插话（Steer），请等待当前回合完成或先点击停止',
+      }
+    }
     const bin = this.binaryPath || findClaudeBinary()
     const runExec = execImpl || this.execImpl
     if (!bin && !runExec) {
