@@ -1283,14 +1283,17 @@ function initHubController() {
 						}
 					}
 				}
-				const queuedCmds = (h.pendingCommands || []).filter((c) => c && c.agentId === t.id && (c.type === "prompt" || c.type === "steer"));
+				const pendingPromptCmds = (h.pendingCommands || []).filter((c) => c && c.agentId === t.id && (c.type === "prompt" || c.type === "steer"));
+				const isHostOnlineNow = h.online !== false && h.activelyConnected !== false;
+				const queuedCmds = pendingPromptCmds.filter((c) => c.queued || !isHostOnlineNow);
+				const dispatchingCmds = pendingPromptCmds.filter((c) => !c.queued && isHostOnlineNow);
 				const expiredCmds = (h.recentResults || []).filter((r) => r && r.expired && (r.type === "prompt" || r.type === "steer") && r.agentId === t.id && r.text);
 				const optimisticList = window.__dshOptimisticMsgs && window.__dshOptimisticMsgs[t.id] || [];
 				const nowMs = Date.now();
 				const remainingOpt = [];
 				for (const opt of optimisticList) {
 					if (nowMs - opt.time >= 15e3) continue;
-					if (baseTranscript.some((m) => m.role === "user" && m.text === opt.text) || queuedCmds.some((c) => c.text === opt.text) || expiredCmds.some((ec) => ec.text === opt.text)) continue;
+					if (baseTranscript.some((m) => m.role === "user" && m.text === opt.text) || pendingPromptCmds.some((c) => c.text === opt.text) || expiredCmds.some((ec) => ec.text === opt.text)) continue;
 					remainingOpt.push(opt);
 					baseTranscript.push({
 						role: "user",
@@ -1298,6 +1301,11 @@ function initHubController() {
 						time: opt.time
 					});
 				}
+				for (const dc of dispatchingCmds) if (!baseTranscript.some((m) => m.role === "user" && m.text === dc.text)) baseTranscript.push({
+					role: "user",
+					text: dc.text,
+					time: dc.createdAt || nowMs
+				});
 				for (const ec of expiredCmds) if (nowMs - (ec.at || 0) <= 18e5) baseTranscript.push({
 					role: "user",
 					text: ec.text,
@@ -1316,7 +1324,7 @@ function initHubController() {
 				const transcript = baseTranscript;
 				const lastMsg = transcript.length > 0 ? transcript[transcript.length - 1] : null;
 				const project = t.project || (t.cwd ? t.cwd.split("/").filter(Boolean).pop() : "默认工作区") || "默认工作区";
-				const status = pendingApp ? "approval" : t.status || "idle";
+				const status = pendingApp ? "approval" : t.status === "running" || dispatchingCmds.length > 0 ? "running" : t.status || "idle";
 				const queuedCount = queuedCmds.length;
 				const rawIdStr = String(t.id || "");
 				const harness = t.harness || (rawIdStr.startsWith("agy-ide:") ? "antigravity-ide" : rawIdStr.startsWith("codex:") ? "codex" : rawIdStr.startsWith("claude:") ? "claude" : "dsh");

@@ -952,13 +952,10 @@ export class HubAgent {
             const diskSess = (this.cachedDiskSessions || []).find(s => s.id === targetId)
             if (diskSess && (type === 'prompt' || type === 'steer')) {
               const trimmedText = effectiveText
-              const isDesktopRunning =
-                diskSess.status === 'running' && !this.dshHeadlessRunner?.isRunning(targetId)
               const headlessRes = await this.dshHeadlessRunner.runTurn({
                 sessionId: targetId,
                 text: trimmedText,
                 cwd: diskSess.cwd || cmd.cwd,
-                desktopBusy: isDesktopRunning,
               })
               if (headlessRes.ok && trimmedText) {
                 const nowTs = Date.now()

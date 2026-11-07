@@ -453,7 +453,7 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
         } catch {}
         const ageNow = Date.now() - fileStat.mtimeMs
         const isActivelyRunningNow =
-          hasLockNow && (ageNow <= 6000 || (ageNow <= 6 * 60 * 60 * 1000 && !cachedEntry.hasConcluded))
+          hasLockNow && (ageNow <= 6000 || (ageNow <= 45000 && !cachedEntry.hasConcluded))
         results.push({
           ...cachedEntry.session,
           ...(customOverride ? { title: customOverride } : {}),
@@ -639,7 +639,7 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
         } catch {}
         const ageMs = Date.now() - fileStat.mtimeMs
         const isActivelyRunning =
-          hasLock && (ageMs <= 6000 || (ageMs <= 6 * 60 * 60 * 1000 && !hasConcluded))
+          hasLock && (ageMs <= 6000 || (ageMs <= 45000 && !hasConcluded))
 
         const sessionObj = {
           id,

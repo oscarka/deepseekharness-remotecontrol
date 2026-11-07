@@ -741,7 +741,7 @@ export class FeishuBridge {
     const nextText = queue.shift()
     if (queue.length === 0) this.steerQueues.delete(agent.id)
     const chatId = this.controlChatId || ''
-    void this.enqueuePrompt(chatId || 'steer-queue', () =>
+    void this.enqueuePrompt(agent?.id || chatId || 'steer-queue', () =>
       this.runPromptForAgent({
         chatId,
         openId: 'steer-queue',
@@ -806,7 +806,7 @@ export class FeishuBridge {
     if (targetChat) {
       await this.sendDetail(targetChat, agent, { phase: 'accepted' })
     }
-    void this.enqueuePrompt(targetChat || 'web-console', () =>
+    void this.enqueuePrompt(agent?.id || targetChat || 'web-console', () =>
       this.runPromptForAgent({
         chatId: targetChat,
         openId,
@@ -2046,7 +2046,7 @@ export class FeishuBridge {
         }
         if (promptText) {
           const chatId = this.controlChatId || ''
-          void this.enqueuePrompt(chatId || 'web-console', () =>
+          void this.enqueuePrompt(created.id || chatId || 'web-console', () =>
             this.runPromptForAgent({
               chatId,
               openId: 'web-admin',
@@ -2087,7 +2087,7 @@ export class FeishuBridge {
         if (this.controlChatId) {
           await this.sendDetail(this.controlChatId, agent, { phase: 'accepted' })
         }
-        void this.enqueuePrompt(chatId, () =>
+        void this.enqueuePrompt(agent.id || chatId, () =>
           this.runPromptForAgent({
             chatId: this.controlChatId || '',
             openId: 'web-admin',
