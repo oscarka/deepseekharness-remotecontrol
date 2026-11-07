@@ -199,6 +199,10 @@ export HUB_TOKEN="自定义一个强密码"
 
 完整威胁模型、已知限制与密钥轮换方法见 **[SECURITY.md](SECURITY.md)**。发现漏洞请走 GitHub Security Advisories，不要开公开 issue。
 
+## 常见问题
+
+装不上、连不通、费用、隐私——先看 **[FAQ](docs/FAQ.md)**。里面直接回答了：只有 Codex 能不能用、Railway 到底收不收费、国内能不能用 Tailscale、数据会不会外传。
+
 ## 路线图
 
 - [x] 飞书长连接控制 + 审批 + 完成推送

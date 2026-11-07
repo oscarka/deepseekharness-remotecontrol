@@ -11,7 +11,9 @@
 - `SECURITY.md`：威胁模型、已知限制、部署检查清单、密钥轮换
 - `CONTRIBUTING.md`
 - GitHub issue / PR 模板
-- 首屏 banner 与 Social Preview 源文件（`docs/assets/`）
+- 首屏 banner 与 Social Preview 源文件（`docs/assets/`），以及导出好的 `social-preview.png`
+- `docs/FAQ.md`：装不装 DSH、Railway 费用、Tailscale 在国内的可用性、数据流向等 15 个问题
+- `docs/launch/`：发布检查清单、Release 正文草稿、中英文发布文章、90 秒演示分镜
 
 ### Changed
 
