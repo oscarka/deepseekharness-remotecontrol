@@ -530,8 +530,12 @@ export class HubCore {
 
     let bestTr = liveTr
     let fromCache = false
+    let staleCache = false
     if (cached && Array.isArray(cached.transcript) && cached.transcript.length > liveTr.length) {
       fromCache = true
+      const revChanged = Boolean(
+        cached.sessionRev && liveTask?.sessionRev && cached.sessionRev !== liveTask.sessionRev,
+      )
       if (liveTr.length === 0) {
         bestTr = [...cached.transcript]
       } else {
@@ -559,6 +563,7 @@ export class HubCore {
             bestTr = [...cached.transcript, ...liveTr.slice(lastCachedMatchInLive + 1)]
           } else {
             bestTr = [...cached.transcript]
+            if (revChanged) staleCache = true
           }
         }
       }
@@ -570,7 +575,7 @@ export class HubCore {
       Number(cached?.totalCount) || 0,
       bestTr.length,
     )
-    const hasMore = bestTr.length < totalCount
+    const hasMore = bestTr.length < totalCount || staleCache
     return {
       ok: true,
       hostId: cleanHostId,
@@ -1457,25 +1462,39 @@ export class HubCore {
       }
     }
 
-    const ttlMs =
-      Number(commandPayload.ttlMs) > 0
+    if (Array.isArray(commandPayload.attachments) && commandPayload.attachments.length > 0) {
+      if (commandPayload.attachments.length > 4) {
+        return { ok: false, statusCode: 413, error: '单次最多上传 4 张图片附件' }
+      }
+      for (const att of commandPayload.attachments) {
+        const b64 = String(att?.dataBase64 || att?.base64 || '').trim()
+        if (!b64 || b64.length > 11_500_000) {
+          return { ok: false, statusCode: 413, error: '图片附件为空或单张超过 8MB 上限' }
+        }
+      }
+    }
+
+    // Approval commands ALWAYS enforce server-authoritative 45s TTL; client ttlMs/expiresAt cannot bypass it
+    const ttlMs = isApprovalCmd
+      ? APPROVAL_SETTLING_TTL_MS
+      : Number(commandPayload.ttlMs) > 0
         ? Number(commandPayload.ttlMs)
-        : isApprovalCmd
-          ? APPROVAL_SETTLING_TTL_MS
-          : DEFAULT_COMMAND_TTL_MS
-    const expiresAt =
-      commandPayload.expiresAt !== undefined
+        : DEFAULT_COMMAND_TTL_MS
+    const expiresAt = isApprovalCmd
+      ? now + APPROVAL_SETTLING_TTL_MS
+      : commandPayload.expiresAt !== undefined
         ? Number(commandPayload.expiresAt)
-        : isInteractivePrompt || isApprovalCmd
+        : isInteractivePrompt
           ? now + ttlMs
           : 0
 
+    const { expiresAt: _clientExpiresAt, ttlMs: _clientTtlMs, ...cleanPayload } = commandPayload
     const cmd = {
       id: commandPayload.id || `cmd-${randomBytes(4).toString('hex')}`,
       createdAt: now,
       queued: !isActivelyOnline,
+      ...cleanPayload,
       ...(expiresAt > 0 ? { expiresAt } : {}),
-      ...commandPayload,
       ...(resolvedApprovalCode ? { code: resolvedApprovalCode } : {}),
     }
     if (isApprovalCmd && resolvedApprovalCode) {
@@ -1490,7 +1509,7 @@ export class HubCore {
         status: 'settling',
         pulledByHost: false,
         requestedAt: now,
-        expiresAt: expiresAt > 0 ? expiresAt : now + APPROVAL_SETTLING_TTL_MS,
+        expiresAt,
         error: '',
       })
     }

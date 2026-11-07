@@ -38,7 +38,7 @@ function decompressZstdTailText(rawBuf, maxFrames = 6) {
  */
 export function isDshSessionActivelyWriting(
   sessDir,
-  { now = Date.now(), activeWindowMs = 6000, midTurnWindowMs = 90000 } = {},
+  { now = Date.now(), activeWindowMs = 6000, maxToolTurnMs = 6 * 60 * 60 * 1000 } = {},
 ) {
   try {
     const zstdPath = join(sessDir, 'session.v4.jsonl.zstd')
@@ -54,18 +54,21 @@ export function isDshSessionActivelyWriting(
       // Conservative mtime gate: any modification within activeWindowMs is treated as active writing
       return true
     }
-    if (ageMs > midTurnWindowMs) {
+    if (ageMs > maxToolTurnMs) {
       return false
     }
 
+    // Even when mtime is minutes or hours old (e.g. a long `sleep 300`, `npm test`, or build tool call),
+    // always inspect the tail events of the session log before considering the session idle.
     const rawText = hasZstd ? decompressZstdTailText(readFileSync(zstdPath), 8) : readFileSync(jsonlPath, 'utf8')
     if (!rawText) {
-      // If file was modified within midTurnWindowMs and is compressed/unreadable mid-flush, be conservative
-      return ageMs <= activeWindowMs * 2
+      // If file is compressed/unreadable mid-flush, treat as active if session.lock exists or recently modified
+      const hasLock = existsSync(join(sessDir, 'session.lock'))
+      return hasLock || ageMs <= activeWindowMs * 2
     }
 
     const lines = rawText.trim().split('\n').filter(Boolean)
-    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 10); i -= 1) {
+    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 12); i -= 1) {
       try {
         const entry = JSON.parse(lines[i])
         const evType = String(entry?.type || '')
@@ -179,52 +182,11 @@ export function buildDshHeadlessPatchFile(dshHome) {
     const cwd = String(process.env.DSH_REMOTE_CWD || process.cwd()).trim();
     let agent;
     if (!isNew && sid) {
-      let resumed;
-      try {
-        resumed = await c.agents.resume({
-          resumeSessionId: sid,
-          agentOptions,
-          setup
-        });
-      } catch (resumeErr) {
-        if (
-          process.env.DSH_ALLOW_IDLE_LOCK_TAKEOVER === "1" &&
-          (resumeErr?.name === "SessionAlreadyOwnedError" ||
-            String(resumeErr?.message || "").includes("active write handle"))
-        ) {
-          const fs = await import("node:fs");
-          const path = await import("node:path");
-          const dshRoot = process.env.DSH_HOME || path.join(process.env.HOME || "", ".dsh");
-          const sessRoot = path.join(dshRoot, "sessions");
-          if (fs.existsSync(sessRoot)) {
-            for (const proj of fs.readdirSync(sessRoot)) {
-              const sDir = path.join(sessRoot, proj, sid);
-              const lockCandidate = path.join(sDir, "session.lock");
-              if (fs.existsSync(lockCandidate)) {
-                const zstdFile = path.join(sDir, "session.v4.jsonl.zstd");
-                const jsonlFile = path.join(sDir, "session.jsonl");
-                const targetFile = fs.existsSync(zstdFile) ? zstdFile : (fs.existsSync(jsonlFile) ? jsonlFile : "");
-                if (targetFile) {
-                  const st = fs.statSync(targetFile);
-                  if (Date.now() - st.mtimeMs <= 6000) {
-                    throw resumeErr;
-                  }
-                }
-                try {
-                  fs.unlinkSync(lockCandidate);
-                } catch {}
-              }
-            }
-          }
-          resumed = await c.agents.resume({
-            resumeSessionId: sid,
-            agentOptions,
-            setup
-          });
-        } else {
-          throw resumeErr;
-        }
-      }
+      const resumed = await c.agents.resume({
+        resumeSessionId: sid,
+        agentOptions,
+        setup
+      });
       agent = resumed.agent || resumed;
     } else {
       const created = await c.agents.create({
@@ -249,12 +211,15 @@ export function buildDshHeadlessPatchFile(dshHome) {
         source: Object.freeze({ kind: "user" })
       });
       agent.followup(msg);
+      console.log("[dsh-headless-remote]READY:" + (agent.session?.id || sid));
       const subagents = c.get("subagents");
       while (true) {
         await agent.whenIdle();
         const idleSeq = agent.session.seq;
         if (!(await subagents?.waitForChildren?.(agent)) && agent.status === "idle" && agent.session.seq === idleSeq) break;
       }
+    } else {
+      console.log("[dsh-headless-remote]READY:" + (agent.session?.id || sid));
     }
     await c.sessions.flush(agent.session);
     exitFn(0);
@@ -369,6 +334,7 @@ export class DshHeadlessRunner {
 
     return await new Promise(resolvePromise => {
       let settledQuickly = false
+      let stdoutBuf = ''
       let stderrBuf = ''
       const proc = spawn(
         bin,
@@ -383,13 +349,28 @@ export class DshHeadlessRunner {
             DSH_REMOTE_TASK: cleanText,
             DSH_REMOTE_TITLE: String(title || '').trim(),
             DSH_REMOTE_CWD: targetCwd,
-            DSH_ALLOW_IDLE_LOCK_TAKEOVER: verifiedIdleSessionOnDisk ? '1' : '0',
           },
           stdio: ['ignore', 'pipe', 'pipe'],
         },
       )
 
       this.activeProcs.set(id, { proc, startedAt: Date.now(), cwd: targetCwd })
+
+      proc.stdout?.on('data', chunk => {
+        stdoutBuf = (stdoutBuf + String(chunk)).slice(-1500)
+        if (!settledQuickly && stdoutBuf.includes('[dsh-headless-remote]READY:')) {
+          settledQuickly = true
+          resolvePromise({
+            ok: true,
+            agentId: id,
+            title: title || cleanText.slice(0, 36) || id,
+            cwd: targetCwd,
+            message: isNew
+              ? `🚀 已启动 DSH 新会话「${(title || cleanText).slice(0, 28)}」，正在后台思考与执行...`
+              : `🚀 已唤醒 DSH 会话并注入指令，正在后台执行...`,
+          })
+        }
+      })
 
       proc.stderr?.on('data', chunk => {
         stderrBuf = (stderrBuf + String(chunk)).slice(-1500)
@@ -409,7 +390,7 @@ export class DshHeadlessRunner {
       proc.on('exit', code => {
         this.activeProcs.delete(id)
         try {
-          this.onTurnSettled?.(id, code)
+          this.onTurnSettled?.(id, code, stderrBuf)
         } catch {}
         if (!settledQuickly) {
           settledQuickly = true
@@ -428,7 +409,7 @@ export class DshHeadlessRunner {
             resolvePromise({
               ok: false,
               error: isOwned
-                ? '该会话当前已在 DeepSeek Harness 桌面端打开，请在桌面端查看或重启一次桌面端以同步远程控制插件'
+                ? '该会话当前已在 DeepSeek Harness 桌面端运行或占用，请等待桌面端完成后再试'
                 : `DSH 执行异常 (exit ${code}): ${stderrBuf.trim().slice(-240) || '请检查模型或 API Key 配置'}`,
             })
           }
@@ -448,7 +429,7 @@ export class DshHeadlessRunner {
               : `🚀 已唤醒 DSH 会话并注入指令，正在后台执行...`,
           })
         }
-      }, 650)
+      }, 4500)
     })
   }
 }

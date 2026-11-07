@@ -302,6 +302,6 @@ flowchart TD
      - **OpenAI Codex (`codex`)**：✅ 通过 Gate 1~3（本机检测到二进制 `~/.codex/plugins/.plugin-appserver/codex` `0.144.0-alpha.4` 及 `~/.codex/sessions` 下 22 个真实会话），已上线 [`CodexAdapter`](file:///Users/cc/deepseekharness-remote/dsh-feishu/lib/harnesses/codex-adapter.js)。
      - **Claude Code (`claude`)**：✅ 通过 Gate 1~3（本机检测到 `/opt/homebrew/bin/claude` `2.1.92` 及 `~/.claude/projects` 下 137 个会话文件），已上线 [`ClaudeAdapter`](file:///Users/cc/deepseekharness-remote/dsh-feishu/lib/harnesses/claude-adapter.js)。
      - **WorkBuddy (`workbuddy`)**：❌ 未通过 Gate 1（`~/.workbuddy` 仅含 `skills/` 目录，本机未安装 WorkBuddy 客户端或 CLI，0 个会话文件），按评审原则标记为 `NOT_INSTALLED` 暂不排期。
-   - 全量自动化单测：**48 / 48 全部通过**（`npm test`）。
+   - 全量自动化单测：**53 / 53 全部通过**（`npm test`）。
 
 

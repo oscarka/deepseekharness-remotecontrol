@@ -1239,5 +1239,118 @@ test('real DSH v4 zstd active lock guard, 409 approval conflict, disk transcript
   }
 })
 
+test('long-running DSH tool turn (>120s/300s) lock protection & server-authoritative approval TTL bypass prevention', async () => {
+  const { HubCore } = await import('../../hub/hub-core.js')
+  const { isDshSessionActivelyWriting } = await import('../lib/harnesses/dsh-headless-adapter.js')
+  const { loadDiskSessionsFromDshHome, invalidateDshSessionParseCache } = await import('../lib/workspace-ops.js')
+  const { mkdirSync, utimesSync, writeFileSync } = await import('node:fs')
+  const zlib = await import('node:zlib')
+
+  const root = await mkdtemp(join(tmpdir(), 'dsh-long-turn-and-ttl-'))
+  try {
+    // 1. Long-running tool turn: `sleep 300` where transcript mtime is 2 minutes and 5 minutes old
+    const sessDir = join(root, 'sessions', 'proj-long', 'session-sleep-300')
+    mkdirSync(sessDir, { recursive: true })
+    const zstdPath = join(sessDir, 'session.v4.jsonl.zstd')
+    const lockPath = join(sessDir, 'session.lock')
+    writeFileSync(lockPath, '99999\n', 'utf8')
+
+    const longRunningLines = [
+      JSON.stringify({ type: 'session', id: 'session-sleep-300', cwd: root, time: 1794000000000 }),
+      JSON.stringify({
+        type: 'user/message',
+        time: 1794000001000,
+        data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Run 5-minute build' }] },
+      }),
+      JSON.stringify({
+        type: 'tool/call',
+        time: 1794000002000,
+        data: { turn: 1, step: 1, callId: 'c-long', name: 'bash', arguments: { command: 'sleep 300' } },
+      }),
+    ].join('\n')
+    writeFileSync(zstdPath, zlib.zstdCompressSync(Buffer.from(`${longRunningLines}\n`, 'utf8')))
+
+    const nowMs = Date.now()
+    // 120 seconds (2 minutes) old
+    const twoMinAgo = new Date(nowMs - 120_000)
+    utimesSync(zstdPath, twoMinAgo, twoMinAgo)
+    assert.equal(isDshSessionActivelyWriting(sessDir, { now: nowMs }), true)
+
+    // 300 seconds (5 minutes) old
+    const fiveMinAgo = new Date(nowMs - 300_000)
+    utimesSync(zstdPath, fiveMinAgo, fiveMinAgo)
+    assert.equal(isDshSessionActivelyWriting(sessDir, { now: nowMs }), true)
+
+    // Also verify loadDiskSessionsFromDshHome reports status='running' for a 5-minute-old unfinished tool turn with session.lock
+    invalidateDshSessionParseCache()
+    const diskList = await loadDiskSessionsFromDshHome(root)
+    assert.equal(diskList.length, 1)
+    assert.equal(diskList[0].status, 'running')
+
+    // 2. Server-authoritative approval TTL: client expiresAt: 0 or ttlMs: 999999999 CANNOT bypass 45s TTL
+    const hub = new HubCore({ stateFile: join(root, 'hub-state.json') })
+    await hub.init()
+    hub.handleHeartbeat({
+      hostId: 'mac-ttl',
+      hostName: 'Mac TTL',
+      bridgeState: {
+        tasks: [{ id: 'agent-ttl', title: 'TTL Test', status: 'approval', transcript: [] }],
+        approvals: [{ code: 'AP-TTL-1', agentId: 'agent-ttl', toolName: 'bash' }],
+        workspaces: [],
+      },
+    })
+
+    const bypassAttempt1 = hub.queueCommand('mac-ttl', {
+      type: 'approval',
+      code: 'AP-TTL-1',
+      agentId: 'agent-ttl',
+      allow: true,
+      expiresAt: 0,
+      ttlMs: 999_999_999,
+    })
+    assert.equal(bypassAttempt1.ok, true)
+    // Must enforce ~45s TTL, never 0 or 999999999!
+    assert.ok(bypassAttempt1.command.expiresAt > Date.now() + 40_000)
+    assert.ok(bypassAttempt1.command.expiresAt <= Date.now() + 46_000)
+    assert.equal(
+      hub.approvalLedger.get('mac-ttl:AP-TTL-1')?.expiresAt,
+      bypassAttempt1.command.expiresAt,
+    )
+
+    // Simulate 46 seconds passing: command must be pruned and NEVER delivered to host
+    hub.hosts.get('mac-ttl').commands[0].expiresAt = Date.now() - 1000
+    const hbAfter = hub.handleHeartbeat({
+      hostId: 'mac-ttl',
+      hostName: 'Mac TTL',
+      bridgeState: {
+        tasks: [{ id: 'agent-ttl', title: 'TTL Test', status: 'approval', transcript: [] }],
+        approvals: [{ code: 'AP-TTL-1', agentId: 'agent-ttl', toolName: 'bash' }],
+        workspaces: [],
+      },
+    })
+    assert.equal(hbAfter.commands.length, 0)
+    assert.equal(hub.approvalLedger.get('mac-ttl:AP-TTL-1')?.status, 'failed')
+
+    // 3. Server-side attachment count limit (>4 rejected with 413)
+    const tooManyAtt = hub.queueCommand('mac-ttl', {
+      type: 'prompt',
+      agentId: 'agent-ttl',
+      text: 'too many',
+      attachments: [
+        { name: '1.png', dataBase64: 'AAAA' },
+        { name: '2.png', dataBase64: 'AAAA' },
+        { name: '3.png', dataBase64: 'AAAA' },
+        { name: '4.png', dataBase64: 'AAAA' },
+        { name: '5.png', dataBase64: 'AAAA' },
+      ],
+    })
+    assert.equal(tooManyAtt.ok, false)
+    assert.equal(tooManyAtt.statusCode, 413)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+
 
 

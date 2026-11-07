@@ -1784,6 +1784,10 @@ export function initHubController() {
                     input.value = rawText;
                     autoGrowComposer();
                   }
+                  if (pendingAttachments.length > 0 && composerAttachments.chat.length === 0) {
+                    composerAttachments.chat = pendingAttachments;
+                    renderAttachmentStrip('chat');
+                  }
                 }
                 fetchState();
                 return;
