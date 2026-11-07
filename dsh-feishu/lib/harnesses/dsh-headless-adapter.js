@@ -1,8 +1,38 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+
+/**
+ * Inspect whether a DSH session directory on disk is currently being written to
+ * by an active Desktop GUI turn (as opposed to sitting idle in an open window).
+ */
+export function isDshSessionActivelyWriting(sessDir, { now = Date.now(), activeWindowMs = 3500 } = {}) {
+  try {
+    const jsonlPath = join(sessDir, 'session.jsonl')
+    if (!existsSync(jsonlPath)) return false
+    const st = statSync(jsonlPath)
+    if (now - st.mtimeMs > activeWindowMs) return false
+    const raw = readFileSync(jsonlPath, 'utf8')
+    const lines = raw.trim().split('\n').filter(Boolean)
+    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 6); i -= 1) {
+      try {
+        const entry = JSON.parse(lines[i])
+        const msg = entry?.data?.message || entry?.message
+        if (!msg) continue
+        if (msg.role === 'user' || msg.role === 'tool') return true
+        if (msg.role === 'assistant') {
+          const parts = Array.isArray(msg.content) ? msg.content : []
+          const hasToolCall = parts.some(p => p?.type === 'tool-call' || p?.type === 'tool_use')
+          const hasFinalText = parts.some(p => p?.type === 'text' && String(p.text || '').trim().length > 0)
+          return hasToolCall && !hasFinalText
+        }
+      } catch {}
+    }
+  } catch {}
+  return false
+}
 
 export function findDshBinary() {
   const home = homedir()
@@ -86,8 +116,9 @@ export function buildDshHeadlessPatchFile(dshHome) {
         });
       } catch (resumeErr) {
         if (
-          resumeErr?.name === "SessionAlreadyOwnedError" ||
-          String(resumeErr?.message || "").includes("active write handle")
+          process.env.DSH_ALLOW_IDLE_LOCK_TAKEOVER === "1" &&
+          (resumeErr?.name === "SessionAlreadyOwnedError" ||
+            String(resumeErr?.message || "").includes("active write handle"))
         ) {
           const fs = await import("node:fs");
           const path = await import("node:path");
@@ -195,7 +226,7 @@ export class DshHeadlessRunner {
     }
   }
 
-  async runTurn({ sessionId = '', text = '', cwd = '', isNew = false, title = '' } = {}) {
+  async runTurn({ sessionId = '', text = '', cwd = '', isNew = false, title = '', desktopBusy = false } = {}) {
     const cleanText = String(text || '').trim()
     if (!isNew && !cleanText) {
       return { ok: false, error: '发送内容不能为空' }
@@ -211,21 +242,37 @@ export class DshHeadlessRunner {
     if (this.activeProcs.has(id)) {
       return {
         ok: false,
+        busy: true,
         error: '该 DSH 会话正在后台执行上一条指令，请等待完成或点击停止后再发',
+      }
+    }
+    if (desktopBusy) {
+      return {
+        ok: false,
+        busy: true,
+        error: '该 DSH 会话当前正在电脑桌面端运行中，请等待当前回合完成后再从手机发送',
       }
     }
     const targetCwd = cwd && existsSync(cwd) ? cwd : process.cwd()
     const patchFile = buildDshHeadlessPatchFile(this.dshHome)
 
-    // Preemptively unlink any existing POSIX session.lock held by an idle Desktop GUI window
-    // so SessionWriteLease.acquire creates a fresh inode and never fails with SessionAlreadyOwnedError.
+    // Preemptively unlink any existing POSIX session.lock ONLY when the Desktop GUI window is idle
+    // (never when the Desktop GUI is actively writing to session.jsonl).
     if (!isNew && id) {
       try {
         const sessRoot = join(resolve(this.dshHome), 'sessions')
         if (existsSync(sessRoot)) {
           for (const proj of readdirSync(sessRoot)) {
-            const lockCandidate = join(sessRoot, proj, id, 'session.lock')
+            const sessDir = join(sessRoot, proj, id)
+            const lockCandidate = join(sessDir, 'session.lock')
             if (existsSync(lockCandidate)) {
+              if (isDshSessionActivelyWriting(sessDir)) {
+                return {
+                  ok: false,
+                  busy: true,
+                  error: '该 DSH 会话当前正在电脑桌面端运行中，请等待当前回合完成后再从手机发送',
+                }
+              }
               try {
                 unlinkSync(lockCandidate)
               } catch {}
@@ -251,6 +298,7 @@ export class DshHeadlessRunner {
             DSH_REMOTE_TASK: cleanText,
             DSH_REMOTE_TITLE: String(title || '').trim(),
             DSH_REMOTE_CWD: targetCwd,
+            DSH_ALLOW_IDLE_LOCK_TAKEOVER: '1',
           },
           stdio: ['ignore', 'pipe', 'pipe'],
         },

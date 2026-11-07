@@ -106,6 +106,8 @@ export function decorateTaskMetadata(task, { isLiveDsh = false, now = Date.now()
 export class HarnessRouter {
   constructor() {
     this.adapters = new Map()
+    this.lastKnownGoodByAdapter = new Map()
+    this.lastAdapterErrors = new Map()
   }
 
   registerAdapter(adapter) {
@@ -130,13 +132,29 @@ export class HarnessRouter {
       if (typeof adapter.listSessions !== 'function') continue
       try {
         const list = await adapter.listSessions(options)
+        const decorated = []
         if (Array.isArray(list)) {
           for (const item of list) {
-            all.push(decorateTaskMetadata(item, { now: options.now }))
+            decorated.push(decorateTaskMetadata(item, { now: options.now }))
           }
         }
-      } catch {
-        // isolate adapter errors so one broken external tool never affects core heartbeat
+        this.lastKnownGoodByAdapter.set(adapter.id, decorated)
+        this.lastAdapterErrors.delete(adapter.id)
+        all.push(...decorated)
+      } catch (err) {
+        // Isolate adapter errors and preserve last-known-good sessions so UI never flickers on transient read errors
+        const errMsg = err?.message || String(err)
+        this.lastAdapterErrors.set(adapter.id, errMsg)
+        const fallback = this.lastKnownGoodByAdapter.get(adapter.id) || []
+        for (const item of fallback) {
+          all.push({
+            ...item,
+            stateMeta: {
+              ...(item.stateMeta || {}),
+              lastScanError: errMsg,
+            },
+          })
+        }
       }
     }
     return all

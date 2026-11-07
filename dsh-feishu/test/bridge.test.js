@@ -846,3 +846,168 @@ test('persistCommandAttachments saves mobile screenshots to workspace and enrich
   }
 })
 
+test('approval lifecycle closure: 45s TTL expiry, dedupe, cancel cleanup, actionId matching, ledger persistence, and full transcript API', async () => {
+  const { HubCore } = await import('../../hub/hub-core.js')
+  const { HarnessRouter } = await import('../lib/harness-router.js')
+
+  const root = await mkdtemp(join(tmpdir(), 'dsh-approval-closure-'))
+  try {
+    const stateFile = join(root, 'hub-state.json')
+    const hub = new HubCore({ stateFile })
+    await hub.init()
+
+    const longTranscript = Array.from({ length: 20 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      text: `Message #${i + 1}`,
+    }))
+
+    hub.handleHeartbeat({
+      hostId: 'mac-1',
+      hostName: 'Mac 1',
+      bridgeState: {
+        tasks: [
+          {
+            id: 'agent-1',
+            title: 'Long Session',
+            status: 'approval',
+            transcript: longTranscript,
+          },
+        ],
+        approvals: [
+          {
+            code: 'AP-100',
+            agentId: 'agent-1',
+            toolName: 'bash',
+            reason: 'rm -rf /tmp/demo',
+          },
+        ],
+        workspaces: [],
+      },
+    })
+
+    // 1. Wire state compacts top session to 14 messages and exposes omittedTranscriptCount,
+    //    while getSessionFullTranscript returns all 20 messages.
+    const wireState = hub.getFullState()
+    const wireTask = wireState.hosts[0].bridgeState.tasks[0]
+    assert.equal(wireTask.transcript.length, 14)
+    assert.equal(wireTask.totalTranscriptCount, 20)
+    assert.equal(wireTask.omittedTranscriptCount, 6)
+    assert.equal(wireTask.hasMoreTranscript, true)
+
+    const fullTr = hub.getSessionFullTranscript('mac-1', 'agent-1')
+    assert.equal(fullTr.ok, true)
+    assert.equal(fullTr.transcript.length, 20)
+    assert.equal(fullTr.transcript[0].text, 'Message #1')
+
+    // 2. Queue approval command -> has 45s TTL and deduplicates double clicks while settling
+    const q1 = hub.queueCommand('mac-1', {
+      type: 'approval',
+      code: 'AP-100',
+      agentId: 'agent-1',
+      allow: true,
+    })
+    assert.equal(q1.ok, true)
+    assert.ok(q1.command.expiresAt > Date.now() + 40000)
+    assert.ok(q1.command.expiresAt <= Date.now() + 46000)
+
+    const q2 = hub.queueCommand('mac-1', {
+      type: 'approval',
+      code: 'AP-100',
+      agentId: 'agent-1',
+      allow: true,
+    })
+    assert.equal(q2.ok, true)
+    assert.equal(q2.deduplicated, true)
+    assert.equal(q2.command.id, q1.command.id)
+    assert.equal(hub.hosts.get('mac-1').commands.length, 1)
+
+    // 3. Persist and restore approvalLedger across Hub restarts
+    await hub.persist()
+    const hubRestarted = new HubCore({ stateFile })
+    await hubRestarted.init()
+    const restoredEntry = hubRestarted.approvalLedger.get('mac-1:AP-100')
+    assert.ok(restoredEntry)
+    assert.equal(restoredEntry.status, 'settling')
+    assert.equal(restoredEntry.actionId, q1.command.id)
+
+    // 4. Cancel command -> clears approvalLedger immediately
+    const cRes = hub.cancelCommand(q1.command.id)
+    assert.equal(cRes.ok, true)
+    assert.equal(hub.approvalLedger.has('mac-1:AP-100'), false)
+
+    // 5. Re-queue and test 45s TTL expiry: offline host reconnecting after TTL NEVER receives timed-out approval
+    const q3 = hub.queueCommand('mac-1', {
+      type: 'approval',
+      code: 'AP-100',
+      agentId: 'agent-1',
+      allow: true,
+    })
+    assert.equal(q3.ok, true)
+    // Simulate 46 seconds passing before host reconnects
+    hub.hosts.get('mac-1').commands[0].expiresAt = Date.now() - 1000
+    const hbAfterTtl = hub.handleHeartbeat({
+      hostId: 'mac-1',
+      hostName: 'Mac 1',
+      bridgeState: {
+        tasks: [{ id: 'agent-1', title: 'Long Session', status: 'approval', transcript: [] }],
+        approvals: [{ code: 'AP-100', agentId: 'agent-1', toolName: 'bash' }],
+        workspaces: [],
+      },
+    })
+    assert.equal(hbAfterTtl.commands.length, 0)
+    assert.equal(hub.approvalLedger.get('mac-1:AP-100')?.status, 'failed')
+
+    // 6. Stale command result cannot settle a newer approval actionId
+    const q4 = hub.queueCommand('mac-1', {
+      type: 'approval',
+      code: 'AP-100',
+      agentId: 'agent-1',
+      allow: false,
+    })
+    assert.equal(q4.ok, true)
+    assert.equal(hub.approvalLedger.get('mac-1:AP-100')?.status, 'settling')
+    // Deliver a late result from an older actionId (q3.command.id)
+    hub.onCommandResult('mac-1', {
+      id: q3.command.id,
+      type: 'approval',
+      code: 'AP-100',
+      ok: true,
+    })
+    // Ledger for q4 must still be settling, not prematurely settled!
+    assert.equal(hub.approvalLedger.get('mac-1:AP-100')?.status, 'settling')
+    assert.equal(hub.approvalLedger.get('mac-1:AP-100')?.actionId, q4.command.id)
+
+    // Now deliver matching result for q4
+    hub.onCommandResult('mac-1', {
+      id: q4.command.id,
+      type: 'approval',
+      code: 'AP-100',
+      ok: true,
+    })
+    assert.equal(hub.approvalLedger.get('mac-1:AP-100')?.status, 'settled')
+
+    // 7. HarnessRouter last-known-good fallback on transient adapter error
+    const router = new HarnessRouter({ enabledHarnesses: ['dsh', 'codex'] })
+    let shouldFail = false
+    router.registerAdapter({
+      id: 'codex',
+      async listSessions() {
+        if (shouldFail) throw new Error('EBUSY transient sqlite lock')
+        return [{ id: 'codex:sess-1', harness: 'codex', title: 'Codex Task' }]
+      },
+    })
+    const firstList = await router.listExternalSessions()
+    assert.equal(firstList.length, 1)
+    assert.equal(firstList[0].id, 'codex:sess-1')
+
+    shouldFail = true
+    const fallbackList = await router.listExternalSessions()
+    assert.equal(fallbackList.length, 1)
+    assert.equal(fallbackList[0].id, 'codex:sess-1')
+    assert.match(fallbackList[0].stateMeta.lastScanError, /EBUSY/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+
