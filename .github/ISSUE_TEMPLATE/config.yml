@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞 / Security vulnerability
+    url: https://github.com/oscarka/deepseekharness-remotecontrol/security/advisories/new
+    about: 请私下报告，不要开公开 issue。
+  - name: 使用与安装问题
+    url: https://github.com/oscarka/deepseekharness-remotecontrol#快速开始
+    about: 先看 README 的快速开始与飞书配置步骤。
