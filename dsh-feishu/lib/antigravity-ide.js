@@ -390,10 +390,10 @@ export function parseAntigravityTranscript(jsonlText, {
         continue
       }
 
-      const asstText = cleanForChat(redactText(rawContent), 1800)
-      const thinkingText = cleanForChat(redactText(rawThinking), 600)
+      const asstText = cleanForChat(redactText(rawContent), 48000)
+      const thinkingText = cleanForChat(redactText(rawThinking), 8000)
       if (asstText) {
-        lastOutput = asstText.slice(0, 1200)
+        lastOutput = asstText.slice(0, 8000)
       } else if (tools.length > 0 && !lastOutput) {
         lastOutput = tools.map(t => t.summary || t.name).join(' · ').slice(0, 400)
       }
@@ -402,7 +402,7 @@ export function parseAntigravityTranscript(jsonlText, {
         runningSummary = `🔧 正在执行: ${tools.map(t => t.summary || t.name).join(' · ')}`.slice(0, 240)
       } else if (asstText && step.status !== 'RUNNING') {
         lastConclusionAt = stepTime || lastActivity
-        lastConclusionText = asstText.slice(0, 1200)
+        lastConclusionText = asstText.slice(0, 8000)
       } else if (thinkingText) {
         runningSummary = `💭 正在思考: ${thinkingText.replace(/\s+/g, ' ').slice(0, 120)}`
       }
