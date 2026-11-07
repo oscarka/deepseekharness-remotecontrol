@@ -1730,16 +1730,44 @@ function initHubController() {
 		const nearBottom = box.dataset.dshSession !== String(activeSessionId) || box.scrollHeight - box.scrollTop - box.clientHeight < 120;
 		const prevScrollTop = box.scrollTop;
 		box.dataset.dshSession = String(activeSessionId);
-		const bubblesHtml = (s.transcript.length > 0 ? s.transcript : [{
+		const rawMsgs = s.transcript.length > 0 ? s.transcript : [{
 			role: "assistant",
 			text: s.rawLastPreview || s.lastPreview
-		}]).map((m, msgIdx) => {
+		}];
+		const msgs = [];
+		for (const item of rawMsgs) {
+			if (!item) continue;
+			const prev = msgs[msgs.length - 1];
+			if (item.role === "assistant" && prev && prev.role === "assistant" && !prev.waitingForInput && !item.waitingForInput) {
+				if (!prev._thoughtList) {
+					prev._thoughtList = prev.thinking ? [String(prev.thinking).trim()] : [];
+					prev._textList = prev.text && !prev.isToolStepOnly ? [String(prev.text).trim()] : [];
+					prev._toolList = [...Array.isArray(prev.toolCalls) && prev.toolCalls.length > 0 ? prev.toolCalls : prev.tools || []];
+					prev._stepCount = prev.thinkingStepCount || (prev.thinking ? 1 : 0);
+				}
+				if (item.thinking && String(item.thinking).trim()) {
+					prev._thoughtList.push(String(item.thinking).trim());
+					prev._stepCount += item.thinkingStepCount || 1;
+				}
+				if (item.text && !item.isToolStepOnly && String(item.text).trim()) prev._textList.push(String(item.text).trim());
+				const nextTools = Array.isArray(item.toolCalls) && item.toolCalls.length > 0 ? item.toolCalls : item.tools || [];
+				for (const t of nextTools) if (t) prev._toolList.push(t);
+				prev.thinkingStepCount = prev._stepCount;
+				prev.thinking = prev._thoughtList.length <= 1 ? prev._thoughtList[0] || "" : prev._thoughtList.map((th, idx) => th.startsWith("【思考") ? th : `【思考 ${idx + 1}】\n${th}`).join("\n\n");
+				prev.text = prev._textList.join("\n\n");
+				prev.tools = prev._toolList;
+				prev.toolCalls = prev._toolList;
+				prev.isToolStepOnly = false;
+			} else msgs.push({ ...item });
+		}
+		const bubblesHtml = msgs.map((m, msgIdx) => {
 			if (m.role === "user") {
 				const queuedBadge = m.queuedCmdId ? `<div class="queued-cmd-pill"><span>⏳ 排队中（电脑上线后执行）</span><button class="cancel-queued-btn" onclick="event.stopPropagation(); cancelQueuedCommand('${esc(m.queuedCmdId)}')">✕ 取消</button></div>` : m.expiredCmdId ? `<div class="queued-cmd-pill" style="background:rgba(239,68,68,0.18);color:#fecaca;"><span>⚠️ 电脑超过 10 分钟未上线，该指令已超时未执行</span></div>` : "";
 				return `<div class="bubble user"><div>${esc(m.text)}</div>${queuedBadge}</div>`;
 			}
 			const thinkId = `think-${msgIdx}`;
-			const thought = m.thinking ? `<details class="thought-box thinking-details" data-detail-id="${thinkId}" ${openDetailIds.has(thinkId) ? "open" : ""}><summary>💭 思考过程 (点击展开)</summary><div style="margin-top:6px;white-space:pre-wrap;">${esc(m.thinking)}</div></details>` : "";
+			const stepCountLabel = m.thinkingStepCount > 1 ? ` · 共 ${m.thinkingStepCount} 步` : "";
+			const thought = m.thinking ? `<details class="thought-box thinking-details" data-detail-id="${thinkId}" ${openDetailIds.has(thinkId) ? "open" : ""}><summary>💭 思考过程${stepCountLabel} (点击展开)</summary><div style="margin-top:6px;white-space:pre-wrap;">${esc(m.thinking)}</div></details>` : "";
 			if (m.isToolStepOnly) {
 				const toolOut = (m.tools || []).map((t) => t.commandLine || t.summary || "").filter(Boolean).join("\n");
 				const waitText = m.waitingForInput ? `<div style="margin-top:6px;font-size:12.5px;color:var(--muted);">Waiting for user input.</div>` : "";
@@ -1758,19 +1786,29 @@ function initHubController() {
             </div>
           `;
 			}
-			const tools = (m.tools || []).length > 0 ? `<div class="tool-chips">${m.tools.map((t, tIdx) => {
-				const tName = t.name || "tool";
-				const tSummary = t.summary || "";
-				const tDetail = t.commandLine || tSummary || "执行完毕";
-				const chipId = `tool-${msgIdx}-${tIdx}`;
-				return `
-                <details class="tool-chip-details" data-detail-id="${chipId}" ${openDetailIds.has(chipId) ? "open" : ""}>
-                  <summary><span>🔧 ${esc(tName)} ${esc(tSummary.slice(0, 48))}</span><span style="color:#94a3b8;font-size:10.5px;">点击查看输出 ▾</span></summary>
-                  <div class="tool-chip-output">${esc(tDetail)}</div>
-                </details>
-              `;
-			}).join("")}</div>` : "";
-			return `<div class="bubble assistant">${thought}<div class="md-body">${formatAssistantText(m.text)}</div>${tools}</div>`;
+			const rawTools = Array.isArray(m.toolCalls) && m.toolCalls.length > 0 ? m.toolCalls : m.tools || [];
+			let tools = "";
+			if (rawTools.length > 0) {
+				const toolItemsHtml = rawTools.map((t, tIdx) => {
+					const tName = typeof t === "string" ? t : t.name || "tool";
+					const tSummary = typeof t === "string" ? "" : t.summary || t.argsSummary || "";
+					const tDetail = typeof t === "string" ? "执行完毕" : t.commandLine || t.output || tSummary || "执行完毕";
+					const chipId = `tool-${msgIdx}-${tIdx}`;
+					return `
+              <details class="tool-chip-details" data-detail-id="${chipId}" ${openDetailIds.has(chipId) ? "open" : ""}>
+                <summary><span>🔧 ${esc(tName)}${tSummary ? ` · ${esc(tSummary.slice(0, 64))}` : ""}</span><span style="color:#94a3b8;font-size:10.5px;">点击查看详情 ▾</span></summary>
+                <div class="tool-chip-output">${esc(tDetail)}</div>
+              </details>
+            `;
+				}).join("");
+				if (rawTools.length > 1) {
+					const groupId = `tool-group-${msgIdx}`;
+					const uniqueToolNames = [...new Set(rawTools.map((t) => typeof t === "string" ? t : t.name || "tool"))].slice(0, 4).join(", ");
+					tools = `<details class="thought-box thinking-details" data-detail-id="${groupId}" ${openDetailIds.has(groupId) ? "open" : ""} style="margin-bottom:8px;"><summary>🔧 执行过程 · 共 ${rawTools.length} 次工具调用 (${esc(uniqueToolNames)}) (点击展开)</summary><div class="tool-chips" style="margin-top:6px;">${toolItemsHtml}</div></details>`;
+				} else tools = `<div class="tool-chips" style="margin-bottom:8px;">${toolItemsHtml}</div>`;
+			}
+			const bodyHtml = m.text ? `<div class="md-body">${formatAssistantText(m.text)}</div>` : `<div style="font-size:12.5px;color:var(--muted);margin-top:4px;">⚙️ 正在思考与执行工具调用...</div>`;
+			return `<div class="bubble assistant">${thought}${tools}${bodyHtml}</div>`;
 		}).join("");
 		const filesChangedHtml = s.harness === "antigravity-ide" && Array.isArray(s.changedFiles) && s.changedFiles.length > 0 ? `
         <div class="agy-files-changed-card">

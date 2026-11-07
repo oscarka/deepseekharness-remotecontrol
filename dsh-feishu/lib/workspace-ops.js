@@ -72,6 +72,166 @@ export function formatFingerprint(buffer) {
   return `${hex.slice(0, 4)} ${hex.slice(4, 8)} ${hex.slice(8, 12)}`
 }
 
+function parseToolArgsObject(rawArgs) {
+  if (!rawArgs) return {}
+  if (typeof rawArgs === 'object' && !Array.isArray(rawArgs)) return rawArgs
+  if (typeof rawArgs === 'string') {
+    try {
+      const parsed = JSON.parse(rawArgs)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
+    } catch {
+      return { raw: rawArgs }
+    }
+  }
+  return {}
+}
+
+function extractPrimaryArgSummary(argsObj) {
+  const cmd = argsObj.command ?? argsObj.cmd ?? argsObj.CommandLine ?? argsObj.script ?? ''
+  if (typeof cmd === 'string' && cmd.trim()) {
+    const firstLine = cmd.trim().split('\n')[0].trim()
+    return firstLine.length > 96 ? `${firstLine.slice(0, 96)}…` : firstLine
+  }
+  const filePath =
+    argsObj.path ??
+    argsObj.file_path ??
+    argsObj.filePath ??
+    argsObj.Path ??
+    argsObj.TargetFile ??
+    argsObj.target_file ??
+    argsObj.cwd ??
+    ''
+  if (typeof filePath === 'string' && filePath.trim()) {
+    return filePath.trim().replace(/^\/Users\/[^/]+/, '~')
+  }
+  const query = argsObj.pattern ?? argsObj.query ?? argsObj.regex ?? argsObj.glob ?? argsObj.url ?? ''
+  if (typeof query === 'string' && query.trim()) {
+    return query.trim().slice(0, 96)
+  }
+  const keys = Object.keys(argsObj)
+  if (keys.length === 0) return ''
+  try {
+    const s = JSON.stringify(argsObj)
+    return s.length > 96 ? `${s.slice(0, 96)}…` : s
+  } catch {
+    return ''
+  }
+}
+
+function buildDshToolRecord(name, callId, rawArgs, resultText = '') {
+  const cleanName = String(name || 'tool')
+  const argsObj = parseToolArgsObject(rawArgs)
+  const summary = redactText(extractPrimaryArgSummary(argsObj))
+  let argsDetail = ''
+  const cmd = argsObj.command ?? argsObj.cmd ?? argsObj.CommandLine ?? ''
+  if (typeof cmd === 'string' && cmd.trim()) {
+    argsDetail = `$ ${redactText(cmd.trim()).slice(0, 3500)}`
+  } else if (Object.keys(argsObj).length > 0) {
+    try {
+      argsDetail = redactText(JSON.stringify(argsObj, null, 2)).slice(0, 2500)
+    } catch {
+      argsDetail = summary
+    }
+  }
+  const cleanResult = resultText ? redactText(String(resultText).trim()).slice(0, 4000) : ''
+  const detailParts = []
+  if (argsDetail) detailParts.push(argsDetail)
+  if (cleanResult) detailParts.push(`--- 执行输出 ---\n${cleanResult}`)
+  return {
+    name: cleanName,
+    id: String(callId || ''),
+    summary,
+    argsSummary: summary,
+    commandLine: detailParts.join('\n\n') || summary || '执行完毕',
+  }
+}
+
+/**
+ * Merge consecutive `assistant` step items within a single turn (between `user` messages)
+ * so 10-20 intermediate thinking + tool execution steps collapse into one turn bubble
+ * with full thinking steps, full tool call details, and the complete untruncated final reply.
+ */
+export function mergeTurnAssistantMessages(items) {
+  if (!Array.isArray(items) || items.length === 0) return []
+  const merged = []
+  let pendingAsst = null
+
+  const flushAsst = () => {
+    if (!pendingAsst) return
+    const thoughtList = pendingAsst._thoughts.filter(Boolean)
+    const combinedThinking =
+      thoughtList.length === 0
+        ? ''
+        : thoughtList.length === 1
+          ? thoughtList[0]
+          : thoughtList
+              .map((t, idx) => `【思考 ${idx + 1}】\n${t}`)
+              .join('\n\n')
+              .slice(0, 24000)
+    const textList = pendingAsst._texts.filter(Boolean)
+    const combinedText = cleanForChat(textList.join('\n\n').trim(), 48000)
+    const tools = pendingAsst._tools.slice(0, 60)
+    merged.push({
+      index: merged.length,
+      role: 'assistant',
+      text: combinedText,
+      thinking: combinedThinking,
+      thinkingStepCount: thoughtList.length,
+      tools,
+      toolCalls: tools,
+      time: pendingAsst.time || 0,
+    })
+    pendingAsst = null
+  }
+
+  for (const item of items) {
+    if (!item) continue
+    if (item.role !== 'assistant') {
+      flushAsst()
+      merged.push({
+        ...item,
+        index: merged.length,
+      })
+      continue
+    }
+    if (!pendingAsst) {
+      pendingAsst = {
+        time: item.time || 0,
+        _thoughts: [],
+        _texts: [],
+        _tools: [],
+        _seenToolIds: new Set(),
+      }
+    }
+    if (item.time && item.time > pendingAsst.time) {
+      pendingAsst.time = item.time
+    }
+    if (item.thinking && String(item.thinking).trim()) {
+      pendingAsst._thoughts.push(String(item.thinking).trim())
+    }
+    if (item.text && String(item.text).trim()) {
+      pendingAsst._texts.push(String(item.text).trim())
+    }
+    const itemTools =
+      Array.isArray(item.tools) && item.tools.length > 0
+        ? item.tools
+        : Array.isArray(item.toolCalls)
+          ? item.toolCalls
+          : []
+    for (const t of itemTools) {
+      if (!t) continue
+      const tid = typeof t === 'object' ? String(t.id || '') : ''
+      if (tid && pendingAsst._seenToolIds.has(tid)) continue
+      if (tid) pendingAsst._seenToolIds.add(tid)
+      pendingAsst._tools.push(
+        typeof t === 'string' ? { name: t, id: '', summary: '', argsSummary: '', commandLine: '执行完毕' } : t,
+      )
+    }
+  }
+  flushAsst()
+  return merged
+}
+
 /**
  * Extract full structured conversation transcript and tool activity from a live agent
  * (for Full Remote Web Chat UI and E2EE Conversation Replay).
@@ -85,9 +245,41 @@ export function extractSessionTranscript(agent, maxMessages = 60) {
     rawMessages = []
   }
 
+  const toolResultsByCallId = new Map()
+  const rawLog = Array.isArray(agent.session?.log) ? agent.session.log : []
+  for (const ev of rawLog) {
+    if (ev?.type === 'tool/result') {
+      const msg = ev.data?.message || {}
+      const cid = String(msg?.source?.callId || ev.data?.callId || msg?.toolCallId || '')
+      if (!cid) continue
+      const blocks = Array.isArray(msg?.content) ? msg.content : []
+      const outText = blocks
+        .filter(b => b?.type === 'text' && typeof b.text === 'string')
+        .map(b => b.text)
+        .join('\n')
+        .trim()
+      if (outText) toolResultsByCallId.set(cid, outText)
+    }
+  }
+
+  for (const msg of rawMessages) {
+    if (msg?.role === 'tool') {
+      const cid = String(msg?.source?.callId || msg?.toolCallId || msg?.id || '')
+      if (!cid || toolResultsByCallId.has(cid)) continue
+      const blocks = Array.isArray(msg?.content) ? msg.content : []
+      const outText = blocks
+        .filter(b => b?.type === 'text' && typeof b.text === 'string')
+        .map(b => b.text)
+        .join('\n')
+        .trim()
+      if (outText) toolResultsByCallId.set(cid, outText)
+    }
+  }
+
   const mapped = []
   for (const msg of rawMessages) {
     const role = String(msg?.role ?? 'unknown')
+    if (role === 'tool' || role === 'system' || role === 'developer') continue
     const blocks = Array.isArray(msg?.content) ? msg.content : []
     const textParts = []
     const thinkingParts = []
@@ -99,12 +291,17 @@ export function extractSessionTranscript(agent, maxMessages = 60) {
         textParts.push(redactText(block.text))
       } else if (block.type === 'thinking' || block.type === 'reasoning') {
         const thought = typeof block.thinking === 'string' ? block.thinking : typeof block.text === 'string' ? block.text : ''
-        if (thought) thinkingParts.push(redactText(thought).slice(0, 1000))
+        if (thought) thinkingParts.push(redactText(thought).slice(0, 8000))
       } else if (block.type === 'tool_use' || block.type === 'tool_call' || block.type === 'tool-call') {
-        tools.push({
-          name: String(block.name || block.toolName || 'tool'),
-          id: String(block.id || ''),
-        })
+        const callId = String(block.id || '')
+        tools.push(
+          buildDshToolRecord(
+            block.name || block.toolName || 'tool',
+            callId,
+            block.arguments ?? block.input,
+            toolResultsByCallId.get(callId) || '',
+          ),
+        )
       }
     }
 
@@ -112,7 +309,7 @@ export function extractSessionTranscript(agent, maxMessages = 60) {
       textParts.push(redactText(msg.content))
     }
 
-    const joinedText = cleanForChat(textParts.join('\n').trim(), 4000)
+    const joinedText = cleanForChat(textParts.join('\n').trim(), 48000)
     if (role === 'user' && isSystemInjectedUserText(joinedText)) {
       continue
     }
@@ -131,7 +328,7 @@ export function extractSessionTranscript(agent, maxMessages = 60) {
     })
   }
 
-  return mapped.slice(-maxMessages)
+  return mergeTurnAssistantMessages(mapped).slice(-maxMessages)
 }
 
 function decompressMultiFrameZstd(rawBuf) {
@@ -249,18 +446,43 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
         const titles = lines.filter(e => e.type === 'session/title' && e.data?.title)
         const title = String(titles.at(-1)?.data?.title || '').trim()
 
+        // Map tool/result outputs by callId so tool/call records include real execution output
+        const toolResultsByCallId = new Map()
+        for (const e of lines) {
+          if (e.type === 'tool/result') {
+            const msg = e.data?.message || {}
+            const cid = String(msg?.source?.callId || e.data?.callId || msg?.toolCallId || '')
+            if (!cid) continue
+            const blocks = Array.isArray(msg?.content) ? msg.content : []
+            const outText = blocks
+              .filter(b => b?.type === 'text' && typeof b.text === 'string')
+              .map(b => b.text)
+              .join('\n')
+              .trim()
+            if (outText) toolResultsByCallId.set(cid, outText)
+          }
+        }
+
         // Group tool/call events by turn+step so we can attach them to assistant messages
         const toolsByStep = new Map()
         for (const e of lines) {
           if (e.type === 'tool/call' && e.data?.name) {
             const key = `${e.data.turn ?? 0}:${e.data.step ?? 0}`
             const arr = toolsByStep.get(key) || []
-            arr.push({ name: String(e.data.name), id: String(e.data.callId || '') })
+            const callId = String(e.data.callId || e.data.id || '')
+            arr.push(
+              buildDshToolRecord(
+                e.data.name,
+                callId,
+                e.data.arguments ?? e.data.input ?? e.data.args,
+                toolResultsByCallId.get(callId) || '',
+              ),
+            )
             toolsByStep.set(key, arr)
           }
         }
 
-        const transcript = []
+        const rawTranscript = []
         let lastOutput = ''
         let lastConclusionText = ''
         let runningSummary = ''
@@ -279,13 +501,13 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
                 .map(b => redactText(b.text))
                 .join('\n')
                 .trim(),
-              4000,
+              48000,
             )
             if (!userText || isSystemInjectedUserText(userText)) continue
             lastUserInputAt = e.time || lastActivity
             runningSummary = '💭 正在思考与分析...'
-            transcript.push({
-              index: transcript.length,
+            rawTranscript.push({
+              index: rawTranscript.length,
               role: 'user',
               text: userText,
               thinking: '',
@@ -301,28 +523,44 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
                 .map(b => redactText(b.text))
                 .join('\n')
                 .trim(),
-              4000,
+              48000,
             )
             const thinkingText = blocks
               .filter(b => (b?.type === 'reasoning' || b?.type === 'thinking') && typeof (b.text || b.thinking) === 'string')
               .map(b => redactText(b.text || b.thinking))
               .join('\n')
               .trim()
-              .slice(0, 1000)
+              .slice(0, 8000)
             const stepKey = `${e.data?.turn ?? 0}:${e.data?.step ?? 0}`
-            const stepTools = toolsByStep.get(stepKey) || []
+            const stepTools = [...(toolsByStep.get(stepKey) || [])]
+            const seenStepToolIds = new Set(stepTools.map(t => t.id).filter(Boolean))
+            for (const b of blocks) {
+              if (b?.type === 'tool-call' || b?.type === 'tool_use' || b?.type === 'tool_call') {
+                const cid = String(b.id || '')
+                if (cid && seenStepToolIds.has(cid)) continue
+                if (cid) seenStepToolIds.add(cid)
+                stepTools.push(
+                  buildDshToolRecord(
+                    b.name || b.toolName || 'tool',
+                    cid,
+                    b.arguments ?? b.input,
+                    toolResultsByCallId.get(cid) || '',
+                  ),
+                )
+              }
+            }
             if (!asstText && !thinkingText && stepTools.length === 0) continue
-            if (asstText) lastOutput = asstText.slice(0, 1200)
+            if (asstText) lastOutput = asstText.slice(0, 8000)
             if (stepTools.length > 0) {
-              runningSummary = `🔧 正在执行: ${stepTools.map(t => t.name).join(' · ')}`.slice(0, 240)
+              runningSummary = `🔧 正在执行: ${stepTools.map(t => (t.summary ? `${t.name} (${t.summary})` : t.name)).join(' · ')}`.slice(0, 240)
             } else if (asstText) {
               lastConclusionAt = e.time || lastActivity
-              lastConclusionText = asstText.slice(0, 1200)
+              lastConclusionText = asstText.slice(0, 8000)
             } else if (thinkingText) {
               runningSummary = `💭 正在思考: ${thinkingText.replace(/\s+/g, ' ').slice(0, 120)}`
             }
-            transcript.push({
-              index: transcript.length,
+            rawTranscript.push({
+              index: rawTranscript.length,
               role: 'assistant',
               text: asstText,
               thinking: thinkingText,
@@ -332,6 +570,8 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
             })
           }
         }
+
+        const transcript = mergeTurnAssistantMessages(rawTranscript)
 
         // Skip completely empty sessions with no user messages
         if (transcript.length === 0) continue

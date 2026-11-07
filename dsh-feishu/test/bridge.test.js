@@ -703,4 +703,64 @@ test('dsh disk sessions are idle-resumable (never observe-only) and HubCore reco
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+
+  // Verify turn-level assistant step merging, full reply preservation (>4000 chars), and tool argument/result extraction
+  const { extractSessionTranscript, mergeTurnAssistantMessages } = await import('../lib/workspace-ops.js')
+  const longFinalReply = '## 完整评估报告\n\n' + '核心结论段落内容。'.repeat(600) // ~5400 chars (> old 4000 limit)
+  const longThought1 = '思考步骤一详情。'.repeat(200) // ~1400 chars (> old 1000 limit)
+  const longThought2 = '思考步骤二详情。'.repeat(200)
+
+  const fakeAgent = {
+    session: {
+      log: [
+        {
+          type: 'tool/result',
+          data: {
+            message: {
+              source: { kind: 'tool', callId: 'call-1' },
+              content: [{ type: 'text', text: 'M hub/hub-core.js\nM hub/web/src/controller.js' }],
+            },
+          },
+        },
+      ],
+      deriveMessages() {
+        return [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: '请帮我评估方案并检查本地改动' }],
+          },
+          {
+            role: 'assistant',
+            content: [
+              { type: 'reasoning', text: longThought1 },
+              { type: 'tool-call', id: 'call-1', name: 'bash', arguments: JSON.stringify({ command: 'git status -s' }) },
+            ],
+          },
+          {
+            role: 'assistant',
+            content: [
+              { type: 'reasoning', text: longThought2 },
+              { type: 'text', text: longFinalReply },
+            ],
+          },
+        ]
+      },
+    },
+  }
+
+  const extracted = extractSessionTranscript(fakeAgent, 40)
+  assert.equal(extracted.length, 2)
+  assert.equal(extracted[0].role, 'user')
+  assert.equal(extracted[1].role, 'assistant')
+  assert.equal(extracted[1].thinkingStepCount, 2)
+  assert.ok(extracted[1].thinking.includes('【思考 1】'))
+  assert.ok(extracted[1].thinking.includes('【思考 2】'))
+  assert.ok(extracted[1].thinking.length > 2500)
+  assert.equal(extracted[1].text.length, longFinalReply.length)
+  assert.equal(extracted[1].tools.length, 1)
+  assert.equal(extracted[1].tools[0].name, 'bash')
+  assert.equal(extracted[1].tools[0].summary, 'git status -s')
+  assert.match(extracted[1].tools[0].commandLine, /\$ git status -s/)
+  assert.match(extracted[1].tools[0].commandLine, /--- 执行输出 ---/)
+  assert.match(extracted[1].tools[0].commandLine, /hub\/hub-core\.js/)
 })
