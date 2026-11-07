@@ -320,7 +320,8 @@ export function createHubServer({
       if (method === 'POST' && hostCommandMatch) {
         const hostId = decodeURIComponent(hostCommandMatch[1])
         const outcome = hub.queueCommand(hostId, body)
-        return { status: outcome.ok ? 200 : 404, json: outcome }
+        const status = outcome.ok ? 200 : outcome.statusCode || 404
+        return { status, json: outcome }
       }
 
       const hostPreviewMatch = /^\/api\/hosts\/([^/]+)\/file-preview$/.exec(pathname)

@@ -281,6 +281,7 @@ export class HubCore {
     if (!this.stateFile) return
     try {
       await mkdir(dirname(this.stateFile), { recursive: true })
+      const now = this.now()
       const payload = {
         activeHostId: this.activeHostId,
         vapidKeys: this.vapidKeys,
@@ -288,16 +289,15 @@ export class HubCore {
         hosts: [...this.hosts.values()].map(h => ({
           ...h,
           lastFilePreview: h.lastFilePreview ? this.sanitizeFilePreviewForState(h.hostId, h.lastFilePreview) : null,
-          commands: (h.commands ?? []).map(c => {
-            if (c && Array.isArray(c.attachments)) {
-              const { attachments, ...rest } = c
-              return rest
-            }
-            return c
-          }),
+          commands: (h.commands ?? []).filter(c => c && (!c.expiresAt || now <= c.expiresAt)),
           recentResults: (h.recentResults ?? []).slice(-15).map(r => {
-            if (r && (r.dataBase64 || (typeof r.content === 'string' && r.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS))) {
-              const { dataBase64, content, ...rest } = r
+            if (
+              r &&
+              (r.dataBase64 ||
+                Array.isArray(r.transcript) ||
+                (typeof r.content === 'string' && r.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS))
+            ) {
+              const { dataBase64, content, transcript, ...rest } = r
               return { ...rest, hasBlob: true }
             }
             return r
@@ -526,16 +526,59 @@ export class HubCore {
     const host = this.hosts.get(cleanHostId)
     const liveTask = (host?.bridgeState?.tasks || []).find(t => t?.id === cleanAgentId)
     const liveTr = Array.isArray(liveTask?.transcript) ? liveTask.transcript : []
-    const bestTr =
-      cached && Array.isArray(cached.transcript) && cached.transcript.length >= liveTr.length
-        ? cached.transcript
-        : liveTr
     if (!liveTask && !cached) return null
+
+    let bestTr = liveTr
+    let fromCache = false
+    if (cached && Array.isArray(cached.transcript) && cached.transcript.length > liveTr.length) {
+      fromCache = true
+      if (liveTr.length === 0) {
+        bestTr = [...cached.transcript]
+      } else {
+        const firstLive = liveTr[0]
+        const matchIdx = cached.transcript.findIndex(
+          m =>
+            m &&
+            m.role === firstLive?.role &&
+            String(m.text || '').slice(0, 80) === String(firstLive?.text || '').slice(0, 80),
+        )
+        if (matchIdx > 0) {
+          bestTr = [...cached.transcript.slice(0, matchIdx), ...liveTr]
+        } else {
+          // Append any newer messages from liveTr that aren't at the end of cached.transcript
+          const lastCached = cached.transcript.at(-1)
+          const lastCachedMatchInLive = lastCached
+            ? liveTr.findIndex(
+                m =>
+                  m &&
+                  m.role === lastCached.role &&
+                  String(m.text || '').slice(0, 80) === String(lastCached.text || '').slice(0, 80),
+              )
+            : -1
+          if (lastCachedMatchInLive >= 0 && lastCachedMatchInLive < liveTr.length - 1) {
+            bestTr = [...cached.transcript, ...liveTr.slice(lastCachedMatchInLive + 1)]
+          } else {
+            bestTr = [...cached.transcript]
+          }
+        }
+      }
+    }
+
+    const totalCount = Math.max(
+      Number(liveTask?.totalTranscriptCount) || 0,
+      Number(liveTask?.messageCount) || 0,
+      Number(cached?.totalCount) || 0,
+      bestTr.length,
+    )
+    const hasMore = bestTr.length < totalCount
     return {
       ok: true,
       hostId: cleanHostId,
       agentId: cleanAgentId,
-      totalCount: Math.max(Number(liveTask?.messageCount) || 0, Number(cached?.totalCount) || 0, bestTr.length),
+      totalCount,
+      hasMore,
+      fromCache,
+      sessionRev: liveTask?.sessionRev || cached?.sessionRev || '',
       transcript: bestTr,
     }
   }
@@ -588,8 +631,13 @@ export class HubCore {
           .slice(-10)
           .reverse()
           .map(r => {
-            if (r && (r.dataBase64 || (typeof r.content === 'string' && r.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS))) {
-              const { dataBase64, content, ...rest } = r
+            if (
+              r &&
+              (r.dataBase64 ||
+                Array.isArray(r.transcript) ||
+                (typeof r.content === 'string' && r.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS))
+            ) {
+              const { dataBase64, content, transcript, ...rest } = r
               return { ...rest, hasBlob: true }
             }
             return r
@@ -935,13 +983,17 @@ export class HubCore {
       for (const res of payload.commandResults) {
         this.totalCommandsExecuted += 1
         this.onCommandResult(hostId, res)
-        const lightRes =
+        const lightResForById =
           res && (res.dataBase64 || (typeof res.content === 'string' && res.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS))
             ? (({ dataBase64, content, ...rest }) => ({ ...rest, hasBlob: true }))(res)
             : res
-        record.recentResults.push(lightRes)
+        const lightResForState =
+          lightResForById && Array.isArray(lightResForById.transcript)
+            ? (({ transcript, ...rest }) => ({ ...rest, transcriptCount: transcript.length }))(lightResForById)
+            : lightResForById
+        record.recentResults.push(lightResForState)
         if (res?.id) {
-          this.commandResultsById.set(res.id, { hostId, ...lightRes })
+          this.commandResultsById.set(res.id, { hostId, ...lightResForById })
           if (this.commandResultsById.size > 300) {
             const oldest = this.commandResultsById.keys().next().value
             this.commandResultsById.delete(oldest)
@@ -1351,6 +1403,12 @@ export class HubCore {
 
     let resolvedApprovalCode = ''
     if (isApprovalCmd) {
+      const requestedDecision =
+        cmdType === 'approval' ? (commandPayload.allow !== false ? 'approve' : 'deny') : cmdType
+      const requestedOptionIndex =
+        commandPayload.optionIndex !== undefined
+          ? Number(commandPayload.optionIndex) || (requestedDecision === 'approve' ? 1 : 4)
+          : null
       resolvedApprovalCode = String(commandPayload.code ?? '').trim().toUpperCase()
       if (!resolvedApprovalCode && commandPayload.agentId && Array.isArray(host.bridgeState?.approvals)) {
         const matched = host.bridgeState.approvals.find(a => a?.agentId === commandPayload.agentId)
@@ -1359,11 +1417,30 @@ export class HubCore {
       if (resolvedApprovalCode) {
         const existingEntry = this.approvalLedger.get(`${cleanHostId}:${resolvedApprovalCode}`)
         if (existingEntry && existingEntry.status === 'settling' && now <= existingEntry.expiresAt) {
+          const decisionConflict = existingEntry.decision !== requestedDecision
+          const optionConflict =
+            requestedOptionIndex !== null &&
+            existingEntry.optionIndex !== undefined &&
+            Number(existingEntry.optionIndex) !== requestedOptionIndex
+          if (decisionConflict || optionConflict) {
+            return {
+              ok: false,
+              statusCode: 409,
+              code: 'APPROVAL_CONFLICT',
+              conflict: true,
+              existingDecision: existingEntry.decision,
+              existingOptionIndex: existingEntry.optionIndex,
+              actionId: existingEntry.actionId,
+              error: `该审批正在同步「${existingEntry.decision === 'approve' ? '允许' : '拒绝'}」指令，无法同时改为相反决定`,
+            }
+          }
           const existingCmd =
             (host.commands ?? []).find(c => c?.id === existingEntry.actionId) || {
               id: existingEntry.actionId,
               type: cmdType,
               code: resolvedApprovalCode,
+              allow: existingEntry.decision === 'approve',
+              optionIndex: existingEntry.optionIndex,
               agentId: existingEntry.agentId,
               createdAt: existingEntry.requestedAt,
               expiresAt: existingEntry.expiresAt,
@@ -1593,8 +1670,10 @@ export class HubCore {
     const now = this.now()
     const host = this.hosts.get(hostId)
     if (res.type === 'load_full_transcript' && res.ok && res.agentId && Array.isArray(res.transcript)) {
+      const liveTask = (host?.bridgeState?.tasks || []).find(t => t?.id === res.agentId)
       this.fullTranscriptCache.set(`${hostId}:${res.agentId}`, {
         at: now,
+        sessionRev: liveTask?.sessionRev || '',
         totalCount: Number(res.totalCount) || res.transcript.length,
         transcript: res.transcript,
       })
