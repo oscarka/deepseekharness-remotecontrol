@@ -390,7 +390,7 @@ export function initHubController() {
             isUnreadInterrupted: false,
             isRecentActive: false,
             lastRole: lastMsg?.role || 'assistant',
-            lastPreview: cleanPreviewText(rawPreview) || '点击查看对话详情',
+            lastPreview: cleanPreviewText(String(rawPreview || '').slice(0, 360)) || '点击查看对话详情',
             rawLastPreview: rawPreview,
             transcript,
           });
@@ -814,12 +814,10 @@ export function initHubController() {
         Date.now()
       );
       try { localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap)); } catch {}
-      lastRenderedChatKey = ''; // 切换会话时强制渲染
-      renderActiveChatStage();
-      renderProjectStrip();
-      renderSessionList();
       document.getElementById('chatFullscreen').classList.add('open');
       document.body.classList.add('mobile-chat-open');
+      lastRenderedChatKey = ''; // 切换会话时强制渲染
+      renderActiveChatStage(found);
       // 重新进入上次读到一半的会话时，如果不在底部，直接浮出「最新消息」
       const box = document.getElementById('chatMessages');
       if (box && box.scrollHeight - box.scrollTop - box.clientHeight >= 120) {
@@ -829,6 +827,9 @@ export function initHubController() {
         trackOverlay('chat', rawCloseChat);
         maybeShowSwipeHint();
       }
+      const nextSessions = getNormalizedSessions();
+      renderProjectStrip(nextSessions);
+      renderSessionList(nextSessions);
     }
 
     function rawCloseChat() {
@@ -862,8 +863,8 @@ export function initHubController() {
       sendApprovalDecision(hostId, code, allow, idx);
     }
 
-    function renderActiveChatStage() {
-      const found = findSessionGlobal(activeSessionId);
+    function renderActiveChatStage(foundArg) {
+      const found = foundArg && foundArg.session ? foundArg : findSessionGlobal(activeSessionId);
       if (!found) return;
       const { session: s } = found;
 
@@ -3491,7 +3492,7 @@ export function initHubController() {
       }
       sseConnected = false;
       const tk = getToken();
-      const url = '/api/events' + (tk ? '?token=' + encodeURIComponent(tk) : '');
+      const url = '/api/events?initial=0' + (tk ? '&token=' + encodeURIComponent(tk) : '');
       try {
         sseSource = new EventSource(url);
         sseSource.onopen = () => {
