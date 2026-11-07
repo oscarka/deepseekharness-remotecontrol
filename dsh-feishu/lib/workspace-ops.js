@@ -1,8 +1,12 @@
+import { execFile } from 'node:child_process'
 import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto'
 import { chmod, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from 'node:path'
+import { promisify } from 'node:util'
 import * as zlib from 'node:zlib'
 import { cleanForChat, redactText } from './redact.js'
+
+const execFileAsync = promisify(execFile)
 
 const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
 
@@ -439,9 +443,34 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
       const cachedEntry = dshSessionParseCache.get(zstdPath)
       if (cachedEntry && cachedEntry.cachedKey === cachedKey && cachedEntry.session) {
         const customOverride = customTitles[cachedEntry.session.id]
+        const fullTr = Array.isArray(cachedEntry.fullTranscript)
+          ? cachedEntry.fullTranscript
+          : cachedEntry.session.transcript || []
+        let hasLockNow = false
+        try {
+          await stat(join(projPath, sessEntry.name, 'session.lock'))
+          hasLockNow = true
+        } catch {}
+        const ageNow = Date.now() - fileStat.mtimeMs
+        const isActivelyRunningNow =
+          hasLockNow && (ageNow <= 6000 || (ageNow <= 90000 && !cachedEntry.hasConcluded))
         results.push({
           ...cachedEntry.session,
           ...(customOverride ? { title: customOverride } : {}),
+          status: isActivelyRunningNow ? 'running' : 'idle',
+          turnState: isActivelyRunningNow
+            ? 'running'
+            : cachedEntry.hasConcluded
+              ? 'conclusion'
+              : 'idle',
+          statusLabel: isActivelyRunningNow
+            ? '🟢 运行中'
+            : cachedEntry.hasConcluded
+              ? '🔵 已出结论'
+              : '已完成',
+          messageCount: fullTr.length,
+          totalTranscriptCount: fullTr.length,
+          transcript: fullTr.slice(-maxMessages),
         })
         continue
       }
@@ -603,6 +632,13 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
         const rawProj = projectParts.at(-1) || '默认项目'
         const project = rawProj === 'default-workspace' ? '默认工作区' : rawProj
         const hasConcluded = lastConclusionAt > 0 && lastConclusionAt >= lastUserInputAt
+        let hasLock = false
+        try {
+          await stat(join(projPath, sessEntry.name, 'session.lock'))
+          hasLock = true
+        } catch {}
+        const ageMs = Date.now() - fileStat.mtimeMs
+        const isActivelyRunning = hasLock && (ageMs <= 6000 || (ageMs <= 90000 && !hasConcluded))
 
         const sessionObj = {
           id,
@@ -610,9 +646,9 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
           harness: 'dsh',
           harnessLabel: 'DeepSeek Harness',
           title: customTitles[id] || title || transcript[0]?.text?.slice(0, 36) || '历史会话',
-          status: 'idle',
-          turnState: hasConcluded ? 'conclusion' : 'idle',
-          statusLabel: hasConcluded ? '🔵 已出结论' : '已完成',
+          status: isActivelyRunning ? 'running' : 'idle',
+          turnState: isActivelyRunning ? 'running' : hasConcluded ? 'conclusion' : 'idle',
+          statusLabel: isActivelyRunning ? '🟢 运行中' : hasConcluded ? '🔵 已出结论' : '已完成',
           project,
           cwd,
           lastActivity,
@@ -621,9 +657,16 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
           lastOutput: lastConclusionText || lastOutput,
           runningSummary: runningSummary || lastOutput,
           queuedSteers: [],
+          messageCount: transcript.length,
+          totalTranscriptCount: transcript.length,
           transcript: transcript.slice(-maxMessages),
         }
-        dshSessionParseCache.set(zstdPath, { cachedKey, session: sessionObj })
+        dshSessionParseCache.set(zstdPath, {
+          cachedKey,
+          hasConcluded,
+          fullTranscript: transcript,
+          session: sessionObj,
+        })
         results.push({ ...sessionObj })
       } catch {
         // ignore unreadable session file
@@ -943,17 +986,44 @@ async function resolveSafeTarget(realRoot, candidatePath) {
 const MAX_ATTACHMENTS_PER_CMD = 4
 const MAX_SINGLE_ATTACHMENT_BYTES = 8 * 1024 * 1024
 
-function inferImageExtension(mimeType = '', name = '') {
-  const m = String(mimeType || '').toLowerCase()
-  if (m.includes('png')) return '.png'
-  if (m.includes('webp')) return '.webp'
-  if (m.includes('gif')) return '.gif'
-  if (m.includes('jpeg') || m.includes('jpg')) return '.jpg'
-  const ext = extname(String(name || '')).toLowerCase()
-  if (['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) {
-    return ext === '.jpeg' ? '.jpg' : ext
+function detectImageFormatFromBuffer(buf, mimeType = '', name = '') {
+  if (Buffer.isBuffer(buf) && buf.length >= 12) {
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+      return { ext: '.png', mime: 'image/png' }
+    }
+    // JPEG: FF D8 FF
+    if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+      return { ext: '.jpg', mime: 'image/jpeg' }
+    }
+    // GIF: GIF87a / GIF89a
+    if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) {
+      return { ext: '.gif', mime: 'image/gif' }
+    }
+    // WebP: RIFF....WEBP
+    if (
+      buf.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buf.subarray(8, 12).toString('ascii') === 'WEBP'
+    ) {
+      return { ext: '.webp', mime: 'image/webp' }
+    }
+    // ISO Base Media File Format (HEIC / HEIF / AVIF): ....ftypheic / ftypheix / ftypmif1 / ftypmsf1
+    if (buf.subarray(4, 8).toString('ascii') === 'ftyp') {
+      const brand = buf.subarray(8, 12).toString('ascii').toLowerCase()
+      if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(brand)) {
+        return { ext: '.heic', mime: 'image/heic' }
+      }
+    }
   }
-  return '.jpg'
+  const m = String(mimeType || '').toLowerCase()
+  const ext = extname(String(name || '')).toLowerCase()
+  if (m.includes('heic') || m.includes('heif') || ext === '.heic' || ext === '.heif') {
+    return { ext: '.heic', mime: 'image/heic' }
+  }
+  if (m.includes('png') || ext === '.png') return { ext: '.png', mime: 'image/png' }
+  if (m.includes('webp') || ext === '.webp') return { ext: '.webp', mime: 'image/webp' }
+  if (m.includes('gif') || ext === '.gif') return { ext: '.gif', mime: 'image/gif' }
+  return { ext: '.jpg', mime: 'image/jpeg' }
 }
 
 /**
@@ -965,35 +1035,64 @@ export async function persistCommandAttachments(
   attachments,
   { cwd = '', dshHome = '', agentId = '', now = Date.now() } = {},
 ) {
-  const list = Array.isArray(attachments) ? attachments.slice(0, MAX_ATTACHMENTS_PER_CMD) : []
+  const rawList = Array.isArray(attachments) ? attachments : []
+  const list = rawList.slice(0, MAX_ATTACHMENTS_PER_CMD)
   const savedFiles = []
+  const errors = []
+  let rejectedCount = Math.max(0, rawList.length - list.length)
 
   for (let i = 0; i < list.length; i += 1) {
     const item = list[i]
-    if (!item || typeof item !== 'object') continue
+    if (!item || typeof item !== 'object') {
+      rejectedCount += 1
+      errors.push(`附件 #${i + 1} 格式无效`)
+      continue
+    }
     const rawB64 = String(item.dataBase64 || item.base64 || '').trim()
-    if (!rawB64) continue
+    if (!rawB64) {
+      rejectedCount += 1
+      errors.push(`附件 ${item.name || `#${i + 1}`} 内容为空`)
+      continue
+    }
     const cleanB64 = rawB64.replace(/^data:[^;]+;base64,/i, '')
     let buf
     try {
       buf = Buffer.from(cleanB64, 'base64')
     } catch {
+      rejectedCount += 1
+      errors.push(`附件 ${item.name || `#${i + 1}`} Base64 解码失败`)
       continue
     }
-    if (!buf || buf.length === 0 || buf.length > MAX_SINGLE_ATTACHMENT_BYTES) continue
+    if (!buf || buf.length === 0) {
+      rejectedCount += 1
+      errors.push(`附件 ${item.name || `#${i + 1}`} 解码后为空`)
+      continue
+    }
+    if (buf.length > MAX_SINGLE_ATTACHMENT_BYTES) {
+      rejectedCount += 1
+      errors.push(`附件 ${item.name || `#${i + 1}`} 超过 8MB 上限`)
+      continue
+    }
 
-    const ext = inferImageExtension(item.mimeType || item.mime, item.name)
+    const detected = detectImageFormatFromBuffer(buf, item.mimeType || item.mime, item.name)
+    let ext = detected.ext
+    let effectiveMime = detected.mime
     const rawBase = basename(String(item.name || `screenshot-${i + 1}`), extname(String(item.name || '')))
       .replace(/[^a-zA-Z0-9_\u4e00-\u9fa5-]/g, '_')
       .slice(0, 32) || `screenshot_${i + 1}`
     const shortHex = randomBytes(3).toString('hex')
-    const fileName = `mobile-${now}-${i + 1}-${rawBase}${ext}`
+    let fileName = `mobile-${now}-${i + 1}-${rawBase}${ext}`
 
     let primaryPath = ''
     if (cwd) {
       try {
         const wsUploadDir = join(resolve(cwd), '.dsh-uploads')
         await mkdir(wsUploadDir, { recursive: true })
+        // Ensure git never tracks .dsh-uploads in any project workspace
+        const gitignorePath = join(wsUploadDir, '.gitignore')
+        try {
+          await writeFile(gitignorePath, '*\n', { flag: 'wx' })
+        } catch {}
         const candidate = join(wsUploadDir, fileName)
         await writeFile(candidate, buf, { mode: 0o600 })
         primaryPath = candidate
@@ -1002,11 +1101,33 @@ export async function persistCommandAttachments(
       }
     }
     if (!primaryPath) {
-      const fallbackDir = join(resolve(dshHome || '/tmp'), 'uploads')
-      await mkdir(fallbackDir, { recursive: true })
-      const candidate = join(fallbackDir, fileName)
-      await writeFile(candidate, buf, { mode: 0o600 })
-      primaryPath = candidate
+      try {
+        const fallbackDir = join(resolve(dshHome || '/tmp'), 'uploads')
+        await mkdir(fallbackDir, { recursive: true })
+        const candidate = join(fallbackDir, fileName)
+        await writeFile(candidate, buf, { mode: 0o600 })
+        primaryPath = candidate
+      } catch (err) {
+        rejectedCount += 1
+        errors.push(`附件 ${item.name || `#${i + 1}`} 写入磁盘失败: ${err?.message || err}`)
+        continue
+      }
+    }
+
+    // If raw HEIC was uploaded on macOS, convert it to JPEG via /usr/bin/sips so Codex (-i) & Claude can read it
+    if (ext === '.heic' && process.platform === 'darwin' && primaryPath) {
+      const convertedPath = primaryPath.replace(/\.heic$/i, '.jpg')
+      try {
+        await execFileAsync('/usr/bin/sips', ['-s', 'format', 'jpeg', primaryPath, '--out', convertedPath])
+        buf = await readFile(convertedPath)
+        await rm(primaryPath, { force: true })
+        primaryPath = convertedPath
+        ext = '.jpg'
+        effectiveMime = 'image/jpeg'
+        fileName = basename(convertedPath)
+      } catch {
+        // Keep .heic file if sips conversion is unavailable
+      }
     }
 
     let brainPath = ''
@@ -1036,7 +1157,7 @@ export async function persistCommandAttachments(
     savedFiles.push({
       name: item.name || fileName,
       fileName,
-      mimeType: item.mimeType || IMAGE_MIME[ext] || 'image/jpeg',
+      mimeType: effectiveMime,
       size: buf.length,
       path: primaryPath,
       brainPath,
@@ -1056,8 +1177,12 @@ export async function persistCommandAttachments(
   }
 
   return {
+    ok: rawList.length === 0 || savedFiles.length > 0,
     savedFiles,
     imagePaths,
+    rejectedCount,
+    errors,
+    error: errors[0] || '',
     enrichPrompt,
   }
 }

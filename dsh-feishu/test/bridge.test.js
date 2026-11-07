@@ -1010,4 +1010,234 @@ test('approval lifecycle closure: 45s TTL expiry, dedupe, cancel cleanup, action
   }
 })
 
+test('real DSH v4 zstd active lock guard, 409 approval conflict, disk transcript hasMore, and attachment restart persistence', async () => {
+  const { HubCore } = await import('../../hub/hub-core.js')
+  const { isDshSessionActivelyWriting } = await import('../lib/harnesses/dsh-headless-adapter.js')
+  const { loadDiskSessionsFromDshHome, invalidateDshSessionParseCache, persistCommandAttachments } = await import(
+    '../lib/workspace-ops.js'
+  )
+  const { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } = await import('node:fs')
+  const zlib = await import('node:zlib')
+
+  const root = await mkdtemp(join(tmpdir(), 'dsh-v4-audit-closure-'))
+  try {
+    // 1. Real DSH v4 format: session.v4.jsonl.zstd active writing detection
+    const sessDir = join(root, 'sessions', 'proj-1', 'session-v4-real')
+    mkdirSync(sessDir, { recursive: true })
+    const zstdPath = join(sessDir, 'session.v4.jsonl.zstd')
+    const lockPath = join(sessDir, 'session.lock')
+    writeFileSync(lockPath, '12345\n', 'utf8')
+
+    const midTurnLines = [
+      JSON.stringify({ type: 'session', id: 'session-v4-real', cwd: root, time: 1794000000000 }),
+      JSON.stringify({
+        type: 'user/message',
+        time: 1794000001000,
+        data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Run test suite' }] },
+      }),
+      JSON.stringify({
+        type: 'tool/call',
+        time: 1794000002000,
+        data: { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: { command: 'npm test' } },
+      }),
+    ].join('\n')
+    writeFileSync(zstdPath, zlib.zstdCompressSync(Buffer.from(`${midTurnLines}\n`, 'utf8')))
+
+    // Even when mtime is 20 seconds old (beyond 6s mtime gate, within 90s mid-turn window),
+    // zstd decompression detects the unfinished tool/call turn!
+    const nowMs = Date.now()
+    const twentySecAgo = new Date(nowMs - 20_000)
+    utimesSync(zstdPath, twentySecAgo, twentySecAgo)
+    assert.equal(isDshSessionActivelyWriting(sessDir, { now: nowMs }), true)
+
+    // Once assistant/message concludes with final text and mtime is > 6s old, session is idle
+    const concludedLines = [
+      midTurnLines,
+      JSON.stringify({
+        type: 'assistant/message',
+        time: 1794000005000,
+        data: {
+          turn: 1,
+          step: 2,
+          message: { role: 'assistant', content: [{ type: 'text', text: 'All tests passed.' }] },
+        },
+      }),
+    ].join('\n')
+    writeFileSync(zstdPath, zlib.zstdCompressSync(Buffer.from(`${concludedLines}\n`, 'utf8')))
+    utimesSync(zstdPath, twentySecAgo, twentySecAgo)
+    assert.equal(isDshSessionActivelyWriting(sessDir, { now: nowMs }), false)
+
+    // If mtime is fresh (1s ago), conservative mtime gate treats it as active immediately
+    const oneSecAgo = new Date(nowMs - 1000)
+    utimesSync(zstdPath, oneSecAgo, oneSecAgo)
+    assert.equal(isDshSessionActivelyWriting(sessDir, { now: nowMs }), true)
+
+    // 2. Approval conflict: allow first, deny second returns 409 APPROVAL_CONFLICT (never silently keeps allow)
+    const stateFile = join(root, 'hub-state.json')
+    const hub = new HubCore({ stateFile })
+    await hub.init()
+    hub.handleHeartbeat({
+      hostId: 'mac-1',
+      hostName: 'Mac 1',
+      bridgeState: {
+        tasks: [
+          {
+            id: 'session-v4-real',
+            title: 'Disk DSH Session',
+            status: 'approval',
+            messageCount: 100,
+            totalTranscriptCount: 100,
+            transcript: Array.from({ length: 14 }, (_, i) => ({
+              role: i % 2 === 0 ? 'user' : 'assistant',
+              text: `Msg ${i + 87}`,
+            })),
+          },
+        ],
+        approvals: [{ code: 'AP-200', agentId: 'session-v4-real', toolName: 'bash' }],
+        workspaces: [],
+      },
+    })
+
+    const allowRes = hub.queueCommand('mac-1', {
+      type: 'approval',
+      code: 'AP-200',
+      agentId: 'session-v4-real',
+      allow: true,
+    })
+    assert.equal(allowRes.ok, true)
+
+    const denyConflictRes = hub.queueCommand('mac-1', {
+      type: 'approval',
+      code: 'AP-200',
+      agentId: 'session-v4-real',
+      allow: false,
+    })
+    assert.equal(denyConflictRes.ok, false)
+    assert.equal(denyConflictRes.statusCode, 409)
+    assert.equal(denyConflictRes.code, 'APPROVAL_CONFLICT')
+    assert.equal(denyConflictRes.conflict, true)
+    assert.equal(denyConflictRes.existingDecision, 'approve')
+
+    // 3. getSessionFullTranscript sets hasMore=true when bridgeState only has 14 of 100 messages,
+    //    and load_full_transcript result is stripped from recentResults in getFullState()
+    const partialTr = hub.getSessionFullTranscript('mac-1', 'session-v4-real')
+    assert.equal(partialTr.ok, true)
+    assert.equal(partialTr.transcript.length, 14)
+    assert.equal(partialTr.totalCount, 100)
+    assert.equal(partialTr.hasMore, true)
+
+    const full100 = Array.from({ length: 100 }, (_, i) => ({
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      text: `Msg ${i + 1}`,
+    }))
+    hub.handleHeartbeat({
+      hostId: 'mac-1',
+      hostName: 'Mac 1',
+      commandResults: [
+        {
+          id: 'cmd-full-tr',
+          type: 'load_full_transcript',
+          ok: true,
+          agentId: 'session-v4-real',
+          totalCount: 100,
+          transcript: full100,
+        },
+      ],
+    })
+    const afterFullTr = hub.getSessionFullTranscript('mac-1', 'session-v4-real')
+    assert.equal(afterFullTr.transcript.length, 100)
+    assert.equal(afterFullTr.hasMore, false)
+
+    // Verify recentResults in getFullState() does NOT carry the 100-item transcript array
+    const stateAfter = hub.getFullState()
+    const recent = stateAfter.hosts[0].recentResults.find(r => r.id === 'cmd-full-tr')
+    assert.ok(recent)
+    assert.equal(recent.transcript, undefined)
+    assert.equal(recent.transcriptCount, 100)
+    // While commandResultsById still has the full transcript for polling
+    assert.equal(hub.getCommandResult('cmd-full-tr').transcript.length, 100)
+
+    // Also verify loadDiskSessionsFromDshHome cache slices by maxMessages properly
+    invalidateDshSessionParseCache()
+    const manyTurnsLines = [
+      JSON.stringify({ type: 'session', id: 'session-v4-real', cwd: root, time: 1794000000000 }),
+    ]
+    for (let i = 0; i < 20; i += 1) {
+      manyTurnsLines.push(
+        JSON.stringify({
+          type: 'user/message',
+          time: 1794000010000 + i * 2000,
+          data: { source: { kind: 'user' }, content: [{ type: 'text', text: `User turn ${i + 1}` }] },
+        }),
+      )
+      manyTurnsLines.push(
+        JSON.stringify({
+          type: 'assistant/message',
+          time: 1794000011000 + i * 2000,
+          data: {
+            turn: i + 1,
+            step: 1,
+            message: { role: 'assistant', content: [{ type: 'text', text: `Assistant reply ${i + 1}` }] },
+          },
+        }),
+      )
+    }
+    writeFileSync(zstdPath, zlib.zstdCompressSync(Buffer.from(`${manyTurnsLines.join('\n')}\n`, 'utf8')))
+    utimesSync(zstdPath, twentySecAgo, twentySecAgo)
+
+    const defaultDisk = await loadDiskSessionsFromDshHome(root, { maxMessages: 14 })
+    assert.equal(defaultDisk[0].transcript.length, 14)
+    assert.equal(defaultDisk[0].messageCount, 40)
+    assert.equal(defaultDisk[0].totalTranscriptCount, 40)
+
+    const expandedDisk = await loadDiskSessionsFromDshHome(root, { maxMessages: 300 })
+    assert.equal(expandedDisk[0].transcript.length, 40)
+
+    // 4. Attachments persist across Hub restart and .dsh-uploads/.gitignore is written automatically
+    const samplePngBase64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0ioAAAAASUVORK5CYII='
+    hub.queueCommand('mac-1', {
+      type: 'prompt',
+      agentId: 'session-v4-real',
+      text: 'Offline queued with screenshot',
+      attachments: [{ name: 'test.jpg', mimeType: 'image/jpeg', dataBase64: samplePngBase64 }],
+    })
+    await hub.persist()
+
+    const hub2 = new HubCore({ stateFile })
+    await hub2.init()
+    const hb2 = hub2.handleHeartbeat({
+      hostId: 'mac-1',
+      hostName: 'Mac 1',
+      bridgeState: { tasks: [], approvals: [], workspaces: [] },
+    })
+    const promptCmd = hb2.commands.find(c => c.type === 'prompt')
+    assert.ok(promptCmd)
+    assert.equal(promptCmd.attachments.length, 1)
+    assert.equal(promptCmd.attachments[0].dataBase64, samplePngBase64)
+
+    // Magic-byte PNG detection (even though name was test.jpg!) and .dsh-uploads/.gitignore creation
+    const savedInfo = await persistCommandAttachments(promptCmd.attachments, {
+      cwd: root,
+      dshHome: root,
+    })
+    assert.equal(savedInfo.ok, true)
+    assert.ok(savedInfo.imagePaths[0].endsWith('.png'))
+    assert.ok(existsSync(join(root, '.dsh-uploads', '.gitignore')))
+    assert.equal(readFileSync(join(root, '.dsh-uploads', '.gitignore'), 'utf8'), '*\n')
+
+    // Invalid/empty attachment returns ok: false
+    const badInfo = await persistCommandAttachments([{ name: 'empty.png', dataBase64: '' }], {
+      cwd: root,
+      dshHome: root,
+    })
+    assert.equal(badInfo.ok, false)
+    assert.equal(badInfo.savedFiles.length, 0)
+    assert.ok(badInfo.error.length > 0)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+
 

@@ -3,28 +3,100 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import * as zlib from 'node:zlib'
+
+const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
+
+function decompressZstdTailText(rawBuf, maxFrames = 6) {
+  if (typeof zlib.zstdDecompressSync !== 'function' || !Buffer.isBuffer(rawBuf) || rawBuf.length < 4) {
+    return ''
+  }
+  const offsets = []
+  let idx = 0
+  while ((idx = rawBuf.indexOf(ZSTD_MAGIC, idx)) !== -1) {
+    offsets.push(idx)
+    idx += 4
+  }
+  if (offsets.length === 0) return ''
+  const startIdx = Math.max(0, offsets.length - maxFrames)
+  let out = ''
+  for (let i = startIdx; i < offsets.length; i += 1) {
+    const slice = rawBuf.subarray(offsets[i], offsets[i + 1] || rawBuf.length)
+    try {
+      out += zlib.zstdDecompressSync(slice).toString('utf8')
+    } catch {
+      // ignore partial frame currently being flushed
+    }
+  }
+  return out
+}
 
 /**
  * Inspect whether a DSH session directory on disk is currently being written to
  * by an active Desktop GUI turn (as opposed to sitting idle in an open window).
+ * Supports both real DSH v4 (`session.v4.jsonl.zstd`) and plain (`session.jsonl`) formats.
  */
-export function isDshSessionActivelyWriting(sessDir, { now = Date.now(), activeWindowMs = 3500 } = {}) {
+export function isDshSessionActivelyWriting(
+  sessDir,
+  { now = Date.now(), activeWindowMs = 6000, midTurnWindowMs = 90000 } = {},
+) {
   try {
+    const zstdPath = join(sessDir, 'session.v4.jsonl.zstd')
     const jsonlPath = join(sessDir, 'session.jsonl')
-    if (!existsSync(jsonlPath)) return false
-    const st = statSync(jsonlPath)
-    if (now - st.mtimeMs > activeWindowMs) return false
-    const raw = readFileSync(jsonlPath, 'utf8')
-    const lines = raw.trim().split('\n').filter(Boolean)
-    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 6); i -= 1) {
+    const hasZstd = existsSync(zstdPath)
+    const hasJsonl = existsSync(jsonlPath)
+    if (!hasZstd && !hasJsonl) return false
+
+    const targetPath = hasZstd ? zstdPath : jsonlPath
+    const st = statSync(targetPath)
+    const ageMs = now - st.mtimeMs
+    if (ageMs < 0 || ageMs <= activeWindowMs) {
+      // Conservative mtime gate: any modification within activeWindowMs is treated as active writing
+      return true
+    }
+    if (ageMs > midTurnWindowMs) {
+      return false
+    }
+
+    const rawText = hasZstd ? decompressZstdTailText(readFileSync(zstdPath), 8) : readFileSync(jsonlPath, 'utf8')
+    if (!rawText) {
+      // If file was modified within midTurnWindowMs and is compressed/unreadable mid-flush, be conservative
+      return ageMs <= activeWindowMs * 2
+    }
+
+    const lines = rawText.trim().split('\n').filter(Boolean)
+    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 10); i -= 1) {
       try {
         const entry = JSON.parse(lines[i])
+        const evType = String(entry?.type || '')
+
+        // DSH v4 event schema: user/message, tool/call, tool/result, assistant/message
+        if (evType === 'user/message') {
+          const kind = entry?.data?.source?.kind
+          if (!kind || kind === 'user') return true
+          continue
+        }
+        if (evType === 'tool/call' || evType === 'tool/result') {
+          return true
+        }
+        if (evType === 'assistant/message') {
+          const blocks = Array.isArray(entry?.data?.message?.content) ? entry.data.message.content : []
+          const hasToolCall = blocks.some(
+            p => p?.type === 'tool-call' || p?.type === 'tool_use' || p?.type === 'tool_call',
+          )
+          const hasFinalText = blocks.some(p => p?.type === 'text' && String(p.text || '').trim().length > 0)
+          return hasToolCall && !hasFinalText
+        }
+
+        // Legacy/generic JSONL message schema
         const msg = entry?.data?.message || entry?.message
         if (!msg) continue
         if (msg.role === 'user' || msg.role === 'tool') return true
         if (msg.role === 'assistant') {
           const parts = Array.isArray(msg.content) ? msg.content : []
-          const hasToolCall = parts.some(p => p?.type === 'tool-call' || p?.type === 'tool_use')
+          const hasToolCall = parts.some(
+            p => p?.type === 'tool-call' || p?.type === 'tool_use' || p?.type === 'tool_call',
+          )
           const hasFinalText = parts.some(p => p?.type === 'text' && String(p.text || '').trim().length > 0)
           return hasToolCall && !hasFinalText
         }
@@ -126,8 +198,18 @@ export function buildDshHeadlessPatchFile(dshHome) {
           const sessRoot = path.join(dshRoot, "sessions");
           if (fs.existsSync(sessRoot)) {
             for (const proj of fs.readdirSync(sessRoot)) {
-              const lockCandidate = path.join(sessRoot, proj, sid, "session.lock");
+              const sDir = path.join(sessRoot, proj, sid);
+              const lockCandidate = path.join(sDir, "session.lock");
               if (fs.existsSync(lockCandidate)) {
+                const zstdFile = path.join(sDir, "session.v4.jsonl.zstd");
+                const jsonlFile = path.join(sDir, "session.jsonl");
+                const targetFile = fs.existsSync(zstdFile) ? zstdFile : (fs.existsSync(jsonlFile) ? jsonlFile : "");
+                if (targetFile) {
+                  const st = fs.statSync(targetFile);
+                  if (Date.now() - st.mtimeMs <= 6000) {
+                    throw resumeErr;
+                  }
+                }
                 try {
                   fs.unlinkSync(lockCandidate);
                 } catch {}
@@ -257,22 +339,25 @@ export class DshHeadlessRunner {
     const patchFile = buildDshHeadlessPatchFile(this.dshHome)
 
     // Preemptively unlink any existing POSIX session.lock ONLY when the Desktop GUI window is idle
-    // (never when the Desktop GUI is actively writing to session.jsonl).
+    // (never when the Desktop GUI is actively writing to session.v4.jsonl.zstd or session.jsonl).
+    let verifiedIdleSessionOnDisk = false
     if (!isNew && id) {
       try {
         const sessRoot = join(resolve(this.dshHome), 'sessions')
         if (existsSync(sessRoot)) {
           for (const proj of readdirSync(sessRoot)) {
             const sessDir = join(sessRoot, proj, id)
+            if (!existsSync(sessDir)) continue
+            if (isDshSessionActivelyWriting(sessDir)) {
+              return {
+                ok: false,
+                busy: true,
+                error: '该 DSH 会话当前正在电脑桌面端运行中，请等待当前回合完成后再从手机发送',
+              }
+            }
+            verifiedIdleSessionOnDisk = true
             const lockCandidate = join(sessDir, 'session.lock')
             if (existsSync(lockCandidate)) {
-              if (isDshSessionActivelyWriting(sessDir)) {
-                return {
-                  ok: false,
-                  busy: true,
-                  error: '该 DSH 会话当前正在电脑桌面端运行中，请等待当前回合完成后再从手机发送',
-                }
-              }
               try {
                 unlinkSync(lockCandidate)
               } catch {}
@@ -298,7 +383,7 @@ export class DshHeadlessRunner {
             DSH_REMOTE_TASK: cleanText,
             DSH_REMOTE_TITLE: String(title || '').trim(),
             DSH_REMOTE_CWD: targetCwd,
-            DSH_ALLOW_IDLE_LOCK_TAKEOVER: '1',
+            DSH_ALLOW_IDLE_LOCK_TAKEOVER: verifiedIdleSessionOnDisk ? '1' : '0',
           },
           stdio: ['ignore', 'pipe', 'pipe'],
         },

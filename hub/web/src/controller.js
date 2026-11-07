@@ -290,8 +290,18 @@ export function initHubController() {
               if (matchIdx > 0) {
                 baseTranscript = [...expandedEntry.transcript.slice(0, matchIdx), ...wireTranscript];
               } else {
-                const extraCount = Math.max(0, expandedEntry.transcript.length - wireTranscript.length);
-                baseTranscript = [...expandedEntry.transcript.slice(0, extraCount), ...wireTranscript];
+                const lastExp = expandedEntry.transcript[expandedEntry.transcript.length - 1];
+                const tailIdxInWire = lastExp
+                  ? wireTranscript.findIndex(
+                      m => m && m.role === lastExp.role && String(m.text || '').slice(0, 80) === String(lastExp.text || '').slice(0, 80)
+                    )
+                  : -1;
+                if (tailIdxInWire >= 0 && tailIdxInWire < wireTranscript.length - 1) {
+                  baseTranscript = [...expandedEntry.transcript, ...wireTranscript.slice(tailIdxInWire + 1)];
+                } else {
+                  const extraCount = Math.max(0, expandedEntry.transcript.length - wireTranscript.length);
+                  baseTranscript = [...expandedEntry.transcript.slice(0, extraCount), ...wireTranscript];
+                }
               }
             }
           }
@@ -1266,13 +1276,27 @@ export function initHubController() {
         btnEl.textContent = '⏳ 正在拉取完整历史对话...';
       }
       try {
+        const currentSess = findSessionGlobal(sessionId)?.session;
+        const currentLen = currentSess?.transcript?.length || 0;
         const res = await apiFetch(
           `/api/hosts/${encodeURIComponent(hostId)}/sessions/${encodeURIComponent(sessionId)}/transcript`
         );
         const data = await res.json();
-        if (data?.ok && Array.isArray(data.transcript) && data.transcript.length > 0) {
+        const totalExpected = Math.max(
+          Number(data?.totalCount) || 0,
+          Number(currentSess?.totalTranscriptCount) || 0
+        );
+        const hasCompleteInCloud =
+          data?.ok &&
+          Array.isArray(data.transcript) &&
+          data.transcript.length > currentLen &&
+          data.hasMore !== true &&
+          (totalExpected === 0 || data.transcript.length >= totalExpected);
+
+        if (hasCompleteInCloud) {
           expandedTranscriptBySession.set(sessionId, {
             transcript: data.transcript,
+            totalCount: totalExpected || data.transcript.length,
             fetchedAt: Date.now(),
           });
           lastRenderedChatKey = '';
@@ -1280,21 +1304,22 @@ export function initHubController() {
           showToast(`✅ 已加载完整历史（共 ${data.transcript.length} 条）`);
           return;
         }
-        // 若云端缓存条数与当前一致，尝试向本机 Daemon 请求磁盘全量历史
+        // 云端仅缓存了裁剪后的近期消息（如磁盘 DSH 会话仅上报 14 条），向本机 Daemon 请求磁盘全量历史
         const cmdRes = await dispatchHostCommand(hostId, {
           type: 'load_full_transcript',
           agentId: sessionId,
-          maxMessages: 200,
+          maxMessages: 300,
         });
         const cmdId = cmdRes?.command?.id;
         if (cmdId) {
-          for (let i = 0; i < 12; i++) {
+          for (let i = 0; i < 14; i++) {
             await new Promise(r => setTimeout(r, 350));
             const pollRes = await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`);
             const pollData = await pollRes.json();
             if (pollData?.ready && Array.isArray(pollData?.result?.transcript)) {
               expandedTranscriptBySession.set(sessionId, {
                 transcript: pollData.result.transcript,
+                totalCount: Number(pollData.result.totalCount) || pollData.result.transcript.length,
                 fetchedAt: Date.now(),
               });
               lastRenderedChatKey = '';
@@ -1303,6 +1328,17 @@ export function initHubController() {
               return;
             }
           }
+        }
+        if (data?.ok && Array.isArray(data.transcript) && data.transcript.length > currentLen) {
+          expandedTranscriptBySession.set(sessionId, {
+            transcript: data.transcript,
+            totalCount: totalExpected || data.transcript.length,
+            fetchedAt: Date.now(),
+          });
+          lastRenderedChatKey = '';
+          renderAll();
+          showToast(`✅ 已加载云端可用历史（共 ${data.transcript.length} 条）`);
+          return;
         }
         showToast('ℹ️ 当前已是最新可用历史记录');
       } catch (err) {
@@ -1801,6 +1837,16 @@ export function initHubController() {
           optionIndex: Number(optionIndex) || (allow ? 1 : 4),
         });
         if (!res || res.ok === false) {
+          if (res?.conflict && code && window.__dshSettlingApprovals) {
+            window.__dshSettlingApprovals[code] = {
+              at: Date.now(),
+              decision: res.existingDecision || (allow ? 'approve' : 'deny'),
+            };
+            lastRenderedChatKey = '';
+            renderAll();
+            showToast('⚠️ ' + (res.error || '当前审批正在同步另一项决定'));
+            return;
+          }
           if (code && window.__dshSettlingApprovals) {
             delete window.__dshSettlingApprovals[code];
           }
@@ -2353,14 +2399,15 @@ export function initHubController() {
 
     async function submitNewTask() {
       stopVoiceInput();
-      const rawText = document.getElementById('newTaskInput').value.trim();
+      const inputEl = document.getElementById('newTaskInput');
+      const rawText = inputEl ? inputEl.value.trim() : '';
       const pendingAttachments = composerAttachments.newTask.slice();
       if ((!rawText && pendingAttachments.length === 0) || !newTaskHostId) {
         showToast('请输入任务指令或上传截图');
         return;
       }
       const text = rawText || '请查看我上传的截图并帮我分析处理。';
-      document.getElementById('newTaskInput').value = '';
+      if (inputEl) inputEl.value = '';
       composerAttachments.newTask = [];
       renderAttachmentStrip('newTask');
       closeSheet('newTaskSheet');
@@ -2372,22 +2419,39 @@ export function initHubController() {
             ? 'Claude Code'
             : 'DeepSeek Harness';
       showToast(`🚀 正在远程电脑 (${engineName}) 创建新任务...`);
-      await dispatchHostCommand(newTaskHostId, {
-        type: 'new_session',
-        harness: newTaskHarness,
-        cwd: newTaskCwd,
-        title: text.slice(0, 28),
-        prompt: text,
-        ...(pendingAttachments.length > 0
-          ? {
-              attachments: pendingAttachments.map(a => ({
-                name: a.name,
-                mimeType: a.mimeType,
-                dataBase64: a.dataBase64,
-              })),
-            }
-          : {}),
-      });
+      let dispatchRes = null;
+      try {
+        dispatchRes = await dispatchHostCommand(newTaskHostId, {
+          type: 'new_session',
+          harness: newTaskHarness,
+          cwd: newTaskCwd,
+          title: text.slice(0, 28),
+          prompt: text,
+          ...(pendingAttachments.length > 0
+            ? {
+                attachments: pendingAttachments.map(a => ({
+                  name: a.name,
+                  mimeType: a.mimeType,
+                  dataBase64: a.dataBase64,
+                })),
+              }
+            : {}),
+        });
+      } catch (err) {
+        dispatchRes = { ok: false, error: err?.message || '网络请求失败' };
+      }
+      if (!dispatchRes || dispatchRes.ok === false) {
+        if (inputEl && !inputEl.value.trim() && rawText) {
+          inputEl.value = rawText;
+        }
+        if (pendingAttachments.length > 0 && composerAttachments.newTask.length === 0) {
+          composerAttachments.newTask = pendingAttachments;
+          renderAttachmentStrip('newTask');
+        }
+        openSheet('newTaskSheet');
+        showToast('❌ 创建任务失败：' + (dispatchRes?.error || '请重试'));
+        return;
+      }
       setTimeout(fetchState, 800);
     }
 

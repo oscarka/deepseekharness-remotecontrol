@@ -854,6 +854,12 @@ export class HubAgent {
               dshHome: this.config.dshHome,
               agentId: targetId,
             })
+            if (!persisted.ok || persisted.savedFiles.length === 0) {
+              return {
+                ok: false,
+                error: persisted.error || '图片附件保存失败（文件超过 8MB 或格式不支持），指令未执行',
+              }
+            }
             savedFiles = persisted.savedFiles
             imagePaths = persisted.imagePaths
             effectiveText = persisted.enrichPrompt(effectiveText)
@@ -972,6 +978,12 @@ export class HubAgent {
               cwd: newCwd,
               dshHome: this.config.dshHome,
             })
+            if (!persisted.ok || persisted.savedFiles.length === 0) {
+              return {
+                ok: false,
+                error: persisted.error || '图片附件保存失败（文件超过 8MB 或格式不支持），任务未创建',
+              }
+            }
             savedFiles = persisted.savedFiles
             imagePaths = persisted.imagePaths
             effectivePrompt = persisted.enrichPrompt(effectivePrompt)
