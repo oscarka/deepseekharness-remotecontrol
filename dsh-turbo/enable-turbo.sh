@@ -38,20 +38,32 @@ else
 fi
 
 # 3. 如果是由远端 upgrade_turbo 触发（非 connect-host.sh 初次引导），延迟热重启后台 daemon 以加载最新代码
-if [ -z "${CONNECT_HOST_RUNNING:-}" ] && [ -f "$HOME/.dsh/hub-daemon.pid" ]; then
+if [ -z "${CONNECT_HOST_RUNNING:-}" ] && { [ -f "$HOME/.dsh/hub-daemon.pid" ] || [ -f "$HOME/.dsh/daemon.lock" ]; }; then
   (
-    sleep 3.5
+    sleep 2.5
+    if command -v launchctl >/dev/null 2>&1 && [ -f "$HOME/Library/LaunchAgents/com.dsh.remotecontrol.plist" ]; then
+      if [ -f "$HOME/.dsh/hub-daemon.pid" ]; then
+        OLD_PID="$(cat "$HOME/.dsh/hub-daemon.pid" 2>/dev/null || true)"
+        [ -n "$OLD_PID" ] && kill -TERM "$OLD_PID" 2>/dev/null || true
+      fi
+      launchctl kickstart -k "gui/$(id -u)/com.dsh.remotecontrol" 2>/dev/null && exit 0
+    fi
     NODE_BIN="$(command -v node 2>/dev/null || true)"
     USE_ELECTRON_NODE=0
     if [ -z "$NODE_BIN" ]; then
       for dsh_app_bin in \
+        "/opt/homebrew/bin/node" \
+        "/usr/local/bin/node" \
         "/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
         "$HOME/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness" \
         "/Applications/Antigravity IDE.app/Contents/MacOS/Electron" \
         "$HOME/Applications/Antigravity IDE.app/Contents/MacOS/Electron"; do
         if [ -x "$dsh_app_bin" ]; then
           NODE_BIN="$dsh_app_bin"
-          USE_ELECTRON_NODE=1
+          case "$dsh_app_bin" in
+            */node) USE_ELECTRON_NODE=0 ;;
+            *) USE_ELECTRON_NODE=1 ;;
+          esac
           break
         fi
       done

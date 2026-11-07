@@ -234,10 +234,10 @@ export function mergeTurnAssistantMessages(items) {
   return merged.map((m, idx) => {
     if (m.role !== 'assistant') return m
     const isRecent = idx >= recentCutoff
-    const maxThink = isRecent ? 16000 : 2000
-    const maxTools = isRecent ? 40 : 18
-    const maxCmd = isRecent ? 1800 : 360
-    const maxText = isRecent ? 48000 : 24000
+    const maxThink = isRecent ? 12000 : 800
+    const maxTools = isRecent ? 25 : 8
+    const maxCmd = isRecent ? 1200 : 220
+    const maxText = isRecent ? 48000 : 12000
     return {
       ...m,
       text: m.text && m.text.length > maxText ? m.text.slice(0, maxText) : m.text,
@@ -246,7 +246,7 @@ export function mergeTurnAssistantMessages(items) {
         ? m.tools.slice(0, maxTools).map(t => ({
             name: t.name || 'tool',
             id: t.id || '',
-            summary: t.summary ? String(t.summary).slice(0, 180) : '',
+            summary: t.summary ? String(t.summary).slice(0, 160) : '',
             commandLine: t.commandLine ? String(t.commandLine).slice(0, maxCmd) : '执行完毕',
           }))
         : [],
@@ -397,7 +397,7 @@ export async function renameDiskSession(dshHome, sessionId, newTitle) {
  */
 const dshSessionParseCache = new Map()
 
-export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, maxMessages = 20 } = {}) {
+export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, maxMessages = 14 } = {}) {
   if (!dshHome) return []
   const sessionsRoot = join(resolve(dshHome), 'sessions')
   let customTitles = {}
@@ -572,12 +572,12 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
               }
             }
             if (!asstText && !thinkingText && stepTools.length === 0) continue
-            if (asstText) lastOutput = asstText.slice(0, 8000)
+            if (asstText) lastOutput = asstText.slice(0, 600)
             if (stepTools.length > 0) {
               runningSummary = `🔧 正在执行: ${stepTools.map(t => (t.summary ? `${t.name} (${t.summary})` : t.name)).join(' · ')}`.slice(0, 240)
             } else if (asstText) {
               lastConclusionAt = e.time || lastActivity
-              lastConclusionText = asstText.slice(0, 8000)
+              lastConclusionText = asstText.slice(0, 600)
             } else if (thinkingText) {
               runningSummary = `💭 正在思考: ${thinkingText.replace(/\s+/g, ' ').slice(0, 120)}`
             }
@@ -587,7 +587,6 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
               text: asstText,
               thinking: thinkingText,
               tools: stepTools,
-              toolCalls: stepTools,
               time: e.time || 0,
             })
           }

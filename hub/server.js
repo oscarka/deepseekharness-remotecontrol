@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { gzipSync } from 'node:zlib'
 import { HubCore } from './hub-core.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -520,7 +521,7 @@ export function createHubServer({
       const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
       if (req.method === 'GET' && urlObj.pathname === '/api/events') {
         if (!checkAuth(req.headers, urlObj)) {
-          sendJson(res, 401, { ok: false, error: 'Unauthorized', authRequired: true })
+          sendJson(res, 401, { ok: false, error: 'Unauthorized', authRequired: true }, req.headers)
           return
         }
         res.writeHead(200, {
@@ -532,7 +533,11 @@ export function createHubServer({
         const sendEvent = stateData => {
           res.write(`event: state\ndata: ${JSON.stringify({ ok: true, ...stateData })}\n\n`)
         }
-        sendEvent(hub.getFullState())
+        if (urlObj.searchParams.get('initial') === '0') {
+          res.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
+        } else {
+          sendEvent(hub.getFullState())
+        }
         const unsubscribe = hub.onStateChange((_evt, stateData) => {
           sendEvent(stateData)
         })
@@ -555,7 +560,7 @@ export function createHubServer({
         body,
       })
       if (result.json !== undefined) {
-        sendJson(res, result.status, result.json)
+        sendJson(res, result.status, result.json, req.headers)
       } else if (result.buffer !== undefined) {
         res.writeHead(result.status, result.headers || {})
         res.end(result.buffer)
@@ -565,7 +570,7 @@ export function createHubServer({
       }
     } catch (error) {
       logger?.warn?.(`dsh-hub error: ${error?.message ?? error}`)
-      sendJson(res, 500, { ok: false, error: error?.message ?? 'Internal server error' })
+      sendJson(res, 500, { ok: false, error: error?.message ?? 'Internal server error' }, req.headers)
     }
   })
 
@@ -910,8 +915,25 @@ function renderShareReplayHtml(share) {
 </html>`
 }
 
-function sendJson(res, status, data) {
+function sendJson(res, status, data, reqHeaders = {}) {
   const payload = JSON.stringify(data)
+  const acceptEncoding = String(reqHeaders?.['accept-encoding'] ?? reqHeaders?.['Accept-Encoding'] ?? '')
+  if (payload.length > 1024 && /\bgzip\b/i.test(acceptEncoding)) {
+    try {
+      const gz = gzipSync(Buffer.from(payload, 'utf8'))
+      res.writeHead(status, {
+        'content-type': 'application/json; charset=utf-8',
+        'content-encoding': 'gzip',
+        'content-length': String(gz.length),
+        'cache-control': 'no-store',
+        'access-control-allow-origin': '*',
+      })
+      res.end(gz)
+      return
+    } catch {
+      // fall back to uncompressed
+    }
+  }
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',

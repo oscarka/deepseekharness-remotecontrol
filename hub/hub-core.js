@@ -354,7 +354,7 @@ export class HubCore {
       : []
 
     const tasks = Array.isArray(bridgeState.tasks)
-      ? bridgeState.tasks.map(t => {
+      ? bridgeState.tasks.map((t, taskIdx) => {
           let nextTask = t
           const isDshTask =
             nextTask?.harness === 'dsh' ||
@@ -370,20 +370,62 @@ export class HubCore {
               },
             }
           }
-          if (!nextTask?.pendingApproval?.code) return nextTask
-          const decorated = decorateApproval(nextTask.pendingApproval)
-          if (!decorated) {
-            return {
-              ...nextTask,
-              pendingApproval: null,
-              status: nextTask.status === 'approval' ? 'running' : nextTask.status,
-              turnState: nextTask.turnState === 'approval' ? 'running' : nextTask.turnState,
+          if (nextTask?.pendingApproval?.code) {
+            const decorated = decorateApproval(nextTask.pendingApproval)
+            if (!decorated) {
+              nextTask = {
+                ...nextTask,
+                pendingApproval: null,
+                status: nextTask.status === 'approval' ? 'running' : nextTask.status,
+                turnState: nextTask.turnState === 'approval' ? 'running' : nextTask.turnState,
+              }
+            } else if (decorated !== nextTask.pendingApproval) {
+              nextTask = { ...nextTask, pendingApproval: decorated }
             }
           }
-          if (decorated !== nextTask.pendingApproval) {
-            return { ...nextTask, pendingApproval: decorated }
+          // Server-side transcript & preview budget guard so /api/state and SSE never exceed ~1MB across all hosts
+          const isTopSession = taskIdx < 8 || nextTask?.status === 'running' || nextTask?.status === 'approval'
+          const maxMsgs = isTopSession ? 14 : 6
+          const rawTr = Array.isArray(nextTask?.transcript) ? nextTask.transcript : []
+          const slicedTr = rawTr.length > maxMsgs ? rawTr.slice(-maxMsgs) : rawTr
+          const recentCutoff = Math.max(0, slicedTr.length - 4)
+          const compactedTr = slicedTr.map((m, mIdx) => {
+            if (!m || typeof m !== 'object') return m
+            const { toolCalls: _omitTc, ...mRest } = m
+            if (m.role !== 'assistant') return mRest
+            const isRecent = mIdx >= recentCutoff
+            const maxText = isRecent ? 48000 : 10000
+            const maxThink = isRecent ? 10000 : 600
+            const maxTools = isRecent ? 24 : 6
+            const maxCmd = isRecent ? 1200 : 200
+            const rawTools = Array.isArray(m.tools) ? m.tools : Array.isArray(m.toolCalls) ? m.toolCalls : []
+            return {
+              ...mRest,
+              text: typeof m.text === 'string' && m.text.length > maxText ? m.text.slice(0, maxText) : m.text,
+              thinking:
+                typeof m.thinking === 'string' && m.thinking.length > maxThink
+                  ? `${m.thinking.slice(0, maxThink)}\n...(历史思考已折叠)...`
+                  : m.thinking,
+              tools: rawTools.slice(0, maxTools).map(tl =>
+                typeof tl === 'string'
+                  ? { name: tl, id: '', summary: '', commandLine: '执行完毕' }
+                  : {
+                      name: tl?.name || 'tool',
+                      id: tl?.id || '',
+                      summary: tl?.summary ? String(tl.summary).slice(0, 160) : '',
+                      commandLine: tl?.commandLine ? String(tl.commandLine).slice(0, maxCmd) : '执行完毕',
+                    },
+              ),
+            }
+          })
+          return {
+            ...nextTask,
+            lastOutput:
+              typeof nextTask?.lastOutput === 'string' && nextTask.lastOutput.length > 600
+                ? nextTask.lastOutput.slice(0, 600)
+                : nextTask?.lastOutput,
+            transcript: compactedTr,
           }
-          return nextTask
         })
       : []
 
@@ -853,7 +895,7 @@ export class HubCore {
     }
     const nextFingerprint = this.computeHostFingerprint(record)
     const stateChanged = hasCommandActivity || nextFingerprint !== record._lastFingerprint
-    if (stateChanged || now - (record._lastBroadcastAt || 0) >= 12_000) {
+    if (stateChanged || now - (record._lastBroadcastAt || 0) >= 45_000) {
       record._lastFingerprint = nextFingerprint
       record._lastBroadcastAt = now
       void this.persist()
@@ -878,7 +920,7 @@ export class HubCore {
           .map(t => {
             const tr = Array.isArray(t.transcript) ? t.transcript : []
             const last = tr.at(-1)
-            return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${t.lastOutput || ''}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}`
+            return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${(t.lastOutput || '').slice(0, 120)}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}`
           })
           .join('|')
       : ''
