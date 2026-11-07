@@ -1,0 +1,50 @@
+name: Feature request
+description: 提议一个新能力或改进 / Propose a capability or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        功能不是越多越好。这个项目优先解决「在手机上安全地接管一个正在跑的 AI 任务」，请说明你的需求如何服务这个目标。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你遇到的具体问题
+      description: 描述场景，而不是直接给方案。
+      placeholder: 我在通勤时想切换受控电脑，但 `!hosts` 卡片在手机上要点两次才能展开。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你希望的解决方式
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你考虑过的替代方案
+    validations:
+      required: false
+  - type: dropdown
+    id: component
+    attributes:
+      label: 涉及的模块
+      multiple: true
+      options:
+        - dsh-feishu 插件
+        - Hub 总控台
+        - Web Push / PWA
+        - 新的 Harness 适配
+        - 文档 / 安装体验
+        - 其他
+    validations:
+      required: true
+  - type: checkboxes
+    id: willing
+    attributes:
+      label: 你愿意帮忙实现吗
+      options:
+        - label: 我愿意提 PR
+        - label: 我可以帮忙测试
+        - label: 我只能提供场景反馈

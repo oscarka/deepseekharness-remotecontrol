@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-label="DSH Remote Control — 用手机与飞书遥控你的 AI 编码助手">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="0.55" stop-color="#0E1730"/>
+      <stop offset="1" stop-color="#111C3A"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#3B82F6" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#3B82F6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#22D3EE" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#7DD3FC" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="400" fill="url(#bg)"/>
+  <rect width="1280" height="400" fill="url(#grid)"/>
+  <circle cx="1090" cy="120" r="300" fill="url(#glow)"/>
+  <circle cx="1230" cy="330" r="220" fill="url(#glow2)"/>
+
+  <!-- decorative rings -->
+  <g fill="none" stroke="#60A5FA" stroke-opacity="0.16">
+    <circle cx="1085" cy="200" r="96" stroke-width="1.5"/>
+    <circle cx="1085" cy="200" r="132" stroke-width="1.2" stroke-opacity="0.11"/>
+    <circle cx="1085" cy="200" r="170" stroke-width="1" stroke-opacity="0.07"/>
+  </g>
+  <circle cx="1085" cy="200" r="34" fill="#0B1220" stroke="#38BDF8" stroke-opacity="0.5" stroke-width="1.5"/>
+  <path d="M1078 190v20M1085 186v28M1092 193v16" stroke="#38BDF8" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.85"/>
+  <circle cx="1085" cy="104" r="5" fill="#22D3EE"/>
+  <circle cx="1181" cy="200" r="4" fill="#3B82F6"/>
+  <circle cx="989" cy="200" r="4" fill="#818CF8"/>
+
+  <!-- accent bar -->
+  <rect x="80" y="132" width="5" height="128" rx="2.5" fill="url(#accent)"/>
+
+  <text x="112" y="150" font-family="-apple-system, 'PingFang SC', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" letter-spacing="4" fill="#7DD3FC">SELF-HOSTED · OPEN SOURCE</text>
+  <text x="110" y="216" font-family="-apple-system, 'PingFang SC', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="60" font-weight="700" letter-spacing="-1" fill="#F8FAFC">DSH Remote Control</text>
+  <text x="112" y="262" font-family="-apple-system, 'PingFang SC', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="25" fill="#94A3B8">用手机与飞书，遥控你的 AI 编码助手</text>
+
+  <!-- pills -->
+  <g font-family="-apple-system, 'PingFang SC', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" font-weight="500" text-anchor="middle">
+    <rect x="112" y="300" width="132" height="36" rx="18" fill="#3B82F6" fill-opacity="0.12" stroke="#60A5FA" stroke-opacity="0.35"/>
+    <text x="178" y="324" fill="#BFDBFE">飞书长连接</text>
+
+    <rect x="256" y="300" width="104" height="36" rx="18" fill="#3B82F6" fill-opacity="0.12" stroke="#60A5FA" stroke-opacity="0.35"/>
+    <text x="308" y="324" fill="#BFDBFE">iOS PWA</text>
+
+    <rect x="372" y="300" width="112" height="36" rx="18" fill="#3B82F6" fill-opacity="0.12" stroke="#60A5FA" stroke-opacity="0.35"/>
+    <text x="428" y="324" fill="#BFDBFE">Web Push</text>
+
+    <rect x="496" y="300" width="118" height="36" rx="18" fill="#3B82F6" fill-opacity="0.12" stroke="#60A5FA" stroke-opacity="0.35"/>
+    <text x="555" y="324" fill="#BFDBFE">E2EE 分享</text>
+
+    <rect x="626" y="300" width="96" height="36" rx="18" fill="#3B82F6" fill-opacity="0.12" stroke="#60A5FA" stroke-opacity="0.35"/>
+    <text x="674" y="324" fill="#BFDBFE">自托管</text>
+  </g>
+</svg>
