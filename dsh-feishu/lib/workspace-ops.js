@@ -133,7 +133,7 @@ function buildDshToolRecord(name, callId, rawArgs, resultText = '') {
       argsDetail = summary
     }
   }
-  const cleanResult = resultText ? redactText(String(resultText).trim()).slice(0, 4000) : ''
+  const cleanResult = resultText ? redactText(String(resultText).trim()).slice(0, 2500) : ''
   const detailParts = []
   if (argsDetail) detailParts.push(argsDetail)
   if (cleanResult) detailParts.push(`--- 执行输出 ---\n${cleanResult}`)
@@ -141,7 +141,6 @@ function buildDshToolRecord(name, callId, rawArgs, resultText = '') {
     name: cleanName,
     id: String(callId || ''),
     summary,
-    argsSummary: summary,
     commandLine: detailParts.join('\n\n') || summary || '执行完毕',
   }
 }
@@ -167,10 +166,9 @@ export function mergeTurnAssistantMessages(items) {
           : thoughtList
               .map((t, idx) => `【思考 ${idx + 1}】\n${t}`)
               .join('\n\n')
-              .slice(0, 24000)
     const textList = pendingAsst._texts.filter(Boolean)
     const combinedText = cleanForChat(textList.join('\n\n').trim(), 48000)
-    const tools = pendingAsst._tools.slice(0, 60)
+    const tools = pendingAsst._tools
     merged.push({
       index: merged.length,
       role: 'assistant',
@@ -178,7 +176,6 @@ export function mergeTurnAssistantMessages(items) {
       thinking: combinedThinking,
       thinkingStepCount: thoughtList.length,
       tools,
-      toolCalls: tools,
       time: pendingAsst.time || 0,
     })
     pendingAsst = null
@@ -188,8 +185,9 @@ export function mergeTurnAssistantMessages(items) {
     if (!item) continue
     if (item.role !== 'assistant') {
       flushAsst()
+      const { toolCalls: _omitToolCalls, ...rest } = item
       merged.push({
-        ...item,
+        ...rest,
         index: merged.length,
       })
       continue
@@ -224,19 +222,43 @@ export function mergeTurnAssistantMessages(items) {
       if (tid && pendingAsst._seenToolIds.has(tid)) continue
       if (tid) pendingAsst._seenToolIds.add(tid)
       pendingAsst._tools.push(
-        typeof t === 'string' ? { name: t, id: '', summary: '', argsSummary: '', commandLine: '执行完毕' } : t,
+        typeof t === 'string' ? { name: t, id: '', summary: '', commandLine: '执行完毕' } : t,
       )
     }
   }
   flushAsst()
-  return merged
+
+  // Keep full fidelity on the most recent 4 merged items (2 full Q&A rounds),
+  // and trim oversized thinking/tool outputs on older historical turns so mobile state stays fast.
+  const recentCutoff = Math.max(0, merged.length - 4)
+  return merged.map((m, idx) => {
+    if (m.role !== 'assistant') return m
+    const isRecent = idx >= recentCutoff
+    const maxThink = isRecent ? 16000 : 2000
+    const maxTools = isRecent ? 40 : 18
+    const maxCmd = isRecent ? 1800 : 360
+    const maxText = isRecent ? 48000 : 24000
+    return {
+      ...m,
+      text: m.text && m.text.length > maxText ? m.text.slice(0, maxText) : m.text,
+      thinking: m.thinking && m.thinking.length > maxThink ? `${m.thinking.slice(0, maxThink)}\n...(历史思考已折叠)...` : m.thinking,
+      tools: Array.isArray(m.tools)
+        ? m.tools.slice(0, maxTools).map(t => ({
+            name: t.name || 'tool',
+            id: t.id || '',
+            summary: t.summary ? String(t.summary).slice(0, 180) : '',
+            commandLine: t.commandLine ? String(t.commandLine).slice(0, maxCmd) : '执行完毕',
+          }))
+        : [],
+    }
+  })
 }
 
 /**
  * Extract full structured conversation transcript and tool activity from a live agent
  * (for Full Remote Web Chat UI and E2EE Conversation Replay).
  */
-export function extractSessionTranscript(agent, maxMessages = 60) {
+export function extractSessionTranscript(agent, maxMessages = 24) {
   if (!agent) return []
   let rawMessages = []
   try {
@@ -375,7 +397,7 @@ export async function renameDiskSession(dshHome, sessionId, newTitle) {
  */
 const dshSessionParseCache = new Map()
 
-export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, maxMessages = 40 } = {}) {
+export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, maxMessages = 20 } = {}) {
   if (!dshHome) return []
   const sessionsRoot = join(resolve(dshHome), 'sessions')
   let customTitles = {}
