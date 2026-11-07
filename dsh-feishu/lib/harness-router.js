@@ -2,33 +2,81 @@ import { isAntigravityIdeSessionId } from './antigravity-ide.js'
 
 export const DEFAULT_HARNESS_CAPABILITIES = {
   dsh: {
+    canView: true,
     canCreateSession: true,
     canPrompt: true,
     canSteer: true,
     canStop: true,
     canApprove: true,
+    approvalStatus: 'supported',
   },
   'antigravity-ide': {
+    canView: true,
     canCreateSession: true,
     canPrompt: true,
     canSteer: true,
     canStop: true,
     canApprove: true,
+    approvalStatus: 'supported',
   },
   codex: {
+    canView: true,
     canCreateSession: true,
     canPrompt: true,
     canSteer: false,
     canStop: true,
     canApprove: false,
+    approvalStatus: 'planned',
   },
   claude: {
+    canView: true,
     canCreateSession: true,
     canPrompt: true,
     canSteer: false,
     canStop: true,
     canApprove: false,
+    approvalStatus: 'planned',
   },
+}
+
+/**
+ * Summarize installed AI coding tools during host setup and produce an honest capability notice.
+ */
+export function summarizeInstalledHarnesses({
+  hasDsh = false,
+  hasAntigravity = false,
+  hasCodex = false,
+  hasClaude = false,
+} = {}) {
+  const detected = []
+  if (hasDsh) detected.push('dsh')
+  if (hasAntigravity) detected.push('antigravity-ide')
+  if (hasCodex) detected.push('codex')
+  if (hasClaude) detected.push('claude')
+
+  const hasApprovalBackend = Boolean(hasDsh || hasAntigravity)
+  if (hasApprovalBackend) {
+    return {
+      mode: 'full',
+      detected,
+      enabledHarnesses: detected.join(',') || 'dsh,antigravity-ide,codex,claude',
+      summary: `已检测到 ${detected.join(', ')}：已启用完整远控模式（看会话、发指令、停止、手机审批、实时插话）。`,
+    }
+  }
+  if (hasCodex || hasClaude) {
+    return {
+      mode: 'observe',
+      detected,
+      enabledHarnesses: detected.join(','),
+      summary: `已检测到 ${detected.join(', ')}（未装 DSH）：当前为观察模式，审批功能需要 DSH（目前支持看会话、发指令、停止）。`,
+    }
+  }
+  return {
+    mode: 'none',
+    detected: [],
+    enabledHarnesses: 'dsh,antigravity-ide,codex,claude',
+    summary: '尚未检测到已安装的 AI 编程工具（当前为观察模式，审批功能需要 DSH）。',
+  }
 }
 
 /**

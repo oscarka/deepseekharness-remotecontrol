@@ -6,15 +6,16 @@ unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy \
   RPC_PROXY_DEST_OVERRIDE RPC_PROXY_HEADER_AS_EXTENSION \
   ANTIGRAVITY_LS_ADDRESS ANTIGRAVITY_CSRF_TOKEN 2>/dev/null || true
 
-# 默认总控中心地址（可通过环境变量 FEISHU_HUB_URL 覆盖）
-HUB_URL="${FEISHU_HUB_URL:-https://dsh-hub.example.run.app}"
+# 严禁在公开脚本中硬编码任何私人云实例地址；由 /install.sh 动态注入或通过 --url / FEISHU_HUB_URL 指定
+DEFAULT_HUB_URL=""
 
 DSH_DIR="${DSH_HOME:-$HOME/.dsh}"
 mkdir -p "$DSH_DIR"
 
 ENV_FILE="$DSH_DIR/feishu.env"
 
-# 读取本机已有的配置（如果之前已配置过密钥或电脑名则自动复用）
+# 读取本机已有的配置（如果之前已配置过网址、密钥或电脑名则自动复用）
+EXISTING_HUB_URL=""
 EXISTING_TOKEN=""
 EXISTING_HOST_ID=""
 EXISTING_HOST_NAME=""
@@ -23,6 +24,7 @@ EXISTING_APP_SECRET=""
 EXISTING_OPEN_IDS=""
 EXISTING_HARNESSES=""
 if [ -f "$ENV_FILE" ]; then
+  EXISTING_HUB_URL="$(grep -E '^FEISHU_HUB_URL=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   EXISTING_TOKEN="$(grep -E '^FEISHU_HUB_TOKEN=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   EXISTING_HOST_ID="$(grep -E '^FEISHU_HOST_ID=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
   EXISTING_HOST_NAME="$(grep -E '^FEISHU_HOST_NAME=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
@@ -32,13 +34,24 @@ if [ -f "$ENV_FILE" ]; then
   EXISTING_HARNESSES="$(grep -E '^FEISHU_ENABLED_HARNESSES=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 fi
 
-# 支持 --name / --token / --id 具名参数与位置参数两种调用方式
+# 支持 --url / --code / --name / --token / --id / --dry-run 具名参数与位置参数
 POS_ARGS=()
+OPT_URL=""
+OPT_CODE=""
 OPT_NAME=""
 OPT_TOKEN=""
 OPT_ID=""
+DRY_RUN=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --url)
+      OPT_URL="${2:-}"
+      shift 2 || shift
+      ;;
+    --code)
+      OPT_CODE="${2:-}"
+      shift 2 || shift
+      ;;
     --name)
       OPT_NAME="${2:-}"
       shift 2 || shift
@@ -51,6 +64,10 @@ while [ $# -gt 0 ]; do
       OPT_ID="${2:-}"
       shift 2 || shift
       ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
     *)
       POS_ARGS+=("$1")
       shift
@@ -58,35 +75,80 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# 第一参数：电脑显示名称，例如 ./connect-host.sh "mac-mini" "你的访问密钥"
 DEFAULT_NAME="$(scutil --get ComputerName 2>/dev/null || hostname -s 2>/dev/null || hostname)"
 if [ "$EXISTING_HOST_NAME" = "--name" ]; then EXISTING_HOST_NAME=""; fi
 if [ "$EXISTING_HOST_ID" = "--id" ]; then EXISTING_HOST_ID=""; fi
 HOST_NAME="${OPT_NAME:-${POS_ARGS[0]:-${FEISHU_HOST_NAME:-${EXISTING_HOST_NAME:-$DEFAULT_NAME}}}}"
 
-# 第二参数（可选）：总控台访问密钥 HUB_TOKEN（绝不硬编码在公开代码库中！）
 ARG_TOKEN="${OPT_TOKEN:-${POS_ARGS[1]:-}}"
 
-# 第三参数（可选）：自定义 Host ID
 RAW_HOST_ID="${OPT_ID:-${POS_ARGS[2]:-${FEISHU_HOST_ID:-${EXISTING_HOST_ID:-$(hostname -s 2>/dev/null || hostname)}}}}"
 HOST_ID="$(echo "$RAW_HOST_ID" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-_')"
 if [ -z "$HOST_ID" ]; then
   HOST_ID="mac-$(date +%s)"
 fi
 
-HUB_TOKEN="${ARG_TOKEN:-${FEISHU_HUB_TOKEN:-$EXISTING_TOKEN}}"
+HUB_URL="${OPT_URL:-${FEISHU_HUB_URL:-${EXISTING_HUB_URL:-$DEFAULT_HUB_URL}}}"
+HUB_URL="${HUB_URL%/}"
 
-if [ -z "$HUB_TOKEN" ]; then
-  echo "🔒 为了保护你的任务隐私，公开仓库不包含总控台密钥。"
-  read -rsp "🔑 请输入总控台访问密码 (HUB_TOKEN): " HUB_TOKEN
-  echo ""
-fi
-
-if [ -z "$HUB_TOKEN" ]; then
-  echo "❌ 未提供访问密码 (HUB_TOKEN)，无法连接总控中心。"
-  echo "   用法: ./connect-host.sh \"电脑名称\" \"你的访问密码\""
+if [ -z "$HUB_URL" ]; then
+  echo "❌ 未指定总控台地址 (FEISHU_HUB_URL)。"
+  echo "   请先打开你的总控台网页，复制「添加电脑」面板里的一键安装命令执行，"
+  echo "   或手动指定: ./connect-host.sh --url https://你的总控台网址 --code 配对码"
   exit 1
 fi
+
+JOIN_CODE="${OPT_CODE:-${FEISHU_JOIN_CODE:-}}"
+HUB_TOKEN="${ARG_TOKEN:-${FEISHU_HUB_TOKEN:-$EXISTING_TOKEN}}"
+
+# 凭配对码加入：自动向控制台换取本机独立凭证（不需要管理员主密码）
+if [ -n "$JOIN_CODE" ]; then
+  echo "🔗 正在使用配对码 (${JOIN_CODE}) 将【${HOST_NAME}】接入总控台 ${HUB_URL} ..."
+  PLATFORM_STR="$(uname -s 2>/dev/null || echo unknown)"
+  ARCH_STR="$(uname -m 2>/dev/null || echo unknown)"
+  JOIN_RESP="$(curl -sS -X POST "${HUB_URL}/api/hosts/join" \
+    -H "Content-Type: application/json" \
+    -d "{\"code\":\"${JOIN_CODE}\",\"hostId\":\"${HOST_ID}\",\"hostName\":\"${HOST_NAME}\",\"platform\":\"${PLATFORM_STR}\",\"arch\":\"${ARCH_STR}\"}" || true)"
+  EXTRACTED_TOKEN="$(printf '%s' "$JOIN_RESP" | sed -n 's/.*"hostToken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  if [ -z "$EXTRACTED_TOKEN" ]; then
+    ERR_MSG="$(printf '%s' "$JOIN_RESP" | sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+    echo "❌ 配对码接入失败: ${ERR_MSG:-$JOIN_RESP}"
+    exit 1
+  fi
+  HUB_TOKEN="$EXTRACTED_TOKEN"
+  echo "✅ 配对成功！已获取本机专属独立凭证 (${EXTRACTED_TOKEN:0:10}...)"
+fi
+
+if [ -z "$HUB_TOKEN" ]; then
+  echo "❌ 未提供配对码 (--code) 或访问凭证 (--token)。"
+  echo "   推荐用法: ./connect-host.sh --url ${HUB_URL} --code 网页上的配对码"
+  exit 1
+fi
+
+# 自动检测本机安装了哪些 AI 编码工具，诚实提示能力边界
+HAS_DSH=0
+HAS_AGY=0
+HAS_CODEX=0
+HAS_CLAUDE=0
+
+if command -v dsh >/dev/null 2>&1 || [ -x "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" ] || [ -x "$HOME/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" ]; then
+  HAS_DSH=1
+fi
+if [ -d "$HOME/.gemini/antigravity" ] || [ -d "/Applications/Antigravity IDE.app" ] || [ -d "$HOME/Applications/Antigravity IDE.app" ]; then
+  HAS_AGY=1
+fi
+if command -v codex >/dev/null 2>&1 || [ -d "$HOME/.codex" ]; then
+  HAS_CODEX=1
+fi
+if command -v claude >/dev/null 2>&1 || [ -d "$HOME/.claude" ]; then
+  HAS_CLAUDE=1
+fi
+
+DETECTED_LIST=()
+[ "$HAS_DSH" = "1" ] && DETECTED_LIST+=("DSH")
+[ "$HAS_AGY" = "1" ] && DETECTED_LIST+=("Antigravity IDE")
+[ "$HAS_CODEX" = "1" ] && DETECTED_LIST+=("Codex")
+[ "$HAS_CLAUDE" = "1" ] && DETECTED_LIST+=("Claude Code")
 
 install -m 600 /dev/null "$ENV_FILE"
 cat > "$ENV_FILE" <<EOF
@@ -104,8 +166,41 @@ chmod 600 "$ENV_FILE"
 echo "✅ 已安全写入本机私密配置 (0600): $ENV_FILE"
 echo "   - 电脑名称: $HOST_NAME ($HOST_ID)"
 echo "   - 总控中心: $HUB_URL"
+if [ "$HAS_DSH" = "1" ] || [ "$HAS_AGY" = "1" ]; then
+  echo "   - 检测工具: ${DETECTED_LIST[*]} ➔ 已启用完整模式（看会话 / 发指令 / 停止 / 手机审批 / 实时插话）"
+elif [ "$HAS_CODEX" = "1" ] || [ "$HAS_CLAUDE" = "1" ]; then
+  echo "   - 检测工具: ${DETECTED_LIST[*]} ➔ 当前为观察模式，审批功能需要 DSH（支持看会话、发指令、停止）"
+else
+  echo "   - 检测工具: 未检测到 DSH ➔ 当前为观察模式，审批功能需要 DSH"
+fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "$DRY_RUN" = "1" ]; then
+  echo "✅ [dry-run] 配置与检测已完成。"
+  exit 0
+fi
+
+# 支持通过 curl -fsSL <HUB_URL>/install.sh | bash 一键安装：若当前不在仓库目录则自动克隆到 ~/.dsh/remotecontrol
+SCRIPT_DIR=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+  CANDIDATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [ -f "$CANDIDATE_DIR/dsh-feishu/daemon.mjs" ]; then
+    SCRIPT_DIR="$CANDIDATE_DIR"
+  fi
+fi
+
+if [ -z "$SCRIPT_DIR" ]; then
+  REPO_DIR="$DSH_DIR/remotecontrol"
+  REPO_URL="${DSH_REPO_URL:-https://github.com/oscarka/deepseekharness-remotecontrol.git}"
+  if [ -d "$REPO_DIR/.git" ]; then
+    echo "📦 正在更新本地客户端仓库 ($REPO_DIR)..."
+    git -C "$REPO_DIR" pull --ff-only origin main >/dev/null 2>&1 || true
+  else
+    echo "📦 正在下载客户端代码到 $REPO_DIR ..."
+    rm -rf "$REPO_DIR"
+    git clone --depth 1 "$REPO_URL" "$REPO_DIR"
+  fi
+  SCRIPT_DIR="$REPO_DIR"
+fi
 
 # 自动探测 Node.js 运行时（优先使用系统 node，若无则使用 DeepSeek Harness.app 内置 Node v24 运行时）
 NODE_BIN=""
@@ -263,4 +358,4 @@ fi
 
 echo ""
 echo "🎉 接入成功！后台守护进程已启动 (PID: ${NEW_PID}，日志: ${DSH_DIR}/hub-daemon.log)"
-echo "👉 打开总控台输入你的访问密码即可查看并遥控【${HOST_NAME}】：${HUB_URL}"
+echo "👉 打开总控台即可查看并遥控【${HOST_NAME}】：${HUB_URL}"

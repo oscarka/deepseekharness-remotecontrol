@@ -1,0 +1,26 @@
+services:
+  dsh-hub:
+    image: ghcr.io/oscarka/deepseekharness-remotecontrol:latest
+    build: .
+    container_name: dsh-remote-hub
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - HUB_STATE_FILE=/data/dsh-hub-state.json
+      - HUB_TOKEN=${HUB_TOKEN:?请先设置管理员密码 HUB_TOKEN，例如 HUB_TOKEN=my-secret-password docker compose up -d}
+      - PUBLIC_URL=${PUBLIC_URL:-}
+      - TRUST_PROXY=${TRUST_PROXY:-0}
+    volumes:
+      - dsh-hub-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  dsh-hub-data:

@@ -1058,15 +1058,242 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 		showToast("🎙️ 已聚焦输入框，请使用键盘右下角「🎤 麦克风」语音输入");
 	}
 }
+// hub/web/src/utils/qrcode.js
+var VERSION_SPECS = [
+	null,
+	{
+		size: 21,
+		totalCodewords: 26,
+		ecCodewords: 7,
+		dataBytes: 17,
+		align: []
+	},
+	{
+		size: 25,
+		totalCodewords: 44,
+		ecCodewords: 10,
+		dataBytes: 32,
+		align: [6, 18]
+	},
+	{
+		size: 29,
+		totalCodewords: 70,
+		ecCodewords: 15,
+		dataBytes: 53,
+		align: [6, 22]
+	},
+	{
+		size: 33,
+		totalCodewords: 100,
+		ecCodewords: 20,
+		dataBytes: 78,
+		align: [6, 26]
+	},
+	{
+		size: 37,
+		totalCodewords: 134,
+		ecCodewords: 26,
+		dataBytes: 106,
+		align: [6, 30]
+	},
+	{
+		size: 41,
+		totalCodewords: 172,
+		ecCodewords: 36,
+		dataBytes: 134,
+		align: [6, 34]
+	}
+];
+var GF_EXP = /* @__PURE__ */ new Uint8Array(512);
+var GF_LOG = /* @__PURE__ */ new Uint8Array(256);
+(() => {
+	let x = 1;
+	for (let i = 0; i < 255; i += 1) {
+		GF_EXP[i] = x;
+		GF_LOG[x] = i;
+		x <<= 1;
+		if (x & 256) x ^= 285;
+	}
+	for (let i = 255; i < 512; i += 1) GF_EXP[i] = GF_EXP[i - 255];
+})();
+function gfMul(a, b) {
+	if (a === 0 || b === 0) return 0;
+	return GF_EXP[GF_LOG[a] + GF_LOG[b]];
+}
+function rsGeneratorPoly(degree) {
+	let poly = new Uint8Array([1]);
+	for (let i = 0; i < degree; i += 1) {
+		const next = new Uint8Array(poly.length + 1);
+		const factor = GF_EXP[i];
+		for (let j = 0; j < poly.length; j += 1) {
+			next[j] ^= poly[j];
+			next[j + 1] ^= gfMul(poly[j], factor);
+		}
+		poly = next;
+	}
+	return poly;
+}
+function rsEncode(data, ecLen) {
+	const gen = rsGeneratorPoly(ecLen);
+	const rem = new Uint8Array(ecLen);
+	for (let i = 0; i < data.length; i += 1) {
+		const factor = data[i] ^ rem[0];
+		for (let j = 0; j < ecLen - 1; j += 1) rem[j] = rem[j + 1] ^ gfMul(gen[j + 1], factor);
+		rem[ecLen - 1] = gfMul(gen[ecLen], factor);
+	}
+	return rem;
+}
+function encodeDataCodewords(utf8Bytes, spec) {
+	spec.dataBytes;
+	const bits = [];
+	const pushBits = (val, len) => {
+		for (let i = len - 1; i >= 0; i -= 1) bits.push(val >>> i & 1);
+	};
+	pushBits(4, 4);
+	pushBits(utf8Bytes.length, 8);
+	for (const b of utf8Bytes) pushBits(b, 8);
+	const maxBits = (spec.totalCodewords - spec.ecCodewords) * 8;
+	for (let i = 0; i < 4 && bits.length < maxBits; i += 1) bits.push(0);
+	while (bits.length % 8 !== 0) bits.push(0);
+	const codewords = new Uint8Array(maxBits / 8);
+	for (let i = 0; i < bits.length / 8; i += 1) {
+		let byte = 0;
+		for (let b = 0; b < 8; b += 1) byte = byte << 1 | bits[i * 8 + b];
+		codewords[i] = byte;
+	}
+	const pads = [236, 17];
+	for (let i = bits.length / 8, p = 0; i < codewords.length; i += 1, p ^= 1) codewords[i] = pads[p];
+	if (spec.totalCodewords === 172) {
+		const b1 = codewords.slice(0, 68);
+		const b2 = codewords.slice(68, 136);
+		const ec1 = rsEncode(b1, 18);
+		const ec2 = rsEncode(b2, 18);
+		const out = /* @__PURE__ */ new Uint8Array(172);
+		let idx = 0;
+		for (let i = 0; i < 68; i += 1) {
+			out[idx++] = b1[i];
+			out[idx++] = b2[i];
+		}
+		for (let i = 0; i < 18; i += 1) {
+			out[idx++] = ec1[i];
+			out[idx++] = ec2[i];
+		}
+		return out;
+	}
+	const ec = rsEncode(codewords, spec.ecCodewords);
+	const out = new Uint8Array(spec.totalCodewords);
+	out.set(codewords, 0);
+	out.set(ec, codewords.length);
+	return out;
+}
+function renderQrCodeSvg(text, { sizePx = 188, margin = 3 } = {}) {
+	const utf8 = new TextEncoder().encode(String(text || ""));
+	let version = 1;
+	while (version <= 6 && VERSION_SPECS[version].dataBytes < utf8.length) version += 1;
+	if (version > 6) return `<div style="padding:16px;font-size:12px;color:var(--muted);">链接较长，请直接使用下方 6 位配对码</div>`;
+	const spec = VERSION_SPECS[version];
+	const n = spec.size;
+	const grid = Array.from({ length: n }, () => new Int8Array(n));
+	const reserved = Array.from({ length: n }, () => new Uint8Array(n));
+	const setModule = (r, c, dark, isReserved = true) => {
+		if (r < 0 || r >= n || c < 0 || c >= n) return;
+		grid[r][c] = dark ? 1 : 0;
+		if (isReserved) reserved[r][c] = 1;
+	};
+	const placeFinder = (row, col) => {
+		for (let dr = -1; dr <= 7; dr += 1) for (let dc = -1; dc <= 7; dc += 1) {
+			const r = row + dr;
+			const c = col + dc;
+			if (r < 0 || r >= n || c < 0 || c >= n) continue;
+			setModule(r, c, dr >= 0 && dr <= 6 && dc >= 0 && dc <= 6 && (dr === 0 || dr === 6 || dc === 0 || dc === 6 || dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4), true);
+		}
+	};
+	placeFinder(0, 0);
+	placeFinder(0, n - 7);
+	placeFinder(n - 7, 0);
+	for (let i = 8; i < n - 8; i += 1) {
+		setModule(6, i, i % 2 === 0, true);
+		setModule(i, 6, i % 2 === 0, true);
+	}
+	for (const ar of spec.align) for (const ac of spec.align) {
+		if (ar === 6 && ac === 6 || ar === 6 && ac === n - 7 || ar === n - 7 && ac === 6) continue;
+		for (let dr = -2; dr <= 2; dr += 1) for (let dc = -2; dc <= 2; dc += 1) {
+			const dark = Math.max(Math.abs(dr), Math.abs(dc)) !== 1;
+			setModule(ar + dr, ac + dc, dark, true);
+		}
+	}
+	for (let i = 0; i < 9; i += 1) if (i !== 6) {
+		reserved[8][i] = 1;
+		reserved[i][8] = 1;
+	}
+	for (let i = 0; i < 8; i += 1) {
+		reserved[8][n - 1 - i] = 1;
+		reserved[n - 1 - i][8] = 1;
+	}
+	setModule(n - 8, 8, true, true);
+	const codewords = encodeDataCodewords(utf8, spec);
+	let bitIdx = 0;
+	const totalBits = codewords.length * 8;
+	let upward = true;
+	for (let col = n - 1; col > 0; col -= 2) {
+		if (col === 6) col -= 1;
+		for (let step = 0; step < n; step += 1) {
+			const r = upward ? n - 1 - step : step;
+			for (let dc = 0; dc < 2; dc += 1) {
+				const c = col - dc;
+				if (reserved[r][c]) continue;
+				let bit = 0;
+				if (bitIdx < totalBits) {
+					bit = codewords[bitIdx >>> 3] >>> 7 - (bitIdx & 7) & 1;
+					bitIdx += 1;
+				}
+				if ((r + c) % 2 === 0) bit ^= 1;
+				grid[r][c] = bit;
+			}
+		}
+		upward = !upward;
+	}
+	const formatBits = 30660;
+	const fCoords1 = [
+		[8, 0],
+		[8, 1],
+		[8, 2],
+		[8, 3],
+		[8, 4],
+		[8, 5],
+		[8, 7],
+		[8, 8],
+		[7, 8],
+		[5, 8],
+		[4, 8],
+		[3, 8],
+		[2, 8],
+		[1, 8],
+		[0, 8]
+	];
+	for (let i = 0; i < 15; i += 1) {
+		const bit = formatBits >>> i & 1;
+		const [r1, c1] = fCoords1[i];
+		grid[r1][c1] = bit;
+		if (i < 8) grid[8][n - 1 - i] = bit;
+		else grid[n - 15 + i][8] = bit;
+	}
+	const totalDim = n + margin * 2;
+	let path = "";
+	for (let r = 0; r < n; r += 1) for (let c = 0; c < n; c += 1) if (grid[r][c]) path += `M${c + margin},${r + margin}h1v1h-1z`;
+	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalDim} ${totalDim}" width="${sizePx}" height="${sizePx}" shape-rendering="crispEdges" style="border-radius:14px;background:#ffffff;border:1px solid #e2e8f0;box-shadow:0 4px 14px rgba(15,23,42,0.06);"><rect width="100%" height="100%" fill="#ffffff"/><path d="${path}" fill="#0f172a"/></svg>`;
+}
 // hub/web/src/controller.js
 function initHubController() {
 	const urlParams = new URLSearchParams(location.search);
 	const queryToken = (urlParams.get("token") || "").trim();
+	const queryPairCode = (urlParams.get("pair") || "").trim();
 	let pendingDeepLinkHostId = (urlParams.get("host") || "").trim();
 	let pendingDeepLinkTaskId = (urlParams.get("task") || urlParams.get("session") || "").trim();
-	if (queryToken || pendingDeepLinkHostId || pendingDeepLinkTaskId) {
+	if (queryToken || queryPairCode || pendingDeepLinkHostId || pendingDeepLinkTaskId) {
 		if (queryToken) localStorage.setItem("dsh_hub_token", queryToken);
 		urlParams.delete("token");
+		urlParams.delete("pair");
 		urlParams.delete("host");
 		urlParams.delete("task");
 		urlParams.delete("session");
@@ -1647,26 +1874,7 @@ function initHubController() {
 		}).join("");
 		let emptyStateHtml = "";
 		if (!rowsHtml) {
-			const hostsCount = (hubState.hosts || []).length;
-			const onboardingCmd = `git clone https://github.com/oscarka/deepseekharness-remotecontrol.git ~/deepseekharness-remote && cd ~/deepseekharness-remote && ./connect-host.sh "我的Mac" "${getToken()}"`;
-			if (hostsCount === 0) emptyStateHtml = `
-            <div style="padding:36px 20px;text-align:center;max-width:340px;margin:0 auto;">
-              <div style="font-size:32px;margin-bottom:8px;">💻</div>
-              <div style="font-size:15.5px;font-weight:700;color:var(--text);margin-bottom:6px;">先把你的电脑接进来</div>
-              <div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:14px;">
-                1. 复制下方专属接入命令<br/>
-                2. 在 Mac / Linux 终端粘贴运行<br/>
-                3. 自动同步本机 DeepSeek Harness 与 Antigravity IDE 会话
-              </div>
-              <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-                <button class="pill-action-btn primary" onclick="copyCodeText('${encodeURIComponent(onboardingCmd)}')">📋 复制一键接入命令</button>
-                <button class="pill-action-btn" onclick="openTurboGuideSheet()">⚡ 查看接入指南</button>
-              </div>
-              <div style="margin-top:12px;font-size:11.5px;color:var(--muted);">
-                💡 iPhone 请用 Safari 点底部「分享 → 添加到主屏幕」开启锁屏推送
-              </div>
-            </div>
-          `;
+			if ((hubState.hosts || []).length === 0) emptyStateHtml = renderAddHostPanelHtml({ isEmptyState: true });
 			else if (allSessions.length === 0) emptyStateHtml = `
             <div style="padding:40px 20px;text-align:center;">
               <div style="font-size:30px;margin-bottom:8px;">✨</div>
@@ -1812,18 +2020,21 @@ function initHubController() {
 				runningBar.classList.remove("show");
 				chatInput.disabled = true;
 				sendBtn.disabled = true;
-				chatInput.placeholder = "👀 当前会话为只读观测模式（或正在电脑独立终端运行）";
-				sendBtn.textContent = "👀 仅观测";
+				sendBtn.style.display = "none";
+				chatInput.placeholder = "👀 当前会话为观察模式（仅支持查看对话记录）";
+				sendBtn.textContent = "👀 仅观察";
 			} else if (s.status === "running") {
 				runningBar.classList.add("show");
 				if (!(s.capabilities?.canSteer !== false && s.harness !== "codex" && s.harness !== "claude")) {
 					chatInput.disabled = true;
 					sendBtn.disabled = true;
-					chatInput.placeholder = "⏳ 当前引擎正在执行中（不支持中途插话，如需修改请点上方停止）";
+					sendBtn.style.display = "none";
+					chatInput.placeholder = "⏳ 当前后端正在执行中（不支持实时插话，可点击上方停止）";
 					sendBtn.textContent = "🟢 执行中";
 				} else {
 					chatInput.disabled = false;
 					sendBtn.disabled = false;
+					sendBtn.style.display = "";
 					chatInput.placeholder = "⚡ 实时插话 (Steer)：补充指令将立即注入...";
 					sendBtn.textContent = "⚡ 插话";
 				}
@@ -1831,6 +2042,7 @@ function initHubController() {
 				runningBar.classList.remove("show");
 				chatInput.disabled = false;
 				sendBtn.disabled = false;
+				sendBtn.style.display = "";
 				chatInput.placeholder = s.controlMode === "idle-resumable" ? `发指令通过 ${s.harnessLabel || s.harness} CLI 继续对话...` : "发指令继续对话...";
 				sendBtn.textContent = "发送";
 			}
@@ -3187,11 +3399,16 @@ function initHubController() {
 			}
 			const codeStr = String(data.code);
 			const expiresAt = Number(data.expiresAt || Date.now() + 18e4);
+			const pairLink = `${location.origin}/?pair=${encodeURIComponent(codeStr)}`;
+			const qrSvgHtml = renderQrCodeSvg(pairLink, {
+				sizePx: 184,
+				margin: 3
+			});
 			const renderCountdown = () => {
 				const remainSec = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1e3));
 				const timerEl = document.getElementById("pairingCodeTimerText");
 				if (timerEl) {
-					timerEl.textContent = remainSec > 0 ? `⏳ 有效期剩余 ${remainSec} 秒（一次性使用）` : "⚠️ 该配对码已过期，请点击下方重新生成";
+					timerEl.textContent = remainSec > 0 ? `⏳ 有效期剩余 ${remainSec} 秒（扫码或输入一次后即刻生效）` : "⚠️ 该二维码/配对码已过期，请点击下方重新生成";
 					timerEl.style.color = remainSec > 0 ? "var(--primary)" : "var(--red)";
 				}
 				if (remainSec <= 0 && pairingCountdownTimer) {
@@ -3201,20 +3418,23 @@ function initHubController() {
 			};
 			body.innerHTML = `
           <div style="text-align:center;padding:8px 4px 14px;">
-            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
-              在新手机打开总控台网址，直接在解锁框输入以下 <strong>6 位字母/数字配对码</strong> 即可免输长密码登录：
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;">
+              用手机相机直接<strong>扫下方二维码</strong>即可免输密码登录（也可在手机端输入 6 位码）：
+            </div>
+            <div style="display:flex;justify-content:center;margin:8px 0 12px;">
+              ${qrSvgHtml}
             </div>
             <div
-              style="font-family:var(--mono);font-size:34px;font-weight:800;letter-spacing:8px;padding:16px 12px;border-radius:14px;background:var(--primary-soft);color:var(--primary);border:1px solid var(--border);user-select:all;"
+              style="font-family:var(--mono);font-size:28px;font-weight:800;letter-spacing:6px;padding:10px 12px;border-radius:12px;background:var(--primary-soft);color:var(--primary);border:1px solid var(--border);user-select:all;"
             >${esc(codeStr)}</div>
             <div id="pairingCodeTimerText" style="margin-top:10px;font-size:12.5px;font-weight:600;color:var(--primary);"></div>
             <div style="display:flex;gap:8px;margin-top:14px;">
               <button
                 class="primary-block-btn"
                 style="margin-top:0;flex:1;"
-                onclick="copyCodeText('${encodeURIComponent(codeStr)}', '📋 6 位配对码已复制')"
+                onclick="copyCodeText('${encodeURIComponent(pairLink)}', '📋 手机免密登录链接已复制')"
               >
-                📋 复制配对码
+                📋 复制免密链接
               </button>
               <button
                 class="choice-chip"
@@ -3259,21 +3479,135 @@ function initHubController() {
 		}
 		setTimeout(fetchState, 600);
 	}
+	function renderAddHostPanelHtml({ isEmptyState = false } = {}) {
+		const enrollment = hubState.enrollment || {};
+		const code = enrollment.code || "正在生成...";
+		const expiresAt = Number(enrollment.expiresAt || 0);
+		const remainMin = expiresAt > Date.now() ? Math.max(1, Math.ceil((expiresAt - Date.now()) / 6e4)) : 15;
+		const joinedCount = Number(enrollment.joinedCount || 0);
+		const originUrl = location.origin;
+		const oneLineCmd = `curl -fsSL ${originUrl}/install.sh | bash -s -- --code ${code}`;
+		const localRepoCmd = `./connect-host.sh --url ${originUrl} --code ${code}`;
+		return `
+        <div class="settings-card" style="padding:16px;${isEmptyState ? "max-width:440px;margin:20px auto;text-align:left;border:1.5px solid var(--primary);" : "margin-bottom:14px;"}">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+            <div>
+              <div style="font-size:15px;font-weight:800;color:var(--text);">
+                ${isEmptyState ? "💻 本机未接入 · 复制下方命令接入电脑" : "➕ 添加电脑（凭配对码加入，无需主密码）"}
+              </div>
+              <div style="font-size:12px;color:var(--muted);margin-top:2px;">
+                每台电脑自动分配独立凭证，可单独吊销；有效期内同一配对码可连加多台电脑
+              </div>
+            </div>
+            <button class="pill-action-btn" style="font-size:11.5px;padding:4px 10px;" onclick="refreshEnrollmentCode()">
+              🔄 刷新配对码
+            </button>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:120px;padding:8px 10px;border-radius:10px;background:var(--primary-soft);border:1px solid var(--border);">
+              <div style="font-size:11px;color:var(--muted);">当前电脑配对码</div>
+              <div style="font-family:var(--mono);font-size:17px;font-weight:800;color:var(--primary);letter-spacing:1.5px;margin-top:2px;">${esc(code)}</div>
+            </div>
+            <div style="padding:8px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
+              <div style="font-size:11px;color:var(--muted);">剩余有效期</div>
+              <div style="font-size:13.5px;font-weight:700;color:var(--text);margin-top:3px;">⏳ ${remainMin} 分钟</div>
+            </div>
+            <div style="padding:8px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
+              <div style="font-size:11px;color:var(--muted);">本码已加入</div>
+              <div style="font-size:13.5px;font-weight:700;color:var(--green);margin-top:3px;">💻 ${joinedCount} 台</div>
+            </div>
+          </div>
+
+          <div style="font-size:11.5px;font-weight:600;color:var(--text-secondary);margin-bottom:4px;">
+            在电脑终端执行这一行命令（自动安装、自动连上、开机自启）：
+          </div>
+          <div
+            style="font-family:var(--mono);font-size:11.5px;line-height:1.5;padding:10px 12px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);color:var(--text);word-break:break-all;margin-bottom:10px;user-select:all;"
+          >${esc(oneLineCmd)}</div>
+
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="pill-action-btn primary" onclick="copyCodeText('${encodeURIComponent(oneLineCmd)}', '📋 一行接入命令已复制！到电脑终端粘贴回车即可')">
+              📋 复制一行安装命令
+            </button>
+            <button class="pill-action-btn" onclick="copyCodeText('${encodeURIComponent(localRepoCmd)}', '📋 本地仓库接入命令已复制')">
+              📋 已克隆仓库用此条
+            </button>
+            <button class="pill-action-btn" onclick="openPairingCodeSheet()">
+              📱 手机扫码登录
+            </button>
+          </div>
+        </div>
+      `;
+	}
+	async function refreshEnrollmentCode() {
+		try {
+			const data = await (await apiFetch("/api/hosts/enrollment", {
+				method: "POST",
+				body: JSON.stringify({ forceNew: true })
+			})).json().catch(() => ({}));
+			if (data?.ok && data.enrollment) {
+				hubState.enrollment = data.enrollment;
+				lastRenderedSettingsKey = "";
+				renderAll();
+				showToast("🔄 已生成新的电脑配对码（15 分钟有效）");
+			}
+		} catch (err) {
+			showToast("❌ 刷新配对码失败：" + (err && err.message || err));
+		}
+	}
+	async function revokeHostCredential(hostId, hostName) {
+		if (!hostId) return;
+		if (!confirm(`确定要吊销电脑「${hostName || hostId}」的独立访问凭证吗？\n吊销后该电脑将立即无法上报或拉取指令（其他电脑不受影响）。`)) return;
+		try {
+			const data = await (await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/trust`, {
+				method: "POST",
+				body: JSON.stringify({ action: "revoke" })
+			})).json().catch(() => ({}));
+			if (data?.ok) {
+				showToast(`🚫 已吊销「${hostName || hostId}」的独立凭证`);
+				lastRenderedSettingsKey = "";
+				fetchState();
+			} else showToast("❌ 吊销失败：" + (data?.error || "请重试"));
+		} catch (err) {
+			showToast("❌ 吊销失败：" + (err && err.message || err));
+		}
+	}
+	async function unrevokeHostCredential(hostId, hostName) {
+		if (!hostId) return;
+		try {
+			if ((await (await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/trust`, {
+				method: "POST",
+				body: JSON.stringify({ action: "unrevoke" })
+			})).json().catch(() => ({})))?.ok) {
+				showToast(`✅ 已解除「${hostName || hostId}」的吊销状态`);
+				lastRenderedSettingsKey = "";
+				fetchState();
+			}
+		} catch (err) {
+			showToast("❌ 操作失败：" + (err && err.message || err));
+		}
+	}
 	function renderSettingsTab() {
 		const hosts = hubState.hosts || [];
 		const shares = hubState.shares || [];
 		const buildInfo = hubState.build || {};
 		const currentTk = getToken();
-		const onboardingCmd = `git clone https://github.com/oscarka/deepseekharness-remotecontrol.git ~/deepseekharness-remote && cd ~/deepseekharness-remote && ./connect-host.sh "新电脑名称" "${currentTk}"`;
+		const enrollmentCode = hubState.enrollment?.code || "";
+		const onboardingCmd = `curl -fsSL ${location.origin}/install.sh | bash -s -- --code ${enrollmentCode}`;
 		const settingsSignature = JSON.stringify({
 			themePref,
 			tokenTail: currentTk.slice(-4),
+			enrollmentCode,
+			joinedCount: hubState.enrollment?.joinedCount || 0,
 			pushCount: (hubState.pushSubscriptions || []).length,
 			build: buildInfo.uiBuild || buildInfo.version || "",
 			hosts: hosts.map((h) => ({
 				id: h.hostId,
 				name: h.hostName,
 				online: h.online,
+				trustStatus: h.trustStatus || h.trust?.status || "",
+				hasDedicatedToken: Boolean(h.hasDedicatedToken),
 				isFeishuActive: h.isFeishuActive,
 				remoteActive: h.remoteActive,
 				taskCount: (h.bridgeState?.tasks || []).length,
@@ -3308,24 +3642,38 @@ function initHubController() {
 		viewport.innerHTML = `
         <div class="settings-wrap">
           <div>
+            <div class="settings-group-title">添加电脑与手机扫码登录</div>
+            ${renderAddHostPanelHtml({ isEmptyState: false })}
+          </div>
+
+          <div>
             <div class="settings-group-title">已接入电脑实时看板 (${hosts.length} 台设备)</div>
             <div class="host-visual-grid">
-              ${hosts.map((h) => `
+              ${hosts.map((h) => {
+			const isRevoked = (h.trustStatus || h.trust?.status) === "revoked";
+			return `
                 <div class="host-visual-card ${h.isFeishuActive ? "active-feishu" : ""}">
                   <div class="host-visual-top">
                     <div>
                       <div style="font-size:15.5px;font-weight:700;display:flex;align-items:center;gap:6px;">
-                        <span class="status-dot ${h.online ? "" : "offline"}"></span>
+                        <span class="status-dot ${h.online && !isRevoked ? "" : "offline"}"></span>
                         <span>${esc(h.hostName)}</span>
                         <span style="font-size:11.5px;color:var(--muted);font-weight:500;">(${esc(h.platform || "macOS")} ${esc(h.arch || "")})</span>
                       </div>
                       <div style="font-size:11.5px;color:var(--muted);margin-top:3px;">
-                        🔒 指纹 ${esc(h.fingerprint || "已锁定")} · ${h.online ? "实时在线" : "离线 (" + formatTime(h.lastSeen) + ")"}
+                        🔒 指纹 ${esc(h.fingerprint || "已锁定")} · ${isRevoked ? "<span style=\"color:var(--red);font-weight:700;\">🚫 已吊销</span>" : h.online ? "实时在线" : "离线 (" + formatTime(h.lastSeen) + ")"} · ${h.hasDedicatedToken ? `🔑 独立凭证 (${esc(h.hostTokenPreview)})` : "🔑 管理员凭证"}
                       </div>
                     </div>
-                    <button class="pill-action-btn ${h.isFeishuActive ? "primary" : ""}" onclick="activateFeishuHost('${esc(h.hostId)}')">
-                      ${h.isFeishuActive ? "🎯 飞书当前主控" : "切飞书到这台"}
-                    </button>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                      <button class="pill-action-btn ${h.isFeishuActive ? "primary" : ""}" onclick="activateFeishuHost('${esc(h.hostId)}')">
+                        ${h.isFeishuActive ? "🎯 飞书当前主控" : "切飞书到这台"}
+                      </button>
+                      ${isRevoked ? `
+                        <button class="pill-action-btn" onclick="unrevokeHostCredential('${esc(h.hostId)}', '${esc(h.hostName)}')">恢复接入</button>
+                      ` : `
+                        <button class="pill-action-btn" style="color:var(--red);" onclick="revokeHostCredential('${esc(h.hostId)}', '${esc(h.hostName)}')">🚫 吊销</button>
+                      `}
+                    </div>
                   </div>
                   <div class="host-metrics-row">
                     <div class="metric-cell">
@@ -3348,22 +3696,59 @@ function initHubController() {
                     </button>
                   </div>
                   <div style="display:flex;flex-wrap:wrap;gap:6px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--hairline);font-size:11.5px;">
-                    <span style="padding:2px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">⚡ Antigravity IDE · 🟢 完全遥控</span>
-                    <span style="padding:2px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">🟣 DSH · 🟢 完全遥控</span>
+                    <span style="padding:2px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">🟣 DSH · ✅ 完整远控+审批</span>
+                    <span style="padding:2px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">⚡ Antigravity IDE · ✅ 完整远控+审批</span>
                     ${(h.bridgeState?.harnesses || []).map((ad) => `
                       <span style="padding:2px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">
-                        ${esc(ad.icon || "🔌")} ${esc(ad.label || ad.id)} · ${ad.hasBinary ? "🔵 可续聊" : ad.installed ? "👀 仅观测" : "⚪ 未安装"}
+                        ${esc(ad.icon || "🔌")} ${esc(ad.label || ad.id)} · ${ad.hasBinary ? "🔵 看会话/发指令/停止（审批计划中）" : ad.installed ? "👀 观察模式（审批需 DSH）" : "⚪ 未安装"}
                       </span>
                     `).join("")}
                   </div>
                   <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--text-secondary);">
-                    <span>飞书远程完成/异常卡片通知</span>
+                    <span>飞书远程完成/异常卡片通知（可选）</span>
                     <button class="pill-action-btn ${h.remoteActive ? "primary" : ""}" style="padding:4px 10px;font-size:11.5px;" onclick="toggleHostRemoteMode('${esc(h.hostId)}', ${!h.remoteActive})">
                       ${h.remoteActive ? "🔔 已开启" : "🔕 已关闭"}
                     </button>
                   </div>
                 </div>
-              `).join("") || `<div style="padding:24px;text-align:center;color:var(--muted);">暂未检测到在线电脑</div>`}
+              `;
+		}).join("") || `<div style="padding:24px;text-align:center;color:var(--muted);">暂未检测到在线电脑，请复制上方「添加电脑」命令在终端执行</div>`}
+            </div>
+          </div>
+
+          <div>
+            <div class="settings-group-title">各后端功能边界（诚实矩阵）</div>
+            <div class="settings-card" style="padding:12px 14px;overflow-x:auto;">
+              <table style="width:100%;border-collapse:collapse;font-size:12px;text-align:center;">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border);color:var(--muted);">
+                    <th style="text-align:left;padding:6px 4px;">后端</th>
+                    <th style="padding:6px 4px;">看会话</th>
+                    <th style="padding:6px 4px;">发指令</th>
+                    <th style="padding:6px 4px;">停止</th>
+                    <th style="padding:6px 4px;">手机审批</th>
+                    <th style="padding:6px 4px;">实时插话</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style="border-bottom:1px solid var(--hairline);">
+                    <td style="text-align:left;padding:7px 4px;font-weight:700;">DSH</td>
+                    <td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td>
+                  </tr>
+                  <tr style="border-bottom:1px solid var(--hairline);">
+                    <td style="text-align:left;padding:7px 4px;font-weight:700;">Antigravity IDE</td>
+                    <td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td>
+                  </tr>
+                  <tr style="border-bottom:1px solid var(--hairline);">
+                    <td style="text-align:left;padding:7px 4px;font-weight:700;">Claude Code</td>
+                    <td>✅</td><td>✅</td><td>✅</td><td style="color:var(--muted);">计划中</td><td>❌</td>
+                  </tr>
+                  <tr>
+                    <td style="text-align:left;padding:7px 4px;font-weight:700;">Codex</td>
+                    <td>✅</td><td>✅</td><td>✅</td><td style="color:var(--muted);">计划中</td><td>❌</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -4554,6 +4939,10 @@ function initHubController() {
 		openPairingCodeSheet,
 		closePairingCodeSheet,
 		generateNewPairingCode,
+		renderAddHostPanelHtml,
+		refreshEnrollmentCode,
+		revokeHostCredential,
+		unrevokeHostCredential,
 		jumpToSessionFiles,
 		deleteTargetSession,
 		renderSettingsTab,
@@ -4612,8 +5001,26 @@ function initHubController() {
 	setupOverlayGestures();
 	setupChatScrollWatcher();
 	setupInstallHint();
-	fetchState();
-	connectSSE();
+	if (queryPairCode) (async () => {
+		try {
+			const exRes = await fetch("/api/pairing/exchange", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ code: queryPairCode.toUpperCase() })
+			});
+			const exData = await exRes.json().catch(() => ({}));
+			if (exRes.ok && exData.token) {
+				localStorage.setItem("dsh_hub_token", exData.token);
+				showToast("🔓 扫码登录成功");
+			} else showToast("⚠️ 扫码配对码已过期或无效，请重新扫码");
+		} catch {}
+		await fetchState();
+		connectSSE();
+	})();
+	else {
+		fetchState();
+		connectSSE();
+	}
 	setInterval(() => {
 		if (!sseConnected || Date.now() - lastSseEventAt > 15e3) fetchState();
 	}, 5e3);

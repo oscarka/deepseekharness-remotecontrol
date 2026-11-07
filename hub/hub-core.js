@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, randomInt } from 'node:crypto'
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { generateOrLoadVapidKeys, sendWebPushNotification } from './web-push.js'
@@ -29,6 +29,7 @@ export class HubCore {
     this.shares = new Map()
     this.pairingCodes = new Map()
     this.pairingFailBuckets = new Map()
+    this.enrollment = null
     this.filePreviewBlobs = new Map()
     this.signalingMailboxes = new Map()
     this.commandResultsById = new Map()
@@ -135,6 +136,19 @@ export class HubCore {
       if (Array.isArray(data.shares)) {
         for (const sh of data.shares) {
           if (sh?.id) this.shares.set(sh.id, sh)
+        }
+      }
+      if (data.enrollment && typeof data.enrollment === 'object' && data.enrollment.code) {
+        if (!data.enrollment.expiresAt || now <= data.enrollment.expiresAt) {
+          this.enrollment = {
+            code: String(data.enrollment.code),
+            createdAt: Number(data.enrollment.createdAt) || now,
+            expiresAt: Number(data.enrollment.expiresAt) || now + 15 * 60_000,
+            joinedCount: Number(data.enrollment.joinedCount) || 0,
+            joinedHostIds: Array.isArray(data.enrollment.joinedHostIds) ? data.enrollment.joinedHostIds : [],
+            failedAttempts: Number(data.enrollment.failedAttempts) || 0,
+            revoked: Boolean(data.enrollment.revoked),
+          }
         }
       }
     } catch {
@@ -306,6 +320,7 @@ export class HubCore {
         snapshots: [...this.snapshots.values()],
         shares: [...this.shares.values()],
         approvalLedger: [...this.approvalLedger.entries()],
+        enrollment: this.enrollment,
       }
       await writeFile(this.stateFile, JSON.stringify(payload), 'utf8')
     } catch {
@@ -343,6 +358,9 @@ export class HubCore {
         fileCount: Number(dsh.fileCount) || 0,
         trustStatus: trust.status || 'unpinned',
         fingerprint: trust.pinnedFingerprint || host.identity?.fingerprint || '',
+        hasDedicatedToken: Boolean(host.hostToken),
+        hostTokenPreview: host.hostTokenPreview || '',
+        hostTokenCreatedAt: host.hostTokenCreatedAt || 0,
       })
     }
     return list
@@ -671,6 +689,7 @@ export class HubCore {
       pushSubscriptions: this.listPushSubscriptions(),
       pushHistory: this.pushHistory.slice(-10).reverse(),
       stats: this.getUsageStats(),
+      enrollment: this.getOrCreateEnrollmentCode(),
       hosts,
       snapshots,
       migrations,
@@ -1098,7 +1117,10 @@ export class HubCore {
     const record = this.hosts.get(hostId)
     if (!record) return { ok: false, error: `Host not found: ${hostId}` }
     const now = this.now()
-    if (action === 'revoke') {
+    if (action === 'revoke' || action === 'revoke_token') {
+      record.hostToken = ''
+      record.hostTokenPreview = ''
+      record.hostTokenRevokedAt = now
       record.trust = {
         ...(record.trust ?? {}),
         status: 'revoked',
@@ -1109,7 +1131,20 @@ export class HubCore {
         this.activeHostId = nextHost?.hostId || ''
       }
       void this.persist()
-      return { ok: true, hostId, trust: record.trust }
+      return { ok: true, hostId, trust: record.trust, tokenRevoked: true }
+    }
+    if (action === 'rotate_token') {
+      const hostToken = `hst_${randomBytes(24).toString('hex')}`
+      record.hostToken = hostToken
+      record.hostTokenCreatedAt = now
+      record.hostTokenPreview = `${hostToken.slice(0, 8)}...${hostToken.slice(-4)}`
+      void this.persist()
+      return {
+        ok: true,
+        hostId,
+        hostToken,
+        hostTokenPreview: record.hostTokenPreview,
+      }
     }
     if (action === 'reset_pin' || action === 'unrevoke') {
       record.trust = {
@@ -1134,6 +1169,169 @@ export class HubCore {
     return { ok: false, error: `Unknown trust action: ${action}` }
   }
 
+  getOrCreateEnrollmentCode({ ttlMs = 15 * 60_000, forceNew = false } = {}) {
+    const now = this.now()
+    if (
+      !forceNew &&
+      this.enrollment &&
+      !this.enrollment.revoked &&
+      this.enrollment.expiresAt > now
+    ) {
+      return {
+        code: this.enrollment.code,
+        createdAt: this.enrollment.createdAt,
+        expiresAt: this.enrollment.expiresAt,
+        joinedCount: this.enrollment.joinedCount || 0,
+        joinedHostIds: [...(this.enrollment.joinedHostIds || [])],
+      }
+    }
+    let raw = ''
+    for (let i = 0; i < 8; i += 1) {
+      raw += PAIRING_ALPHABET[randomInt(0, PAIRING_ALPHABET.length)]
+    }
+    const formatted = `${raw.slice(0, 4)}-${raw.slice(4, 8)}`
+    this.enrollment = {
+      code: formatted,
+      createdAt: now,
+      expiresAt: now + ttlMs,
+      joinedCount: 0,
+      joinedHostIds: [],
+      failedAttempts: 0,
+      revoked: false,
+    }
+    void this.persist()
+    return {
+      code: this.enrollment.code,
+      createdAt: this.enrollment.createdAt,
+      expiresAt: this.enrollment.expiresAt,
+      joinedCount: 0,
+      joinedHostIds: [],
+    }
+  }
+
+  joinHostWithCode({
+    code = '',
+    hostId = '',
+    hostName = '',
+    platform = '',
+    arch = '',
+    clientKey = 'global',
+  } = {}) {
+    const now = this.now()
+    const bucketKey = `join:${String(clientKey || 'global').trim() || 'global'}`
+    const bucket = (this.pairingFailBuckets.get(bucketKey) || []).filter(ts => now - ts < PAIRING_RATE_WINDOW_MS)
+    if (bucket.length >= PAIRING_MAX_FAILS_PER_WINDOW) {
+      this.pairingFailBuckets.set(bucketKey, bucket)
+      return { ok: false, rateLimited: true, statusCode: 429, error: '尝试次数过多，请 1 分钟后再试' }
+    }
+
+    const recordFail = () => {
+      bucket.push(now)
+      this.pairingFailBuckets.set(bucketKey, bucket)
+      if (this.enrollment && !this.enrollment.revoked) {
+        this.enrollment.failedAttempts = (this.enrollment.failedAttempts || 0) + 1
+        if (this.enrollment.failedAttempts >= 8) {
+          this.enrollment.revoked = true
+        }
+        void this.persist()
+      }
+    }
+
+    const normalizedInput = String(code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+    if (!normalizedInput) {
+      recordFail()
+      return { ok: false, statusCode: 401, error: '配对码不能为空' }
+    }
+    if (!this.enrollment || this.enrollment.revoked) {
+      recordFail()
+      return { ok: false, statusCode: 401, error: '配对码无效或已失效，请在控制台刷新配对码' }
+    }
+    if (now > this.enrollment.expiresAt) {
+      recordFail()
+      return { ok: false, statusCode: 401, error: '配对码已过期，请在控制台刷新配对码' }
+    }
+    const normalizedExpected = String(this.enrollment.code).toUpperCase().replace(/[^A-Z0-9]/g, '')
+    const a = Buffer.from(normalizedInput)
+    const b = Buffer.from(normalizedExpected)
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      recordFail()
+      return { ok: false, statusCode: 401, error: '配对码不正确' }
+    }
+
+    const rawId = String(hostId || hostName || `mac-${randomBytes(3).toString('hex')}`)
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-_]/g, '')
+    const cleanHostId = rawId || `mac-${randomBytes(3).toString('hex')}`
+    const cleanHostName = String(hostName || cleanHostId).trim() || cleanHostId
+    const hostToken = `hst_${randomBytes(24).toString('hex')}`
+    const hostTokenPreview = `${hostToken.slice(0, 8)}...${hostToken.slice(-4)}`
+
+    const existing = this.hosts.get(cleanHostId)
+    const record = existing ?? {
+      hostId: cleanHostId,
+      hostName: cleanHostName,
+      platform: String(platform || ''),
+      arch: String(arch || ''),
+      identity: null,
+      trust: { status: 'unpinned', pinnedPublicKey: '', pinnedFingerprint: '' },
+      lastSeen: now,
+      dshStats: {},
+      bridgeState: { tasks: [], approvals: [], workspaces: [] },
+      commands: [],
+      recentResults: [],
+    }
+    record.hostName = cleanHostName
+    if (platform) record.platform = String(platform)
+    if (arch) record.arch = String(arch)
+    record.lastSeen = now
+    record.hostToken = hostToken
+    record.hostTokenCreatedAt = now
+    record.hostTokenPreview = hostTokenPreview
+    if (record.trust?.status === 'revoked') {
+      record.trust = { status: 'unpinned', pinnedPublicKey: '', pinnedFingerprint: '' }
+    }
+    this.hosts.set(cleanHostId, record)
+    if (!this.activeHostId) {
+      this.activeHostId = cleanHostId
+    }
+
+    if (!Array.isArray(this.enrollment.joinedHostIds)) {
+      this.enrollment.joinedHostIds = []
+    }
+    if (!this.enrollment.joinedHostIds.includes(cleanHostId)) {
+      this.enrollment.joinedHostIds.push(cleanHostId)
+    }
+    this.enrollment.joinedCount = this.enrollment.joinedHostIds.length
+    this.pairingFailBuckets.delete(bucketKey)
+    void this.persist()
+    this.emitStateChange('host_joined')
+
+    return {
+      ok: true,
+      hostId: cleanHostId,
+      hostName: cleanHostName,
+      hostToken,
+      hostTokenPreview,
+      joinedCount: this.enrollment.joinedCount,
+      expiresAt: this.enrollment.expiresAt,
+    }
+  }
+
+  verifyHostCredential(hostId, candidateToken) {
+    const cleanHostId = String(hostId ?? '').trim()
+    const candidate = String(candidateToken ?? '').trim()
+    if (!cleanHostId || !candidate) return false
+    const record = this.hosts.get(cleanHostId)
+    if (!record || !record.hostToken) return false
+    if (record.trust?.status === 'revoked') return false
+    const a = Buffer.from(candidate)
+    const b = Buffer.from(String(record.hostToken))
+    if (a.length !== b.length) return false
+    return timingSafeEqual(a, b)
+  }
+
   createPairingCode({ hostId = '', ttlMs = 5 * 60_000 } = {}) {
     const now = this.now()
     for (const [k, v] of this.pairingCodes) {
@@ -1148,6 +1346,7 @@ export class HubCore {
       hostId: hostId || this.activeHostId || '',
       createdAt: now,
       expiresAt: now + ttlMs,
+      failedAttempts: 0,
     }
     this.pairingCodes.set(code, entry)
     return entry
@@ -1165,6 +1364,12 @@ export class HubCore {
     const recordFail = () => {
       bucket.push(now)
       this.pairingFailBuckets.set(bucketKey, bucket)
+      for (const [k, v] of this.pairingCodes) {
+        v.failedAttempts = (v.failedAttempts || 0) + 1
+        if (v.failedAttempts >= PAIRING_MAX_FAILS_PER_WINDOW) {
+          this.pairingCodes.delete(k)
+        }
+      }
     }
 
     const clean = String(code ?? '').trim().toUpperCase()

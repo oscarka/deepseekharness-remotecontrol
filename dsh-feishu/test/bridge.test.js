@@ -1354,6 +1354,319 @@ test('45s mid-turn DSH lock window, stale 0-byte lock recovery & server-authorit
   }
 })
 
+test('P0 Security & Container Suite: refuse startup without password, spoof-proof real IP rate limit, non-root Dockerfile & clean connect-host.sh', async () => {
+  const {
+    createHubServer,
+    resolveClientIp,
+    validateHubStartupToken,
+    formatStartupBanner,
+  } = await import('../../hub/server.js')
+  const { HubCore } = await import('../../hub/hub-core.js')
+  const { readFile } = await import('node:fs/promises')
+  const { dirname } = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  const { spawnSync } = await import('node:child_process')
+
+  // 1. Refuse startup without password
+  const emptyCheck = validateHubStartupToken('')
+  assert.equal(emptyCheck.ok, false)
+  assert.match(emptyCheck.error, /拒绝无密码启动/)
+
+  assert.throws(
+    () => createHubServer({ hub: new HubCore(), token: '', requireToken: true }),
+    /拒绝无密码启动/,
+  )
+
+  // Verify running `node hub/server.js` CLI without HUB_TOKEN exits with code 1
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+  const cliProc = spawnSync(process.execPath, [join(repoRoot, 'hub', 'server.js')], {
+    env: { PATH: process.env.PATH, HUB_TOKEN: '', FEISHU_HUB_TOKEN: '' },
+    encoding: 'utf8',
+    timeout: 5000,
+  })
+  assert.equal(cliProc.status, 1)
+  assert.match(cliProc.stderr, /拒绝无密码启动/)
+
+  // 2. Startup banner prints URL + Password + Data path
+  const banner = formatStartupBanner({
+    host: '0.0.0.0',
+    port: 8080,
+    token: 'my-secret-pw',
+    stateFile: '/data/dsh-hub-state.json',
+  })
+  assert.match(banner, /http:\/\/localhost:8080/)
+  assert.match(banner, /my-secret-pw/)
+  assert.match(banner, /\/data\/dsh-hub-state\.json/)
+
+  // 3. Real IP resolution: ignore spoofed X-Forwarded-For when trustProxy=false; take rightmost hop when trustProxy=true
+  assert.equal(
+    resolveClientIp({ 'x-forwarded-for': '1.2.3.4, 5.6.7.8' }, '::ffff:192.168.1.50', { trustProxy: false }),
+    '192.168.1.50',
+  )
+  assert.equal(
+    resolveClientIp({ 'x-forwarded-for': 'spoofed-1.1.1.1, 203.0.113.99' }, '10.0.0.1', { trustProxy: true }),
+    '203.0.113.99',
+  )
+
+  // Verify spoofed X-Forwarded-For rotation cannot bypass rate limiting on /api/pairing/exchange
+  const hub = new HubCore()
+  const { fetchAdapter } = createHubServer({
+    hub,
+    token: 'admin-master-secret',
+    requireToken: true,
+    trustProxy: false,
+  })
+  const pairing = hub.createPairingCode()
+  for (let i = 0; i < 10; i += 1) {
+    const res = await fetchAdapter('http://localhost/api/pairing/exchange', {
+      method: 'POST',
+      headers: { 'x-forwarded-for': `203.0.113.${i + 1}` },
+      remoteAddress: '198.51.100.77',
+      body: { code: 'WRONG1' },
+    })
+    assert.equal(res.status, 401)
+  }
+  // 11th attempt even with a new spoofed X-Forwarded-For is blocked with 429 AND the active code was burned
+  const blockedRes = await fetchAdapter('http://localhost/api/pairing/exchange', {
+    method: 'POST',
+    headers: { 'x-forwarded-for': '203.0.113.250' },
+    remoteAddress: '198.51.100.77',
+    body: { code: pairing.code },
+  })
+  assert.equal(blockedRes.status, 429)
+
+  // 4. Verify Dockerfile (non-root USER node, /data volume, healthcheck) & connect-host.sh has no author URL
+  const dockerfile = await readFile(join(repoRoot, 'Dockerfile'), 'utf8')
+  assert.match(dockerfile, /USER node/)
+  assert.match(dockerfile, /VOLUME \["\/data"\]/)
+  assert.match(dockerfile, /ENV HUB_STATE_FILE=\/data\/dsh-hub-state\.json/)
+  assert.match(dockerfile, /HEALTHCHECK/)
+
+  const connectScript = await readFile(join(repoRoot, 'connect-host.sh'), 'utf8')
+  assert.doesNotMatch(connectScript, /dsh-remotecontrol-hub-\d{6,}/)
+  assert.match(connectScript, /DEFAULT_HUB_URL=""/)
+})
+
+test('P1 & P2 Onboarding Loop: multi-use enrollment code, per-host independent token & revocation, /install.sh, QR SVG & honest capability matrix', async () => {
+  const { createHubServer } = await import('../../hub/server.js')
+  const { HubCore } = await import('../../hub/hub-core.js')
+  const { DEFAULT_HARNESS_CAPABILITIES, summarizeInstalledHarnesses } = await import('../lib/harness-router.js')
+  const { renderQrCodeSvg } = await import('../../hub/web/src/utils/qrcode.js')
+  const { readFile } = await import('node:fs/promises')
+  const { dirname } = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  const { spawnSync } = await import('node:child_process')
+
+  const root = await mkdtemp(join(tmpdir(), 'dsh-p1-onboarding-'))
+  try {
+    const stateFile = join(root, 'data', 'dsh-hub-state.json')
+    const hub = new HubCore({ stateFile })
+    await hub.init()
+    const { server, fetchAdapter } = createHubServer({
+      hub,
+      token: 'master-admin-pw-999',
+      requireToken: true,
+    })
+
+    // 1. GET /install.sh dynamically injects the Hub's origin URL
+    const installScriptRes = await fetchAdapter('https://rc.my-domain.com/install.sh', {
+      method: 'GET',
+      headers: { host: 'rc.my-domain.com', 'x-forwarded-proto': 'https' },
+    })
+    assert.equal(installScriptRes.status, 200)
+    const installScriptText = await installScriptRes.text()
+    assert.match(installScriptText, /DEFAULT_HUB_URL="https:\/\/rc\.my-domain\.com"/)
+
+    // 2. Admin fetches /api/state -> receives active multi-use enrollment code
+    const stateRes1 = await fetchAdapter('http://localhost/api/state', {
+      method: 'GET',
+      headers: { authorization: 'Bearer master-admin-pw-999' },
+    })
+    assert.equal(stateRes1.status, 200)
+    const stateData1 = await stateRes1.json()
+    const enrollCode = stateData1.enrollment?.code
+    assert.ok(enrollCode && /^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(enrollCode))
+    assert.equal(stateData1.enrollment.joinedCount, 0)
+
+    // 3. Computer #1 joins using ONLY the enrollment code (no master password!)
+    const join1Res = await fetchAdapter('http://localhost/api/hosts/join', {
+      method: 'POST',
+      remoteAddress: '10.0.0.11',
+      body: {
+        code: enrollCode,
+        hostId: 'macbook-pro-1',
+        hostName: 'MacBook Pro 1',
+        platform: 'Darwin',
+        arch: 'arm64',
+      },
+    })
+    assert.equal(join1Res.status, 200)
+    const join1 = await join1Res.json()
+    assert.equal(join1.ok, true)
+    assert.equal(join1.hostId, 'macbook-pro-1')
+    assert.equal(join1.joinedCount, 1)
+    assert.match(join1.hostToken, /^hst_[0-9a-f]{48}$/)
+
+    // 4. Computer #2 joins using the SAME enrollment code (multi-use within validity window, no restart!)
+    const join2Res = await fetchAdapter('http://localhost/api/hosts/join', {
+      method: 'POST',
+      remoteAddress: '10.0.0.12',
+      body: {
+        code: enrollCode.replace('-', '').toLowerCase(),
+        hostId: 'mac-mini-2',
+        hostName: 'Mac mini 2',
+        platform: 'Darwin',
+        arch: 'arm64',
+      },
+    })
+    assert.equal(join2Res.status, 200)
+    const join2 = await join2Res.json()
+    assert.equal(join2.ok, true)
+    assert.equal(join2.hostId, 'mac-mini-2')
+    assert.equal(join2.joinedCount, 2)
+    assert.notEqual(join2.hostToken, join1.hostToken)
+
+    // 5. Per-host token isolation:
+    // - Computer #1's hostToken CAN send heartbeats for macbook-pro-1
+    const hb1Ok = await fetchAdapter('http://localhost/api/heartbeat', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${join1.hostToken}` },
+      body: {
+        hostId: 'macbook-pro-1',
+        hostName: 'MacBook Pro 1',
+        bridgeState: { tasks: [{ id: 't1', title: 'Task 1', status: 'running', transcript: [] }] },
+      },
+    })
+    assert.equal(hb1Ok.status, 200)
+
+    // - Computer #1's hostToken CANNOT spoof heartbeats for mac-mini-2 (401)
+    const hbSpoof = await fetchAdapter('http://localhost/api/heartbeat', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${join1.hostToken}` },
+      body: {
+        hostId: 'mac-mini-2',
+        hostName: 'Spoofed',
+        bridgeState: { tasks: [] },
+      },
+    })
+    assert.equal(hbSpoof.status, 401)
+
+    // - Computer #1's hostToken CANNOT access admin /api/state or queue commands (401)
+    const adminSpoof = await fetchAdapter('http://localhost/api/state', {
+      method: 'GET',
+      headers: { authorization: `Bearer ${join1.hostToken}` },
+    })
+    assert.equal(adminSpoof.status, 401)
+
+    // - /api/state never leaks raw hostToken
+    const stateRes2 = await fetchAdapter('http://localhost/api/state', {
+      method: 'GET',
+      headers: { authorization: 'Bearer master-admin-pw-999' },
+    })
+    const stateText2 = await stateRes2.text()
+    assert.doesNotMatch(stateText2, new RegExp(join1.hostToken))
+    assert.doesNotMatch(stateText2, new RegExp(join2.hostToken))
+
+    // 6. Revoking Computer #1 immediately invalidates its hostToken while Computer #2 continues working
+    const revokeRes = await fetchAdapter('http://localhost/api/hosts/macbook-pro-1/trust', {
+      method: 'POST',
+      headers: { authorization: 'Bearer master-admin-pw-999' },
+      body: { action: 'revoke' },
+    })
+    assert.equal(revokeRes.status, 200)
+
+    const hb1AfterRevoke = await fetchAdapter('http://localhost/api/heartbeat', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${join1.hostToken}` },
+      body: { hostId: 'macbook-pro-1', bridgeState: { tasks: [] } },
+    })
+    assert.equal(hb1AfterRevoke.status, 401)
+
+    const hb2StillOk = await fetchAdapter('http://localhost/api/heartbeat', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${join2.hostToken}` },
+      body: { hostId: 'mac-mini-2', bridgeState: { tasks: [] } },
+    })
+    assert.equal(hb2StillOk.status, 200)
+
+    // 7. Data persistence across Hub restart
+    await hub.persist()
+    const hubRestarted = new HubCore({ stateFile })
+    await hubRestarted.init()
+    assert.equal(hubRestarted.hosts.size, 2)
+    assert.equal(hubRestarted.verifyHostCredential('mac-mini-2', join2.hostToken), true)
+    assert.equal(hubRestarted.verifyHostCredential('macbook-pro-1', join1.hostToken), false)
+
+    // 8. End-to-end test of `connect-host.sh --dry-run --url ... --code ...` via in-process HTTP or script
+    const dshHome = join(root, 'fake-dsh-home')
+    const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+    // Test connect-host.sh with --token and --dry-run (works even inside sandboxed environments without loopback port binding)
+    const scriptRes = spawnSync(
+      'bash',
+      [
+        join(repoRoot, 'connect-host.sh'),
+        '--url',
+        'https://rc.my-domain.com',
+        '--token',
+        join2.hostToken,
+        '--name',
+        'CLI-Test-Mac',
+        '--id',
+        'cli-test-mac',
+        '--dry-run',
+      ],
+      {
+        env: { ...process.env, DSH_HOME: dshHome },
+        encoding: 'utf8',
+        timeout: 8000,
+      },
+    )
+    assert.equal(scriptRes.status, 0, scriptRes.stderr || scriptRes.stdout)
+    const envWritten = await readFile(join(dshHome, 'feishu.env'), 'utf8')
+    assert.match(envWritten, /FEISHU_HOST_ID=cli-test-mac/)
+    assert.match(envWritten, /FEISHU_HUB_URL=https:\/\/rc\.my-domain\.com/)
+    assert.match(envWritten, new RegExp(`FEISHU_HUB_TOKEN=${join2.hostToken}`))
+
+    // Also verify connect-host.sh refuses to run when neither --url nor existing FEISHU_HUB_URL is present
+    const emptyHome = join(root, 'empty-dsh-home')
+    const noUrlRes = spawnSync(
+      'bash',
+      [join(repoRoot, 'connect-host.sh'), '--dry-run'],
+      {
+        env: { PATH: process.env.PATH, HOME: emptyHome, DSH_HOME: emptyHome, FEISHU_HUB_URL: '' },
+        encoding: 'utf8',
+        timeout: 5000,
+      },
+    )
+    assert.notEqual(noUrlRes.status, 0)
+    assert.match(noUrlRes.stdout + noUrlRes.stderr, /未指定总控台地址/)
+
+    // 9. Honest capability matrix & tool detection summary & QR SVG
+    assert.equal(DEFAULT_HARNESS_CAPABILITIES.dsh.canApprove, true)
+    assert.equal(DEFAULT_HARNESS_CAPABILITIES.dsh.canSteer, true)
+    assert.equal(DEFAULT_HARNESS_CAPABILITIES.codex.canApprove, false)
+    assert.equal(DEFAULT_HARNESS_CAPABILITIES.codex.canSteer, false)
+    assert.equal(DEFAULT_HARNESS_CAPABILITIES.codex.approvalStatus, 'planned')
+    assert.equal(DEFAULT_HARNESS_CAPABILITIES.claude.canApprove, false)
+    assert.equal(DEFAULT_HARNESS_CAPABILITIES.claude.canSteer, false)
+
+    const codexOnly = summarizeInstalledHarnesses({ hasCodex: true })
+    assert.equal(codexOnly.mode, 'observe')
+    assert.match(codexOnly.summary, /当前为观察模式，审批功能需要 DSH/)
+
+    const fullDsh = summarizeInstalledHarnesses({ hasDsh: true, hasCodex: true })
+    assert.equal(fullDsh.mode, 'full')
+    assert.match(fullDsh.summary, /完整远控模式/)
+
+    const qrSvg = renderQrCodeSvg('https://rc.example.com/?pair=A7K9M2')
+    assert.match(qrSvg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/)
+    assert.match(qrSvg, /<path d="M/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+
 
 
 

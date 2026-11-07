@@ -5,228 +5,144 @@
 <h1 align="center">DSH Remote Control</h1>
 
 <p align="center">
-  把正在运行的 AI 编码任务接到手机与飞书：看进度、批准工具调用、插话、继续。<br/>
-  纯出站长连接，不开公网端口，不经过任何第三方中继服务器。
+  <strong>在手机上盯着并指挥你的 AI 编码任务——看进度、发指令、停止，装了 DSH 还能直接批准危险操作。</strong><br/>
+  不是“又一个 ChatGPT 客户端”，也不是“托管服务”。数据留在你自己机器上，控制台放哪由你决定。
 </p>
 
 <p align="center">
+  <a href="https://railway.app/template?referralCode=dsh-remote"><img src="https://railway.app/button.svg" alt="Deploy on Railway" height="28" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3B82F6.svg" alt="License: MIT" /></a>
+  <img src="https://img.shields.io/badge/arch-amd64%20%7C%20arm64%20%7C%20armv7-10B981.svg" alt="Multi-Arch" />
   <img src="https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white" alt="Node >= 20" />
-  <img src="https://img.shields.io/badge/self--hosted-yes-0EA5E9.svg" alt="Self-hosted" />
-  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-22C55E.svg" alt="PRs Welcome" /></a>
+  <a href="SECURITY.md"><img src="https://img.shields.io/badge/self--hosted-zero--trust-0EA5E9.svg" alt="Self-Hosted" /></a>
 </p>
 
 <p align="center">
-  <a href="README.en.md">English</a> · <a href="#快速开始">快速开始</a> · <a href="#功能">功能</a> · <a href="SECURITY.md">安全模型</a> · <a href="#路线图">路线图</a>
+  <img src="docs/assets/demo.svg" alt="DSH Remote Control 7-Step Flow Demo" width="100%" />
 </p>
 
 ---
 
-## 它解决什么问题
+## 1. 支持矩阵（功能边界诚实版）
 
-你在电脑上让 AI 跑一个重构任务，然后出门。接下来一小时内，它可能：
+界面严格按这张表渲染：**做不到的就不显示按钮，绝不放假按钮**。安装时会自动检测本机已装的工具并明确提示当前所处模式。
 
-- 卡在一个工具调用上，等你点「批准」；
-- 跑完了，但你想立刻知道结果；
-- 跑偏了，你想马上补一句「别动测试文件」。
+| 后端工具 | 看会话 | 发指令 | 停止 | **手机审批** | 实时插话 |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **DSH (DeepSeek Harness)** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Antigravity IDE** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Claude Code** | ✅ | ✅ | ✅ | 计划中 | ❌ |
+| **Codex** | ✅ | ✅ | ✅ | 计划中 | ❌ |
 
-飞书机器人 + 一个自托管的总控台，把这三件事搬到手机上。**电脑不需要公网 IP，路由器不需要端口映射**——所有连接都是本机主动向外发起的。
+> 只装了 Codex 或 Claude Code 时，安装脚本会直接提示：“当前为观察模式，审批功能需要 DSH（支持看会话、发指令、停止）”。
 
-## 架构
+---
 
-```mermaid
-flowchart LR
-    subgraph Phone["手机端"]
-        FS["飞书 App"]
-        WEB["浏览器 / PWA"]
-    end
+## 2. 30 秒跑起来（Docker 一条命令）
 
-    subgraph Feishu["飞书开放平台"]
-        GW["长连接网关"]
-    end
+镜像支持多架构（`linux/amd64`、`linux/arm64`、`linux/arm/v7`），苹果电脑、普通服务器、NAS、树莓派都能直接跑；强制要求设置管理员密码 `HUB_TOKEN`（不带密码拒绝启动），并挂载 `/data` 持久化数据卷：
 
-    subgraph Host["你的电脑（可多台）"]
-        PL["dsh-feishu 插件"]
-        AG["DSH / Codex / Claude"]
-        PL <--> AG
-    end
-
-    subgraph Hub["自托管 Hub（可选）"]
-        HB["Web 总控台<br/>配对 / 信令 / 加密分享"]
-    end
-
-    FS <-->|"WebSocket"| GW
-    GW <-->|"出站 WSS，无需公网端口"| PL
-    WEB <-->|"HTTPS + HUB_TOKEN"| HB
-    HB <-->|"心跳 / 指令 / 快照"| PL
-    HB -->|"Web Push（VAPID）"| APNS["APNs"]
-    APNS --> FS
+```bash
+docker run -d --name dsh-hub \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -v dsh-hub-data:/data \
+  -e HUB_TOKEN="自定义一个强密码" \
+  ghcr.io/oscarka/deepseekharness-remotecontrol:latest
 ```
 
-- **只要飞书**：跑 `dsh-feishu` 插件就够了，Hub 可以完全不部署。
-- **要远程建会话、多机切换、网页回放、锁屏推送**：加一个 Hub（Cloud Run 或本地都行）。
-
-## 快速开始
-
-### 30 秒：先看看界面（不需要飞书）
-
-Hub 零运行时依赖，克隆下来直接跑：
+或者使用源码直接启动（零第三方运行时依赖）：
 
 ```bash
 git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
 cd deepseekharness-remotecontrol
-
-HUB_TOKEN="$(openssl rand -hex 16)" PORT=8080 npm start
-# 打开 http://localhost:8080 ，用上面这个 HUB_TOKEN 登录
+HUB_TOKEN="自定义一个强密码" PORT=8080 npm start
 ```
 
-或者用 Docker：
+---
 
-```bash
-docker build -t dsh-remote .
-docker run --rm -p 8080:8080 -e HUB_TOKEN=your-strong-token dsh-remote
-```
+## 3. 完整七步流程（唯一主线）
 
-### 10 分钟：接入飞书
+无论你把控制台部署在哪里，使用流程只有这一条主线（**不需要配置飞书也能完整使用**）：
+
+| 步骤 | 在哪台设备 | 做什么 |
+|:---:|---|---|
+| **①** | 部署平台 | 部署控制台，得到 **一个网址 + 一个密码**（启动日志会直接打印） |
+| **②** | **电脑** | 打开网址，输入管理员密码登录 |
+| **③** | **电脑** | 页面提示“本机未接入”，给出一条 **安装命令** + 一个 **配对码** |
+| **④** | **电脑** | 复制命令到终端执行（自动装好、自动连上、注册开机自启） |
+| **⑤** | **电脑** | 页面自动刷新，出现这台电脑 |
+| **⑥** | **手机** | 打开同一网址，**扫电脑上的二维码**直接登录（不用在手机上输密码） |
+| **⑦** | **手机** | 看任务、发指令、停止、批准危险操作（取决于后端能力） |
+
+- **加第二台电脑**：重复 ②–⑤，直接用同一个配对码（15 分钟有效期内可多次使用），无需重启控制台。
+- **三个东西各司其职**：**网址**是唯一入口，**密码**证明你是主人，**配对码**让电脑加入并为每台电脑签发可单独吊销的独立凭证。
+
+---
+
+## 4. 部署方式选择表（六条路，同一个终点）
+
+所有部署方式最后都汇入上面的**七步流程**。完整配置详见 **[docs/self-hosting.md](docs/self-hosting.md)**：
+
+| 你的情况 | 方案 | 成本 | 难度 | 入口 / 说明 |
+|---|---|---|:---:|---|
+| 小白，想最快试 | **Railway 一键部署** | 30 天免费试用，之后约 \$5/月 | ★ | [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template?referralCode=dsh-remote) |
+| 有云服务器 | **Docker + 域名 HTTPS** | 服务器本身 | ★★ | 使用仓库自带 `docker-compose.yml` + Caddy/Nginx |
+| 有域名、无公网 IP | **Cloudflare 固定隧道** | 域名年费 | ★★ | 本地跑 Docker，`cloudflared tunnel` 暴露 HTTPS |
+| 国内网络、要稳定 | **国内内网穿透服务** | 0 起（免费版有限制） | ★★ | 本地跑 Docker + cpolar / frp / natapp |
+| 能顺利登录 Tailscale | **Tailscale Funnel** | 0 | ★★★ | `tailscale serve` / `tailscale funnel`（国内登录可能需代理） |
+| 只在家用 | **局域网 / NAS / 树莓派** | 0 | ★ | 直接跑上面的 Docker 命令，手机连家庭 Wi-Fi 访问 |
 
 <details>
-<summary><b>第一步 · 创建飞书自建应用</b>（点开）</summary>
+<summary><b>可选扩展：同时接入飞书机器人通知与卡片控制</b>（点开查看）</summary>
 
-1. 在[飞书开放平台](https://open.feishu.cn/)创建**企业自建应用**，启用**机器人**能力。
-2. 申请最小权限集：
-   - `im:message.p2p_msg:readonly` —— 接收单聊消息
-   - `im:message:send_as_bot` —— 以机器人身份发消息
-   - （可选）群聊 @ 消息读取权限
-3. 事件订阅：添加 `im.message.receive_v1`，订阅方式选 **长连接**（不需要回调地址）。
-4. 发布版本并等管理员审核通过，然后把机器人加进你的单聊。
+不配飞书，网页与手机 PWA 功能一点不少。如果你希望在飞书里也收到任务完成卡片与审批提醒：
+1. 在[飞书开放平台](https://open.feishu.cn/)创建企业自建应用，启用机器人，申请 `im:message.p2p_msg:readonly` 与 `im:message:send_as_bot` 权限，事件订阅选择**长连接**并添加 `im.message.receive_v1`。
+2. 在本机 `~/.dsh/feishu.env` 中补充 `FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_ALLOWED_OPEN_IDS` 即可。
 
 </details>
 
-<details>
-<summary><b>第二步 · 在电脑上装插件并写配置</b>（点开）</summary>
+---
+
+## 5. 为什么手机审批目前只有 DSH / Antigravity 能用 + 路线图
+
+AI 编码工具的危险操作审批（如执行 `rm`、联网或写盘命令）需要工具本体暴露“执行前拦截挂钩（Pre-Tool Hook）”或进程内 RPC 接口：
+
+- **DSH 与 Antigravity IDE**：已内置实时插件/RPC 通道，因此能做到手机端一键批准/拒绝、45 秒超时保护与冲突拦截。
+- **后续审批扩展路线图（P3）**：
+  1. **Claude Code 审批（优先）** —— 官方提供 `PreToolUse` 执行前钩子与权限代理机制，技术路径明确。
+  2. **Codex 审批** —— 需从单次 CLI 续聊切换到常驻服务模式。
+  3. **通用终端兜底** —— 终端抓屏 + 远程按键注入，覆盖其余 CLI 工具。
+
+### 明确不做
+
+- ❌ **不做托管服务** —— 数据留在你自己的机器与控制台里。
+- ❌ **不做多渠道抽象（Telegram / 微信）** —— 保持轻量聚焦。
+- ❌ **不做多实例集群** —— 单实例 + `/data` 持久化卷就是最简单可靠的设计前提。
+
+---
+
+## 6. 安全说明
+
+- **不带密码拒绝启动**：控制台未配置 `HUB_TOKEN` 时直接报错退出，杜绝公网空密码裸奔。
+- **每台电脑独立凭证、可随时单独吊销**：电脑通过配对码加入后自动获取受限的独立凭证（`hst_...`），仅能上报本机心跳，不能查看其他电脑或调用管理接口；在网页上点一下「吊销」即可立即切断该电脑权限，无需更换主密码。
+- **防伪造真实 IP 限流 + 配对码熔断**：默认取底层 Socket 真实 IP（可信反代下取最右侧网关追加 IP），并对配对码设置全局失败次数熔断，防止伪造 `X-Forwarded-For` 暴力枚举。
+- **非 root 容器运行**：Docker 镜像以非特权 `node` 用户运行，本机 `~/.dsh/feishu.env` 强制校验 `0600` 权限。
+- **端到端加密分享**：会话分享采用 AES-256-GCM 浏览器本地加解密，密钥仅存在于 URL `#key=` 锚点中，服务端只存密文。
+
+完整威胁模型与漏洞披露流程见 **[SECURITY.md](SECURITY.md)**。
+
+---
+
+## 7. 贡献与许可
+
+欢迎提交 Issue 与 PR，开始前请阅读 **[CONTRIBUTING.md](CONTRIBUTING.md)** 与详细工程计划 **[docs/PLAN.md](docs/PLAN.md)**。
 
 ```bash
-# 安装插件（Desktop App 用 desktop profile）
-dsh plugin --profile desktop add /path/to/deepseekharness-remotecontrol/dsh-feishu
+npm install                      # 安装前端构建依赖
+npm --prefix dsh-feishu install  # 安装插件测试依赖
+npm test                         # 运行完整单元测试与集成测试套件
+npm run build                    # 构建前端静态产物
 ```
-
-创建密钥文件（权限必须是 `0600`，插件启动时会校验）：
-
-```bash
-install -m 600 /dev/null ~/.dsh/feishu.env
-cat > ~/.dsh/feishu.env <<'EOF'
-FEISHU_HOST_NAME=办公Mac
-FEISHU_APP_ID=cli_xxxxxxxxxxxxxxxx
-FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-FEISHU_ALLOWED_OPEN_IDS=ou_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# 可选：接入自托管 Hub
-FEISHU_HUB_URL=https://your-service.run.app
-FEISHU_HUB_TOKEN=你的总控台Token
-EOF
-chmod 600 ~/.dsh/feishu.env
-```
-
-> 不知道自己 `open_id`？先给机器人发一条消息，它会回你；或者暂时留空 `FEISHU_ALLOWED_OPEN_IDS` 跑一次诊断后再填。
-
-</details>
-
-<details>
-<summary><b>第三步 ·（可选）部署 Hub 到 Cloud Run</b>（点开）</summary>
-
-```bash
-export PROJECT_ID="你的-gcp-project-id"
-export REGION="asia-east1"
-export HUB_TOKEN="自定义一个强密码"
-./deploy-cloudrun.sh
-```
-
-部署完成后把输出的 Service URL 填进每台电脑的 `FEISHU_HUB_URL`。
-
-</details>
-
-## 功能
-
-| 能力 | 说明 |
-| --- | --- |
-| **飞书日常控制** | `!sessions` 任务列表、`!new` 远程新建、`!steer` 运行中插话、`!files` 工作区浏览 |
-| **审批与推送** | 工具调用卡片直接批准/拒绝；完成与异常推送到飞书，或经 Web Push 弹到 iPhone 锁屏与 Apple Watch |
-| **多机主从** | 一个机器人管多台电脑，`!hosts` 一键切换当前受控主机，避免多机抢消息 |
-| **一键迁移** | 网页上选「源 ➔ 目标」，加密打包 `~/.dsh` 会话与配置，切控制权，可选清空源机 |
-| **网页总控台** | 会话回放（含思考过程与工具步骤）、文件树与安全预览、运行中打断重发 |
-| **端到端加密分享** | AES-256-GCM，密钥只存在于 URL `#k=` 片段，服务端只存密文 |
-| **设备指纹** | Ed25519 公钥锁定 + 12 位指纹，支持一键吊销与重置 |
-| **手机接入** | 6 位配对码 / 免密链接登录，自托管 WebRTC 信令与 TURN 临时凭据 |
-| **PWA** | 添加到 iPhone 主屏幕即为全屏 App，5 Tab 原生交互 |
-
-### 支持的后端
-
-| Harness | 状态 |
-| --- | --- |
-| DeepSeek Harness (DSH) | 完整支持（控制、审批、插话、会话管理） |
-| Codex | 支持（观察 + 新建任务，取决于版本） |
-| Claude Code | 支持（观察 + 新建任务，取决于版本） |
-| Antigravity IDE | 实验性 |
-
-> 各后端能力差异由 `dsh-feishu/lib/harness-router.js` 的能力矩阵决定；也可以在 `~/.dsh/feishu.env` 用 `FEISHU_ENABLED_HARNESSES=dsh,codex` 限定启用的后端。
-
-## 飞书命令速查
-
-| 飞书发送 | 作用 |
-| --- | --- |
-| `连接` / `!connect` | 开启远程模式（2 小时有效），汇总运行中任务、待审批与离线期间完成的任务 |
-| `断开` / `!disconnect` | 退出远程模式，停止完成推送 |
-| `!sessions` | 任务列表卡片（查看详情、停止运行中任务、继续已完成任务） |
-| `!new <任务指令>` | 在当前电脑工作区新建会话并开始执行 |
-| `!steer <补充指令>` | 向运行中的任务实时插话，或排入下一轮队列 |
-| `!files [子目录]` | 查看当前任务工作区文件 |
-| `!share` | 为当前任务生成端到端加密的对话回放链接 |
-| `!hosts` / `主机` | 查看所有已接入电脑并一键切换控制权 |
-| `!host <电脑名或ID>` | 直接切换到指定电脑 |
-| `!web` | 获取 Web 总控台链接 |
-| `!approve <code>` / `!deny <code>` | 批准或拒绝工具调用（卡片上也可直接点） |
-| `!whoami` | 查看自己的飞书 `open_id` |
-
-## 安全
-
-这个项目持有飞书 `App Secret`、Hub Token 和设备私钥，所以安全边界写得很明确：
-
-- **默认零入站端口**：飞书链路是纯出站长连接；Hub 是唯一对外暴露的面，且需要 `HUB_TOKEN`。
-- **密钥文件强制 `0600`**，启动时校验，不合格直接拒绝启动。
-- **白名单**：`FEISHU_ALLOWED_OPEN_IDS` 之外的发送者不会拿到任何会话信息。
-- **审计日志**：`~/.dsh/feishu-audit.jsonl`，同样 `0600`。
-- **分享加密**：服务端只见密文，解密密钥不出现在任何请求里。
-
-完整威胁模型、已知限制与密钥轮换方法见 **[SECURITY.md](SECURITY.md)**。发现漏洞请走 GitHub Security Advisories，不要开公开 issue。
-
-## 路线图
-
-- [x] 飞书长连接控制 + 审批 + 完成推送
-- [x] 自托管 Hub、多机切换、一键迁移
-- [x] E2EE 分享、设备指纹、配对码、Web Push
-- [ ] 无飞书的一键本地模式（单命令启动）
-- [ ] 演示视频与截图
-- [ ] 更多 Harness 适配与能力对齐
-- [ ] 更完整的英文文档
-
-## 参与
-
-欢迎 issue 和 PR。开始之前请读 [CONTRIBUTING.md](CONTRIBUTING.md)，尤其是「不要提交任何真实密钥」这一条。
-
-```bash
-git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
-cd deepseekharness-remotecontrol
-
-npm install                      # 前端构建依赖
-npm --prefix dsh-feishu install  # 插件依赖（跑测试需要）
-npm test
-npm run dev                      # 调试 Web 总控台前端
-```
-
-> Hub 本身只用了 Node 内置模块，`npm start` 不需要任何依赖。
-
-## 许可
 
 [MIT](LICENSE) © 2026 oscarka
-
-> **免责声明**：本项目为独立实现，与 DeepSeek、飞书、`dsh.r2049.cn`、`go.dshtui.com` 的运营方无隶属、合作或背书关系。请自行确认你的使用场景符合所在组织与相关服务条款的要求。

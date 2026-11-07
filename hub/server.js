@@ -13,7 +13,82 @@ const gzipAsync = promisify(gzip)
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const INDEX_HTML_PATH = join(__dirname, 'public', 'index.html')
 const PACKAGE_JSON_PATH = join(__dirname, '..', 'package.json')
+const CONNECT_SCRIPT_PATH = join(__dirname, '..', 'connect-host.sh')
 const MAX_BODY_BYTES = 50 * 1024 * 1024 // 50 MiB for snapshot uploads
+
+export function resolveClientIp(
+  headers = {},
+  remoteAddress = '',
+  {
+    trustProxy = process.env.TRUST_PROXY === '1' ||
+      process.env.TRUST_PROXY === 'true' ||
+      Boolean(process.env.K_SERVICE) ||
+      Boolean(process.env.RAILWAY_ENVIRONMENT),
+  } = {},
+) {
+  const cleanSocket = String(remoteAddress || '')
+    .trim()
+    .replace(/^::ffff:/i, '')
+  if (!trustProxy) {
+    return cleanSocket || 'socket-local'
+  }
+  const xffRaw = String(headers['x-forwarded-for'] ?? headers['X-Forwarded-For'] ?? '').trim()
+  if (xffRaw) {
+    const hops = xffRaw
+      .split(',')
+      .map(s => s.trim().replace(/^::ffff:/i, ''))
+      .filter(Boolean)
+    // Behind a trusted reverse proxy (Cloud Run / Railway / Nginx), the proxy appends the real client IP at the rightmost hop.
+    if (hops.length > 0) {
+      return hops[hops.length - 1]
+    }
+  }
+  const realIp = String(headers['x-real-ip'] ?? headers['X-Real-IP'] ?? '')
+    .trim()
+    .replace(/^::ffff:/i, '')
+  return realIp || cleanSocket || 'socket-local'
+}
+
+export function validateHubStartupToken(token, { allowInsecureNoToken = false } = {}) {
+  const clean = String(token ?? '').trim()
+  if (!clean && !allowInsecureNoToken) {
+    return {
+      ok: false,
+      error:
+        '❌ 拒绝无密码启动：未设置 HUB_TOKEN 环境变量。\n' +
+        '   为了防止控制台在公网裸奔，启动时必须指定管理员密码，例如：\n' +
+        '   HUB_TOKEN="$(openssl rand -hex 16)" node hub/server.js\n' +
+        '   docker run -d -p 8080:8080 -v dsh-data:/data -e HUB_TOKEN="你的密码" ghcr.io/oscarka/deepseekharness-remotecontrol:latest',
+    }
+  }
+  return { ok: true, token: clean }
+}
+
+export function formatStartupBanner({
+  host = '0.0.0.0',
+  port = 8080,
+  publicUrl = process.env.PUBLIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN || '',
+  token = '',
+  stateFile = '/data/dsh-hub-state.json',
+} = {}) {
+  const displayHost = host === '0.0.0.0' || host === '::' ? 'localhost' : host
+  const normalizedPublic = publicUrl
+    ? publicUrl.startsWith('http')
+      ? publicUrl
+      : `https://${publicUrl}`
+    : `http://${displayHost}:${port}`
+  return [
+    '============================================================',
+    '🚀 DSH Remote Control 控制台已启动',
+    `🌐 访问网址: ${normalizedPublic}`,
+    `🔑 管理密码: ${token || '(未设置)'}`,
+    `💾 数据存储: ${stateFile}`,
+    '------------------------------------------------------------',
+    '👉 下一步：在电脑浏览器打开上方网址，输入密码登录，',
+    '   复制页面上的「添加电脑」一行命令到终端执行即可接入。',
+    '============================================================',
+  ].join('\n')
+}
 
 function resolveBuildInfo(startedAt = Date.now()) {
   let version = '0.2.0'
@@ -37,19 +112,31 @@ function resolveBuildInfo(startedAt = Date.now()) {
 export function createHubServer({
   hub = new HubCore({ stateFile: process.env.HUB_STATE_FILE || '' }),
   token = process.env.HUB_TOKEN || process.env.FEISHU_HUB_TOKEN || '',
+  requireToken = false,
+  trustProxy,
   logger = console,
 } = {}) {
   let expectedToken = String(token ?? '').trim()
+  if (requireToken) {
+    const check = validateHubStartupToken(expectedToken)
+    if (!check.ok) {
+      throw new Error(check.error)
+    }
+  }
   const buildInfo = resolveBuildInfo(hub.now ? hub.now() : Date.now())
   hub.buildInfo = buildInfo
 
-  function checkAuth(headers = {}, urlObj) {
-    if (!expectedToken) return true
+  function extractCandidateToken(headers = {}, urlObj) {
     const authHeader = String(headers.authorization ?? headers.Authorization ?? '').trim()
     const bearer = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : ''
     const headerToken = String(headers['x-hub-token'] ?? headers['X-Hub-Token'] ?? '').trim()
-    const queryToken = String(urlObj.searchParams.get('token') ?? '').trim()
-    const candidate = bearer || headerToken || queryToken
+    const queryToken = urlObj ? String(urlObj.searchParams.get('token') ?? '').trim() : ''
+    return bearer || headerToken || queryToken
+  }
+
+  function checkAuth(headers = {}, urlObj) {
+    if (!expectedToken) return !requireToken
+    const candidate = extractCandidateToken(headers, urlObj)
     if (!candidate) return false
     const a = Buffer.from(candidate)
     const b = Buffer.from(expectedToken)
@@ -57,8 +144,33 @@ export function createHubServer({
     return timingSafeEqual(a, b)
   }
 
-  async function dispatchRequest({ method = 'GET', url = '/', headers = {}, body = {} }) {
-    const urlObj = new URL(url || '/', `http://${headers.host || 'localhost'}`)
+  function checkHostOrAdminAuth(headers = {}, urlObj, hostId = '') {
+    if (checkAuth(headers, urlObj)) return true
+    const candidate = extractCandidateToken(headers, urlObj)
+    if (!candidate) return false
+    if (hostId) {
+      return hub.verifyHostCredential(hostId, candidate)
+    }
+    for (const h of hub.hosts.values()) {
+      if (hub.verifyHostCredential(h.hostId, candidate)) {
+        return true
+      }
+    }
+    return false
+  }
+
+  async function dispatchRequest({
+    method = 'GET',
+    url = '/',
+    headers = {},
+    body = {},
+    remoteAddress = '',
+  }) {
+    const protoHeader = String(headers['x-forwarded-proto'] ?? headers['X-Forwarded-Proto'] ?? '')
+      .split(',')[0]
+      .trim()
+    const scheme = protoHeader === 'https' ? 'https' : 'http'
+    const urlObj = new URL(url || '/', `${scheme}://${headers.host || 'localhost'}`)
     const pathname = urlObj.pathname
 
     if (method === 'OPTIONS') {
@@ -230,11 +342,30 @@ export function createHubServer({
       return { status: 200, json: { ok: true, selfHosted: true } }
     }
 
+    // One-line Host Install Script served directly from the Hub (pre-fills this Hub's origin URL)
+    if (method === 'GET' && (pathname === '/install.sh' || pathname === '/connect-host.sh')) {
+      const originUrl = `${urlObj.protocol}//${urlObj.host}`
+      try {
+        const rawScript = await readFile(CONNECT_SCRIPT_PATH, 'utf8')
+        const injected = rawScript.replace(
+          'DEFAULT_HUB_URL=""',
+          `DEFAULT_HUB_URL="${originUrl}"`,
+        )
+        return {
+          status: 200,
+          headers: { 'content-type': 'text/x-shellscript; charset=utf-8', 'cache-control': 'no-store' },
+          body: injected,
+        }
+      } catch {
+        return { status: 404, body: '#!/usr/bin/env bash\necho "install script not found"\nexit 1\n' }
+      }
+    }
+
     // One-Time Pairing Code Exchange (allows mobile QR scan / 6-digit code login without typing HUB_TOKEN)
     if (method === 'POST' && pathname === '/api/pairing/exchange') {
-      const clientKey =
-        String(headers['x-forwarded-for'] ?? headers['X-Forwarded-For'] ?? '').split(',')[0].trim() ||
-        'global'
+      const clientKey = resolveClientIp(headers, remoteAddress, {
+        ...(trustProxy !== undefined ? { trustProxy } : {}),
+      })
       const outcome = hub.exchangePairingCode(body.code, { clientKey })
       if (!outcome.ok) return { status: outcome.rateLimited ? 429 : 401, json: outcome }
       return {
@@ -243,6 +374,24 @@ export function createHubServer({
           ...outcome,
           token: expectedToken,
         },
+      }
+    }
+
+    // Host Join by Multi-Use Time-Limited Enrollment Code (issues independent per-host token, never master HUB_TOKEN)
+    if (method === 'POST' && (pathname === '/api/hosts/join' || pathname === '/api/pairing/join-host')) {
+      const clientKey = resolveClientIp(headers, remoteAddress, {
+        ...(trustProxy !== undefined ? { trustProxy } : {}),
+      })
+      const outcome = hub.joinHostWithCode({
+        ...body,
+        clientKey,
+      })
+      if (!outcome.ok) {
+        return { status: outcome.statusCode || (outcome.rateLimited ? 429 : 401), json: outcome }
+      }
+      return {
+        status: 200,
+        json: outcome,
       }
     }
 
@@ -255,7 +404,45 @@ export function createHubServer({
     }
 
     if (pathname.startsWith('/api/')) {
-      if (!checkAuth(headers, urlObj)) {
+      // Host-level reporting endpoints accept either the Admin HUB_TOKEN or that specific host's dedicated hostToken
+      if (method === 'POST' && pathname === '/api/heartbeat') {
+        const targetHostId = String(body?.hostId ?? '').trim()
+        if (!checkHostOrAdminAuth(headers, urlObj, targetHostId)) {
+          return {
+            status: 401,
+            json: {
+              ok: false,
+              error: 'Unauthorized: valid HUB_TOKEN or active Host Token required',
+              authRequired: true,
+            },
+          }
+        }
+        const outcome = hub.handleHeartbeat(body)
+        const status = outcome.ok ? 200 : outcome.code === 'DEVICE_REVOKED' || outcome.code === 'PEER_IDENTITY_MISMATCH' ? 403 : 400
+        return { status, json: outcome }
+      }
+
+      const isSharedHostEndpoint =
+        (method === 'POST' && pathname === '/api/shares') ||
+        (method === 'POST' && pathname === '/api/snapshots') ||
+        (method === 'GET' && /^\/api\/snapshots\/([^/]+)\/download$/.test(pathname)) ||
+        pathname === '/api/v1/signaling' ||
+        /^\/api\/v1\/signaling\/([^/]+)$/.test(pathname) ||
+        pathname === '/api/v1/turn/credentials'
+
+      if (isSharedHostEndpoint) {
+        const claimedHostId = String(body?.hostId || body?.meta?.hostId || '').trim()
+        if (!checkHostOrAdminAuth(headers, urlObj, claimedHostId)) {
+          return {
+            status: 401,
+            json: {
+              ok: false,
+              error: 'Unauthorized: valid HUB_TOKEN or active Host Token required',
+              authRequired: true,
+            },
+          }
+        }
+      } else if (!checkAuth(headers, urlObj)) {
         return {
           status: 401,
           json: {
@@ -264,6 +451,15 @@ export function createHubServer({
             authRequired: true,
           },
         }
+      }
+
+      if ((method === 'GET' || method === 'POST') && pathname === '/api/hosts/enrollment') {
+        const forceNew = method === 'POST' && Boolean(body?.forceNew ?? true)
+        const enrollment = hub.getOrCreateEnrollmentCode({
+          forceNew,
+          ...(Number(body?.ttlMs) > 0 ? { ttlMs: Number(body.ttlMs) } : {}),
+        })
+        return { status: 200, json: { ok: true, enrollment } }
       }
 
       if (method === 'POST' && pathname === '/api/auth/change-token') {
@@ -294,12 +490,6 @@ export function createHubServer({
             stats: hub.getUsageStats(),
           },
         }
-      }
-
-      if (method === 'POST' && pathname === '/api/heartbeat') {
-        const outcome = hub.handleHeartbeat(body)
-        const status = outcome.ok ? 200 : outcome.code === 'DEVICE_REVOKED' || outcome.code === 'PEER_IDENTITY_MISMATCH' ? 403 : 400
-        return { status, json: outcome }
       }
 
       const activateMatch = /^\/api\/hosts\/([^/]+)\/activate$/.exec(pathname)
@@ -573,6 +763,7 @@ export function createHubServer({
         url: req.url,
         headers: req.headers,
         body,
+        remoteAddress: req.socket?.remoteAddress || '',
       })
       if (result.json !== undefined) {
         await sendJson(res, result.status, result.json, req.headers)
@@ -600,7 +791,13 @@ export function createHubServer({
       } else if (init.body && typeof init.body === 'object') {
         parsedBody = init.body
       }
-      const out = await dispatchRequest({ method, url: urlStr, headers, body: parsedBody })
+      const out = await dispatchRequest({
+        method,
+        url: urlStr,
+        headers,
+        body: parsedBody,
+        remoteAddress: init.remoteAddress || '',
+      })
       return {
         status: out.status,
         ok: out.status >= 200 && out.status < 300,
@@ -983,15 +1180,30 @@ function readJsonBody(req) {
   })
 }
 
-// Allow running directly (`node hub/server.js`) for Google Cloud Run / Docker / local usage
+// Allow running directly (`node hub/server.js`) for Google Cloud Run / Docker / Railway / local usage
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
 if (isMain) {
   const port = Number(process.env.PORT || process.env.HUB_PORT || 8080)
   const host = process.env.HOST || '0.0.0.0'
-  const hub = new HubCore({ stateFile: process.env.HUB_STATE_FILE || '/tmp/dsh-hub-state.json' })
+  const stateFile = process.env.HUB_STATE_FILE || '/data/dsh-hub-state.json'
+  const rawToken = process.env.HUB_TOKEN || process.env.FEISHU_HUB_TOKEN || ''
+  const allowInsecure = process.env.ALLOW_INSECURE_NO_TOKEN === '1'
+  const tokenCheck = validateHubStartupToken(rawToken, { allowInsecureNoToken: allowInsecure })
+  if (!tokenCheck.ok) {
+    console.error(tokenCheck.error)
+    process.exit(1)
+  }
+  const hub = new HubCore({ stateFile })
   await hub.init()
-  const { server } = createHubServer({ hub })
+  const { server } = createHubServer({ hub, token: tokenCheck.token, requireToken: !allowInsecure })
   server.listen(port, host, () => {
-    console.log(`DSH Remote Control Hub listening on http://${host}:${port}`)
+    console.log(
+      formatStartupBanner({
+        host,
+        port,
+        token: tokenCheck.token,
+        stateFile,
+      }),
+    )
   })
 }
