@@ -958,6 +958,51 @@
     .md-body th { background: var(--subtle); font-weight: 600; white-space: nowrap; }
     .md-body > *:first-child { margin-top: 0; }
 
+    .assistant-copy-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--border);
+    }
+    .assistant-char-meta {
+      font-size: 11px;
+      color: var(--muted);
+      user-select: none;
+    }
+    .assistant-copy-btn {
+      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--subtle);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .assistant-copy-btn:hover {
+      border-color: #93c5fd;
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+    .assistant-copy-btn:active {
+      transform: scale(0.96);
+    }
+    .assistant-copy-btn.copied {
+      border-color: #86efac;
+      background: var(--green-soft);
+      color: var(--green);
+    }
+
     .thought-box {
       margin-bottom: 9px;
       background: var(--subtle);

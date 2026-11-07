@@ -1699,6 +1699,35 @@ function initHubController() {
 		document.body.classList.remove("mobile-file-open");
 	}
 	let selectedAgyOptionIndex = 1;
+	let lastRenderedAssistantTexts = {};
+	async function copyAssistantReply(msgIdx, btnEl) {
+		const text = String(lastRenderedAssistantTexts?.[msgIdx] || "").trim();
+		if (!text) {
+			showToast("⚠️ 暂无可复制的回复内容");
+			return;
+		}
+		if (await copyText(text, {
+			successMessage: `📋 已复制完整回复（${text.length} 字）`,
+			title: "📋 复制 AI 回复全文"
+		}) && btnEl) {
+			const origHtml = btnEl.dataset.origLabel || btnEl.innerHTML;
+			btnEl.dataset.origLabel = origHtml;
+			btnEl.classList.add("copied");
+			btnEl.innerHTML = "✅ 已复制全文";
+			setTimeout(() => {
+				btnEl.classList.remove("copied");
+				btnEl.innerHTML = origHtml;
+			}, 1800);
+		}
+	}
+	async function copyLatestAssistantReply(btnEl) {
+		const keys = Object.keys(lastRenderedAssistantTexts || {}).map((k) => Number(k)).filter((n) => Number.isFinite(n)).sort((a, b) => b - a);
+		if (!keys.length) {
+			showToast("⚠️ 当前对话暂无 AI 回复可复制");
+			return;
+		}
+		await copyAssistantReply(keys[0], btnEl);
+	}
 	function selectAgyApprovalOption(idx) {
 		selectedAgyOptionIndex = Number(idx) || 1;
 		document.querySelectorAll(".agy-approval-opt").forEach((el) => {
@@ -1805,6 +1834,7 @@ function initHubController() {
 				prev.isToolStepOnly = false;
 			} else msgs.push({ ...item });
 		}
+		lastRenderedAssistantTexts = {};
 		const bubblesHtml = msgs.map((m, msgIdx) => {
 			if (m.role === "user") {
 				const queuedBadge = m.queuedCmdId ? `<div class="queued-cmd-pill"><span>⏳ 排队中（电脑上线后执行）</span><button class="cancel-queued-btn" onclick="event.stopPropagation(); cancelQueuedCommand('${esc(m.queuedCmdId)}')">✕ 取消</button></div>` : m.expiredCmdId ? `<div class="queued-cmd-pill" style="background:rgba(239,68,68,0.18);color:#fecaca;"><span>⚠️ 电脑超过 10 分钟未上线，该指令已超时未执行</span></div>` : "";
@@ -1852,7 +1882,10 @@ function initHubController() {
 					tools = `<details class="thought-box thinking-details" data-detail-id="${groupId}" ${openDetailIds.has(groupId) ? "open" : ""} style="margin-bottom:8px;"><summary>🔧 执行过程 · 共 ${rawTools.length} 次工具调用 (${esc(uniqueToolNames)}) (点击展开)</summary><div class="tool-chips" style="margin-top:6px;">${toolItemsHtml}</div></details>`;
 				} else tools = `<div class="tool-chips" style="margin-bottom:8px;">${toolItemsHtml}</div>`;
 			}
-			const bodyHtml = m.text ? `<div class="md-body">${formatAssistantText(m.text)}</div>` : `<div style="font-size:12.5px;color:var(--muted);margin-top:4px;">⚙️ 正在思考与执行工具调用...</div>`;
+			const cleanReplyText = m.text ? String(m.text).trim() : "";
+			if (cleanReplyText) lastRenderedAssistantTexts[msgIdx] = cleanReplyText;
+			const copyFooterHtml = cleanReplyText ? `<div class="assistant-copy-footer"><span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 一键复制全文</button></div>` : "";
+			const bodyHtml = cleanReplyText ? `<div class="md-body">${formatAssistantText(cleanReplyText)}</div>${copyFooterHtml}` : `<div style="font-size:12.5px;color:var(--muted);margin-top:4px;">⚙️ 正在思考与执行工具调用...</div>`;
 			return `<div class="bubble assistant">${thought}${tools}${bodyHtml}</div>`;
 		}).join("");
 		const filesChangedHtml = s.harness === "antigravity-ide" && Array.isArray(s.changedFiles) && s.changedFiles.length > 0 ? `
@@ -1928,6 +1961,7 @@ function initHubController() {
       ` : "";
 		const followupsHtml = `
         <div class="quick-followups">
+          ${Object.keys(lastRenderedAssistantTexts).length > 0 ? `<button class="followup-pill" onclick="copyLatestAssistantReply(this)">📋 复制最新回复全文</button>` : ""}
           ${[
 			"▶ 继续执行下一步",
 			"🔍 查看 git status 与改动",
@@ -4271,6 +4305,8 @@ function initHubController() {
 		closeMobileFile,
 		selectAgyApprovalOption,
 		submitAgyApproval,
+		copyAssistantReply,
+		copyLatestAssistantReply,
 		renderActiveChatStage,
 		renderInlineMarkdown,
 		renderMarkdownBlocks,

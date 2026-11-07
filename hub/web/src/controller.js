@@ -849,6 +849,41 @@ export function initHubController() {
     }
 
     let selectedAgyOptionIndex = 1;
+    let lastRenderedAssistantTexts = {};
+
+    async function copyAssistantReply(msgIdx, btnEl) {
+      const text = String(lastRenderedAssistantTexts?.[msgIdx] || '').trim();
+      if (!text) {
+        showToast('⚠️ 暂无可复制的回复内容');
+        return;
+      }
+      const ok = await copyText(text, {
+        successMessage: `📋 已复制完整回复（${text.length} 字）`,
+        title: '📋 复制 AI 回复全文',
+      });
+      if (ok && btnEl) {
+        const origHtml = btnEl.dataset.origLabel || btnEl.innerHTML;
+        btnEl.dataset.origLabel = origHtml;
+        btnEl.classList.add('copied');
+        btnEl.innerHTML = '✅ 已复制全文';
+        setTimeout(() => {
+          btnEl.classList.remove('copied');
+          btnEl.innerHTML = origHtml;
+        }, 1800);
+      }
+    }
+
+    async function copyLatestAssistantReply(btnEl) {
+      const keys = Object.keys(lastRenderedAssistantTexts || {})
+        .map(k => Number(k))
+        .filter(n => Number.isFinite(n))
+        .sort((a, b) => b - a);
+      if (!keys.length) {
+        showToast('⚠️ 当前对话暂无 AI 回复可复制');
+        return;
+      }
+      await copyAssistantReply(keys[0], btnEl);
+    }
 
     function selectAgyApprovalOption(idx) {
       selectedAgyOptionIndex = Number(idx) || 1;
@@ -1009,6 +1044,7 @@ export function initHubController() {
         }
       }
 
+      lastRenderedAssistantTexts = {};
       const bubblesHtml = msgs.map((m, msgIdx) => {
         if (m.role === 'user') {
           const queuedBadge = m.queuedCmdId
@@ -1066,8 +1102,15 @@ export function initHubController() {
             tools = `<div class="tool-chips" style="margin-bottom:8px;">${toolItemsHtml}</div>`;
           }
         }
-        const bodyHtml = m.text
-          ? `<div class="md-body">${formatAssistantText(m.text)}</div>`
+        const cleanReplyText = m.text ? String(m.text).trim() : '';
+        if (cleanReplyText) {
+          lastRenderedAssistantTexts[msgIdx] = cleanReplyText;
+        }
+        const copyFooterHtml = cleanReplyText
+          ? `<div class="assistant-copy-footer"><span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 一键复制全文</button></div>`
+          : '';
+        const bodyHtml = cleanReplyText
+          ? `<div class="md-body">${formatAssistantText(cleanReplyText)}</div>${copyFooterHtml}`
           : `<div style="font-size:12.5px;color:var(--muted);margin-top:4px;">⚙️ 正在思考与执行工具调用...</div>`;
         return `<div class="bubble assistant">${thought}${tools}${bodyHtml}</div>`;
       }).join('');
@@ -1137,9 +1180,11 @@ export function initHubController() {
         </div>
       `) : '';
 
+      const hasAnyAssistantReply = Object.keys(lastRenderedAssistantTexts).length > 0;
       const followups = ['▶ 继续执行下一步', '🔍 查看 git status 与改动', '🧪 运行测试验证'];
       const followupsHtml = `
         <div class="quick-followups">
+          ${hasAnyAssistantReply ? `<button class="followup-pill" onclick="copyLatestAssistantReply(this)">📋 复制最新回复全文</button>` : ''}
           ${followups.map(f => `<button class="followup-pill" onclick="sendQuickFollowup('${esc(f)}')">${esc(f)}</button>`).join('')}
         </div>
       `;
@@ -3807,6 +3852,8 @@ export function initHubController() {
       closeMobileFile,
       selectAgyApprovalOption,
       submitAgyApproval,
+      copyAssistantReply,
+      copyLatestAssistantReply,
       renderActiveChatStage,
       renderInlineMarkdown,
       renderMarkdownBlocks,
