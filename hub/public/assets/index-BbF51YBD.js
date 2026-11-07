@@ -422,9 +422,31 @@ function ChatStage() {
 		class: "stop-task-btn",
 		onClick: () => window.stopActiveSession?.()
 	}, "⏹ 立即停止")), /* @__PURE__ */ k("div", {
+		class: "composer-attachments-strip",
+		id: "composerAttachmentsStrip",
+		style: "display:none;"
+	}), /* @__PURE__ */ k("div", {
 		class: "chat-composer",
 		id: "chatComposerBar"
-	}, /* @__PURE__ */ k("button", {
+	}, /* @__PURE__ */ k("input", {
+		type: "file",
+		id: "chatImageInput",
+		accept: "image/*",
+		multiple: true,
+		style: "display:none;",
+		onChange: (e) => window.onChatImageSelected?.(e, "chat")
+	}), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "voice-btn image-upload-btn",
+		id: "chatImageBtn",
+		title: "从手机相册上传截图或照片",
+		"aria-label": "上传截图或照片",
+		onClick: (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			window.triggerImagePicker?.("chat");
+		}
+	}, "🖼️"), /* @__PURE__ */ k("button", {
 		type: "button",
 		class: "voice-btn",
 		id: "chatVoiceBtn",
@@ -439,12 +461,13 @@ function ChatStage() {
 		class: "chat-input",
 		id: "globalPromptInput",
 		rows: 1,
-		placeholder: "发指令继续对话...",
+		placeholder: "发指令或点左侧🖼️传截图...",
 		autocorrect: "on",
 		autocapitalize: "sentences",
 		spellcheck: true,
 		onInput: () => window.onComposerInput?.(),
-		onKeyDown: (e) => window.onComposerKeydown?.(e)
+		onKeyDown: (e) => window.onComposerKeydown?.(e),
+		onPaste: (e) => window.onComposerPaste?.(e, "chat")
 	}), /* @__PURE__ */ k("button", {
 		type: "button",
 		class: "send-btn",
@@ -483,8 +506,24 @@ function Sheets() {
 		id: "newTaskProjectChips"
 	}), /* @__PURE__ */ k("div", {
 		class: "form-label",
-		style: "display:flex;align-items:center;justify-content:space-between;"
-	}, /* @__PURE__ */ k("span", null, "4. 任务指令（或点选下方快捷指令）"), /* @__PURE__ */ k("button", {
+		style: "display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;"
+	}, /* @__PURE__ */ k("span", null, "4. 任务指令（支持截图或语音）"), /* @__PURE__ */ k("div", { style: "display:inline-flex;align-items:center;gap:6px;" }, /* @__PURE__ */ k("input", {
+		type: "file",
+		id: "newTaskImageInput",
+		accept: "image/*",
+		multiple: true,
+		style: "display:none;",
+		onChange: (e) => window.onChatImageSelected?.(e, "newTask")
+	}), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "voice-pill-btn",
+		id: "newTaskImageBtn",
+		onClick: (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			window.triggerImagePicker?.("newTask");
+		}
+	}, "🖼️ 传截图"), /* @__PURE__ */ k("button", {
 		type: "button",
 		class: "voice-pill-btn",
 		id: "newTaskVoiceBtn",
@@ -493,7 +532,7 @@ function Sheets() {
 			e.stopPropagation();
 			window.toggleVoiceInput?.("newTaskInput", "newTaskVoiceBtn");
 		}
-	}, "🎤 语音输入")), /* @__PURE__ */ k("div", {
+	}, "🎤 语音输入"))), /* @__PURE__ */ k("div", {
 		class: "chip-selector",
 		style: "margin-bottom:6px;"
 	}, /* @__PURE__ */ k("button", {
@@ -508,13 +547,18 @@ function Sheets() {
 		type: "button",
 		class: "choice-chip",
 		onClick: () => window.fillQuickPrompt?.("查看 git status 并总结最近的代码改动")
-	}, "📦 总结代码改动")), /* @__PURE__ */ k("textarea", {
+	}, "📦 总结代码改动")), /* @__PURE__ */ k("div", {
+		class: "composer-attachments-strip",
+		id: "newTaskAttachmentsStrip",
+		style: "display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"
+	}), /* @__PURE__ */ k("textarea", {
 		class: "new-task-textarea",
 		id: "newTaskInput",
-		placeholder: "输入你想让电脑执行的任务...",
+		placeholder: "输入你想让电脑执行的任务，或点击右上角🖼️传截图...",
 		autocorrect: "on",
 		autocapitalize: "sentences",
-		spellcheck: true
+		spellcheck: true,
+		onPaste: (e) => window.onComposerPaste?.(e, "newTask")
 	}), /* @__PURE__ */ k("button", {
 		type: "button",
 		class: "primary-block-btn",
@@ -1987,6 +2031,169 @@ function initHubController() {
 		input.value = readComposerDraft(composerSessionId);
 		input.style.height = "";
 		autoGrowComposer();
+		renderAttachmentStrip("chat");
+	}
+	const MAX_COMPOSER_ATTACHMENTS = 4;
+	const composerAttachments = {
+		chat: [],
+		newTask: []
+	};
+	function getAttachmentList(target = "chat") {
+		return target === "newTask" ? composerAttachments.newTask : composerAttachments.chat;
+	}
+	function triggerImagePicker(target = "chat") {
+		const inputId = target === "newTask" ? "newTaskImageInput" : "chatImageInput";
+		const el = document.getElementById(inputId);
+		if (el) {
+			el.value = "";
+			el.click();
+		}
+	}
+	function readFileAsDataUrl(file) {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => resolve(String(reader.result || ""));
+			reader.onerror = () => reject(/* @__PURE__ */ new Error("读取图片失败"));
+			reader.readAsDataURL(file);
+		});
+	}
+	async function compressImageFile(file) {
+		const rawDataUrl = await readFileAsDataUrl(file);
+		const commaIdx = rawDataUrl.indexOf(",");
+		const rawBase64 = commaIdx >= 0 ? rawDataUrl.slice(commaIdx + 1) : rawDataUrl;
+		const origMime = file.type && file.type.startsWith("image/") ? file.type : "image/jpeg";
+		const origName = file.name || `screenshot-${Date.now()}.jpg`;
+		try {
+			const img = await new Promise((resolve, reject) => {
+				const el = new Image();
+				el.onload = () => resolve(el);
+				el.onerror = () => reject(/* @__PURE__ */ new Error("Image decode failed"));
+				el.src = rawDataUrl;
+			});
+			const w = img.naturalWidth || img.width || 0;
+			const h = img.naturalHeight || img.height || 0;
+			const maxSide = 1600;
+			const needsResize = w > maxSide || h > maxSide;
+			const needsCompress = file.size > 266240;
+			if (!needsResize && !needsCompress && w > 0 && h > 0) return {
+				name: origName,
+				mimeType: origMime,
+				dataBase64: rawBase64,
+				previewUrl: rawDataUrl,
+				sizeBytes: file.size || Math.round(rawBase64.length * 3 / 4),
+				width: w,
+				height: h
+			};
+			if (w > 0 && h > 0) {
+				const scale = needsResize ? Math.min(maxSide / w, maxSide / h) : 1;
+				const targetW = Math.max(1, Math.round(w * scale));
+				const targetH = Math.max(1, Math.round(h * scale));
+				const canvas = document.createElement("canvas");
+				canvas.width = targetW;
+				canvas.height = targetH;
+				const ctx = canvas.getContext("2d");
+				if (ctx) {
+					ctx.fillStyle = "#ffffff";
+					ctx.fillRect(0, 0, targetW, targetH);
+					ctx.drawImage(img, 0, 0, targetW, targetH);
+					const outMime = "image/jpeg";
+					const outDataUrl = canvas.toDataURL(outMime, .82);
+					const outComma = outDataUrl.indexOf(",");
+					const outBase64 = outComma >= 0 ? outDataUrl.slice(outComma + 1) : outDataUrl;
+					return {
+						name: `${origName.replace(/\.[a-zA-Z0-9]+$/, "") || "screenshot"}.jpg`,
+						mimeType: outMime,
+						dataBase64: outBase64,
+						previewUrl: outDataUrl,
+						sizeBytes: Math.round(outBase64.length * 3 / 4),
+						width: targetW,
+						height: targetH
+					};
+				}
+			}
+		} catch {}
+		return {
+			name: origName,
+			mimeType: origMime,
+			dataBase64: rawBase64,
+			previewUrl: rawDataUrl,
+			sizeBytes: file.size || Math.round(rawBase64.length * 3 / 4)
+		};
+	}
+	function renderAttachmentStrip(target = "chat") {
+		const stripId = target === "newTask" ? "newTaskAttachmentsStrip" : "composerAttachmentsStrip";
+		const strip = document.getElementById(stripId);
+		if (!strip) return;
+		const list = getAttachmentList(target);
+		if (!list.length || target === "chat" && desktopStageMode === "code") {
+			strip.style.display = "none";
+			strip.innerHTML = "";
+			return;
+		}
+		strip.style.display = "flex";
+		strip.innerHTML = list.map((item, idx) => `
+        <div class="attachment-thumb-item">
+          <img class="attachment-thumb-img" src="${esc(item.previewUrl)}" alt="${esc(item.name)}" />
+          <span class="attachment-thumb-meta">${esc(formatBytes(item.sizeBytes || 0))}</span>
+          <button
+            type="button"
+            class="attachment-thumb-remove"
+            title="移除截图"
+            onclick="removeComposerAttachment('${target === "newTask" ? "newTask" : "chat"}', ${idx})"
+          >✕</button>
+        </div>
+      `).join("");
+	}
+	function removeComposerAttachment(target = "chat", index = 0) {
+		const list = getAttachmentList(target);
+		if (index >= 0 && index < list.length) list.splice(index, 1);
+		renderAttachmentStrip(target);
+	}
+	async function addFilesToComposer(files, target = "chat") {
+		const list = getAttachmentList(target);
+		const candidates = Array.from(files || []).filter((f) => f && (f.type && f.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|heic)$/i.test(f.name || "")));
+		if (!candidates.length) {
+			showToast("⚠️ 请选择 PNG / JPG / WebP 截图或照片");
+			return;
+		}
+		const remaining = MAX_COMPOSER_ATTACHMENTS - list.length;
+		if (remaining <= 0) {
+			showToast(`⚠️ 单次最多附带 ${MAX_COMPOSER_ATTACHMENTS} 张截图`);
+			return;
+		}
+		const selected = candidates.slice(0, remaining);
+		let addedCount = 0;
+		let totalSize = 0;
+		for (const file of selected) try {
+			const compressed = await compressImageFile(file);
+			if (compressed && compressed.dataBase64) {
+				list.push(compressed);
+				addedCount += 1;
+				totalSize += compressed.sizeBytes || 0;
+			}
+		} catch (err) {
+			showToast("❌ 处理图片失败：" + (err?.message || err));
+		}
+		renderAttachmentStrip(target);
+		if (addedCount > 0) showToast(`🖼️ 已添加 ${addedCount} 张截图（已自动优化至 ${formatBytes(totalSize)}）`);
+	}
+	async function onChatImageSelected(event, target = "chat") {
+		const files = event?.target?.files;
+		if (files && files.length > 0) await addFilesToComposer(files, target);
+		if (event?.target) event.target.value = "";
+	}
+	async function onComposerPaste(event, target = "chat") {
+		const items = event?.clipboardData?.items;
+		if (!items) return;
+		const imageFiles = [];
+		for (const item of Array.from(items)) if (item.kind === "file" && item.type && item.type.startsWith("image/")) {
+			const file = item.getAsFile();
+			if (file) imageFiles.push(file);
+		}
+		if (imageFiles.length > 0) {
+			event.preventDefault();
+			await addFilesToComposer(imageFiles, target);
+		}
 	}
 	window.addEventListener("pagehide", () => {
 		persistComposerDraft();
@@ -2015,12 +2222,17 @@ function initHubController() {
 	async function sendPromptToActiveSession() {
 		stopVoiceInput();
 		const input = document.getElementById("globalPromptInput");
-		const text = input.value.trim();
-		if (!text || !activeSessionId) return;
+		const rawText = input ? input.value.trim() : "";
+		const pendingAttachments = composerAttachments.chat.slice();
+		if (!rawText && pendingAttachments.length === 0 || !activeSessionId) return;
 		const found = findSessionGlobal(activeSessionId);
 		if (!found) return;
 		const { session: s, host } = found;
-		input.value = "";
+		const text = rawText || "请查看我上传的截图并帮我分析处理。";
+		const optimisticText = pendingAttachments.length > 0 ? `${text}\n[🖼️ 已附带 ${pendingAttachments.length} 张截图]` : text;
+		if (input) input.value = "";
+		composerAttachments.chat = [];
+		renderAttachmentStrip("chat");
 		try {
 			localStorage.removeItem(composerDraftKey(composerSessionId || activeSessionId));
 		} catch {}
@@ -2028,14 +2240,14 @@ function initHubController() {
 		window.__dshOptimisticMsgs = window.__dshOptimisticMsgs || {};
 		const optList = window.__dshOptimisticMsgs[s.id] || [];
 		optList.push({
-			text,
+			text: optimisticText,
 			time: Date.now()
 		});
 		window.__dshOptimisticMsgs[s.id] = optList.slice(-5);
 		lastRenderedChatKey = "";
 		renderActiveChatStage();
 		const cmdType = s.status === "running" ? "steer" : "prompt";
-		if (Boolean(host && host.online !== false && host.activelyConnected !== false)) showToast(cmdType === "steer" ? "⚡ 已发送实时插话" : "📨 已发送指令");
+		if (Boolean(host && host.online !== false && host.activelyConnected !== false)) showToast(pendingAttachments.length > 0 ? `🖼️ 已发送截图与指令 (${pendingAttachments.length} 张)` : cmdType === "steer" ? "⚡ 已发送实时插话" : "📨 已发送指令");
 		let dispatchRes = null;
 		try {
 			dispatchRes = await dispatchHostCommand(s.hostId, {
@@ -2043,7 +2255,12 @@ function initHubController() {
 				agentId: s.id,
 				cwd: s.cwd || "",
 				text,
-				prompt: text
+				prompt: text,
+				...pendingAttachments.length > 0 ? { attachments: pendingAttachments.map((a) => ({
+					name: a.name,
+					mimeType: a.mimeType,
+					dataBase64: a.dataBase64
+				})) } : {}
 			});
 		} catch (err) {
 			dispatchRes = {
@@ -2052,13 +2269,17 @@ function initHubController() {
 			};
 		}
 		if (!dispatchRes || dispatchRes.ok === false) {
-			window.__dshOptimisticMsgs[s.id] = (window.__dshOptimisticMsgs[s.id] || []).filter((item) => item.text !== text);
+			window.__dshOptimisticMsgs[s.id] = (window.__dshOptimisticMsgs[s.id] || []).filter((item) => item.text !== optimisticText);
 			lastRenderedChatKey = "";
 			renderActiveChatStage();
 			showToast("❌ " + (dispatchRes?.error || "发送指令失败"));
-			if (input && !input.value.trim()) {
-				input.value = text;
+			if (input && !input.value.trim() && rawText) {
+				input.value = rawText;
 				autoGrowComposer();
+			}
+			if (pendingAttachments.length > 0 && composerAttachments.chat.length === 0) {
+				composerAttachments.chat = pendingAttachments;
+				renderAttachmentStrip("chat");
 			}
 			return;
 		}
@@ -2073,12 +2294,12 @@ function initHubController() {
 					const data = await (await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`)).json();
 					if (data?.ready || data?.command?.status === "completed") {
 						if (data.result && data.result.ok === false) {
-							window.__dshOptimisticMsgs[s.id] = (window.__dshOptimisticMsgs[s.id] || []).filter((item) => item.text !== text);
+							window.__dshOptimisticMsgs[s.id] = (window.__dshOptimisticMsgs[s.id] || []).filter((item) => item.text !== optimisticText);
 							lastRenderedChatKey = "";
 							renderActiveChatStage();
 							showToast("❌ " + (data.result.error || data.result.message || "发送失败"));
-							if (input && !input.value.trim()) {
-								input.value = text;
+							if (input && !input.value.trim() && rawText) {
+								input.value = rawText;
 								autoGrowComposer();
 							}
 						}
@@ -2485,6 +2706,7 @@ function initHubController() {
 		if (mode === "code") {
 			chatBox.style.display = "none";
 			composer.style.display = "none";
+			renderAttachmentStrip("chat");
 			codePane.style.display = "block";
 			const found = findSessionGlobal(activeSessionId);
 			if (found) {
@@ -2496,6 +2718,7 @@ function initHubController() {
 			chatBox.style.display = "flex";
 			composer.style.display = "flex";
 			codePane.style.display = "none";
+			renderAttachmentStrip("chat");
 		}
 	}
 	function openNewTaskSheet() {
@@ -2504,6 +2727,7 @@ function initHubController() {
 		const projects = getHostProjects(hosts.find((h) => h.hostId === newTaskHostId));
 		if (!newTaskCwd && projects[0]) newTaskCwd = projects[0].cwd;
 		renderNewTaskForm();
+		renderAttachmentStrip("newTask");
 		openSheet("newTaskSheet");
 		setTimeout(() => document.getElementById("newTaskInput").focus(), 100);
 	}
@@ -2567,12 +2791,16 @@ function initHubController() {
 	}
 	async function submitNewTask() {
 		stopVoiceInput();
-		const text = document.getElementById("newTaskInput").value.trim();
-		if (!text || !newTaskHostId) {
-			showToast("请输入任务指令");
+		const rawText = document.getElementById("newTaskInput").value.trim();
+		const pendingAttachments = composerAttachments.newTask.slice();
+		if (!rawText && pendingAttachments.length === 0 || !newTaskHostId) {
+			showToast("请输入任务指令或上传截图");
 			return;
 		}
+		const text = rawText || "请查看我上传的截图并帮我分析处理。";
 		document.getElementById("newTaskInput").value = "";
+		composerAttachments.newTask = [];
+		renderAttachmentStrip("newTask");
 		closeSheet("newTaskSheet");
 		showToast(`🚀 正在远程电脑 (${newTaskHarness === "antigravity-ide" ? "Antigravity IDE" : newTaskHarness === "codex" ? "OpenAI Codex" : newTaskHarness === "claude" ? "Claude Code" : "DeepSeek Harness"}) 创建新任务...`);
 		await dispatchHostCommand(newTaskHostId, {
@@ -2580,7 +2808,12 @@ function initHubController() {
 			harness: newTaskHarness,
 			cwd: newTaskCwd,
 			title: text.slice(0, 28),
-			prompt: text
+			prompt: text,
+			...pendingAttachments.length > 0 ? { attachments: pendingAttachments.map((a) => ({
+				name: a.name,
+				mimeType: a.mimeType,
+				dataBase64: a.dataBase64
+			})) } : {}
 		});
 		setTimeout(fetchState, 800);
 	}
@@ -4056,6 +4289,12 @@ function initHubController() {
 		shouldSendOnEnter,
 		onComposerKeydown,
 		switchComposerSession,
+		triggerImagePicker,
+		onChatImageSelected,
+		onComposerPaste,
+		removeComposerAttachment,
+		renderAttachmentStrip,
+		compressImageFile,
 		setVoiceBtnRecording,
 		isVoiceRecording,
 		stopVoiceInput,

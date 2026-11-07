@@ -354,7 +354,7 @@ export class CodexAdapter {
     return results
   }
 
-  async createSession({ prompt, cwd, execImpl } = {}) {
+  async createSession({ prompt, cwd, imagePaths = [], execImpl } = {}) {
     const text = String(prompt || '').trim()
     if (!text) return { ok: false, error: '请输入新建任务的指令内容' }
     const bin = this.binaryPath || findCodexBinary()
@@ -362,7 +362,8 @@ export class CodexAdapter {
     if (!bin && !runExec) {
       return { ok: false, error: '当前电脑未检测到 codex CLI 可执行文件' }
     }
-    const args = ['exec', text, '--skip-git-repo-check', '--json']
+    const imgFlags = Array.isArray(imagePaths) ? imagePaths.filter(Boolean).flatMap(p => ['-i', p]) : []
+    const args = ['exec', text, ...imgFlags, '--skip-git-repo-check', '--json']
     if (runExec) {
       await runExec(bin || 'codex', args, { cwd: cwd || undefined, timeout: 60_000 })
       return {
@@ -387,7 +388,7 @@ export class CodexAdapter {
     }
   }
 
-  async sendPrompt({ sessionId, text, cwd, execImpl } = {}) {
+  async sendPrompt({ sessionId, text, cwd, imagePaths = [], execImpl } = {}) {
     const rawId = toRawCodexId(sessionId)
     const prompt = String(text || '').trim()
     if (!prompt) return { ok: false, error: '请输入指令内容' }
@@ -396,7 +397,8 @@ export class CodexAdapter {
     if (!bin && !runExec) {
       return { ok: false, error: '当前电脑未检测到 codex CLI 可执行文件' }
     }
-    const args = ['exec', 'resume', rawId, prompt, '--skip-git-repo-check', '--json']
+    const imgFlags = Array.isArray(imagePaths) ? imagePaths.filter(Boolean).flatMap(p => ['-i', p]) : []
+    const args = ['exec', 'resume', rawId, prompt, ...imgFlags, '--skip-git-repo-check', '--json']
     if (runExec) {
       await runExec(bin || 'codex', args, { cwd: cwd || undefined, timeout: 60_000 })
       return {

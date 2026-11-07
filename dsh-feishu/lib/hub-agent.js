@@ -26,6 +26,7 @@ import {
   invalidateDshSessionParseCache,
   loadDiskSessionsFromDshHome,
   loadOrCreateHostIdentity,
+  persistCommandAttachments,
   renameDiskSession,
 } from './workspace-ops.js'
 
@@ -839,14 +840,33 @@ export class HubAgent {
         case 'steer':
         case 'stop': {
           const targetId = String(cmd.agentId ?? '')
+          const matchedAnySess =
+            (this.cachedAgySessions || []).find(s => s.id === targetId) ||
+            (this.cachedExternalSessions || []).find(s => s.id === targetId) ||
+            (this.cachedDiskSessions || []).find(s => s.id === targetId)
+          const effectiveCwd = matchedAnySess?.cwd || cmd.cwd || this.config?.defaultWorkspace || ''
+          let effectiveText = String(cmd.text ?? cmd.prompt ?? '').trim()
+          let imagePaths = []
+          let savedFiles = []
+          if ((type === 'prompt' || type === 'steer') && Array.isArray(cmd.attachments) && cmd.attachments.length > 0) {
+            const persisted = await persistCommandAttachments(cmd.attachments, {
+              cwd: effectiveCwd,
+              dshHome: this.config.dshHome,
+              agentId: targetId,
+            })
+            savedFiles = persisted.savedFiles
+            imagePaths = persisted.imagePaths
+            effectiveText = persisted.enrichPrompt(effectiveText)
+          }
+
           if (isAntigravityIdeSessionId(targetId)) {
             const sess = (this.cachedAgySessions || []).find(s => s.id === targetId)
             const res = await executeAntigravityIdeAction(
-              { type, agentId: targetId, text: cmd.text, cwd: sess?.cwd || cmd.cwd },
+              { type, agentId: targetId, text: effectiveText, cwd: sess?.cwd || cmd.cwd, imagePaths },
               { execImpl: this.execImpl },
             )
             if (res.ok && (type === 'prompt' || type === 'steer')) {
-              const trimmedText = String(cmd.text || '').trim()
+              const trimmedText = effectiveText
               if (trimmedText) {
                 const nowTs = Date.now()
                 const list = this.pendingUserPrompts.get(targetId) || []
@@ -861,7 +881,6 @@ export class HubAgent {
                       text: trimmedText,
                       thinking: '',
                       tools: [],
-                      toolCalls: [],
                       time: nowTs,
                     },
                   ]
@@ -870,7 +889,10 @@ export class HubAgent {
                 }
               }
             }
-            return res
+            return {
+              ...res,
+              ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),
+            }
           }
           const extAdapter = this.harnessRouter?.getAdapter(targetId)
           if (extAdapter) {
@@ -885,23 +907,32 @@ export class HubAgent {
               return await extAdapter.stopSession({ sessionId: targetId, cwd: extSess?.cwd || cmd.cwd })
             }
             if ((type === 'prompt' || type === 'steer') && typeof extAdapter.sendPrompt === 'function') {
-              return await extAdapter.sendPrompt({
+              const extRes = await extAdapter.sendPrompt({
                 sessionId: targetId,
-                text: cmd.text,
+                text: effectiveText,
                 cwd: extSess?.cwd || cmd.cwd,
+                imagePaths,
                 mode: type,
                 execImpl: this.execImpl,
               })
+              return {
+                ...extRes,
+                ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),
+              }
             }
           }
-          const bridgeRes = await this.bridge.executeHubCommand(cmd)
+          const enrichedCmd =
+            effectiveText && effectiveText !== cmd.text
+              ? { ...cmd, text: effectiveText, prompt: effectiveText }
+              : cmd
+          const bridgeRes = await this.bridge.executeHubCommand(enrichedCmd)
           if (!bridgeRes?.ok && bridgeRes?.error === '找不到该任务会话') {
             if (type === 'stop' && this.dshHeadlessRunner?.isRunning(targetId)) {
               return this.dshHeadlessRunner.stop(targetId)
             }
             const diskSess = (this.cachedDiskSessions || []).find(s => s.id === targetId)
             if (diskSess && (type === 'prompt' || type === 'steer')) {
-              const trimmedText = String(cmd.text || '').trim()
+              const trimmedText = effectiveText
               const headlessRes = await this.dshHeadlessRunner.runTurn({
                 sessionId: targetId,
                 text: trimmedText,
@@ -917,42 +948,82 @@ export class HubAgent {
                 diskSess.lastActivity = nowTs
                 diskSess.updatedAt = nowTs
               }
-              return headlessRes
+              return {
+                ...headlessRes,
+                ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),
+              }
             }
           }
-          return bridgeRes
+          return {
+            ...bridgeRes,
+            ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),
+          }
         }
         case 'new_session': {
+          const newCwd = cmd.cwd || this.config?.defaultWorkspace || process.cwd()
+          let effectivePrompt = String(cmd.prompt || cmd.text || '').trim()
+          let imagePaths = []
+          let savedFiles = []
+          if (Array.isArray(cmd.attachments) && cmd.attachments.length > 0) {
+            const persisted = await persistCommandAttachments(cmd.attachments, {
+              cwd: newCwd,
+              dshHome: this.config.dshHome,
+            })
+            savedFiles = persisted.savedFiles
+            imagePaths = persisted.imagePaths
+            effectivePrompt = persisted.enrichPrompt(effectivePrompt)
+          }
           if (cmd.harness === 'antigravity-ide') {
-            return await executeAntigravityIdeAction(
+            const agyRes = await executeAntigravityIdeAction(
               {
                 type: 'new_session',
                 title: cmd.title,
-                prompt: cmd.prompt || cmd.text,
+                prompt: effectivePrompt,
                 cwd: cmd.cwd,
+                imagePaths,
               },
               { execImpl: this.execImpl },
             )
+            return {
+              ...agyRes,
+              ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),
+            }
           }
           const extAdapter = this.harnessRouter?.getAdapter(cmd.harness)
           if (extAdapter && typeof extAdapter.createSession === 'function') {
-            return await extAdapter.createSession({
+            const extNewRes = await extAdapter.createSession({
               title: cmd.title,
-              prompt: cmd.prompt || cmd.text,
+              prompt: effectivePrompt,
               cwd: cmd.cwd,
+              imagePaths,
               execImpl: this.execImpl,
             })
+            return {
+              ...extNewRes,
+              ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),
+            }
           }
-          const bridgeNewRes = await this.bridge.executeHubCommand(cmd)
+          const bridgeNewRes = await this.bridge.executeHubCommand({
+            ...cmd,
+            prompt: effectivePrompt,
+            text: effectivePrompt,
+          })
           if (!bridgeNewRes?.ok && bridgeNewRes?.error === '当前 DSH 实例不支持动态创建会话') {
-            return await this.dshHeadlessRunner.runTurn({
+            const hlNewRes = await this.dshHeadlessRunner.runTurn({
               isNew: true,
               title: cmd.title,
-              text: cmd.prompt || cmd.text,
-              cwd: cmd.cwd || this.config?.defaultWorkspace || process.cwd(),
+              text: effectivePrompt,
+              cwd: newCwd,
             })
+            return {
+              ...hlNewRes,
+              ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),
+            }
           }
-          return bridgeNewRes
+          return {
+            ...bridgeNewRes,
+            ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),
+          }
         }
         case 'request_ax_permission': {
           const perm = await checkAccessibilityPermission({

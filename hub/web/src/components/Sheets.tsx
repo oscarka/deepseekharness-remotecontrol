@@ -50,21 +50,43 @@ export function Sheets() {
 
           <div
             class="form-label"
-            style="display:flex;align-items:center;justify-content:space-between;"
+            style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;"
           >
-            <span>4. 任务指令（或点选下方快捷指令）</span>
-            <button
-              type="button"
-              class="voice-pill-btn"
-              id="newTaskVoiceBtn"
-              onClick={e => {
-                e.preventDefault();
-                e.stopPropagation();
-                (window as any).toggleVoiceInput?.('newTaskInput', 'newTaskVoiceBtn');
-              }}
-            >
-              🎤 语音输入
-            </button>
+            <span>4. 任务指令（支持截图或语音）</span>
+            <div style="display:inline-flex;align-items:center;gap:6px;">
+              <input
+                type="file"
+                id="newTaskImageInput"
+                accept="image/*"
+                multiple
+                style="display:none;"
+                onChange={e => (window as any).onChatImageSelected?.(e, 'newTask')}
+              />
+              <button
+                type="button"
+                class="voice-pill-btn"
+                id="newTaskImageBtn"
+                onClick={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  (window as any).triggerImagePicker?.('newTask');
+                }}
+              >
+                🖼️ 传截图
+              </button>
+              <button
+                type="button"
+                class="voice-pill-btn"
+                id="newTaskVoiceBtn"
+                onClick={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  (window as any).toggleVoiceInput?.('newTaskInput', 'newTaskVoiceBtn');
+                }}
+              >
+                🎤 语音输入
+              </button>
+            </div>
           </div>
           <div class="chip-selector" style="margin-bottom:6px;">
             <button
@@ -93,13 +115,19 @@ export function Sheets() {
               📦 总结代码改动
             </button>
           </div>
+          <div
+            class="composer-attachments-strip"
+            id="newTaskAttachmentsStrip"
+            style="display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"
+          ></div>
           <textarea
             class="new-task-textarea"
             id="newTaskInput"
-            placeholder="输入你想让电脑执行的任务..."
+            placeholder="输入你想让电脑执行的任务，或点击右上角🖼️传截图..."
             autocorrect="on"
             autocapitalize="sentences"
             spellcheck={true}
+            onPaste={e => (window as any).onComposerPaste?.(e, 'newTask')}
           ></textarea>
 
           <button

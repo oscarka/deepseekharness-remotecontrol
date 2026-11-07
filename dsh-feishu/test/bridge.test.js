@@ -764,3 +764,85 @@ test('dsh disk sessions are idle-resumable (never observe-only) and HubCore reco
   assert.match(extracted[1].tools[0].commandLine, /--- 执行输出 ---/)
   assert.match(extracted[1].tools[0].commandLine, /hub\/hub-core\.js/)
 })
+
+test('persistCommandAttachments saves mobile screenshots to workspace and enriches prompts across harnesses', async () => {
+  const { persistCommandAttachments } = await import('../lib/workspace-ops.js')
+  const { HubCore } = await import('../../hub/hub-core.js')
+  const { existsSync, readFileSync } = await import('node:fs')
+
+  const root = await mkdtemp(join(tmpdir(), 'dsh-upload-test-'))
+  try {
+    // 1x1 PNG in base64
+    const samplePngBase64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0ioAAAAASUVORK5CYII='
+
+    const saved = await persistCommandAttachments(
+      [
+        {
+          name: 'mobile-screen-1.png',
+          mimeType: 'image/png',
+          dataBase64: `data:image/png;base64,${samplePngBase64}`,
+        },
+      ],
+      {
+        cwd: root,
+        dshHome: root,
+        agentId: 'codex:019c0000-1111-2222-3333-444444444444',
+        now: 1793960000000,
+      },
+    )
+
+    assert.equal(saved.savedFiles.length, 1)
+    assert.equal(saved.imagePaths.length, 1)
+    assert.ok(existsSync(saved.imagePaths[0]))
+    assert.ok(saved.imagePaths[0].includes('.dsh-uploads'))
+    const diskBuf = readFileSync(saved.imagePaths[0])
+    assert.ok(diskBuf.length > 20)
+
+    const enriched = saved.enrichPrompt('请看这张报错截图')
+    assert.match(enriched, /请看这张报错截图/)
+    assert.match(enriched, /手机端上传图片附件/)
+    assert.ok(enriched.includes(saved.imagePaths[0]))
+
+    // Verify HubCore keeps attachments in host.commands for heartbeat delivery,
+    // while stripping raw base64 from HTTP echo and getFullState()
+    const hub = new HubCore({ stateFile: join(root, 'hub-state.json') })
+    hub.handleHeartbeat({
+      hostId: 'mac-test',
+      hostName: 'Mac Test',
+      bridgeState: { tasks: [], approvals: [], workspaces: [] },
+    })
+    const qRes = hub.queueCommand('mac-test', {
+      type: 'prompt',
+      agentId: 'codex:019c0000-1111-2222-3333-444444444444',
+      text: '帮我看截图',
+      attachments: [
+        {
+          name: 'shot.png',
+          mimeType: 'image/png',
+          dataBase64: samplePngBase64,
+        },
+      ],
+    })
+    assert.equal(qRes.ok, true)
+    assert.equal(qRes.command.attachmentCount, 1)
+    assert.equal(qRes.command.attachments, undefined)
+
+    const fullState = hub.getFullState()
+    const pendingInState = fullState.hosts[0].pendingCommands[0]
+    assert.equal(pendingInState.attachments, undefined)
+
+    // When host heartbeats, it receives the full attachments payload
+    const hbRes = hub.handleHeartbeat({
+      hostId: 'mac-test',
+      hostName: 'Mac Test',
+      bridgeState: { tasks: [], approvals: [], workspaces: [] },
+    })
+    assert.equal(hbRes.commands.length, 1)
+    assert.equal(hbRes.commands[0].attachments.length, 1)
+    assert.equal(hbRes.commands[0].attachments[0].dataBase64, samplePngBase64)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
