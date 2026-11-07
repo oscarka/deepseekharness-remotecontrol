@@ -6,7 +6,7 @@
 - 保留当时的判断，包括后来被推翻的方案；
 - 目的是解释「为什么这样设计」，而不是「怎么用」。
 
-用户文档请回到仓库根目录的 [README](../README.md) 与 [SECURITY](../SECURITY.md)。
+用户文档请回到仓库根目录的 [README](../../README.md) 与 [SECURITY](../../SECURITY.md)。
 
 ## 索引
 
