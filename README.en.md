@@ -191,27 +191,31 @@ Put the resulting Service URL into `FEISHU_HUB_URL` on every machine.
 
 This project holds a Feishu `App Secret`, a Hub token and a device private key, so the boundary is explicit:
 
-- **No inbound port by default**: the Feishu path is outbound-only; the Hub is the only exposed surface and requires `HUB_TOKEN`.
+- **No inbound port by default**: the Feishu path is outbound-only; the Hub is the only exposed surface. Set `HUB_TOKEN` before exposing it — without it, no authentication is performed (mandatory from 0.3.0).
 - **Secret files must be `0600`** — enforced at startup.
 - **Allowlist**: senders outside `FEISHU_ALLOWED_OPEN_IDS` get no session data at all.
 - **Audit log** at `~/.dsh/feishu-audit.jsonl`, also `0600`.
 - **Share encryption**: the server only ever sees ciphertext; the key never appears in a request.
 
-See **[SECURITY.md](SECURITY.md)** for the threat model, known limitations and key rotation. Report vulnerabilities through GitHub Security Advisories, not public issues.
+See **[SECURITY.md](SECURITY.md)** for the threat model, known limitations and key rotation. Dependencies are listed in **[docs/dependencies.md](docs/dependencies.md)** — the Hub has zero runtime dependencies. Report vulnerabilities through GitHub Security Advisories, not public issues.
+
+## FAQ
+
+Install problems, connectivity, cost, privacy — start with the **[FAQ](docs/FAQ.en.md)**. It answers: can I use it without DSH, does Railway really cost money, does Tailscale work from China, and does your data leave your machine.
 
 ## Roadmap
 
 - [x] Feishu long-connection control, approvals, completion push
 - [x] Self-hosted Hub, multi-host switching, one-click migration
 - [x] E2EE sharing, device pinning, pairing codes, Web Push
-- [ ] Single-command local mode without Feishu
+- [ ] Single-command Docker image (zero-config local mode)
 - [ ] Demo video and screenshots
 - [ ] More harness adapters and capability parity
 - [ ] More complete English documentation
 
 ## Contributing
 
-Issues and PRs are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first — especially "never commit a real secret".
+Issues and PRs are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first — especially "never commit a real secret". Also worth a look: [KNOWN_ISSUES.md](KNOWN_ISSUES.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ```bash
 git clone https://github.com/oscarka/deepseekharness-remotecontrol.git

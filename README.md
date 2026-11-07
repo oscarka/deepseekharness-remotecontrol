@@ -191,11 +191,13 @@ export HUB_TOKEN="自定义一个强密码"
 
 这个项目持有飞书 `App Secret`、Hub Token 和设备私钥，所以安全边界写得很明确：
 
-- **默认零入站端口**：飞书链路是纯出站长连接；Hub 是唯一对外暴露的面，且需要 `HUB_TOKEN`。
+- **默认零入站端口**：飞书链路是纯出站长连接；Hub 是唯一对外暴露的面。对外之前必须设置 `HUB_TOKEN`——不设置时不会启用鉴权（0.3.0 起强制要求）。
 - **密钥文件强制 `0600`**，启动时校验，不合格直接拒绝启动。
 - **白名单**：`FEISHU_ALLOWED_OPEN_IDS` 之外的发送者不会拿到任何会话信息。
 - **审计日志**：`~/.dsh/feishu-audit.jsonl`，同样 `0600`。
 - **分享加密**：服务端只见密文，解密密钥不出现在任何请求里。
+
+依赖清单见 **[docs/dependencies.md](docs/dependencies.md)**：Hub 零运行时依赖，插件只有一个飞书官方 SDK。
 
 完整威胁模型、已知限制与密钥轮换方法见 **[SECURITY.md](SECURITY.md)**。发现漏洞请走 GitHub Security Advisories，不要开公开 issue。
 
@@ -208,14 +210,14 @@ export HUB_TOKEN="自定义一个强密码"
 - [x] 飞书长连接控制 + 审批 + 完成推送
 - [x] 自托管 Hub、多机切换、一键迁移
 - [x] E2EE 分享、设备指纹、配对码、Web Push
-- [ ] 无飞书的一键本地模式（单命令启动）
+- [ ] 单命令启动的 Docker 镜像（本地零配置）
 - [ ] 演示视频与截图
 - [ ] 更多 Harness 适配与能力对齐
 - [ ] 更完整的英文文档
 
 ## 参与
 
-欢迎 issue 和 PR。开始之前请读 [CONTRIBUTING.md](CONTRIBUTING.md)，尤其是「不要提交任何真实密钥」这一条。
+欢迎 issue 和 PR。开始之前请读 [CONTRIBUTING.md](CONTRIBUTING.md)，尤其是「不要提交任何真实密钥」这一条。也建议先看 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)（已知限制）和 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 
 ```bash
 git clone https://github.com/oscarka/deepseekharness-remotecontrol.git

@@ -13,13 +13,18 @@
 - GitHub issue / PR 模板
 - 首屏 banner 与 Social Preview 源文件（`docs/assets/`），以及导出好的 `social-preview.png`
 - `docs/FAQ.md`：装不装 DSH、Railway 费用、Tailscale 在国内的可用性、数据流向等 15 个问题
+- `docs/FAQ.en.md`：英文精简版 FAQ
 - `docs/launch/`：发布检查清单、Release 正文草稿、中英文发布文章、90 秒演示分镜
+- `CODE_OF_CONDUCT.md`：Contributor Covenant 2.1 改编
+- `KNOWN_ISSUES.md`：能力、部署、环境三类已知限制与临时办法
+- `docs/dependencies.md`：依赖清单（Hub 零运行时依赖）
 
 ### Changed
 
 - 重写 README：首屏改为「问题 → 架构 → 快速开始」，补充 30 秒本地启动路径
 - 内部设计文档移入 `docs/design/`
 - 关于第三方托管服务的表述改为「兼容 / 可替代」，并补充独立性免责声明
+- README 安全章节改为如实描述：不设置 `HUB_TOKEN` 时不启用鉴权（此前表述为「必须」，与代码不符），并注明 0.3.0 起强制要求
 
 ## [0.2.0] - 2026-11-07
 
