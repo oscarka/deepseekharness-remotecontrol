@@ -8,6 +8,7 @@
 | `preview-phone-home.svg` / `.png` | 手机端首页 | 780×1688（2x） |
 | `preview-phone-approval.svg` / `.png` | 手机端审批卡片 | 780×1688（2x） |
 | `preview-desktop.svg` / `.png` | 桌面端总控台 | 1280×800 |
+| `preview-feishu-card.svg` / `.png` | 飞书审批卡片 | 1440×840（2x） |
 | `preview-flow.gif` | README 里的短动画 | 390×844，4.6 秒，370 KB |
 
 ## 关于预览图
