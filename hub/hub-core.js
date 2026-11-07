@@ -1058,7 +1058,7 @@ export class HubCore {
     }
     const nextFingerprint = this.computeHostFingerprint(record)
     const stateChanged = hasCommandActivity || nextFingerprint !== record._lastFingerprint
-    if (stateChanged || now - (record._lastBroadcastAt || 0) >= 45_000) {
+    if (stateChanged || now - (record._lastBroadcastAt || 0) >= 12_000) {
       record._lastFingerprint = nextFingerprint
       record._lastBroadcastAt = now
       void this.persist()

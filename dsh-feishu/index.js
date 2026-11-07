@@ -141,25 +141,19 @@ export function apply(ctx, rawConfig) {
             daemonLock = await acquireDaemonLock({
               dshHome: effectiveConfig.dshHome,
               hostId: effectiveConfig.hostId,
-              replace: false,
+              replace: true,
             })
           } catch {}
-          if (!daemonLock || daemonLock.acquired !== false) {
-            hubAgent = new HubAgent({
-              config: effectiveConfig,
-              bridge,
-              transport,
-              audit,
-              logger,
-              bootId: daemonLock?.bootId,
-              bootEpochMs: daemonLock?.startedAt || Date.now(),
-            })
-            hubAgent.start()
-          } else {
-            logger?.info?.(
-              `dsh-feishu: standalone daemon (PID ${daemonLock.holder?.pid}) already holds daemon.lock; skipping duplicate HubAgent`,
-            )
-          }
+          hubAgent = new HubAgent({
+            config: effectiveConfig,
+            bridge,
+            transport,
+            audit,
+            logger,
+            bootId: daemonLock?.bootId,
+            bootEpochMs: daemonLock?.startedAt || Date.now(),
+          })
+          hubAgent.start()
         }
 
         await audit.write('startup', {

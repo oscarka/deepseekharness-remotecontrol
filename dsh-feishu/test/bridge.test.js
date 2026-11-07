@@ -1239,7 +1239,7 @@ test('real DSH v4 zstd active lock guard, 409 approval conflict, disk transcript
   }
 })
 
-test('long-running DSH tool turn (>120s/300s) lock protection & server-authoritative approval TTL bypass prevention', async () => {
+test('45s mid-turn DSH lock window, stale 0-byte lock recovery & server-authoritative approval TTL bypass prevention', async () => {
   const { HubCore } = await import('../../hub/hub-core.js')
   const { isDshSessionActivelyWriting } = await import('../lib/harnesses/dsh-headless-adapter.js')
   const { loadDiskSessionsFromDshHome, invalidateDshSessionParseCache } = await import('../lib/workspace-ops.js')
@@ -1248,44 +1248,47 @@ test('long-running DSH tool turn (>120s/300s) lock protection & server-authorita
 
   const root = await mkdtemp(join(tmpdir(), 'dsh-long-turn-and-ttl-'))
   try {
-    // 1. Long-running tool turn: `sleep 300` where transcript mtime is 2 minutes and 5 minutes old
+    // 1. Mid-turn tool window (<= 45s) is protected, while stale 0-byte session.lock (> 45s) does NOT stay stuck as 'running'
     const sessDir = join(root, 'sessions', 'proj-long', 'session-sleep-300')
     mkdirSync(sessDir, { recursive: true })
     const zstdPath = join(sessDir, 'session.v4.jsonl.zstd')
     const lockPath = join(sessDir, 'session.lock')
-    writeFileSync(lockPath, '99999\n', 'utf8')
+    writeFileSync(lockPath, '', 'utf8')
 
     const longRunningLines = [
       JSON.stringify({ type: 'session', id: 'session-sleep-300', cwd: root, time: 1794000000000 }),
       JSON.stringify({
         type: 'user/message',
         time: 1794000001000,
-        data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Run 5-minute build' }] },
+        data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Run build' }] },
       }),
       JSON.stringify({
         type: 'tool/call',
         time: 1794000002000,
-        data: { turn: 1, step: 1, callId: 'c-long', name: 'bash', arguments: { command: 'sleep 300' } },
+        data: { turn: 1, step: 1, callId: 'c-long', name: 'bash', arguments: { command: 'npm test' } },
       }),
     ].join('\n')
     writeFileSync(zstdPath, zlib.zstdCompressSync(Buffer.from(`${longRunningLines}\n`, 'utf8')))
 
     const nowMs = Date.now()
-    // 120 seconds (2 minutes) old
+    // 30 seconds old (within 45s mid-turn window) -> active/running
+    const thirtySecAgo = new Date(nowMs - 30_000)
+    utimesSync(zstdPath, thirtySecAgo, thirtySecAgo)
+    assert.equal(isDshSessionActivelyWriting(sessDir, { now: nowMs }), true)
+    invalidateDshSessionParseCache()
+    const activeDiskList = await loadDiskSessionsFromDshHome(root)
+    assert.equal(activeDiskList.length, 1)
+    assert.equal(activeDiskList[0].status, 'running')
+
+    // 120 seconds (2 minutes) old with permanent 0-byte session.lock -> idle (reclaimable, not stuck running)
     const twoMinAgo = new Date(nowMs - 120_000)
     utimesSync(zstdPath, twoMinAgo, twoMinAgo)
-    assert.equal(isDshSessionActivelyWriting(sessDir, { now: nowMs }), true)
-
-    // 300 seconds (5 minutes) old
-    const fiveMinAgo = new Date(nowMs - 300_000)
-    utimesSync(zstdPath, fiveMinAgo, fiveMinAgo)
-    assert.equal(isDshSessionActivelyWriting(sessDir, { now: nowMs }), true)
-
-    // Also verify loadDiskSessionsFromDshHome reports status='running' for a 5-minute-old unfinished tool turn with session.lock
+    utimesSync(lockPath, twoMinAgo, twoMinAgo)
+    assert.equal(isDshSessionActivelyWriting(sessDir, { now: nowMs }), false)
     invalidateDshSessionParseCache()
-    const diskList = await loadDiskSessionsFromDshHome(root)
-    assert.equal(diskList.length, 1)
-    assert.equal(diskList[0].status, 'running')
+    const idleDiskList = await loadDiskSessionsFromDshHome(root)
+    assert.equal(idleDiskList.length, 1)
+    assert.equal(idleDiskList[0].status, 'idle')
 
     // 2. Server-authoritative approval TTL: client expiresAt: 0 or ttlMs: 999999999 CANNOT bypass 45s TTL
     const hub = new HubCore({ stateFile: join(root, 'hub-state.json') })

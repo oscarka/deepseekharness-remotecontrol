@@ -38,7 +38,7 @@ function decompressZstdTailText(rawBuf, maxFrames = 6) {
  */
 export function isDshSessionActivelyWriting(
   sessDir,
-  { now = Date.now(), activeWindowMs = 6000, maxToolTurnMs = 6 * 60 * 60 * 1000 } = {},
+  { now = Date.now(), activeWindowMs = 6000, midTurnWindowMs = 45000 } = {},
 ) {
   try {
     const zstdPath = join(sessDir, 'session.v4.jsonl.zstd')
@@ -54,7 +54,7 @@ export function isDshSessionActivelyWriting(
       // Conservative mtime gate: any modification within activeWindowMs is treated as active writing
       return true
     }
-    if (ageMs > maxToolTurnMs) {
+    if (ageMs > midTurnWindowMs) {
       return false
     }
 
@@ -182,11 +182,42 @@ export function buildDshHeadlessPatchFile(dshHome) {
     const cwd = String(process.env.DSH_REMOTE_CWD || process.cwd()).trim();
     let agent;
     if (!isNew && sid) {
-      const resumed = await c.agents.resume({
-        resumeSessionId: sid,
-        agentOptions,
-        setup
-      });
+      let resumed;
+      try {
+        resumed = await c.agents.resume({
+          resumeSessionId: sid,
+          agentOptions,
+          setup
+        });
+      } catch (resumeErr) {
+        if (
+          process.env.DSH_ALLOW_IDLE_LOCK_TAKEOVER !== "0" &&
+          (resumeErr?.name === "SessionAlreadyOwnedError" ||
+            String(resumeErr?.message || "").includes("active write handle"))
+        ) {
+          const fs = await import("node:fs");
+          const path = await import("node:path");
+          const dshRoot = process.env.DSH_HOME || path.join(process.env.HOME || "", ".dsh");
+          const sessRoot = path.join(dshRoot, "sessions");
+          if (fs.existsSync(sessRoot)) {
+            for (const proj of fs.readdirSync(sessRoot)) {
+              const lockCandidate = path.join(sessRoot, proj, sid, "session.lock");
+              if (fs.existsSync(lockCandidate)) {
+                try {
+                  fs.unlinkSync(lockCandidate);
+                } catch {}
+              }
+            }
+          }
+          resumed = await c.agents.resume({
+            resumeSessionId: sid,
+            agentOptions,
+            setup
+          });
+        } else {
+          throw resumeErr;
+        }
+      }
       agent = resumed.agent || resumed;
     } else {
       const created = await c.agents.create({
@@ -429,7 +460,7 @@ export class DshHeadlessRunner {
               : `🚀 已唤醒 DSH 会话并注入指令，正在后台执行...`,
           })
         }
-      }, 4500)
+      }, 650)
     })
   }
 }
