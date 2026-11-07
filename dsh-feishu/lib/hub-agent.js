@@ -107,8 +107,19 @@ export class HubAgent {
     this.inflightTick = null
     this.dshHeadlessRunner = new DshHeadlessRunner({
       dshHome: this.config?.dshHome,
-      onTurnSettled: () => {
+      onTurnSettled: (sessionId, code, stderrBuf) => {
         invalidateDshSessionParseCache()
+        if (code !== 0 && sessionId) {
+          const diskSess = (this.cachedDiskSessions || []).find(s => s.id === sessionId)
+          if (diskSess) {
+            diskSess.status = 'idle'
+            diskSess.turnState = 'interrupted'
+            diskSess.lastInterruptedAt = Date.now()
+            if (stderrBuf) {
+              diskSess.lastOutput = `⚠️ 执行异常 (exit ${code}): ${String(stderrBuf).trim().slice(-200)}`
+            }
+          }
+        }
         void this.refreshDshStats(true).then(() => this.tick())
       },
     })
@@ -854,10 +865,12 @@ export class HubAgent {
               dshHome: this.config.dshHome,
               agentId: targetId,
             })
-            if (!persisted.ok || persisted.savedFiles.length === 0) {
+            if (!persisted.ok || persisted.savedFiles.length === 0 || persisted.rejectedCount > 0) {
               return {
                 ok: false,
-                error: persisted.error || '图片附件保存失败（文件超过 8MB 或格式不支持），指令未执行',
+                error:
+                  persisted.error ||
+                  `共上传 ${cmd.attachments.length} 张图片，其中 ${persisted.rejectedCount} 张保存失败，指令未执行`,
               }
             }
             savedFiles = persisted.savedFiles
@@ -978,10 +991,12 @@ export class HubAgent {
               cwd: newCwd,
               dshHome: this.config.dshHome,
             })
-            if (!persisted.ok || persisted.savedFiles.length === 0) {
+            if (!persisted.ok || persisted.savedFiles.length === 0 || persisted.rejectedCount > 0) {
               return {
                 ok: false,
-                error: persisted.error || '图片附件保存失败（文件超过 8MB 或格式不支持），任务未创建',
+                error:
+                  persisted.error ||
+                  `共上传 ${cmd.attachments.length} 张图片，其中 ${persisted.rejectedCount} 张保存失败，任务未创建`,
               }
             }
             savedFiles = persisted.savedFiles
