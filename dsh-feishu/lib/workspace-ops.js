@@ -939,3 +939,125 @@ async function resolveSafeTarget(realRoot, candidatePath) {
   }
   return real
 }
+
+const MAX_ATTACHMENTS_PER_CMD = 4
+const MAX_SINGLE_ATTACHMENT_BYTES = 8 * 1024 * 1024
+
+function inferImageExtension(mimeType = '', name = '') {
+  const m = String(mimeType || '').toLowerCase()
+  if (m.includes('png')) return '.png'
+  if (m.includes('webp')) return '.webp'
+  if (m.includes('gif')) return '.gif'
+  if (m.includes('jpeg') || m.includes('jpg')) return '.jpg'
+  const ext = extname(String(name || '')).toLowerCase()
+  if (['.png', '.jpg', '.jpeg', '.webp', '.gif'].includes(ext)) {
+    return ext === '.jpeg' ? '.jpg' : ext
+  }
+  return '.jpg'
+}
+
+/**
+ * Persist mobile-uploaded screenshot/photo attachments to the target workspace (`.dsh-uploads`)
+ * and (when targeting Antigravity IDE) to the conversation's `.user_uploaded` brain directory
+ * so all 4 harnesses (DSH, Antigravity IDE, Codex, Claude Code) can inspect the image directly.
+ */
+export async function persistCommandAttachments(
+  attachments,
+  { cwd = '', dshHome = '', agentId = '', now = Date.now() } = {},
+) {
+  const list = Array.isArray(attachments) ? attachments.slice(0, MAX_ATTACHMENTS_PER_CMD) : []
+  const savedFiles = []
+
+  for (let i = 0; i < list.length; i += 1) {
+    const item = list[i]
+    if (!item || typeof item !== 'object') continue
+    const rawB64 = String(item.dataBase64 || item.base64 || '').trim()
+    if (!rawB64) continue
+    const cleanB64 = rawB64.replace(/^data:[^;]+;base64,/i, '')
+    let buf
+    try {
+      buf = Buffer.from(cleanB64, 'base64')
+    } catch {
+      continue
+    }
+    if (!buf || buf.length === 0 || buf.length > MAX_SINGLE_ATTACHMENT_BYTES) continue
+
+    const ext = inferImageExtension(item.mimeType || item.mime, item.name)
+    const rawBase = basename(String(item.name || `screenshot-${i + 1}`), extname(String(item.name || '')))
+      .replace(/[^a-zA-Z0-9_\u4e00-\u9fa5-]/g, '_')
+      .slice(0, 32) || `screenshot_${i + 1}`
+    const shortHex = randomBytes(3).toString('hex')
+    const fileName = `mobile-${now}-${i + 1}-${rawBase}${ext}`
+
+    let primaryPath = ''
+    if (cwd) {
+      try {
+        const wsUploadDir = join(resolve(cwd), '.dsh-uploads')
+        await mkdir(wsUploadDir, { recursive: true })
+        const candidate = join(wsUploadDir, fileName)
+        await writeFile(candidate, buf, { mode: 0o600 })
+        primaryPath = candidate
+      } catch {
+        primaryPath = ''
+      }
+    }
+    if (!primaryPath) {
+      const fallbackDir = join(resolve(dshHome || '/tmp'), 'uploads')
+      await mkdir(fallbackDir, { recursive: true })
+      const candidate = join(fallbackDir, fileName)
+      await writeFile(candidate, buf, { mode: 0o600 })
+      primaryPath = candidate
+    }
+
+    let brainPath = ''
+    const targetId = String(agentId || '')
+    if (targetId.startsWith('agy-ide:') && process.env.HOME) {
+      const rawConvId = targetId.slice('agy-ide:'.length).trim()
+      if (rawConvId && !rawConvId.includes('/') && !rawConvId.includes('..')) {
+        try {
+          const agyUploadDir = join(
+            process.env.HOME,
+            '.gemini',
+            'antigravity',
+            'brain',
+            rawConvId,
+            '.user_uploaded',
+          )
+          await mkdir(agyUploadDir, { recursive: true })
+          const candidate = join(agyUploadDir, `media_${now}_${shortHex}${ext}`)
+          await writeFile(candidate, buf, { mode: 0o600 })
+          brainPath = candidate
+        } catch {
+          brainPath = ''
+        }
+      }
+    }
+
+    savedFiles.push({
+      name: item.name || fileName,
+      fileName,
+      mimeType: item.mimeType || IMAGE_MIME[ext] || 'image/jpeg',
+      size: buf.length,
+      path: primaryPath,
+      brainPath,
+      preferredPath: primaryPath || brainPath,
+    })
+  }
+
+  const imagePaths = savedFiles.map(f => f.preferredPath)
+  const enrichPrompt = (baseText = '') => {
+    const cleanBase = String(baseText ?? '').trim() || '请查看我从手机上传的图片并帮我分析处理：'
+    if (savedFiles.length === 0) return cleanBase
+    const lines = savedFiles.map((f, idx) => {
+      const extraBrain = f.brainPath && f.brainPath !== f.path ? ` (备用路径: ${f.brainPath})` : ''
+      return `- 📎 手机上传图片 ${idx + 1} (${f.name}): ${f.path}${extraBrain}`
+    })
+    return `${cleanBase}\n\n[手机端上传图片附件 (${savedFiles.length} 张) — 已保存至本机，请直接读取查看]:\n${lines.join('\n')}`
+  }
+
+  return {
+    savedFiles,
+    imagePaths,
+    enrichPrompt,
+  }
+}

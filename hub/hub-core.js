@@ -234,7 +234,13 @@ export class HubCore {
         hosts: [...this.hosts.values()].map(h => ({
           ...h,
           lastFilePreview: h.lastFilePreview ? this.sanitizeFilePreviewForState(h.hostId, h.lastFilePreview) : null,
-          commands: h.commands ?? [],
+          commands: (h.commands ?? []).map(c => {
+            if (c && Array.isArray(c.attachments)) {
+              const { attachments, ...rest } = c
+              return rest
+            }
+            return c
+          }),
           recentResults: (h.recentResults ?? []).slice(-15).map(r => {
             if (r && (r.dataBase64 || (typeof r.content === 'string' && r.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS))) {
               const { dataBase64, content, ...rest } = r
@@ -1282,12 +1288,16 @@ export class HubCore {
     host.commands.push(cmd)
     void this.persist()
     this.emitStateChange('command_queued')
+    const { attachments: rawAttachments, ...echoCmd } = cmd
     return {
       ok: true,
       queued: !isActivelyOnline,
       hostOnline: isActivelyOnline,
       hostLastSeenAgeMs: Number.isFinite(ageMs) ? ageMs : null,
-      command: cmd,
+      command:
+        Array.isArray(rawAttachments) && rawAttachments.length > 0
+          ? { ...echoCmd, attachmentCount: rawAttachments.length }
+          : cmd,
     }
   }
 

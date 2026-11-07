@@ -79,7 +79,35 @@ export function ChatStage() {
         </button>
       </div>
 
+      <div
+        class="composer-attachments-strip"
+        id="composerAttachmentsStrip"
+        style="display:none;"
+      ></div>
+
       <div class="chat-composer" id="chatComposerBar">
+        <input
+          type="file"
+          id="chatImageInput"
+          accept="image/*"
+          multiple
+          style="display:none;"
+          onChange={e => (window as any).onChatImageSelected?.(e, 'chat')}
+        />
+        <button
+          type="button"
+          class="voice-btn image-upload-btn"
+          id="chatImageBtn"
+          title="从手机相册上传截图或照片"
+          aria-label="上传截图或照片"
+          onClick={e => {
+            e.preventDefault();
+            e.stopPropagation();
+            (window as any).triggerImagePicker?.('chat');
+          }}
+        >
+          🖼️
+        </button>
         <button
           type="button"
           class="voice-btn"
@@ -98,12 +126,13 @@ export function ChatStage() {
           class="chat-input"
           id="globalPromptInput"
           rows={1}
-          placeholder="发指令继续对话..."
+          placeholder="发指令或点左侧🖼️传截图..."
           autocorrect="on"
           autocapitalize="sentences"
           spellcheck={true}
           onInput={() => (window as any).onComposerInput?.()}
           onKeyDown={e => (window as any).onComposerKeydown?.(e)}
+          onPaste={e => (window as any).onComposerPaste?.(e, 'chat')}
         ></textarea>
         <button
           type="button"
