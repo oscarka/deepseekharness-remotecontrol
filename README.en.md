@@ -32,6 +32,18 @@ You kick off a long refactor on your laptop, then leave the house. Within the ho
 
 A Feishu/Lark bot plus a self-hosted control hub moves all three to your phone. **Your machine needs no public IP and no port forwarding** — every connection is outbound, initiated from your own computer.
 
+## Screens
+
+<p align="center">
+  <img src="docs/assets/preview-flow.gif" width="300" alt="Phone: task list and approval card (mockup)">
+</p>
+
+<p align="center"><sub>Phone: task list → approval card (mockup; the running build may differ)</sub></p>
+
+<p align="center">
+  <img src="docs/assets/preview-desktop.png" width="820" alt="Desktop console (mockup)">
+</p>
+
 ## Architecture
 
 ```mermaid

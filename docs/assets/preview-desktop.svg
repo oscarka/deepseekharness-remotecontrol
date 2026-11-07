@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800" font-family="-apple-system, 'PingFang SC', 'Segoe UI', Roboto, sans-serif">
+  <rect width="1280" height="800" fill="#f8fafc"/>
+
+  <!-- sidebar -->
+  <rect x="0" y="0" width="300" height="800" fill="#ffffff"/>
+  <line x1="300" y1="0" x2="300" y2="800" stroke="#e2e8f0"/>
+  <text x="24" y="52" font-size="17" font-weight="700" fill="#0f172a">DSH 远控</text>
+  <text x="24" y="72" font-size="11" fill="#94a3b8">自托管 · 3 台电脑</text>
+  <rect x="24" y="88" width="252" height="34" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="38" y="109" font-size="12" fill="#94a3b8">搜索会话…</text>
+
+  <text x="24" y="156" font-size="10" font-weight="600" fill="#94a3b8" letter-spacing="1.2">运行中</text>
+
+  <!-- session 1 (active) -->
+  <rect x="12" y="168" width="276" height="66" rx="12" fill="#eff6ff"/>
+  <circle cx="32" cy="190" r="4" fill="#f59e0b"/>
+  <text x="44" y="194" font-size="13" font-weight="600" fill="#1d4ed8">修复支付回调的幂等性</text>
+  <text x="44" y="214" font-size="11" fill="#64748b">MacBook Pro · DSH</text>
+  <text x="272" y="214" font-size="10" fill="#b45309" text-anchor="end">待批准</text>
+
+  <!-- session 2 -->
+  <rect x="12" y="242" width="276" height="66" rx="12" fill="#ffffff"/>
+  <circle cx="32" cy="264" r="4" fill="#10b981"/>
+  <text x="44" y="268" font-size="13" font-weight="500" fill="#0f172a">重构 session 存储层</text>
+  <text x="44" y="288" font-size="11" fill="#64748b">Studio · Codex</text>
+
+  <!-- session 3 -->
+  <rect x="12" y="316" width="276" height="66" rx="12" fill="#ffffff"/>
+  <circle cx="32" cy="338" r="4" fill="#94a3b8"/>
+  <text x="44" y="342" font-size="13" font-weight="500" fill="#0f172a">补全 i18n 文案</text>
+  <text x="44" y="362" font-size="11" fill="#64748b">MacBook Air · Claude</text>
+
+  <!-- session 4 -->
+  <rect x="12" y="390" width="276" height="66" rx="12" fill="#ffffff"/>
+  <circle cx="32" cy="412" r="4" fill="#94a3b8"/>
+  <text x="44" y="416" font-size="13" font-weight="500" fill="#0f172a">类型检查与构建</text>
+  <text x="44" y="436" font-size="11" fill="#64748b">MacBook Pro · 昨天</text>
+
+  <!-- user -->
+  <line x1="12" y1="740" x2="288" y2="740" stroke="#e2e8f0"/>
+  <circle cx="36" cy="768" r="14" fill="#eff6ff"/>
+  <text x="36" y="773" font-size="11" font-weight="600" fill="#2563eb" text-anchor="middle">OS</text>
+  <text x="58" y="772" font-size="12" fill="#475569">oscarka</text>
+
+  <!-- main header -->
+  <text x="332" y="56" font-size="20" font-weight="700" fill="#0f172a">修复支付回调的幂等性</text>
+  <rect x="332" y="70" width="86" height="24" rx="12" fill="#fffbeb" stroke="#fde68a"/>
+  <text x="375" y="86" font-size="10.5" font-weight="600" fill="#b45309" text-anchor="middle">等待批准</text>
+  <text x="430" y="86" font-size="11" fill="#64748b">MacBook Pro · DSH · 已执行 7 步 · 2 分钟前</text>
+  <line x1="332" y1="108" x2="1248" y2="108" stroke="#e2e8f0"/>
+
+  <!-- steps -->
+  <text x="332" y="146" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="1.2">执行步骤</text>
+
+  <g>
+    <circle cx="336" cy="180" r="5" fill="#10b981"/>
+    <text x="356" y="185" font-size="13" fill="#334155">读取支付回调模块，定位重复扣款的路径</text>
+    <text x="812" y="185" font-size="11" fill="#94a3b8" text-anchor="end">0.4s</text>
+    <line x1="336" y1="190" x2="336" y2="216" stroke="#e2e8f0" stroke-width="1.5"/>
+
+    <circle cx="336" cy="226" r="5" fill="#10b981"/>
+    <text x="356" y="231" font-size="13" fill="#334155">检查现有迁移文件与索引定义</text>
+    <text x="812" y="231" font-size="11" fill="#94a3b8" text-anchor="end">1.2s</text>
+    <line x1="336" y1="236" x2="336" y2="262" stroke="#e2e8f0" stroke-width="1.5"/>
+
+    <circle cx="336" cy="272" r="5" fill="#10b981"/>
+    <text x="356" y="277" font-size="13" fill="#334155">生成迁移脚本（新增唯一索引）</text>
+    <text x="812" y="277" font-size="11" fill="#94a3b8" text-anchor="end">2.8s</text>
+    <line x1="336" y1="282" x2="336" y2="308" stroke="#e2e8f0" stroke-width="1.5"/>
+
+    <circle cx="336" cy="318" r="6" fill="#f59e0b"/>
+    <text x="356" y="323" font-size="13" font-weight="500" fill="#b45309">执行数据库迁移（等待批准）</text>
+  </g>
+
+  <!-- approval card -->
+  <rect x="848" y="140" width="400" height="440" rx="16" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="872" y="176" font-size="14" font-weight="600" fill="#0f172a">待审批的操作</text>
+  <text x="872" y="200" font-size="11" fill="#64748b">批准后任务会继续执行</text>
+
+  <text x="872" y="236" font-size="10.5" font-weight="600" fill="#94a3b8" letter-spacing="1">命令</text>
+  <rect x="872" y="246" width="352" height="104" rx="10" fill="#0f172a"/>
+  <text x="886" y="272" font-size="11.5" fill="#e2e8f0" font-family="'SF Mono', Menlo, monospace">pnpm prisma migrate deploy</text>
+  <text x="886" y="292" font-size="11.5" fill="#94a3b8" font-family="'SF Mono', Menlo, monospace">  --schema prisma/schema.prisma</text>
+  <text x="886" y="312" font-size="11.5" fill="#64748b" font-family="'SF Mono', Menlo, monospace">workdir: services/payments</text>
+  <text x="886" y="332" font-size="11.5" fill="#64748b" font-family="'SF Mono', Menlo, monospace">timeout: 120s</text>
+
+  <text x="872" y="382" font-size="12" fill="#475569">影响</text>
+  <text x="908" y="382" font-size="12" fill="#0f172a">1 张表 · 2 个索引</text>
+
+  <rect x="872" y="398" width="352" height="38" rx="10" fill="#fef2f2" stroke="#fecaca"/>
+  <text x="886" y="422" font-size="11.5" fill="#b91c1c">修改生产库结构，无法自动回滚</text>
+
+  <rect x="872" y="504" width="104" height="48" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="924" y="534" font-size="14" font-weight="600" fill="#334155" text-anchor="middle">拒绝</text>
+
+  <rect x="988" y="504" width="236" height="48" rx="12" fill="#2563eb"/>
+  <text x="1106" y="534" font-size="14" font-weight="600" fill="#ffffff" text-anchor="middle">批准并继续</text>
+
+  <!-- footer hint -->
+  <text x="332" y="640" font-size="11" fill="#94a3b8">手机上会收到同一条审批请求，任一端处理即可。</text>
+</svg>

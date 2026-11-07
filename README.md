@@ -32,6 +32,18 @@
 
 飞书机器人 + 一个自托管的总控台，把这三件事搬到手机上。**电脑不需要公网 IP，路由器不需要端口映射**——所有连接都是本机主动向外发起的。
 
+## 界面
+
+<p align="center">
+  <img src="docs/assets/preview-flow.gif" width="300" alt="手机端：任务列表与审批卡片（界面示意）">
+</p>
+
+<p align="center"><sub>手机端：任务列表 → 审批卡片（界面示意，实际以运行版本为准）</sub></p>
+
+<p align="center">
+  <img src="docs/assets/preview-desktop.png" width="820" alt="桌面端总控台（界面示意）">
+</p>
+
 ## 架构
 
 ```mermaid

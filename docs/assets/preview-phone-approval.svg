@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844" font-family="-apple-system, 'PingFang SC', 'Segoe UI', Roboto, sans-serif">
+  <rect width="390" height="844" fill="#f8fafc"/>
+
+  <!-- status bar -->
+  <text x="24" y="32" font-size="13" font-weight="600" fill="#0f172a">9:41</text>
+  <g fill="#0f172a">
+    <rect x="300" y="22" width="3" height="6" rx="1"/>
+    <rect x="305" y="20" width="3" height="8" rx="1"/>
+    <rect x="310" y="18" width="3" height="10" rx="1"/>
+    <rect x="315" y="16" width="3" height="12" rx="1"/>
+    <path d="M327 20a9 9 0 0 1 12 0" stroke="#0f172a" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    <path d="M330 24a5 5 0 0 1 6 0" stroke="#0f172a" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    <circle cx="333" cy="27.5" r="1.3"/>
+    <rect x="346" y="17" width="20" height="11" rx="3" fill="none" stroke="#0f172a" stroke-opacity="0.5"/>
+    <rect x="348" y="19" width="13" height="7" rx="1.5"/>
+    <rect x="367" y="20.5" width="2" height="4" rx="1"/>
+  </g>
+
+  <!-- header -->
+  <path d="M26 66l-7 7 7 7" stroke="#0f172a" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="48" y="77" font-size="16" font-weight="600" fill="#0f172a">修复支付回调的幂等性</text>
+  <text x="48" y="94" font-size="11" fill="#94a3b8">MacBook Pro · DSH · 第 8 步</text>
+
+  <!-- waiting banner -->
+  <rect x="16" y="108" width="358" height="68" rx="14" fill="#fffbeb" stroke="#fde68a"/>
+  <circle cx="36" cy="132" r="5" fill="#f59e0b"/>
+  <text x="50" y="137" font-size="14" font-weight="600" fill="#b45309">等待你的批准</text>
+  <text x="50" y="157" font-size="11" fill="#92400e">已暂停 2 分钟 · 超时 3 分钟后自动拒绝</text>
+
+  <!-- steps -->
+  <text x="24" y="206" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="1">执行步骤</text>
+  <g>
+    <circle cx="28" cy="228" r="4" fill="#10b981"/>
+    <text x="44" y="232" font-size="13" fill="#334155">读取支付回调模块</text>
+    <text x="356" y="232" font-size="11" fill="#94a3b8" text-anchor="end">0.4s</text>
+
+    <line x1="28" y1="236" x2="28" y2="252" stroke="#e2e8f0" stroke-width="1.5"/>
+
+    <circle cx="28" cy="260" r="4" fill="#10b981"/>
+    <text x="44" y="264" font-size="13" fill="#334155">定位重复扣款原因</text>
+    <text x="356" y="264" font-size="11" fill="#94a3b8" text-anchor="end">1.2s</text>
+
+    <line x1="28" y1="268" x2="28" y2="284" stroke="#e2e8f0" stroke-width="1.5"/>
+
+    <circle cx="28" cy="292" r="5" fill="#f59e0b"/>
+    <text x="44" y="296" font-size="13" font-weight="500" fill="#b45309">准备执行数据库迁移（待批准）</text>
+  </g>
+
+  <!-- command card -->
+  <text x="24" y="336" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="1">要执行的命令</text>
+  <rect x="16" y="348" width="358" height="126" rx="14" fill="#ffffff" stroke="#e2e8f0"/>
+  <rect x="32" y="362" width="326" height="96" rx="10" fill="#0f172a"/>
+  <text x="44" y="386" font-size="11.5" fill="#e2e8f0" font-family="'SF Mono', Menlo, monospace">pnpm prisma migrate deploy</text>
+  <text x="44" y="406" font-size="11.5" fill="#94a3b8" font-family="'SF Mono', Menlo, monospace">  --schema prisma/schema.prisma</text>
+  <text x="44" y="426" font-size="11.5" fill="#64748b" font-family="'SF Mono', Menlo, monospace">workdir: services/payments</text>
+  <text x="44" y="446" font-size="11.5" fill="#64748b" font-family="'SF Mono', Menlo, monospace">timeout: 120s</text>
+
+  <!-- impact -->
+  <text x="24" y="504" font-size="12" fill="#475569">影响范围</text>
+  <text x="90" y="504" font-size="12" fill="#0f172a">1 张表 · 2 个索引</text>
+  <rect x="16" y="518" width="358" height="40" rx="10" fill="#fef2f2" stroke="#fecaca"/>
+  <text x="32" y="543" font-size="12" fill="#b91c1c">这会修改生产数据库结构，无法自动回滚</text>
+
+  <!-- buttons -->
+  <rect x="16" y="744" width="112" height="52" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="72" y="776" font-size="15" font-weight="600" fill="#334155" text-anchor="middle">拒绝</text>
+
+  <rect x="140" y="744" width="234" height="52" rx="14" fill="#2563eb"/>
+  <text x="257" y="776" font-size="15" font-weight="600" fill="#ffffff" text-anchor="middle">批准并继续</text>
+
+  <rect x="139" y="830" width="112" height="4" rx="2" fill="#0f172a" fill-opacity="0.25"/>
+</svg>
