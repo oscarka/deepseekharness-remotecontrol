@@ -163,6 +163,10 @@ export function initHubController() {
     let lastRenderedListKey = '';
     let lastRenderedSettingsKey = '';
     let lastRenderedFilesKey = '';
+    let cachedPushStatusText = '';
+    let cachedPushStatusColor = '';
+    let cachedPushDeviceListText = '';
+    let lastAutoPushSyncAt = 0;
 
     // 外观主题偏好 (#14)：system | light | dark
     let themePref = localStorage.getItem('dsh_theme_pref') || 'system';
@@ -3531,10 +3535,10 @@ export function initHubController() {
           remoteActive: h.remoteActive,
           taskCount: (h.bridgeState?.tasks || []).length,
           runningCount: h.runningCount || 0,
-          totalBytes: h.totalBytes || 0,
+          totalBytesBucket: expandedHostCardIds[h.hostId] ? Math.round((h.totalBytes || 0) / 10240) : 0,
           turbo: h.bridgeState?.turbo?.engineLabel || '',
-          power: h.bridgeState?.systemTelemetry?.power?.label || '',
-          net: h.bridgeState?.systemTelemetry?.network?.label || '',
+          power: h.bridgeState?.systemTelemetry?.power?.shortLabel || '',
+          net: h.bridgeState?.systemTelemetry?.network?.kindLabel || '',
           shareUrl: h.lastShareResult?.shareUrl || '',
         })),
         shares: shares.map(s => ({ id: s.id || s.shareId, at: s.createdAt })),
@@ -3790,10 +3794,10 @@ export function initHubController() {
               <div class="settings-item" style="display:block;">
                 <div class="settings-item-title">启用 iPhone 锁屏实时推送</div>
                 <div class="settings-item-desc">当任意电脑有待审批、任务完成或异常时直接弹窗</div>
-                <div id="pushLocalStatus" style="margin-top:9px;font-size:12.5px;font-weight:600;color:var(--primary);">
-                  正在检测本机推送状态…
+                <div id="pushLocalStatus" style="margin-top:9px;font-size:12.5px;font-weight:600;color:${esc(cachedPushStatusColor || 'var(--primary)')};">
+                  ${esc(cachedPushStatusText || '正在检测本机推送状态…')}
                 </div>
-                <div id="pushDeviceList" style="margin-top:4px;font-size:12px;color:var(--muted);line-height:1.55;"></div>
+                <div id="pushDeviceList" style="margin-top:4px;font-size:12px;color:var(--muted);line-height:1.55;">${esc(cachedPushDeviceListText || '')}</div>
                 <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
                   <button class="pill-action-btn primary" onclick="subscribeIphonePush()">📲 开启推送</button>
                   <button class="pill-action-btn" onclick="sendTestPush()">🔔 测试</button>
@@ -3910,16 +3914,13 @@ export function initHubController() {
 
     let lastPushStatusAt = 0;
     async function refreshPushStatus(manual = false) {
-      // 设置页每 2 秒会重绘一次，避免跟着重复查询 Service Worker
-      if (!manual && Date.now() - lastPushStatusAt < 1500) return;
-      lastPushStatusAt = Date.now();
       const statusEl = document.getElementById('pushLocalStatus');
       const listEl = document.getElementById('pushDeviceList');
       if (!statusEl) return;
       const subs = hubState.pushSubscriptions || [];
       if (listEl) {
         if (!subs.length) {
-          listEl.textContent = '还没有设备登记推送';
+          cachedPushDeviceListText = '还没有设备登记推送';
         } else {
           const devices = subs.slice(0, 5).map(sub => {
             const name = sub.deviceName || '未知设备';
@@ -3927,12 +3928,23 @@ export function initHubController() {
             return `${name}${host}`;
           });
           const more = subs.length > 5 ? ` 等 ${subs.length} 台` : '';
-          listEl.textContent = `已在服务端登记 ${subs.length} 台设备：${devices.join('；')}${more}`;
+          cachedPushDeviceListText = `已在服务端登记 ${subs.length} 台设备：${devices.join('；')}${more}`;
         }
+        listEl.textContent = cachedPushDeviceListText;
       }
+      // 已经有缓存状态时，10 秒内不重复轮询 Service Worker，直接沿用缓存，彻底消除状态闪烁
+      if (!manual && cachedPushStatusText && Date.now() - lastPushStatusAt < 10000) {
+        statusEl.textContent = cachedPushStatusText;
+        if (cachedPushStatusColor) statusEl.style.color = cachedPushStatusColor;
+        if (langPref === 'en') applyLangToDom(document.body, langPref);
+        return;
+      }
+      lastPushStatusAt = Date.now();
       if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') {
-        statusEl.textContent = '本机：当前浏览器不支持锁屏推送（iPhone 需从主屏幕 App 打开）';
-        statusEl.style.color = '#d97706';
+        cachedPushStatusText = '本机：当前浏览器不支持锁屏推送（iPhone 需从主屏幕 App 打开）';
+        cachedPushStatusColor = '#d97706';
+        statusEl.textContent = cachedPushStatusText;
+        statusEl.style.color = cachedPushStatusColor;
         if (langPref === 'en') applyLangToDom(document.body, langPref);
         return;
       }
@@ -3943,27 +3955,35 @@ export function initHubController() {
         if (sub && permission === 'granted') {
           const localKey = getSubServerKeyBase64Url(sub);
           const expectedKey = hubState.vapidPublicKey || '';
-          if ((expectedKey && localKey && localKey !== expectedKey) || !subs.length) {
+          if (
+            ((expectedKey && localKey && localKey !== expectedKey) || !subs.length) &&
+            Date.now() - lastAutoPushSyncAt > 60000
+          ) {
+            lastAutoPushSyncAt = Date.now();
             const synced = await ensureLocalPushSubscriptionSynced();
             if (synced) sub = synced;
           }
-          statusEl.textContent = '本机：✅ 已开启锁屏推送';
-          statusEl.style.color = '#059669';
+          cachedPushStatusText = '本机：✅ 已开启锁屏推送';
+          cachedPushStatusColor = '#059669';
         } else if (sub && permission === 'denied') {
-          statusEl.textContent = '本机：已订阅但通知权限被拒绝，请到「设置 → 通知」中允许';
-          statusEl.style.color = '#dc2626';
+          cachedPushStatusText = '本机：已订阅但通知权限被拒绝，请到「设置 → 通知」中允许';
+          cachedPushStatusColor = '#dc2626';
         } else if (permission === 'denied') {
-          statusEl.textContent = '本机：通知权限被拒绝，请到「设置 → 通知 → DSH 远控」中允许';
-          statusEl.style.color = '#dc2626';
+          cachedPushStatusText = '本机：通知权限被拒绝，请到「设置 → 通知 → DSH 远控」中允许';
+          cachedPushStatusColor = '#dc2626';
         } else {
-          statusEl.textContent = '本机：未开启（点下方「开启推送」）';
-          statusEl.style.color = '#d97706';
+          cachedPushStatusText = '本机：未开启（点下方「开启推送」）';
+          cachedPushStatusColor = '#d97706';
         }
+        statusEl.textContent = cachedPushStatusText;
+        statusEl.style.color = cachedPushStatusColor;
         if (langPref === 'en') applyLangToDom(document.body, langPref);
         if (manual) showToast('已刷新推送状态');
       } catch (err) {
-        statusEl.textContent = '本机：状态读取失败（' + ((err && err.message) || err) + '）';
-        statusEl.style.color = '#dc2626';
+        cachedPushStatusText = '本机：状态读取失败（' + ((err && err.message) || err) + '）';
+        cachedPushStatusColor = '#dc2626';
+        statusEl.textContent = cachedPushStatusText;
+        statusEl.style.color = cachedPushStatusColor;
         if (langPref === 'en') applyLangToDom(document.body, langPref);
       }
     }
@@ -3988,7 +4008,7 @@ export function initHubController() {
         } catch {}
         showToast('🔕 已关闭本机推送');
         setTimeout(fetchState, 300);
-        void refreshPushStatus();
+        void refreshPushStatus(true);
       } catch (err) {
         showToast('❌ 关闭失败：' + ((err && err.message) || err));
       }
@@ -4158,6 +4178,7 @@ export function initHubController() {
           throw new Error(data.error || ('订阅上报失败 (HTTP ' + res.status + ')'));
         }
         showToast('📲 已成功开启 iPhone 锁屏推送！');
+        void refreshPushStatus(true);
         setTimeout(fetchState, 300);
       } catch (err) {
         const detail = (err && err.name ? err.name + ': ' : '') + ((err && err.message) || err);
