@@ -2,26 +2,15 @@
   <img src="docs/assets/banner.svg" alt="DSH Remote Control" width="100%" />
 </p>
 
-<h1 align="center">DSH Remote Control</h1>
-
 <p align="center">
-  <strong>Put your running AI coding tasks in your pocket — check progress, send prompts, stop runs, or approve actions in one tap from your phone.</strong><br/>
-  All code and transcripts stay on your own machines, never on a third-party hosted SaaS.
-</p>
-
-<p align="center">
-  <a href="https://railway.app/template?referralCode=dsh-remote"><img src="https://railway.app/button.svg" alt="Deploy on Railway" height="28" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3B82F6.svg" alt="License: MIT" /></a>
-  <img src="https://img.shields.io/badge/Docker-Mac%20%7C%20Linux%20%7C%20NAS%20%7C%20Pi-10B981.svg" alt="Multi-Arch" />
+  <img src="https://img.shields.io/badge/platform-Mac%20%7C%20Linux%20%7C%20NAS%20%7C%20Pi-10B981.svg" alt="Platform" />
   <img src="https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white" alt="Node >= 20" />
+  <a href="https://railway.app/template?referralCode=dsh-remote"><img src="https://img.shields.io/badge/Railway-1--Click_Deploy-7B3FE4?logo=railway&logoColor=white" alt="Deploy on Railway" /></a>
 </p>
 
 <p align="center">
   <a href="README.md"><strong>🇨🇳 简体中文</strong></a> · <strong>🇺🇸 English</strong> · <a href="#get-started-in-3-steps">3-Step Setup</a> · <a href="#supported-ai-coding-tools">Supported Tools</a> · <a href="#faq">FAQ</a> · <a href="docs/self-hosting.md">Self-Hosting Guide</a> · <a href="SECURITY.md">Security</a>
-</p>
-
-<p align="center">
-  <img src="docs/assets/demo.svg" alt="DSH Remote Control Demo" width="100%" />
 </p>
 
 ---
@@ -34,7 +23,27 @@ You kick off a 30-minute refactor or test suite on your computer and step away f
 - 🚇 **It goes off track and you want to steer it**: Halfway through your commute you realize it's touching the wrong files, and you want to stop it or tell it *"don't touch the tests"* right now.
 - 🎉 **You want to know the moment it finishes**: Instead of walking back to check your laptop every five minutes, get a lock-screen alert and send the next prompt straight from your phone.
 
-**DSH Remote Control** puts all of your machines in one clean mobile web app — without uploading your codebase to a third-party cloud.
+**DSH Remote Control** puts all of your machines in one clean mobile web app — all code and transcripts stay on your own computers, never on a third-party hosted SaaS.
+
+<table align="center">
+  <tr>
+    <td align="center" width="33%">
+      <b>① Computer Pairing & QR Login</b><br/>
+      <sub>1-line command to pair · Scan QR on phone to sign in</sub><br/><br/>
+      <img src="docs/assets/screen-pair.png" width="260" alt="Computer Pairing and Phone QR Login" />
+    </td>
+    <td align="center" width="33%">
+      <b>② Watch Progress & Approve Commands</b><br/>
+      <sub>Unified multi-tool view · One-tap command approval</sub><br/><br/>
+      <img src="docs/assets/screen-sessions.png" width="260" alt="Phone Multi-Tool Sessions and Command Approval" />
+    </td>
+    <td align="center" width="33%">
+      <b>③ Answer Popups & Send Prompts</b><br/>
+      <sub>Interactive multiple-choice cards & quick actions</sub><br/><br/>
+      <img src="docs/assets/screen-approve.png" width="260" alt="Phone Multiple-Choice Popup and Chat" />
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -53,8 +62,11 @@ No Feishu/Lark account required, and zero changes to your existing workflow:
   ```
 
 - **🚇 Option B: Control from Anywhere Outside (1-Click Cloud Deploy)**  
-  Click below to automatically deploy your own private Hub from GitHub in 3 minutes and get an HTTPS URL:  
-  [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template?referralCode=dsh-remote) *(30-day free trial, then ~\$5/month)*
+  Click below to automatically deploy your own private Hub from GitHub in 3 minutes and get an HTTPS URL *(30-day free trial, then ~\$5/month)*:
+
+  <p align="left">
+    <a href="https://railway.app/template?referralCode=dsh-remote"><img src="https://railway.app/button.svg" alt="Deploy on Railway" height="32" /></a>
+  </p>
 
 <details>
 <summary>💡 <b>Want to use Docker on a VPS / NAS / Raspberry Pi, or use a Tunnel? Click to expand</b></summary>

@@ -2,26 +2,15 @@
   <img src="docs/assets/banner.svg" alt="DSH Remote Control" width="100%" />
 </p>
 
-<h1 align="center">DSH Remote Control</h1>
-
 <p align="center">
-  <strong>把电脑上正在跑的 AI 编码任务装进手机口袋——随时看进度、发指令、紧急叫停，或者点一下批准操作。</strong><br/>
-  代码与对话全部留在你自己的电脑上，不经过任何第三方托管平台。
-</p>
-
-<p align="center">
-  <a href="https://railway.app/template?referralCode=dsh-remote"><img src="https://railway.app/button.svg" alt="Deploy on Railway" height="28" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3B82F6.svg" alt="License: MIT" /></a>
-  <img src="https://img.shields.io/badge/Docker-Mac%20%7C%20Linux%20%7C%20NAS%20%7C%20树莓派-10B981.svg" alt="Multi-Arch" />
+  <img src="https://img.shields.io/badge/平台-Mac%20%7C%20Linux%20%7C%20NAS%20%7C%20树莓派-10B981.svg" alt="Platform" />
   <img src="https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white" alt="Node >= 20" />
+  <a href="https://railway.app/template?referralCode=dsh-remote"><img src="https://img.shields.io/badge/Railway-云端一键部署-7B3FE4?logo=railway&logoColor=white" alt="Deploy on Railway" /></a>
 </p>
 
 <p align="center">
   <strong>🇨🇳 简体中文</strong> · <a href="README.en.md"><strong>🇺🇸 English</strong></a> · <a href="#三步用起来">三步上手</a> · <a href="#支持哪些-ai-编程工具">支持工具</a> · <a href="#常见问题">常见问题</a> · <a href="docs/self-hosting.md">进阶部署</a> · <a href="SECURITY.md">安全说明</a>
-</p>
-
-<p align="center">
-  <img src="docs/assets/demo.svg" alt="DSH Remote Control Demo" width="100%" />
 </p>
 
 ---
@@ -34,7 +23,27 @@
 - 🚇 **跑偏了想插句话**：在路上突然发现它改错了方向，想立刻喊停，或者补一句“别动测试文件”。
 - 🎉 **跑完了想马上知道**：不想每隔五分钟回工位看一眼，跑完直接锁屏通知你，顺手在手机上接着布置下一步。
 
-**DSH Remote Control** 就是为了解决这三件事：在手机网页（或添加到桌面当 App 用）里直接盯着并指挥你名下所有的电脑。
+**DSH Remote Control** 就是为了解决这三件事：在手机网页（或添加到桌面当 App 用）里直接盯着并指挥你名下所有的电脑，代码与对话全部留在你自己的电脑上。
+
+<table align="center">
+  <tr>
+    <td align="center" width="33%">
+      <b>① 电脑配对与手机扫码</b><br/>
+      <sub>一行命令接入电脑 · 手机相机扫码免密登录</sub><br/><br/>
+      <img src="docs/assets/screen-pair.png" width="260" alt="电脑配对与手机扫码登录" />
+    </td>
+    <td align="center" width="33%">
+      <b>② 手机看进度与命令审批</b><br/>
+      <sub>多工具统一看板 · 危险命令在顶部一键放行</sub><br/><br/>
+      <img src="docs/assets/screen-sessions.png" width="260" alt="手机端多工具会话列表与命令审批" />
+    </td>
+    <td align="center" width="33%">
+      <b>③ 手机做选择题与发指令</b><br/>
+      <sub>同步电脑弹窗选择题 · 随时发消息或点快捷指令</sub><br/><br/>
+      <img src="docs/assets/screen-approve.png" width="260" alt="手机端弹窗选择题与交互" />
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -53,8 +62,11 @@
   ```
 
 - **🚇 方式 B：出门在外、坐地铁也要随时连（云端一键部署）**  
-  点一下这个按钮，自动从 GitHub 源码部署一台专属云端控制台，拿到一个公网网址：  
-  [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template?referralCode=dsh-remote) *(前 30 天免费体验，之后约 \$5/月)*
+  点下方按钮，自动从 GitHub 源码部署一台专属云端控制台，拿到一个公网网址 *(前 30 天免费体验，之后约 \$5/月)*：
+
+  <p align="left">
+    <a href="https://railway.app/template?referralCode=dsh-remote"><img src="https://railway.app/button.svg" alt="Deploy on Railway" height="32" /></a>
+  </p>
 
 <details>
 <summary>💡 <b>想用 Docker 跑在云服务器 / 群晖 NAS / 树莓派，或配内网穿透？点此展开</b></summary>
