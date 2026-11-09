@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { access, readdir, readFile, stat } from 'node:fs/promises'
+import { access, open, readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -214,6 +214,52 @@ export function parseAntigravityToolCalls(rawToolCalls) {
 }
 
 /**
+ * When `transcript.jsonl` has `"truncated_fields": ["content"]` on `PLANNER_RESPONSE` steps,
+ * hydrate the full untruncated `content` from `transcript_full.jsonl` in the same directory.
+ */
+async function loadTruncatedStepContents(compactPath, rawCompactText) {
+  if (!compactPath || !compactPath.endsWith('transcript.jsonl')) return null
+  if (!rawCompactText || !rawCompactText.includes('"truncated_fields"')) return null
+  const fullPath = join(dirname(compactPath), 'transcript_full.jsonl')
+  let fh = null
+  try {
+    const st = await stat(fullPath)
+    if (!st.isFile() || st.size <= 0) return null
+    const maxBytes = 8 * 1024 * 1024 // Read up to the last 8MB of transcript_full.jsonl
+    const readLen = Math.min(st.size, maxBytes)
+    const offset = Math.max(0, st.size - readLen)
+    fh = await open(fullPath, 'r')
+    const buf = Buffer.allocUnsafe(readLen)
+    const { bytesRead } = await fh.read(buf, 0, readLen, offset)
+    await fh.close()
+    fh = null
+    const text = buf.subarray(0, bytesRead).toString('utf8')
+    const map = new Map()
+    const rawLines = text.split('\n')
+    // If we started mid-file, skip the first potentially partial line
+    const startIdx = offset > 0 ? 1 : 0
+    for (let i = startIdx; i < rawLines.length; i += 1) {
+      const line = rawLines[i].trim()
+      if (!line || !line.includes('"PLANNER_RESPONSE"')) continue
+      try {
+        const obj = JSON.parse(line)
+        if (obj && obj.type === 'PLANNER_RESPONSE' && typeof obj.step_index === 'number' && typeof obj.content === 'string' && obj.content) {
+          map.set(obj.step_index, obj.content)
+        }
+      } catch {
+        // ignore partial/invalid line
+      }
+    }
+    return map.size > 0 ? map : null
+  } catch {
+    if (fh) {
+      try { await fh.close() } catch {}
+    }
+    return null
+  }
+}
+
+/**
  * Parse a single Antigravity `transcript.jsonl` content string into a normalized session object.
  */
 export function parseAntigravityTranscript(jsonlText, {
@@ -230,6 +276,7 @@ export function parseAntigravityTranscript(jsonlText, {
   liveStatus = '',
   hasLiveSummary = false,
   liveWaitingSteps = null,
+  fullContentByStepIndex = null,
 } = {}) {
   const rawLines = String(jsonlText ?? '')
     .split('\n')
@@ -376,7 +423,30 @@ export function parseAntigravityTranscript(jsonlText, {
     }
 
     if (stepType === 'PLANNER_RESPONSE') {
-      const rawContent = String(step.content ?? '').trim()
+      let fullStepContent = String(step.content ?? '')
+      if (
+        fullContentByStepIndex instanceof Map
+        && typeof step.step_index === 'number'
+        && fullContentByStepIndex.has(step.step_index)
+      ) {
+        const candidate = String(fullContentByStepIndex.get(step.step_index) || '')
+        if (candidate.length > fullStepContent.length) {
+          fullStepContent = candidate
+        }
+      }
+      if (Array.isArray(step.media) && step.media.length > 0) {
+        for (const m of step.media) {
+          const uri = String(m?.uri || '').trim()
+          const mime = String(m?.mime_type || '').trim().toLowerCase()
+          if (!uri) continue
+          const isImg = mime.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(uri)
+          if (isImg && !fullStepContent.includes(uri)) {
+            const cleanUri = uri.replace(/^file:\/\//i, '')
+            fullStepContent += `\n\n![${basename(cleanUri)}](${cleanUri})`
+          }
+        }
+      }
+      const rawContent = fullStepContent.trim()
       const rawThinking = String(step.thinking ?? '').trim()
       const { tools, inferredWs, approvalRequest, fileChanges } = parseAntigravityToolCalls(step.tool_calls)
       if (inferredWs && !boundWs && (!cwd || project === 'Antigravity IDE')) {
@@ -1016,6 +1086,7 @@ export async function loadAntigravityIdeSessions({
       }
 
       const rawText = await readFile(item.path, 'utf8')
+      const fullContentByStepIndex = await loadTruncatedStepContents(item.path, rawText)
       const parsed = parseAntigravityTranscript(rawText, {
         conversationId: item.convId,
         mtimeMs: item.mtimeMs,
@@ -1030,6 +1101,7 @@ export async function loadAntigravityIdeSessions({
         liveStatus,
         hasLiveSummary,
         liveWaitingSteps,
+        fullContentByStepIndex,
       })
       if (parsed) {
         sessionParseCache.set(item.convId, { cacheKey, session: parsed })

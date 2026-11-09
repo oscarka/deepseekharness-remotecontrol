@@ -66,7 +66,7 @@
   <rect x="64" y="74" width="5" height="156" rx="2.5" fill="url(#accent)"/>
 
   <!-- Eyebrow -->
-  <text x="90" y="96" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif" font-size="14.5" font-weight="700" letter-spacing="2.2" fill="#38BDF8">OPEN SOURCE · 免费自托管 · 代码与对话不离本机</text>
+  <text x="90" y="96" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif" font-size="14.5" font-weight="700" letter-spacing="2.2" fill="#38BDF8">OPEN SOURCE · 免费自托管 · 零第三方中继 · 完全自己掌控</text>
 
   <!-- Main Title -->
   <text x="88" y="158" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif" font-size="54" font-weight="800" letter-spacing="-0.5" fill="#F8FAFC">DSH Remote Control</text>
@@ -94,3 +94,4 @@
     <text x="512" y="292" fill="#EDE9FE">🔌 DSH · Antigravity IDE · Claude · Codex</text>
   </g>
 </svg>
+

@@ -31,6 +31,7 @@ export class HubCore {
     this.pairingFailBuckets = new Map()
     this.enrollment = null
     this.filePreviewBlobs = new Map()
+    this.filePreviewHistory = new Map()
     this.signalingMailboxes = new Map()
     this.commandResultsById = new Map()
     this.approvalLedger = new Map()
@@ -179,7 +180,7 @@ export class HubCore {
     if (hasBinaryOrLarge) {
       const existing = this.filePreviewBlobs.get(hostId)
       if (!existing || existing.at !== at || (preview.dataBase64 && !existing.dataBase64)) {
-        this.filePreviewBlobs.set(hostId, {
+        const blobObj = {
           at,
           agentId: preview.agentId || '',
           relPath: preview.relPath || '',
@@ -191,7 +192,16 @@ export class HubCore {
           content: preview.content,
           dataBase64: preview.dataBase64,
           expiresAt: this.now() + FILE_PREVIEW_BLOB_TTL_MS,
-        })
+        }
+        this.filePreviewBlobs.set(hostId, blobObj)
+        this.filePreviewHistory.set(`${hostId}:${at}`, blobObj)
+        if (preview.relPath) {
+          this.filePreviewHistory.set(`${hostId}:path:${preview.relPath}`, blobObj)
+        }
+        while (this.filePreviewHistory.size > 48) {
+          const oldestKey = this.filePreviewHistory.keys().next().value
+          this.filePreviewHistory.delete(oldestKey)
+        }
       }
     }
 
@@ -214,9 +224,21 @@ export class HubCore {
     return sanitized
   }
 
-  getFilePreviewBlob(hostId, expectedAt = null) {
+  getFilePreviewBlob(hostId, expectedAt = null, expectedPath = null) {
     const cleanHostId = String(hostId ?? '').trim()
     if (!cleanHostId) return null
+    if (expectedPath) {
+      const byPath = this.filePreviewHistory.get(`${cleanHostId}:path:${expectedPath}`)
+      if (byPath && (!byPath.expiresAt || this.now() <= byPath.expiresAt)) {
+        return byPath
+      }
+    }
+    if (expectedAt !== null && expectedAt !== undefined && expectedAt !== '') {
+      const byAt = this.filePreviewHistory.get(`${cleanHostId}:${Number(expectedAt)}`)
+      if (byAt && (!byAt.expiresAt || this.now() <= byAt.expiresAt)) {
+        return byAt
+      }
+    }
     const blob = this.filePreviewBlobs.get(cleanHostId)
     if (blob) {
       if (blob.expiresAt && this.now() > blob.expiresAt) {

@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
-import { chmod, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
-import { networkInterfaces } from 'node:os'
+import { chmod, lstat, mkdir, open, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { homedir, networkInterfaces } from 'node:os'
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import * as zlib from 'node:zlib'
@@ -1851,18 +1851,56 @@ export async function listWorkspaceFiles(workspaceRoot, subDir = '') {
 }
 
 /**
- * Read-only workspace file preview (strictly confined inside workspace root, with secret redaction).
+ * Read-only workspace file preview (strictly confined inside workspace root or AI artifact roots, with secret redaction).
  */
 export async function readWorkspaceFile(workspaceRoot, relPath = '') {
   try {
     if (!workspaceRoot) return { ok: false, error: '该任务未关联工作区目录' }
     const root = await resolveRealRoot(workspaceRoot)
-    const rawRel = String(relPath || '').replace(/^([/\\])+/, '').trim()
-    if (!rawRel || rawRel.startsWith('..') || rawRel.includes(`..${sep}`) || rawRel.includes('../')) {
+    const originalRel = String(relPath || '').trim()
+    let cleanedInput = originalRel.replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim()
+    try {
+      if (cleanedInput.includes('%')) cleanedInput = decodeURIComponent(cleanedInput)
+    } catch {}
+    if (cleanedInput.startsWith('~/')) {
+      cleanedInput = join(homedir(), cleanedInput.slice(2))
+    }
+
+    const rawRel = cleanedInput.replace(/^([/\\])+/, '').trim()
+    if (!rawRel || rawRel.startsWith('..') || rawRel.includes(`..${sep}`) || rawRel.includes('../') || cleanedInput.includes('../')) {
       return { ok: false, error: '拒绝越界访问工作区外部文件' }
     }
-    const targetFile = resolve(root, rawRel)
-    const realFile = await resolveSafeTarget(root, targetFile)
+
+    let realFile = ''
+    if (cleanedInput.startsWith('/')) {
+      const candidateAbs = resolve(cleanedInput)
+      const allowedArtifactRoots = [
+        root,
+        await resolveRealRoot(join(homedir(), '.gemini', 'antigravity', 'brain')),
+        await resolveRealRoot(join(homedir(), '.dsh')),
+      ]
+      let matchedRoot = null
+      for (const ar of allowedArtifactRoots) {
+        if (ar && (candidateAbs === ar || candidateAbs.startsWith(ar + sep))) {
+          matchedRoot = ar
+          break
+        }
+      }
+      if (matchedRoot) {
+        realFile = await resolveSafeTarget(matchedRoot, candidateAbs)
+      } else {
+        const targetFile = resolve(root, rawRel)
+        realFile = await resolveSafeTarget(root, targetFile)
+      }
+    } else {
+      const targetFile = resolve(root, rawRel)
+      realFile = await resolveSafeTarget(root, targetFile)
+    }
+
+    const returnRelPath = originalRel.startsWith('/') || originalRel.startsWith('file://')
+      ? originalRel
+      : rawRel
+
     const info = await stat(realFile)
     if (!info.isFile()) {
       return { ok: false, error: '目标路径不是普通文件' }
@@ -1876,7 +1914,7 @@ export async function readWorkspaceFile(workspaceRoot, relPath = '') {
       const bytes = await readFile(realFile)
       return {
         ok: true,
-        relPath: rawRel,
+        relPath: returnRelPath,
         name: basename(realFile),
         ext,
         kind: 'image',
@@ -1886,13 +1924,25 @@ export async function readWorkspaceFile(workspaceRoot, relPath = '') {
       }
     }
 
-    const bytes = await readFile(realFile)
-    const truncated = bytes.length > MAX_PREVIEW_BYTES
-    const slice = truncated ? bytes.subarray(0, MAX_PREVIEW_BYTES) : bytes
+    const truncated = info.size > MAX_PREVIEW_BYTES
+    let slice
+    if (truncated) {
+      const fh = await open(realFile, 'r')
+      try {
+        const buf = Buffer.allocUnsafe(MAX_PREVIEW_BYTES)
+        const { bytesRead } = await fh.read(buf, 0, MAX_PREVIEW_BYTES, 0)
+        slice = buf.subarray(0, bytesRead)
+      } finally {
+        await fh.close()
+      }
+    } else {
+      slice = await readFile(realFile)
+    }
+
     if (slice.includes(0)) {
       return {
         ok: true,
-        relPath: rawRel,
+        relPath: returnRelPath,
         name: basename(realFile),
         ext,
         kind: 'binary',
@@ -1904,7 +1954,7 @@ export async function readWorkspaceFile(workspaceRoot, relPath = '') {
     const rawText = slice.toString('utf8')
     return {
       ok: true,
-      relPath: rawRel,
+      relPath: returnRelPath,
       name: basename(realFile),
       ext,
       kind: 'text',

@@ -1326,14 +1326,17 @@ export function initHubController() {
 
       const filesChangedHtml = (s.harness === 'antigravity-ide' && Array.isArray(s.changedFiles) && s.changedFiles.length > 0) ? `
         <div class="agy-files-changed-card">
-          ${s.changedFiles.slice(-8).map(fc => `
-            <div class="agy-file-row">
+          ${s.changedFiles.slice(-8).map(fc => {
+            const encFcPath = encodeURIComponent(fc.path || fc.name || '').replace(/'/g, '%27');
+            return `
+            <div class="agy-file-row" style="cursor:pointer;" onclick="openChatFileLink('${encFcPath}')">
               <span class="agy-file-dot">◉</span>
               <span class="agy-file-diff"><span class="add">+${Number(fc.added || 0)}</span><span class="del">-${Number(fc.removed || 0)}</span></span>
               <span class="agy-file-name">${esc(fc.name || '')}</span>
               <span class="agy-file-path">${esc(fc.displayPath || fc.path || '')}</span>
             </div>
-          `).join('')}
+          `;
+          }).join('')}
           <div class="agy-files-footer">
             <span>📄 ${s.changedFiles.length} Files With Changes ⌃</span>
             <div class="agy-files-footer-btns">
@@ -1500,6 +1503,7 @@ export function initHubController() {
       // 正在往上翻历史时，新内容到达不要把用户拽回底部
       const sessionChanged = lastRenderedChatSessionId !== s.id;
       box.innerHTML = loadEarlierHtml + bubblesHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
+      void hydrateInlineChatImages(s, box);
       if (sessionChanged || nearBottom) {
         box.scrollTop = box.scrollHeight;
         setScrollBottomVisible(false);
@@ -2253,6 +2257,80 @@ export function initHubController() {
       document.body.classList.add('mobile-file-open');
       document.getElementById('inChatFileTitle').textContent = `📂 ${found.session.project} (${found.session.hostName})`;
       await requestDirList(found.session.hostId, found.session.id, fileProjectCwd, '', true);
+    }
+
+    async function openChatFileLink(encodedPath) {
+      let rawPath = String(encodedPath || '').trim();
+      try {
+        rawPath = decodeURIComponent(rawPath);
+      } catch {}
+      if (!rawPath) return;
+      const found = findSessionGlobal(activeSessionId);
+      if (!found) return;
+      fileProjectCwd = found.session.cwd || '';
+      openSheet('inChatFileSheet');
+      document.body.classList.add('mobile-file-open');
+      const titleEl = document.getElementById('inChatFileTitle');
+      if (titleEl) {
+        titleEl.textContent = `📂 ${found.session.project} (${found.session.hostName})`;
+      }
+      await clickRealFileEntry(found.session.hostId, found.session.id, fileProjectCwd, rawPath, false, true);
+    }
+
+    async function hydrateInlineChatImages(session, containerEl) {
+      if (!session || !containerEl) return;
+      const pendingNodes = Array.from(containerEl.querySelectorAll('.md-local-img-pending[data-local-img-path]'));
+      if (pendingNodes.length === 0) return;
+      window.__dshInlineImgCache = window.__dshInlineImgCache || {};
+      window.__dshInlineImgInflight = window.__dshInlineImgInflight || {};
+
+      for (const node of pendingNodes) {
+        const imgPath = node.getAttribute('data-local-img-path') || '';
+        if (!imgPath) continue;
+        if (window.__dshInlineImgCache[imgPath]) {
+          const src = window.__dshInlineImgCache[imgPath];
+          node.classList.remove('md-local-img-pending');
+          node.innerHTML = `<img class="md-inline-img" src="${src}" alt="image" />`;
+          continue;
+        }
+        if (window.__dshInlineImgInflight[imgPath]) continue;
+        window.__dshInlineImgInflight[imgPath] = true;
+        (async () => {
+          try {
+            await dispatchHostCommand(session.hostId, {
+              type: 'read_file',
+              agentId: session.id,
+              cwd: session.cwd || '',
+              relPath: imgPath,
+            });
+            for (let i = 0; i < 10; i++) {
+              await sleepMs(380);
+              const checkRes = await apiFetch(
+                `/api/hosts/${encodeURIComponent(session.hostId)}/file-preview?path=${encodeURIComponent(imgPath)}&format=json`
+              ).catch(() => null);
+              if (checkRes && checkRes.ok) {
+                const data = await checkRes.json().catch(() => ({}));
+                if (data?.preview?.kind === 'image') {
+                  const tk = getToken();
+                  const srcUrl =
+                    `/api/hosts/${encodeURIComponent(session.hostId)}/file-preview?path=${encodeURIComponent(imgPath)}` +
+                    (tk ? `&token=${encodeURIComponent(tk)}` : '');
+                  window.__dshInlineImgCache[imgPath] = srcUrl;
+                  document
+                    .querySelectorAll(`.md-local-img-pending[data-local-img-path="${CSS.escape(imgPath)}"]`)
+                    .forEach(el => {
+                      el.classList.remove('md-local-img-pending');
+                      el.innerHTML = `<img class="md-inline-img" src="${srcUrl}" alt="${esc(data.preview.name || 'image')}" />`;
+                    });
+                  return;
+                }
+              }
+            }
+          } catch {} finally {
+            delete window.__dshInlineImgInflight[imgPath];
+          }
+        })();
+      }
     }
 
     const previewTextCache = new Map();
@@ -4938,6 +5016,7 @@ export function initHubController() {
       rawCloseSheet,
       trackOverlay,
       openSheet,
+      openChatFileLink,
       dismissOverlay,
       shouldDismissHorizontalSwipe,
       shouldDismissVerticalSwipe,

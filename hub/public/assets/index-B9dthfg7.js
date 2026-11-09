@@ -771,6 +771,26 @@ function renderInlineMarkdown(rawLine) {
 		htmlBits.push(html);
 		return `\u0000PH${htmlBits.length - 1}\u0000`;
 	};
+	safe = safe.replace(/!\[((?:[^\[\]]|\[[^\]]*\])*)\]\(([^)\n]+)\)/g, (_m, alt, rawSrc) => {
+		const cleanAlt = String(alt || "").trim();
+		const trimmedSrc = String(rawSrc || "").trim();
+		if (/^(https?:\/\/|data:image\/)/i.test(trimmedSrc)) return stash(`<span class="md-inline-img-card"><img class="md-inline-img" src="${trimmedSrc}" alt="${cleanAlt}" loading="lazy" />${cleanAlt ? `<span class="md-inline-img-cap">${cleanAlt}</span>` : ""}</span>`);
+		const cleanPath = trimmedSrc.replace(/^file:\/\//i, "").replace(/#L\d+(?:-L?\d+)?$/i, "").trim();
+		const baseName = cleanPath.split("/").filter(Boolean).pop() || cleanPath || "image";
+		const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, "%27");
+		const cachedSrc = typeof window !== "undefined" && window.__dshInlineImgCache ? window.__dshInlineImgCache[cleanPath] : "";
+		if (cachedSrc) return stash(`<span class="md-inline-img-card" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><img class="md-inline-img" src="${cachedSrc}" alt="${cleanAlt || esc(baseName)}" />${cleanAlt ? `<span class="md-inline-img-cap">🖼️ ${cleanAlt}</span>` : ""}</span>`);
+		return stash(`<span class="md-inline-img-card md-local-img-pending" data-local-img-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🖼️ ${cleanAlt || esc(baseName)} · 正在从电脑加载图片…（点此直接查看）</span></span>`);
+	});
+	safe = safe.replace(/\[((?:[^\[\]]|\[[^\]]*\])+)\]\(((?:file:\/\/\/|\/Users\/|\/home\/)[^)\n]+)\)/g, (_m, rawLabel, rawUrl) => {
+		const cleanLabel = String(rawLabel || "").replace(/^`+|`+$/g, "").trim();
+		const lineAnchorMatch = /#(L\d+(?:-L?\d+)?)$/i.exec(rawUrl);
+		const lineSuffix = lineAnchorMatch ? ` (${lineAnchorMatch[1]})` : "";
+		const cleanPath = String(rawUrl || "").replace(/^file:\/\//i, "").replace(/#L\d+(?:-L?\d+)?$/i, "").trim();
+		const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, "%27");
+		const icon = /\.(png|jpe?g|webp|gif|svg)$/i.test(cleanPath) ? "🖼️" : /\.blend$/i.test(cleanPath) ? "🧊" : "📄";
+		return stash(`<button type="button" class="md-file-chip" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">${icon} ${cleanLabel}${lineSuffix}</button>`);
+	});
 	safe = safe.replace(/`([^`\n]+)`/g, (_m, code) => stash(`<code>${code}</code>`));
 	safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label, url) => stash(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`));
 	safe = safe.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_\n]+)__/g, "<strong>$1</strong>").replace(/\*([^\s*](?:[^*\n]*[^\s*])?)\*/g, "<em>$1</em>");
@@ -790,7 +810,8 @@ function renderMarkdownBlocks(rawBlock) {
 	const flushList = () => {
 		if (!list) return;
 		const itemsHtml = list.items.map((item) => `<li>${item.split("\n").map(renderInlineMarkdown).join("<br>")}</li>`).join("");
-		out.push(`<${list.type}>${itemsHtml}</${list.type}>`);
+		const startAttr = list.type === "ol" && list.start && list.start > 1 ? ` start="${list.start}"` : "";
+		out.push(`<${list.type}${startAttr}>${itemsHtml}</${list.type}>`);
 		list = null;
 	};
 	const flushQuote = () => {
@@ -859,18 +880,20 @@ function renderMarkdownBlocks(rawBlock) {
 			continue;
 		}
 		const ulItem = /^\s{0,3}[-*+]\s+(.*)$/.exec(line);
-		const olItem = /^\s{0,3}\d+[.)]\s+(.*)$/.exec(line);
+		const olItem = /^\s{0,3}(\d+)[.)]\s+(.*)$/.exec(line);
 		if (ulItem || olItem) {
 			flushParagraph();
 			flushQuote();
 			const type = ulItem ? "ul" : "ol";
-			let item = (ulItem || olItem)[1];
+			let item = ulItem ? ulItem[1] : olItem[2];
+			const olStart = olItem ? Number(olItem[1]) || 1 : 1;
 			const task = /^\[( |x|X)\]\s+(.*)$/.exec(item);
 			if (task) item = `${task[1].toLowerCase() === "x" ? "☑" : "☐"} ${task[2]}`;
 			if (!list || list.type !== type) {
 				flushList();
 				list = {
 					type,
+					start: olStart,
 					items: []
 				};
 			}
@@ -890,6 +913,9 @@ function renderMarkdownBlocks(rawBlock) {
 }
 function renderMarkdown(rawText) {
 	let text = String(rawText || "");
+	text = text.replace(/````carousel\n?([\s\S]*?)````/g, (_m, inner) => {
+		return String(inner || "").replace(/<!--\s*slide\s*-->/gi, "\n---\n");
+	});
 	if ((text.match(/```/g) || []).length % 2 === 1) text += "\n```";
 	const chunks = [];
 	const fence = /```([a-zA-Z0-9_+\-]*)\n?([\s\S]*?)```/g;
@@ -2777,14 +2803,16 @@ function initHubController() {
 		}).join("");
 		const filesChangedHtml = s.harness === "antigravity-ide" && Array.isArray(s.changedFiles) && s.changedFiles.length > 0 ? `
         <div class="agy-files-changed-card">
-          ${s.changedFiles.slice(-8).map((fc) => `
-            <div class="agy-file-row">
+          ${s.changedFiles.slice(-8).map((fc) => {
+			return `
+            <div class="agy-file-row" style="cursor:pointer;" onclick="openChatFileLink('${encodeURIComponent(fc.path || fc.name || "").replace(/'/g, "%27")}')">
               <span class="agy-file-dot">◉</span>
               <span class="agy-file-diff"><span class="add">+${Number(fc.added || 0)}</span><span class="del">-${Number(fc.removed || 0)}</span></span>
               <span class="agy-file-name">${esc(fc.name || "")}</span>
               <span class="agy-file-path">${esc(fc.displayPath || fc.path || "")}</span>
             </div>
-          `).join("")}
+          `;
+		}).join("")}
           <div class="agy-files-footer">
             <span>📄 ${s.changedFiles.length} Files With Changes ⌃</span>
             <div class="agy-files-footer-btns">
@@ -2948,6 +2976,7 @@ function initHubController() {
         ` : expandedTranscriptBySession.has(s.id) ? `<div style="text-align:center;font-size:11.5px;color:var(--muted);margin:4px 0 10px;">✅ 已加载全部历史对话（共 ${s.transcript.length} 条）</div>` : "";
 		const sessionChanged = lastRenderedChatSessionId !== s.id;
 		box.innerHTML = loadEarlierHtml + bubblesHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
+		hydrateInlineChatImages(s, box);
 		if (sessionChanged || nearBottom) {
 			box.scrollTop = box.scrollHeight;
 			setScrollBottomVisible(false);
@@ -3562,6 +3591,69 @@ function initHubController() {
 		document.body.classList.add("mobile-file-open");
 		document.getElementById("inChatFileTitle").textContent = `📂 ${found.session.project} (${found.session.hostName})`;
 		await requestDirList(found.session.hostId, found.session.id, fileProjectCwd, "", true);
+	}
+	async function openChatFileLink(encodedPath) {
+		let rawPath = String(encodedPath || "").trim();
+		try {
+			rawPath = decodeURIComponent(rawPath);
+		} catch {}
+		if (!rawPath) return;
+		const found = findSessionGlobal(activeSessionId);
+		if (!found) return;
+		fileProjectCwd = found.session.cwd || "";
+		openSheet("inChatFileSheet");
+		document.body.classList.add("mobile-file-open");
+		const titleEl = document.getElementById("inChatFileTitle");
+		if (titleEl) titleEl.textContent = `📂 ${found.session.project} (${found.session.hostName})`;
+		await clickRealFileEntry(found.session.hostId, found.session.id, fileProjectCwd, rawPath, false, true);
+	}
+	async function hydrateInlineChatImages(session, containerEl) {
+		if (!session || !containerEl) return;
+		const pendingNodes = Array.from(containerEl.querySelectorAll(".md-local-img-pending[data-local-img-path]"));
+		if (pendingNodes.length === 0) return;
+		window.__dshInlineImgCache = window.__dshInlineImgCache || {};
+		window.__dshInlineImgInflight = window.__dshInlineImgInflight || {};
+		for (const node of pendingNodes) {
+			const imgPath = node.getAttribute("data-local-img-path") || "";
+			if (!imgPath) continue;
+			if (window.__dshInlineImgCache[imgPath]) {
+				const src = window.__dshInlineImgCache[imgPath];
+				node.classList.remove("md-local-img-pending");
+				node.innerHTML = `<img class="md-inline-img" src="${src}" alt="image" />`;
+				continue;
+			}
+			if (window.__dshInlineImgInflight[imgPath]) continue;
+			window.__dshInlineImgInflight[imgPath] = true;
+			(async () => {
+				try {
+					await dispatchHostCommand(session.hostId, {
+						type: "read_file",
+						agentId: session.id,
+						cwd: session.cwd || "",
+						relPath: imgPath
+					});
+					for (let i = 0; i < 10; i++) {
+						await sleepMs(380);
+						const checkRes = await apiFetch(`/api/hosts/${encodeURIComponent(session.hostId)}/file-preview?path=${encodeURIComponent(imgPath)}&format=json`).catch(() => null);
+						if (checkRes && checkRes.ok) {
+							const data = await checkRes.json().catch(() => ({}));
+							if (data?.preview?.kind === "image") {
+								const tk = getToken();
+								const srcUrl = `/api/hosts/${encodeURIComponent(session.hostId)}/file-preview?path=${encodeURIComponent(imgPath)}` + (tk ? `&token=${encodeURIComponent(tk)}` : "");
+								window.__dshInlineImgCache[imgPath] = srcUrl;
+								document.querySelectorAll(`.md-local-img-pending[data-local-img-path="${CSS.escape(imgPath)}"]`).forEach((el) => {
+									el.classList.remove("md-local-img-pending");
+									el.innerHTML = `<img class="md-inline-img" src="${srcUrl}" alt="${esc(data.preview.name || "image")}" />`;
+								});
+								return;
+							}
+						}
+					}
+				} catch {} finally {
+					delete window.__dshInlineImgInflight[imgPath];
+				}
+			})();
+		}
 	}
 	const previewTextCache = /* @__PURE__ */ new Map();
 	async function ensureTextPreviewLoaded(hostId, preview) {
@@ -5977,6 +6069,7 @@ function initHubController() {
 		rawCloseSheet,
 		trackOverlay,
 		openSheet,
+		openChatFileLink,
 		dismissOverlay,
 		shouldDismissHorizontalSwipe,
 		shouldDismissVerticalSwipe,

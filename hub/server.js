@@ -594,8 +594,9 @@ export function createHubServer({
         }
         if (method === 'GET') {
           const expectedAt = urlObj.searchParams.get('at')
+          const expectedPath = urlObj.searchParams.get('path')
           const format = urlObj.searchParams.get('format')
-          const blob = hub.getFilePreviewBlob(hostId, expectedAt)
+          const blob = hub.getFilePreviewBlob(hostId, expectedAt, expectedPath)
           if (!blob) {
             return { status: 404, json: { ok: false, error: '文件预览已过期或不存在，请重新点击文件加载' } }
           }

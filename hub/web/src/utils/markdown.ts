@@ -1,7 +1,6 @@
 import { esc } from './format';
 
-// ---- 轻量 Markdown 渲染：标题 / 列表 / 引用 / 代码 / 链接 / 加粗 ----
-// 只做「AI 回复更好读」所需的子集，全部先转义，链接只允许 http(s)。
+// ---- 轻量 Markdown 渲染：标题 / 列表 / 引用 / 代码 / 链接 / 本地文件胶囊 / 本地图片 ----
 export function renderInlineMarkdown(rawLine: string): string {
   let safe = esc(rawLine);
   const htmlBits: string[] = [];
@@ -9,7 +8,54 @@ export function renderInlineMarkdown(rawLine: string): string {
     htmlBits.push(html);
     return `\u0000PH${htmlBits.length - 1}\u0000`;
   };
-  // 行内代码和链接先「藏起来」，避免里面的 * 被当成加粗/斜体
+
+  // 1. Markdown 图片：![alt](url 或 /Users/... 或 file:///...)
+  safe = safe.replace(/!\[((?:[^\[\]]|\[[^\]]*\])*)\]\(([^)\n]+)\)/g, (_m, alt, rawSrc) => {
+    const cleanAlt = String(alt || '').trim();
+    const trimmedSrc = String(rawSrc || '').trim();
+    if (/^(https?:\/\/|data:image\/)/i.test(trimmedSrc)) {
+      return stash(
+        `<span class="md-inline-img-card"><img class="md-inline-img" src="${trimmedSrc}" alt="${cleanAlt}" loading="lazy" />${
+          cleanAlt ? `<span class="md-inline-img-cap">${cleanAlt}</span>` : ''
+        }</span>`
+      );
+    }
+    const cleanPath = trimmedSrc.replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim();
+    const baseName = cleanPath.split('/').filter(Boolean).pop() || cleanPath || 'image';
+    const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, '%27');
+    const cachedSrc =
+      typeof window !== 'undefined' && (window as any).__dshInlineImgCache
+        ? (window as any).__dshInlineImgCache[cleanPath]
+        : '';
+    if (cachedSrc) {
+      return stash(
+        `<span class="md-inline-img-card" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><img class="md-inline-img" src="${cachedSrc}" alt="${cleanAlt || esc(baseName)}" />${
+          cleanAlt ? `<span class="md-inline-img-cap">🖼️ ${cleanAlt}</span>` : ''
+        }</span>`
+      );
+    }
+    return stash(
+      `<span class="md-inline-img-card md-local-img-pending" data-local-img-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🖼️ ${
+        cleanAlt || esc(baseName)
+      } · 正在从电脑加载图片…（点此直接查看）</span></span>`
+    );
+  });
+
+  // 2. 本地文件链接：[label](file:///... 或 /Users/... 或 /home/...) -> 渲染为可点击文件胶囊
+  safe = safe.replace(/\[((?:[^\[\]]|\[[^\]]*\])+)\]\(((?:file:\/\/\/|\/Users\/|\/home\/)[^)\n]+)\)/g, (_m, rawLabel, rawUrl) => {
+    const cleanLabel = String(rawLabel || '').replace(/^`+|`+$/g, '').trim();
+    const lineAnchorMatch = /#(L\d+(?:-L?\d+)?)$/i.exec(rawUrl);
+    const lineSuffix = lineAnchorMatch ? ` (${lineAnchorMatch[1]})` : '';
+    const cleanPath = String(rawUrl || '').replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim();
+    const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, '%27');
+    const isImg = /\.(png|jpe?g|webp|gif|svg)$/i.test(cleanPath);
+    const icon = isImg ? '🖼️' : /\.blend$/i.test(cleanPath) ? '🧊' : '📄';
+    return stash(
+      `<button type="button" class="md-file-chip" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">${icon} ${cleanLabel}${lineSuffix}</button>`
+    );
+  });
+
+  // 3. 行内代码和普通网页链接先「藏起来」，避免里面的 * 或 _ 被当成加粗/斜体
   safe = safe.replace(/`([^`\n]+)`/g, (_m, code) => stash(`<code>${code}</code>`));
   safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label, url) =>
     stash(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`)
@@ -25,7 +71,7 @@ export function renderMarkdownBlocks(rawBlock: string): string {
   const lines = String(rawBlock || '').replace(/\r\n?/g, '\n').split('\n');
   const out: string[] = [];
   let paragraph: string[] = [];
-  let list: { type: 'ul' | 'ol'; items: string[] } | null = null;
+  let list: { type: 'ul' | 'ol'; start?: number; items: string[] } | null = null;
   let quote: string[] = [];
 
   const flushParagraph = () => {
@@ -38,7 +84,8 @@ export function renderMarkdownBlocks(rawBlock: string): string {
     const itemsHtml = list.items
       .map(item => `<li>${item.split('\n').map(renderInlineMarkdown).join('<br>')}</li>`)
       .join('');
-    out.push(`<${list.type}>${itemsHtml}</${list.type}>`);
+    const startAttr = list.type === 'ol' && list.start && list.start > 1 ? ` start="${list.start}"` : '';
+    out.push(`<${list.type}${startAttr}>${itemsHtml}</${list.type}>`);
     list = null;
   };
   const flushQuote = () => {
@@ -124,17 +171,18 @@ export function renderMarkdownBlocks(rawBlock: string): string {
     }
 
     const ulItem = /^\s{0,3}[-*+]\s+(.*)$/.exec(line);
-    const olItem = /^\s{0,3}\d+[.)]\s+(.*)$/.exec(line);
+    const olItem = /^\s{0,3}(\d+)[.)]\s+(.*)$/.exec(line);
     if (ulItem || olItem) {
       flushParagraph();
       flushQuote();
       const type = ulItem ? 'ul' : 'ol';
-      let item = (ulItem || olItem)![1];
+      let item = ulItem ? ulItem[1] : olItem![2];
+      const olStart = olItem ? Number(olItem[1]) || 1 : 1;
       const task = /^\[( |x|X)\]\s+(.*)$/.exec(item);
       if (task) item = `${task[1].toLowerCase() === 'x' ? '☑' : '☐'} ${task[2]}`;
       if (!list || list.type !== type) {
         flushList();
-        list = { type, items: [] };
+        list = { type, start: olStart, items: [] };
       }
       list.items.push(item);
       continue;
@@ -156,6 +204,10 @@ export function renderMarkdownBlocks(rawBlock: string): string {
 
 export function renderMarkdown(rawText: string): string {
   let text = String(rawText || '');
+  // 展开 Antigravity IDE 的 ````carousel 块，避免里面的图片被当成普通代码块
+  text = text.replace(/````carousel\n?([\s\S]*?)````/g, (_m, inner) => {
+    return String(inner || '').replace(/<!--\s*slide\s*-->/gi, '\n---\n');
+  });
   // 流式输出时代码块可能还没收尾，先补一个结尾，避免整段变成纯文本
   if ((text.match(/```/g) || []).length % 2 === 1) text += '\n```';
 
