@@ -1993,19 +1993,27 @@ export class FeishuBridge {
       runningCount: live.filter(agent => agent.status === 'running').length,
       taskCount: all.length,
       workspaces: [...workspaceSet].slice(0, 12),
-      tasks: all.slice(0, 30).map(agent => ({
-        id: agent.id,
-        shortId: shortId(agent.id),
-        title: this.taskTitle(agent),
-        status: String(agent.status ?? 'unknown'),
-        statusLabel: this.taskStateLabel(agent),
-        project: projectName(cwdOf(agent)),
-        cwd: cwdOf(agent),
-        lastActivity: this.lastActivity(agent),
-        lastOutput: cleanForChat(this.lastAssistantText(agent), 1500),
-        queuedSteers: (this.steerQueues.get(agent.id) ?? []).slice(),
-        transcript: extractSessionTranscript(agent, 40),
-      })),
+      tasks: all.slice(0, 30).map(agent => {
+        const st = String(agent.status ?? 'unknown')
+        const out = cleanForChat(this.lastAssistantText(agent), 1500)
+        const act = this.lastActivity(agent)
+        return {
+          id: agent.id,
+          shortId: shortId(agent.id),
+          title: this.taskTitle(agent),
+          status: st,
+          isMidTurn: st === 'running',
+          turnState: st === 'running' ? 'running' : out ? 'conclusion' : 'idle',
+          lastConclusionAt: st === 'running' ? 0 : (out ? act : 0),
+          statusLabel: this.taskStateLabel(agent),
+          project: projectName(cwdOf(agent)),
+          cwd: cwdOf(agent),
+          lastActivity: act,
+          lastOutput: out,
+          queuedSteers: (this.steerQueues.get(agent.id) ?? []).slice(),
+          transcript: extractSessionTranscript(agent, 40),
+        }
+      }),
       approvals: [...this.pending.values()]
         .filter(entry => !entry.settled && now - entry.createdAt <= this.config.approvalTtlSeconds * 1000)
         .map(entry => ({

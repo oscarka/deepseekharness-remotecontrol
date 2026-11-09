@@ -310,7 +310,7 @@ function TopBar() {
 	return /* @__PURE__ */ k(M, null, /* @__PURE__ */ k("header", {
 		class: "top-bar",
 		id: "mobileTopHostBtn"
-	}, /* @__PURE__ */ k("div", { style: "display:flex;align-items:center;gap:6px;min-width:0;" }, /* @__PURE__ */ k("button", {
+	}, /* @__PURE__ */ k("div", { class: "top-bar-left" }, /* @__PURE__ */ k("button", {
 		type: "button",
 		class: "host-switcher-btn",
 		onClick: () => window.openHostSheet?.()
@@ -1419,12 +1419,34 @@ function initHubController() {
 	applyTheme(themePref);
 	let pinnedMap = {};
 	let seenMap = {};
+	let seenSigMap = {};
+	let addHostPanelExpanded = false;
+	let expandedHostCardIds = {};
 	try {
 		pinnedMap = JSON.parse(localStorage.getItem("dsh_pinned_v4") || "{}");
 	} catch {}
 	try {
 		seenMap = JSON.parse(localStorage.getItem("dsh_seen_v4") || "{}");
 	} catch {}
+	try {
+		seenSigMap = JSON.parse(localStorage.getItem("dsh_seen_sig_v1") || "{}");
+	} catch {}
+	function syncSessionReadToServer(sessionId, sig, at) {
+		if (!sessionId) return;
+		hubState.sessionReadState = hubState.sessionReadState || {};
+		hubState.sessionReadState[sessionId] = {
+			sig: String(sig || ""),
+			at: Number(at) || Date.now()
+		};
+		apiFetch("/api/sessions/read", {
+			method: "POST",
+			body: JSON.stringify({
+				sessionId,
+				sig: String(sig || ""),
+				at: Number(at) || Date.now()
+			})
+		}).catch(() => {});
+	}
 	function dismissLiveBanner() {
 		renderSessionList();
 	}
@@ -1564,6 +1586,9 @@ function initHubController() {
 				const changedFiles = Array.isArray(t.changedFiles) ? t.changedFiles : Array.isArray(pendingApp?.changedFiles) ? pendingApp.changedFiles : [];
 				const totalTranscriptCount = Math.max(Number(t.totalTranscriptCount) || 0, Number(t.messageCount) || 0, transcript.length);
 				const omittedTranscriptCount = expandedEntry ? 0 : Math.max(0, Number(t.omittedTranscriptCount) || totalTranscriptCount - wireTranscript.length);
+				const cleanPrev = cleanPreviewText(String(rawPreview || "").slice(0, 360)) || "点击查看对话详情";
+				const msgCountVal = totalTranscriptCount || transcript.length || 0;
+				const conclusionSig = `${turnState}:${msgCountVal}:${cleanPrev.slice(0, 80)}`;
 				list.push({
 					id: t.id,
 					hostId: h.hostId,
@@ -1581,10 +1606,11 @@ function initHubController() {
 					turnState,
 					lastConclusionAt,
 					lastInterruptedAt,
+					conclusionSig,
 					approvalObj: pendingApp || null,
 					changedFiles,
 					queuedCount,
-					msgCount: totalTranscriptCount || transcript.length || 0,
+					msgCount: msgCountVal,
 					totalTranscriptCount,
 					omittedTranscriptCount,
 					hasMoreTranscript: Boolean(omittedTranscriptCount > 0 || t.hasMoreTranscript && !expandedEntry),
@@ -1596,7 +1622,7 @@ function initHubController() {
 					isUnreadInterrupted: false,
 					isRecentActive: false,
 					lastRole: lastMsg?.role || "assistant",
-					lastPreview: cleanPreviewText(String(rawPreview || "").slice(0, 360)) || "点击查看对话详情",
+					lastPreview: cleanPrev,
 					rawLastPreview: rawPreview,
 					transcript
 				});
@@ -1604,11 +1630,27 @@ function initHubController() {
 		}
 		const sortedByTime = [...list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 		let seenDirty = false;
-		sortedByTime.forEach((s, idx) => {
+		const serverReadMap = hubState.sessionReadState || {};
+		sortedByTime.forEach((s) => {
+			const srvRead = serverReadMap[s.id];
+			if (srvRead) {
+				if (srvRead.at && (!seenMap[s.id] || srvRead.at > seenMap[s.id])) {
+					seenMap[s.id] = srvRead.at;
+					seenDirty = true;
+				}
+				if (srvRead.sig && seenSigMap[s.id] !== srvRead.sig && (!seenMap[s.id] || srvRead.at >= seenMap[s.id])) {
+					seenSigMap[s.id] = srvRead.sig;
+					seenDirty = true;
+				}
+			}
 			if (s.id === activeSessionId && isChatOpenNow) {
 				const maxTs = Math.max(seenMap[s.id] || 0, s.updatedAt || 0, s.lastConclusionAt || 0);
-				if (seenMap[s.id] !== maxTs) {
+				if (seenMap[s.id] !== maxTs || s.turnState === "conclusion" && seenSigMap[s.id] !== s.conclusionSig) {
 					seenMap[s.id] = maxTs;
+					if (s.turnState === "conclusion") {
+						seenSigMap[s.id] = s.conclusionSig;
+						if (!srvRead || srvRead.sig !== s.conclusionSig) syncSessionReadToServer(s.id, s.conclusionSig, maxTs);
+					}
 					seenDirty = true;
 				}
 			}
@@ -1623,18 +1665,20 @@ function initHubController() {
 				return;
 			}
 			if (!seenMap[s.id]) {
-				if (idx === 0 && s.turnState === "conclusion" && s.id !== activeSessionId) seenMap[s.id] = Math.max(1, (s.lastConclusionAt || s.updatedAt || 2) - 1e3);
-				else seenMap[s.id] = Math.max(s.updatedAt || 0, s.lastConclusionAt || 0, Date.now());
+				seenMap[s.id] = Math.max(s.updatedAt || 0, s.lastConclusionAt || 0, Date.now());
+				if (s.turnState === "conclusion") seenSigMap[s.id] = s.conclusionSig;
 				seenDirty = true;
 			}
 			const seenAt = Number(seenMap[s.id]) || 0;
+			const seenSig = String(seenSigMap[s.id] || "");
 			const isCurrentOpen = s.id === activeSessionId && isChatOpenNow;
-			s.hasUnreadConclusion = !isCurrentOpen && s.turnState === "conclusion" && s.lastConclusionAt > 0 && s.lastConclusionAt > seenAt;
+			s.hasUnreadConclusion = !isCurrentOpen && s.turnState === "conclusion" && s.lastConclusionAt > 0 && s.lastConclusionAt > seenAt && s.conclusionSig !== seenSig;
 			s.isUnreadInterrupted = !isCurrentOpen && s.turnState === "interrupted" && (s.lastInterruptedAt || s.updatedAt) > seenAt;
 			s.unread = s.hasUnreadConclusion || s.isUnreadInterrupted;
 		});
 		if (seenDirty) try {
 			localStorage.setItem("dsh_seen_v4", JSON.stringify(seenMap));
+			localStorage.setItem("dsh_seen_sig_v1", JSON.stringify(seenSigMap));
 		} catch {}
 		const statePriority = (s) => {
 			if (s.status === "approval") return 4;
@@ -1900,6 +1944,7 @@ function initHubController() {
 				rowStateClass = "row-state-interrupted";
 				statusHtml = `<span class="badge-interrupted">⚠️ 中断待继续</span>`;
 			}
+			const unreadDotHtml = s.hasUnreadConclusion ? `<span class="unread-completion-dot" title="新完成的回复（点击查看后消失）"></span>` : "";
 			const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : "";
 			const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag">${esc(s.hostName)}</span>` : "";
 			const harnessTagHtml = s.harness === "antigravity-ide" ? `<span class="harness-mini-tag agy">⚡ IDE</span>` : s.harness === "codex" ? `<span class="harness-mini-tag agy">🧠 Codex</span>` : s.harness === "claude" ? `<span class="harness-mini-tag agy">✴️ Claude</span>` : "";
@@ -1910,6 +1955,7 @@ function initHubController() {
             <div class="session-main">
               <div class="session-top-line">
                 <div class="session-title-wrap">
+                  ${unreadDotHtml}
                   ${pinHtml}
                   <div class="session-title">${esc(displayTitle)}</div>
                 </div>
@@ -1964,10 +2010,14 @@ function initHubController() {
 		if (!found) return;
 		activeSessionId = found.session.id;
 		found.session.hostId;
-		seenMap[activeSessionId] = Math.max(found.session.updatedAt || 0, found.session.lastConclusionAt || 0, Date.now());
+		const readTs = Math.max(found.session.updatedAt || 0, found.session.lastConclusionAt || 0, Date.now());
+		seenMap[activeSessionId] = readTs;
+		if (found.session.conclusionSig) seenSigMap[activeSessionId] = found.session.conclusionSig;
 		try {
 			localStorage.setItem("dsh_seen_v4", JSON.stringify(seenMap));
+			localStorage.setItem("dsh_seen_sig_v1", JSON.stringify(seenSigMap));
 		} catch {}
+		syncSessionReadToServer(activeSessionId, found.session.conclusionSig || "", readTs);
 		document.getElementById("chatFullscreen").classList.add("open");
 		document.body.classList.add("mobile-chat-open");
 		lastRenderedChatKey = "";
@@ -3534,6 +3584,17 @@ function initHubController() {
 		}
 		setTimeout(fetchState, 600);
 	}
+	function toggleAddHostPanel() {
+		addHostPanelExpanded = !addHostPanelExpanded;
+		lastRenderedSettingsKey = "";
+		renderSettingsTab();
+	}
+	function toggleHostSettingsCard(hostId) {
+		if (!hostId) return;
+		expandedHostCardIds[hostId] = !expandedHostCardIds[hostId];
+		lastRenderedSettingsKey = "";
+		renderSettingsTab();
+	}
 	function renderAddHostPanelHtml({ isEmptyState = false } = {}) {
 		const enrollment = hubState.enrollment || {};
 		const code = enrollment.code || "正在生成...";
@@ -3543,34 +3604,66 @@ function initHubController() {
 		const originUrl = location.origin;
 		const oneLineCmd = `curl -fsSL ${originUrl}/install.sh | bash -s -- --code ${code}`;
 		const localRepoCmd = `./connect-host.sh --url ${originUrl} --code ${code}`;
-		return `
-        <div class="settings-card" style="padding:16px;${isEmptyState ? "max-width:440px;margin:20px auto;text-align:left;border:1.5px solid var(--primary);" : "margin-bottom:14px;"}">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-            <div>
-              <div style="font-size:15px;font-weight:800;color:var(--text);">
-                ${isEmptyState ? "💻 本机未接入 · 复制下方命令接入电脑" : "➕ 添加电脑（凭配对码加入，无需主密码）"}
+		const hasHosts = (hubState.hosts || []).length > 0;
+		if (!(isEmptyState || !hasHosts || addHostPanelExpanded)) return `
+          <div class="settings-card" style="padding:11px 13px;cursor:pointer;" onclick="toggleAddHostPanel()">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <div style="min-width:0;flex:1;">
+                <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;">
+                  <span style="font-size:13.5px;font-weight:700;color:var(--text);">➕ 添加电脑</span>
+                  <span style="font-family:var(--mono);font-size:11.5px;font-weight:700;padding:2px 6px;border-radius:6px;background:var(--primary-soft);color:var(--primary);">${esc(code)}</span>
+                </div>
+                <div style="font-size:11.5px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                  ⏳ ${remainMin}m有效 · 已连 ${joinedCount} 台 · 点此展开命令
+                </div>
               </div>
-              <div style="font-size:12px;color:var(--muted);margin-top:2px;">
-                每台电脑自动分配独立凭证，可单独吊销；有效期内同一配对码可连加多台电脑
+              <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+                <button class="pill-action-btn primary" style="padding:5px 9px;font-size:11.5px;" onclick="event.stopPropagation(); copyCodeText('${encodeURIComponent(oneLineCmd)}', '📋 一行接入命令已复制！到电脑终端粘贴回车即可')">
+                  📋 复制命令
+                </button>
+                <button class="pill-action-btn" style="padding:5px 8px;font-size:11.5px;" onclick="event.stopPropagation(); openPairingCodeSheet()">
+                  📱 扫码
+                </button>
+                <span style="font-size:12px;color:var(--muted);padding-left:2px;">▾</span>
               </div>
             </div>
-            <button class="pill-action-btn" style="font-size:11.5px;padding:4px 10px;" onclick="refreshEnrollmentCode()">
-              🔄 刷新配对码
-            </button>
+          </div>
+        `;
+		return `
+        <div class="settings-card" style="padding:15px;${isEmptyState ? "max-width:440px;margin:20px auto;text-align:left;border:1.5px solid var(--primary);" : ""}">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+            <div style="min-width:0;flex:1;">
+              <div style="font-size:14.5px;font-weight:800;color:var(--text);">
+                ${isEmptyState ? "💻 本机未接入 · 复制下方命令接入电脑" : "➕ 添加电脑（凭配对码加入，无需主密码）"}
+              </div>
+              <div style="font-size:11.5px;color:var(--muted);margin-top:2px;">
+                每台电脑独立凭证可单机吊销；有效期内可连加多台电脑
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0;">
+              <button class="pill-action-btn" style="font-size:11.5px;padding:4px 9px;" onclick="refreshEnrollmentCode()">
+                🔄 换码
+              </button>
+              ${!isEmptyState && hasHosts ? `
+                <button class="pill-action-btn" style="font-size:11.5px;padding:4px 9px;" onclick="toggleAddHostPanel()">
+                  ▴ 收起
+                </button>
+              ` : ""}
+            </div>
           </div>
 
           <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-            <div style="flex:1;min-width:120px;padding:8px 10px;border-radius:10px;background:var(--primary-soft);border:1px solid var(--border);">
+            <div style="flex:1;min-width:110px;padding:7px 10px;border-radius:10px;background:var(--primary-soft);border:1px solid var(--border);">
               <div style="font-size:11px;color:var(--muted);">当前电脑配对码</div>
-              <div style="font-family:var(--mono);font-size:17px;font-weight:800;color:var(--primary);letter-spacing:1.5px;margin-top:2px;">${esc(code)}</div>
+              <div style="font-family:var(--mono);font-size:16px;font-weight:800;color:var(--primary);letter-spacing:1.2px;margin-top:2px;">${esc(code)}</div>
             </div>
-            <div style="padding:8px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
+            <div style="padding:7px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
               <div style="font-size:11px;color:var(--muted);">剩余有效期</div>
-              <div style="font-size:13.5px;font-weight:700;color:var(--text);margin-top:3px;">⏳ ${remainMin} 分钟</div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);margin-top:3px;">⏳ ${remainMin} 分钟</div>
             </div>
-            <div style="padding:8px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
+            <div style="padding:7px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
               <div style="font-size:11px;color:var(--muted);">本码已加入</div>
-              <div style="font-size:13.5px;font-weight:700;color:var(--green);margin-top:3px;">💻 ${joinedCount} 台</div>
+              <div style="font-size:13px;font-weight:700;color:var(--green);margin-top:3px;">💻 ${joinedCount} 台</div>
             </div>
           </div>
 
@@ -3578,7 +3671,7 @@ function initHubController() {
             在电脑终端执行这一行命令（自动安装、自动连上、开机自启）：
           </div>
           <div
-            style="font-family:var(--mono);font-size:11.5px;line-height:1.5;padding:10px 12px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);color:var(--text);word-break:break-all;margin-bottom:10px;user-select:all;"
+            style="font-family:var(--mono);font-size:11.5px;line-height:1.45;padding:9px 11px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);color:var(--text);word-break:break-all;margin-bottom:10px;user-select:all;"
           >${esc(oneLineCmd)}</div>
 
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -3652,6 +3745,8 @@ function initHubController() {
 		const onboardingCmd = `curl -fsSL ${location.origin}/install.sh | bash -s -- --code ${enrollmentCode}`;
 		const settingsSignature = JSON.stringify({
 			themePref,
+			addHostPanelExpanded,
+			expandedHostCardIds,
 			tokenTail: currentTk.slice(-4),
 			enrollmentCode,
 			joinedCount: hubState.enrollment?.joinedCount || 0,
@@ -3704,78 +3799,104 @@ function initHubController() {
           </div>
 
           <div>
-            <div class="settings-group-title">已接入电脑实时看板 (${hosts.length} 台设备)</div>
+            <div class="settings-group-title">已接入电脑 (${hosts.length} 台 · 点击卡片展开详情)</div>
             <div class="host-visual-grid">
               ${hosts.map((h) => {
 			const isRevoked = (h.trustStatus || h.trust?.status) === "revoked";
+			const isCardExpanded = Boolean(expandedHostCardIds[h.hostId]);
+			const tm = formatHostTelemetry(h);
+			const sessCount = (h.bridgeState?.tasks || []).length;
+			const runCount = h.runningCount || 0;
+			const turboShort = h.bridgeState?.turbo?.enabled ? "⚡ 极速" : "🐢 轮询";
+			const shortFp = (h.fingerprint || "已锁定").slice(0, 14);
 			return `
-                <div class="host-visual-card ${h.isFeishuActive ? "active-feishu" : ""}">
-                  <div class="host-visual-top">
-                    <div>
-                      <div style="font-size:15.5px;font-weight:700;display:flex;align-items:center;gap:6px;">
+                <div class="host-visual-card ${h.isFeishuActive ? "active-feishu" : ""}" style="padding:12px 14px;">
+                  <div
+                    style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;"
+                    onclick="toggleHostSettingsCard('${esc(h.hostId)}')"
+                  >
+                    <div style="min-width:0;flex:1;">
+                      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                         <span class="status-dot ${h.online && !isRevoked ? "" : "offline"}"></span>
-                        <span>${esc(h.hostName)}</span>
-                        <span style="font-size:11.5px;color:var(--muted);font-weight:500;">(${esc(h.platform || "macOS")} ${esc(h.arch || "")})</span>
+                        <span style="font-size:14.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;">${esc(h.hostName)}</span>
+                        ${h.isFeishuActive ? `<span style="font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--primary-soft);color:var(--primary);">🎯 主控</span>` : ""}
+                        ${isRevoked ? `<span style="font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--red-soft);color:var(--red);">🚫 已吊销</span>` : ""}
                       </div>
-                      <div style="font-size:11.5px;color:var(--muted);margin-top:3px;">
-                        🔒 指纹 ${esc(h.fingerprint || "已锁定")} · ${isRevoked ? "<span style=\"color:var(--red);font-weight:700;\">🚫 已吊销</span>" : h.online ? "实时在线" : "离线 (" + formatTime(h.lastSeen) + ")"} · ${h.hasDedicatedToken ? `🔑 独立凭证 (${esc(h.hostTokenPreview)})` : "🔑 管理员凭证"}
+                      <div style="font-size:11.5px;color:var(--muted);margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                        <span>${h.online ? `${tm.powerIcon} ${esc(tm.powerShort)}` : `⚪ 离线 (${formatTime(h.lastSeen)})`}</span>
+                        <span>·</span>
+                        <span>${tm.netIcon} ${esc(tm.netShort)}</span>
+                        <span>·</span>
+                        <span>💬 ${sessCount} 会话${runCount > 0 ? ` (<strong style="color:var(--green);">${runCount} 运行中</strong>)` : ""}</span>
+                        <span>·</span>
+                        <span>${turboShort}</span>
                       </div>
                     </div>
-                    <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                      <button class="pill-action-btn ${h.isFeishuActive ? "primary" : ""}" onclick="activateFeishuHost('${esc(h.hostId)}')">
-                        ${h.isFeishuActive ? "🎯 飞书当前主控" : "切飞书到这台"}
-                      </button>
-                      ${isRevoked ? `
-                        <button class="pill-action-btn" onclick="unrevokeHostCredential('${esc(h.hostId)}', '${esc(h.hostName)}')">恢复接入</button>
-                      ` : `
-                        <button class="pill-action-btn" style="color:var(--red);" onclick="revokeHostCredential('${esc(h.hostId)}', '${esc(h.hostName)}')">🚫 吊销</button>
-                      `}
-                    </div>
-                  </div>
-                  <div class="host-metrics-row">
-                    <div class="metric-cell">
-                      <span class="metric-label">总会话数</span>
-                      <span class="metric-val">${(h.bridgeState?.tasks || []).length} 条</span>
-                    </div>
-                    <div class="metric-cell">
-                      <span class="metric-label">运行中</span>
-                      <span class="metric-val">${h.runningCount || 0} 个</span>
-                    </div>
-                    <div class="metric-cell">
-                      <span class="metric-label">~/.dsh 存储</span>
-                      <span class="metric-val">${formatBytes(h.totalBytes)}</span>
-                    </div>
-                  </div>
-                  ${(() => {
-				const tm = formatHostTelemetry(h);
-				return `
-                      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;font-size:12px;color:var(--text-secondary);padding:7px 10px;margin-bottom:8px;border-radius:10px;background:${tm.lowBattery ? "var(--amber-soft)" : "var(--subtle)"};border:1px solid ${tm.lowBattery ? "#fde68a" : "var(--border)"};">
-                        <span>${tm.powerIcon} 供电状态：<strong>${esc(tm.powerDetail)}</strong>${tm.lowBattery ? " <span style=\"color:var(--red);font-weight:700;\">⚠️ 低电量防休眠预警</span>" : ""}</span>
-                        <span>${tm.netIcon} 网络状态：<strong>${esc(tm.netDetail)}</strong>${!h.online ? " <span style=\"color:var(--red);\">(离线前最后状态)</span>" : ""}</span>
-                      </div>
-                    `;
-			})()}
-                  <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--text-secondary);padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--hairline);">
-                    <span>⚡ 同步引擎：<strong>${esc(h.bridgeState?.turbo?.engineLabel || "🐢 标准轮询 (可升级)")}</strong>${h.syncMeta?.seq ? ` · 序号 #${h.syncMeta.seq}` : ""}</span>
-                    <button class="pill-action-btn primary" style="padding:4px 10px;font-size:11.5px;" onclick="openTurboGuideSheet()">
-                      ${h.bridgeState?.turbo?.enabled ? "⚡ 极速详情" : "🚀 一键提速"}
-                    </button>
-                  </div>
-                  <div style="display:flex;flex-wrap:wrap;gap:6px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--hairline);font-size:11.5px;">
-                    <span style="padding:2px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">🟣 DSH · ✅ 完整远控+审批</span>
-                    <span style="padding:2px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">⚡ Antigravity IDE · ✅ 完整远控+审批</span>
-                    ${(h.bridgeState?.harnesses || []).map((ad) => `
-                      <span style="padding:2px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">
-                        ${esc(ad.icon || "🔌")} ${esc(ad.label || ad.id)} · ${ad.hasBinary ? "🔵 看会话/发指令/停止（审批计划中）" : ad.installed ? "👀 观察模式（审批需 DSH）" : "⚪ 未安装"}
+                    <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                      <span style="font-size:11.5px;font-weight:600;color:var(--text-secondary);padding:4px 8px;border-radius:999px;background:var(--subtle);">
+                        ${isCardExpanded ? "▴ 收起" : "▾ 详情"}
                       </span>
-                    `).join("")}
+                    </div>
                   </div>
-                  <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--text-secondary);">
-                    <span>飞书远程完成/异常卡片通知（可选）</span>
-                    <button class="pill-action-btn ${h.remoteActive ? "primary" : ""}" style="padding:4px 10px;font-size:11.5px;" onclick="toggleHostRemoteMode('${esc(h.hostId)}', ${!h.remoteActive})">
-                      ${h.remoteActive ? "🔔 已开启" : "🔕 已关闭"}
-                    </button>
-                  </div>
+
+                  ${isCardExpanded ? `
+                    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--hairline);display:flex;flex-direction:column;gap:10px;">
+                      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;font-size:12px;">
+                        <div style="padding:8px 10px;border-radius:10px;background:${tm.lowBattery ? "var(--amber-soft)" : "var(--subtle)"};border:1px solid ${tm.lowBattery ? "#fde68a" : "var(--border)"};">
+                          <div style="font-size:11px;color:var(--muted);">供电与电量</div>
+                          <div style="font-weight:700;color:var(--text);margin-top:2px;">${tm.powerIcon} ${esc(tm.powerDetail)}${tm.lowBattery ? " ⚠️" : ""}</div>
+                        </div>
+                        <div style="padding:8px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
+                          <div style="font-size:11px;color:var(--muted);">网络与延迟</div>
+                          <div style="font-weight:700;color:var(--text);margin-top:2px;">${tm.netIcon} ${esc(tm.netDetail)}</div>
+                        </div>
+                        <div style="padding:8px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
+                          <div style="font-size:11px;color:var(--muted);">会话与存储</div>
+                          <div style="font-weight:700;color:var(--text);margin-top:2px;">${sessCount} 条 · ${runCount} 运行 · ${formatBytes(h.totalBytes)}</div>
+                        </div>
+                        <div style="padding:8px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
+                          <div style="font-size:11px;color:var(--muted);">同步与系统</div>
+                          <div style="font-weight:700;color:var(--text);margin-top:2px;">${esc(h.platform || "macOS")} ${esc(h.arch || "")} · ${turboShort}</div>
+                        </div>
+                      </div>
+
+                      <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:11.5px;">
+                        <span style="padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">🟣 DSH · ✅ 远控+审批</span>
+                        <span style="padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">⚡ Antigravity · ✅ 远控+审批</span>
+                        ${(h.bridgeState?.harnesses || []).map((ad) => `
+                          <span style="padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">
+                            ${esc(ad.icon || "🔌")} ${esc(ad.label || ad.id)} · ${ad.hasBinary ? "🔵 看会话/发指令" : ad.installed ? "👀 观察模式" : "⚪ 未安装"}
+                          </span>
+                        `).join("")}
+                      </div>
+
+                      <div style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+                        <span>🔒 指纹 <code>${esc(shortFp)}</code> · ${h.hasDedicatedToken ? `🔑 独立凭证 (${esc(h.hostTokenPreview)})` : "🔑 管理员凭证"}</span>
+                        <span>${h.syncMeta?.seq ? `同步序号 #${h.syncMeta.seq}` : ""}</span>
+                      </div>
+
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;padding-top:4px;">
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                          <button class="pill-action-btn ${h.isFeishuActive ? "primary" : ""}" style="padding:5px 10px;font-size:11.5px;" onclick="activateFeishuHost('${esc(h.hostId)}')">
+                            ${h.isFeishuActive ? "🎯 飞书当前主控" : "切飞书到这台"}
+                          </button>
+                          <button class="pill-action-btn ${h.remoteActive ? "primary" : ""}" style="padding:5px 10px;font-size:11.5px;" onclick="toggleHostRemoteMode('${esc(h.hostId)}', ${!h.remoteActive})">
+                            ${h.remoteActive ? "🔔 飞书通知: 开" : "🔕 飞书通知: 关"}
+                          </button>
+                          <button class="pill-action-btn" style="padding:5px 10px;font-size:11.5px;" onclick="openTurboGuideSheet()">
+                            ${h.bridgeState?.turbo?.enabled ? "⚡ 极速详情" : "🚀 一键提速"}
+                          </button>
+                        </div>
+                        <div>
+                          ${isRevoked ? `
+                            <button class="pill-action-btn" style="padding:5px 10px;font-size:11.5px;" onclick="unrevokeHostCredential('${esc(h.hostId)}', '${esc(h.hostName)}')">恢复接入</button>
+                          ` : `
+                            <button class="pill-action-btn" style="padding:5px 10px;font-size:11.5px;color:var(--red);" onclick="revokeHostCredential('${esc(h.hostId)}', '${esc(h.hostName)}')">🚫 吊销凭证</button>
+                          `}
+                        </div>
+                      </div>
+                    </div>
+                  ` : ""}
                 </div>
               `;
 		}).join("") || `<div style="padding:24px;text-align:center;color:var(--muted);">暂未检测到在线电脑，请复制上方「添加电脑」命令在终端执行</div>`}
@@ -3821,10 +3942,10 @@ function initHubController() {
           <div>
             <div class="settings-group-title">外观与显示模式</div>
             <div class="settings-card">
-              <div class="settings-item">
-                <div>
-                  <div class="settings-item-title">深色 / 浅色主题</div>
-                  <div class="settings-item-desc">夜间弱光下使用深色模式更护眼，默认跟随手机系统自动切换</div>
+              <div class="settings-item" style="gap:8px;">
+                <div style="min-width:0;flex:1;">
+                  <div class="settings-item-title" style="white-space:nowrap;">深色 / 浅色主题</div>
+                  <div class="settings-item-desc" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">自动或手动切换外观</div>
                 </div>
                 <div class="theme-seg-group">
                   <button class="theme-seg-btn ${themePref === "system" ? "active" : ""}" onclick="setThemePreference('system')">跟随系统</button>
@@ -5011,6 +5132,9 @@ function initHubController() {
 		openPairingCodeSheet,
 		closePairingCodeSheet,
 		generateNewPairingCode,
+		toggleAddHostPanel,
+		toggleHostSettingsCard,
+		syncSessionReadToServer,
 		renderAddHostPanelHtml,
 		refreshEnrollmentCode,
 		revokeHostCredential,

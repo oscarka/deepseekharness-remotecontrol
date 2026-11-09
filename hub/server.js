@@ -472,6 +472,11 @@ export function createHubServer({
         return { status: 200, json: { ok: true } }
       }
 
+      if (method === 'POST' && pathname === '/api/sessions/read') {
+        const outcome = hub.markSessionRead(body || {})
+        return { status: outcome.ok ? 200 : 400, json: outcome }
+      }
+
       if (method === 'GET' && pathname === '/api/state') {
         return {
           status: 200,

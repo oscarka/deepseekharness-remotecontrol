@@ -300,6 +300,7 @@ export function parseAntigravityTranscript(jsonlText, {
   let lastUserInputAt = 0
   let lastConclusionAt = 0
   let pendingApproval = null
+  const pendingBackgroundTaskIds = new Set()
   const changedFilesMap = new Map()
 
   for (let i = 0; i < lines.length; i += 1) {
@@ -308,6 +309,17 @@ export function parseAntigravityTranscript(jsonlText, {
     const stepTime = step.created_at ? Date.parse(step.created_at) : 0
     if (Number.isFinite(stepTime) && stepTime > lastActivity) {
       lastActivity = stepTime
+    }
+
+    if (stepType === 'SYSTEM_MESSAGE' || (typeof step.content === 'string' && step.content.includes('<SYSTEM_MESSAGE>'))) {
+      const sysContent = String(step.content || '')
+      for (const m of sysContent.matchAll(/Task id "([^"]+)" finished/g)) {
+        if (m[1]) pendingBackgroundTaskIds.delete(m[1].trim().replace(/[.,;]+$/, ''))
+      }
+      for (const m of sysContent.matchAll(/sender=([^\s\r\n>]+)/g)) {
+        if (m[1]) pendingBackgroundTaskIds.delete(m[1].trim().replace(/[.,;]+$/, ''))
+      }
+      if (stepType === 'SYSTEM_MESSAGE') continue
     }
 
     if (stepType === 'CHECKPOINT') {
@@ -346,6 +358,9 @@ export function parseAntigravityTranscript(jsonlText, {
       }
       if (!userText) continue
       pendingApproval = null // Previous approval is resolved once user inputs
+      pendingBackgroundTaskIds.clear()
+      lastConclusionAt = 0
+      lastConclusionText = ''
       lastUserInputAt = stepTime || lastActivity
       runningSummary = '💭 正在思考与分析...'
       transcript.push({
@@ -399,11 +414,18 @@ export function parseAntigravityTranscript(jsonlText, {
       }
 
       if (tools.length > 0) {
+        lastConclusionAt = 0
         runningSummary = `🔧 正在执行: ${tools.map(t => t.summary || t.name).join(' · ')}`.slice(0, 240)
       } else if (asstText && step.status !== 'RUNNING') {
-        lastConclusionAt = stepTime || lastActivity
-        lastConclusionText = asstText.slice(0, 600)
+        if (pendingBackgroundTaskIds.size > 0) {
+          lastConclusionAt = 0
+          runningSummary = `⏳ 等待后台任务完成: ${asstText.replace(/\s+/g, ' ').slice(0, 120)}`
+        } else {
+          lastConclusionAt = stepTime || lastActivity
+          lastConclusionText = asstText.slice(0, 600)
+        }
       } else if (thinkingText) {
+        lastConclusionAt = 0
         runningSummary = `💭 正在思考: ${thinkingText.replace(/\s+/g, ' ').slice(0, 120)}`
       }
 
@@ -501,6 +523,13 @@ export function parseAntigravityTranscript(jsonlText, {
       }
     } else if (stepType === 'RUN_COMMAND' || stepType === 'CODE_ACTION' || stepType === 'GENERIC') {
       pendingApproval = null
+      lastConclusionAt = 0
+      if (typeof step.content === 'string') {
+        const bgMatch = step.content.match(/Tool is running as a background task with task id:\s*([^\s\r\n"]+)/i)
+        if (bgMatch && bgMatch[1]) {
+          pendingBackgroundTaskIds.add(bgMatch[1].trim().replace(/[.,;]+$/, ''))
+        }
+      }
       if (
         stepType === 'GENERIC' &&
         typeof step.content === 'string' &&
@@ -589,14 +618,20 @@ export function parseAntigravityTranscript(jsonlText, {
   const lastStep = lines.at(-1) || {}
   const lastStepType = String(lastStep.type || '')
   const lastStepTools = Array.isArray(lastStep.tool_calls) ? lastStep.tool_calls : []
-  const isConcludedStep = lastStepType === 'PLANNER_RESPONSE'
+  const hasActiveBackgroundTask = pendingBackgroundTaskIds.size > 0 && (now - lastActivity < 15 * 60_000)
+  const isLsRunning = liveStatus === 'CASCADE_RUN_STATUS_RUNNING'
+  const isConcludedStep = !hasActiveBackgroundTask
+    && !isLsRunning
+    && lastStepType === 'PLANNER_RESPONSE'
     && lastStep.status !== 'RUNNING'
     && lastStepTools.length === 0
     && Boolean(String(lastStep.content || '').trim())
   const isErrorStep = lastStepType === 'ERROR_MESSAGE' || lastStep.status === 'ERROR'
-  const isMidTurn = !isConcludedStep && !isErrorStep
+  const isMidTurn = hasActiveBackgroundTask || isLsRunning || (!isConcludedStep && !isErrorStep)
 
-  const isRecentlyActive = (isMidTurn && (now - lastActivity < 90_000))
+  const isRecentlyActive = isLsRunning
+    || hasActiveBackgroundTask
+    || (isMidTurn && (now - lastActivity < 300_000) && liveStatus !== 'CASCADE_RUN_STATUS_IDLE')
     || (isErrorStep && (now - lastActivity < 15_000))
 
   const status = pendingApproval
@@ -605,7 +640,7 @@ export function parseAntigravityTranscript(jsonlText, {
       ? 'running'
       : 'idle'
 
-  const hasConcludedCurrentTurn = isConcludedStep || (lastConclusionAt > 0 && lastConclusionAt >= lastUserInputAt)
+  const hasConcludedCurrentTurn = !isRecentlyActive && (isConcludedStep || (lastConclusionAt > 0 && lastConclusionAt >= lastUserInputAt))
   const turnState = pendingApproval
     ? 'approval'
     : status === 'running'
@@ -662,6 +697,7 @@ export function parseAntigravityTranscript(jsonlText, {
     status,
     turnState,
     isMidTurn,
+    hasActiveBackgroundTask,
     statusLabel,
     lastStepIndex,
     sessionRev,
@@ -945,8 +981,10 @@ export async function loadAntigravityIdeSessions({
       const cached = sessionParseCache.get(item.convId)
       if (cached && cached.cacheKey === cacheKey && cached.session) {
         // Recompute dynamic running/idle status against current `now` while skipping disk read & JSONL parse
+        const hasBgTask = Boolean(cached.session.hasActiveBackgroundTask) && (now - cached.session.lastActivity <= 15 * 60_000)
         const isRecentlyActive = liveStatus === 'CASCADE_RUN_STATUS_RUNNING'
-          || (Boolean(cached.session.isMidTurn) && (now - cached.session.lastActivity <= 90_000) && liveStatus !== 'CASCADE_RUN_STATUS_IDLE')
+          || hasBgTask
+          || (Boolean(cached.session.isMidTurn) && (now - cached.session.lastActivity <= 300_000) && liveStatus !== 'CASCADE_RUN_STATUS_IDLE')
         const status = cached.session.pendingApproval
           ? 'approval'
           : isRecentlyActive

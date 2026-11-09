@@ -5,7 +5,7 @@ export function TopBar() {
     <Fragment>
       {/* 1. 唯一极简顶栏 */}
       <header class="top-bar" id="mobileTopHostBtn">
-        <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+        <div class="top-bar-left">
           <button
             type="button"
             class="host-switcher-btn"

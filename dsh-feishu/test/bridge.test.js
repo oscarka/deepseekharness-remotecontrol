@@ -1845,6 +1845,148 @@ test('DSH workspace.json bidirectional sync: filters archived sessions & registe
   }
 })
 
+test('Antigravity background task mid-turn push suppression & persistent sessionReadState sync', async () => {
+  const { parseAntigravityTranscript } = await import('../lib/antigravity-ide.js')
+  const { HubCore } = await import('../../hub/hub-core.js')
+  const root = await mkdtemp(join(tmpdir(), 'dsh-bg-push-read-'))
+  try {
+    const now = Date.now()
+    const iso = (offsetMs) => new Date(now + offsetMs).toISOString()
+
+    // 1. Mid-turn transcript where run_command backgrounds a task and model outputs an interim waiting message
+    const midTurnLines = [
+      JSON.stringify({
+        step_index: 1,
+        type: 'USER_INPUT',
+        status: 'DONE',
+        created_at: iso(-20_000),
+        content: 'Deploy to Cloud Run',
+      }),
+      JSON.stringify({
+        step_index: 2,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: iso(-18_000),
+        content: 'Starting deploy...',
+        tool_calls: [{ name: 'run_command', arguments: { CommandLine: 'gcloud run deploy' } }],
+      }),
+      JSON.stringify({
+        step_index: 3,
+        type: 'RUN_COMMAND',
+        status: 'DONE',
+        created_at: iso(-15_000),
+        content: 'Tool is running as a background task with task id: bg-task-99.\nOutput so far: Building...',
+      }),
+      JSON.stringify({
+        step_index: 4,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: iso(-12_000),
+        content: '正在等待 Cloud Run 构建完成...',
+        tool_calls: [],
+      }),
+    ].join('\n')
+
+    const midSession = parseAntigravityTranscript(midTurnLines, { conversationId: 'conv-bg-test', now })
+    assert.equal(midSession.hasActiveBackgroundTask, true)
+    assert.equal(midSession.isMidTurn, true)
+    assert.equal(midSession.status, 'running')
+    assert.equal(midSession.turnState, 'running')
+
+    // 2. Once SYSTEM_MESSAGE reports the background task finished and model outputs final conclusion, it transitions to idle/conclusion
+    const concludedLines = [
+      midTurnLines,
+      JSON.stringify({
+        step_index: 5,
+        type: 'USER_INPUT',
+        status: 'DONE',
+        created_at: iso(-5000),
+        content: '<SYSTEM_MESSAGE>\nTask id "bg-task-99" finished with exit code 0.\n</SYSTEM_MESSAGE>',
+      }),
+      JSON.stringify({
+        step_index: 6,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: iso(-2000),
+        content: '✅ Cloud Run 部署已完成！',
+        tool_calls: [],
+      }),
+    ].join('\n')
+
+    const finalSession = parseAntigravityTranscript(concludedLines, { conversationId: 'conv-bg-test', now })
+    assert.equal(finalSession.hasActiveBackgroundTask, false)
+    assert.equal(finalSession.isMidTurn, false)
+    assert.equal(finalSession.status, 'idle')
+    assert.equal(finalSession.turnState, 'conclusion')
+
+    // 3. HubCore suppresses mid-turn false pushes and deduplicates repeated conclusion pushes, and persists sessionReadState
+    const stateFile = join(root, 'hub-state.json')
+    const hub = new HubCore({ stateFile })
+    await hub.init()
+
+    // First heartbeat: running
+    hub.handleHeartbeat({
+      hostId: 'no2',
+      hostName: 'No2 Mac',
+      bridgeState: { tasks: [midSession], approvals: [] },
+    })
+    assert.equal(hub.pushHistory.length, 0)
+
+    // Even if a transient heartbeat reports status='idle' while isMidTurn/hasActiveBackgroundTask is true, no push fires
+    hub.handleHeartbeat({
+      hostId: 'no2',
+      hostName: 'No2 Mac',
+      bridgeState: {
+        tasks: [{ ...midSession, status: 'idle' }],
+        approvals: [],
+      },
+    })
+    assert.equal(hub.pushHistory.length, 0)
+
+    // Real conclusion arrives -> triggers exactly 1 completion push
+    hub.handleHeartbeat({
+      hostId: 'no2',
+      hostName: 'No2 Mac',
+      bridgeState: { tasks: [finalSession], approvals: [] },
+    })
+    assert.equal(hub.pushHistory.length, 1)
+    assert.match(hub.pushHistory[0].title, /任务完成/)
+
+    // If status briefly flaps running -> idle with the SAME conclusion, deduplication prevents duplicate push
+    hub.handleHeartbeat({
+      hostId: 'no2',
+      hostName: 'No2 Mac',
+      bridgeState: { tasks: [{ ...finalSession, status: 'running', turnState: 'running' }], approvals: [] },
+    })
+    hub.handleHeartbeat({
+      hostId: 'no2',
+      hostName: 'No2 Mac',
+      bridgeState: { tasks: [finalSession], approvals: [] },
+    })
+    assert.equal(hub.pushHistory.length, 1)
+
+    // Mark session read and verify persistence across HubCore restart
+    const readRes = hub.markSessionRead({
+      sessionId: finalSession.id,
+      sig: 'conclusion:2:✅ Cloud Run 部署已完成！',
+      at: now,
+    })
+    assert.equal(readRes.ok, true)
+    await hub.persist()
+
+    const hub2 = new HubCore({ stateFile })
+    await hub2.init()
+    const fullState = hub2.getFullState()
+    assert.equal(
+      fullState.sessionReadState[finalSession.id]?.sig,
+      'conclusion:2:✅ Cloud Run 部署已完成！',
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+
 
 
 

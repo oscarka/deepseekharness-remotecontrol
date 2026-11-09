@@ -233,30 +233,44 @@
     /* ==================== 1. 唯一极简顶栏 ==================== */
     .top-bar {
       height: 54px;
-      padding: 0 14px;
+      padding: 0 12px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 8px;
       background: rgba(255, 255, 255, 0.94);
       backdrop-filter: blur(16px);
       border-bottom: 1px solid var(--hairline);
       flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .top-bar-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      flex: 1;
+      overflow: hidden;
     }
 
     .host-switcher-btn {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       background: var(--subtle);
       border: 1px solid transparent;
-      padding: 7px 13px;
+      padding: 6px 11px;
       border-radius: 999px;
-      font-size: 14.5px;
+      font-size: 13.5px;
       font-weight: 700;
       color: var(--text);
       cursor: pointer;
       transition: all 0.15s;
-      max-width: 235px;
+      min-width: 0;
+      flex: 0 1 auto;
+      max-width: 100%;
+      overflow: hidden;
     }
     .host-switcher-btn:hover { background: var(--subtle-hover); }
     .host-switcher-btn:active { transform: scale(0.97); }
@@ -274,6 +288,8 @@
       box-shadow: none;
     }
     .host-switcher-name {
+      min-width: 0;
+      flex: 1 1 auto;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -281,6 +297,7 @@
     .host-switcher-caret {
       font-size: 11px;
       color: var(--text-secondary);
+      flex-shrink: 0;
     }
 
     .new-chat-btn {
@@ -290,13 +307,15 @@
       background: var(--primary);
       color: #fff;
       border: none;
-      padding: 7px 14px;
+      padding: 7px 12px;
       border-radius: 999px;
-      font-size: 13.5px;
+      font-size: 13px;
       font-weight: 600;
       cursor: pointer;
       box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
       transition: all 0.15s;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .new-chat-btn:hover { background: var(--primary-hover); }
     .new-chat-btn:active { transform: scale(0.96); }
@@ -595,6 +614,16 @@
       border-radius: 50%;
       background: var(--primary);
       flex-shrink: 0;
+    }
+
+    .unread-completion-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.22);
+      flex-shrink: 0;
+      display: inline-block;
     }
 
     .pin-tag {
@@ -1929,6 +1958,8 @@
       border-radius: 999px;
       padding: 2px;
       gap: 2px;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .theme-seg-btn {
       border: none;
@@ -1939,6 +1970,8 @@
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .theme-seg-btn.active {
       background: var(--surface);

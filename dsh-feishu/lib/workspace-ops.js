@@ -678,6 +678,7 @@ export async function loadDiskSessionsFromDshHome(
           ...cachedEntry.session,
           ...(customOverride ? { title: customOverride } : {}),
           status: isActivelyRunningNow ? 'running' : 'idle',
+          isMidTurn: !cachedEntry.hasConcluded,
           turnState: isActivelyRunningNow
             ? 'running'
             : cachedEntry.hasConcluded
@@ -779,6 +780,7 @@ export async function loadDiskSessionsFromDshHome(
             )
             if (!userText || isSystemInjectedUserText(userText)) continue
             lastUserInputAt = e.time || lastActivity
+            lastConclusionAt = 0
             runningSummary = '💭 正在思考与分析...'
             rawTranscript.push({
               index: rawTranscript.length,
@@ -789,6 +791,8 @@ export async function loadDiskSessionsFromDshHome(
               toolCalls: [],
               time: e.time || 0,
             })
+          } else if (e.type === 'tool/call' || e.type === 'tool/result') {
+            lastConclusionAt = 0
           } else if (e.type === 'assistant/message') {
             const blocks = Array.isArray(e.data?.message?.content) ? e.data.message.content : []
             const asstText = cleanForChat(
@@ -826,11 +830,13 @@ export async function loadDiskSessionsFromDshHome(
             if (!asstText && !thinkingText && stepTools.length === 0) continue
             if (asstText) lastOutput = asstText.slice(0, 600)
             if (stepTools.length > 0) {
+              lastConclusionAt = 0
               runningSummary = `🔧 正在执行: ${stepTools.map(t => (t.summary ? `${t.name} (${t.summary})` : t.name)).join(' · ')}`.slice(0, 240)
             } else if (asstText) {
               lastConclusionAt = e.time || lastActivity
               lastConclusionText = asstText.slice(0, 600)
             } else if (thinkingText) {
+              lastConclusionAt = 0
               runningSummary = `💭 正在思考: ${thinkingText.replace(/\s+/g, ' ').slice(0, 120)}`
             }
             rawTranscript.push({
@@ -871,6 +877,7 @@ export async function loadDiskSessionsFromDshHome(
           harnessLabel: 'DeepSeek Harness',
           title: customTitles[id] || title || transcript[0]?.text?.slice(0, 36) || '历史会话',
           status: isActivelyRunning ? 'running' : 'idle',
+          isMidTurn: !hasConcluded,
           turnState: isActivelyRunning ? 'running' : hasConcluded ? 'conclusion' : 'idle',
           statusLabel: isActivelyRunning ? '🟢 运行中' : hasConcluded ? '🔵 已出结论' : '已完成',
           project,

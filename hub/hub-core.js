@@ -39,6 +39,8 @@ export class HubCore {
     this.pushSubscriptions = new Map()
     this.unsubscribedEndpoints = new Set()
     this.pushedApprovalCodes = new Set()
+    this.pushedCompletionSigs = new Map()
+    this.sessionReadState = new Map()
     this.hostTaskStates = new Map()
     this.pushHistory = []
     this.sseListeners = new Set()
@@ -136,6 +138,16 @@ export class HubCore {
       if (Array.isArray(data.shares)) {
         for (const sh of data.shares) {
           if (sh?.id) this.shares.set(sh.id, sh)
+        }
+      }
+      if (data.sessionReadState && typeof data.sessionReadState === 'object') {
+        for (const [k, v] of Object.entries(data.sessionReadState)) {
+          if (k && v && typeof v === 'object') {
+            this.sessionReadState.set(String(k), {
+              sig: String(v.sig || ''),
+              at: Number(v.at) || 0,
+            })
+          }
         }
       }
       if (data.enrollment && typeof data.enrollment === 'object' && data.enrollment.code) {
@@ -320,6 +332,7 @@ export class HubCore {
         snapshots: [...this.snapshots.values()],
         shares: [...this.shares.values()],
         approvalLedger: [...this.approvalLedger.entries()],
+        sessionReadState: Object.fromEntries(this.sessionReadState),
         enrollment: this.enrollment,
       }
       await writeFile(this.stateFile, JSON.stringify(payload), 'utf8')
@@ -691,11 +704,28 @@ export class HubCore {
       pushHistory: this.pushHistory.slice(-10).reverse(),
       stats: this.getUsageStats(),
       enrollment: this.getOrCreateEnrollmentCode(),
+      sessionReadState: Object.fromEntries(this.sessionReadState),
       hosts,
       snapshots,
       migrations,
       shares,
     }
+  }
+
+  markSessionRead({ sessionId = '', sig = '', at = 0 } = {}) {
+    const cleanId = String(sessionId ?? '').trim()
+    if (!cleanId) return { ok: false, error: 'sessionId is required' }
+    const now = this.now()
+    const prev = this.sessionReadState.get(cleanId)
+    const nextAt = Math.max(Number(at) || 0, Number(prev?.at) || 0, now)
+    const nextSig = String(sig || prev?.sig || '')
+    this.sessionReadState.set(cleanId, { sig: nextSig, at: nextAt })
+    while (this.sessionReadState.size > 500) {
+      const oldestKey = this.sessionReadState.keys().next().value
+      this.sessionReadState.delete(oldestKey)
+    }
+    void this.persist()
+    return { ok: true, sessionId: cleanId, readState: { sig: nextSig, at: nextAt } }
   }
 
   getVapidPublicKey() {
@@ -854,10 +884,25 @@ export class HubCore {
       const key = `${hostId}:${task.id}`
       const prevStatus = this.hostTaskStates.get(key)
       const curStatus = String(task.status || 'unknown')
-      this.hostTaskStates.set(key, curStatus)
-      if (!prevStatus || prevStatus === curStatus) continue
+      const isStillMidTurn =
+        Boolean(task.isMidTurn) ||
+        Boolean(task.hasActiveBackgroundTask) ||
+        task.turnState === 'running' ||
+        task.turnState === 'approval'
+      const effectiveStatus = curStatus === 'idle' && isStillMidTurn ? 'running' : curStatus
+      this.hostTaskStates.set(key, effectiveStatus)
+      if (!prevStatus || prevStatus === effectiveStatus) continue
 
-      if (prevStatus === 'running' && curStatus === 'idle') {
+      if (prevStatus === 'running' && effectiveStatus === 'idle') {
+        if (task.turnState === 'interrupted') continue
+        const completionSig = `${task.lastStepIndex ?? ''}:${task.lastConclusionAt || ''}:${String(task.lastOutput || '').slice(0, 80)}`
+        if (completionSig && this.pushedCompletionSigs.get(key) === completionSig) continue
+        if (completionSig) {
+          this.pushedCompletionSigs.set(key, completionSig)
+          while (this.pushedCompletionSigs.size > 400) {
+            this.pushedCompletionSigs.delete(this.pushedCompletionSigs.keys().next().value)
+          }
+        }
         void this.broadcastWebPush({
           title: `✅ [${hostName}] 任务完成：${task.title}`,
           body: task.lastOutput ? String(task.lastOutput).slice(0, 120) : '任务已执行完毕，点击查看结果或继续指令',
