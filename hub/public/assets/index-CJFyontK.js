@@ -1884,47 +1884,26 @@ function initHubController() {
 			if (!q) return true;
 			return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || s.lastPreview.toLowerCase().includes(q);
 		});
-		const visibleHosts = (hubState.hosts || []).filter((h) => !currentHostId || currentHostId === "ALL_HOSTS" || h.hostId === currentHostId);
-		const hostTelemetrySig = visibleHosts.map((h) => {
-			const tm = formatHostTelemetry(h);
-			return `${h.hostId}:${h.online ? 1 : 0}:${tm.powerShort}:${tm.netShort}:${tm.lowBattery ? 1 : 0}`;
-		}).join("|");
 		const showHostTag = currentHostId === "ALL_HOSTS" && (hubState.hosts || []).length > 1;
-		const bannerKey = pendingAppInfo ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.promptTitle || ""}:${pendingAppInfo.app.settling ? 1 : 0}:${pendingAppInfo.app.lastError || ""}` : "";
-		const rowsSig = filtered.map((s) => `${s.id}:${s.status}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`).join("|");
-		const listKey = `${(hubState.hosts || []).length}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${hostTelemetrySig}:${bannerKey}#${rowsSig}`;
+		const isPendingQuestion = Boolean(pendingAppInfo && (pendingAppInfo.app.kind === "question" || Array.isArray(pendingAppInfo.app.questions)));
+		const bannerKey = pendingAppInfo ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.kind || ""}:${pendingAppInfo.app.promptTitle || ""}:${pendingAppInfo.app.settling ? 1 : 0}:${pendingAppInfo.app.lastError || ""}` : "";
+		const rowsSig = filtered.map((s) => `${s.id}:${s.status}:${s.approvalObj?.kind || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`).join("|");
+		const listKey = `${(hubState.hosts || []).length}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${bannerKey}#${rowsSig}`;
 		if (listKey === lastRenderedListKey && viewport.querySelector(".session-list")) return;
 		lastRenderedListKey = listKey;
 		const prevScrollTop = viewport.scrollTop;
-		const hostTelemetryStripHtml = visibleHosts.length > 0 ? `
-        <div class="host-telemetry-strip" style="display:flex;gap:6px;overflow-x:auto;padding:7px 12px;border-bottom:1px solid var(--hairline);background:var(--subtle);font-size:11.5px;align-items:center;">
-          ${visibleHosts.map((h) => {
-			const tm = formatHostTelemetry(h);
-			const warnStyle = !tm.isOnline ? "background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.28);" : tm.lowBattery ? "background:var(--amber-soft);color:#b45309;border:1px solid #fde68a;" : "background:var(--card);color:var(--text-secondary);border:1px solid var(--border);";
-			const statusText = tm.isOnline ? `${tm.compactBadge}${tm.lowBattery ? " (低电量预警)" : ""}` : `⚪ 离线 (${formatTime(h.lastSeen)}${tm.hasTelemetry ? ` · 断连前 ${tm.powerIcon}${tm.powerShort} ${tm.netShort}` : ""})`;
-			return `
-              <button
-                type="button"
-                onclick="openHostSheet()"
-                style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap;cursor:pointer;${warnStyle}"
-                title="${esc(tm.fullLine)}"
-              >
-                <span>${tm.isOnline ? "🟢" : "🔴"} ${esc(h.hostName)}:</span>
-                <span>${esc(statusText)}</span>
-              </button>
-            `;
-		}).join("")}
-        </div>
-      ` : "";
 		const liveBannerHtml = pendingAppInfo ? `
         <div class="live-activity-bar">
           <div class="live-activity-left" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">
-            <div class="live-activity-title">⏳ [${esc(pendingAppInfo.host.hostName)}] ${esc(pendingAppInfo.app.project ? `${pendingAppInfo.app.project} / ` : "")}${esc(pendingAppInfo.app.settling ? "正在同步审批到电脑端..." : pendingAppInfo.app.title || "等待你批准工具执行")}</div>
+            <div class="live-activity-title">${isPendingQuestion ? "💬" : "⏳"} [${esc(pendingAppInfo.host.hostName)}] ${esc(pendingAppInfo.app.project ? `${pendingAppInfo.app.project} / ` : "")}${esc(pendingAppInfo.app.settling ? isPendingQuestion ? "正在同步你的选择到电脑端..." : "正在同步审批到电脑端..." : pendingAppInfo.app.title || (isPendingQuestion ? "等待你做出选择" : "等待你批准工具执行"))}</div>
             <div class="live-activity-desc" ${pendingAppInfo.app.lastError ? "style=\"color:#ef4444;font-weight:600;\"" : ""}>${esc(pendingAppInfo.app.lastError ? `⚠️ ${pendingAppInfo.app.lastError}` : pendingAppInfo.app.promptTitle || pendingAppInfo.app.reason || "")}</div>
           </div>
           <div class="live-activity-actions">
             ${pendingAppInfo.app.settling ? `
               <button class="mini-approve-btn" disabled style="opacity:0.65;cursor:not-allowed;">⏳ 处理中...</button>
+            ` : isPendingQuestion ? `
+              <button class="mini-approve-btn" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">去选择 ›</button>
+              <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false, 4, '${esc(pendingAppInfo.app.agentId || "")}')">跳过</button>
             ` : `
               <button class="mini-approve-btn" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', true, 1, '${esc(pendingAppInfo.app.agentId || "")}')">✓ 允许</button>
               <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false, 4, '${esc(pendingAppInfo.app.agentId || "")}')">拒绝</button>
@@ -1937,7 +1916,8 @@ function initHubController() {
 			let statusHtml = `<span class="session-time">${esc(s.timeLabel)}</span>`;
 			if (s.status === "approval") {
 				rowStateClass = "row-state-approval";
-				statusHtml = s.approvalObj?.settling ? `<span class="badge-approval">⏳ 同步电脑中...</span>` : s.approvalObj?.lastError ? `<span class="badge-interrupted">⚠️ 审批待重试</span>` : `<span class="badge-approval">⏳ 待你授权</span>`;
+				const isRowQuestion = Boolean(s.approvalObj && (s.approvalObj.kind === "question" || Array.isArray(s.approvalObj.questions)));
+				statusHtml = s.approvalObj?.settling ? `<span class="badge-approval">⏳ 同步电脑中...</span>` : s.approvalObj?.lastError ? `<span class="badge-interrupted">⚠️ ${isRowQuestion ? "选择待重试" : "审批待重试"}</span>` : `<span class="badge-approval">⏳ ${isRowQuestion ? "待你选择" : "待你授权"}</span>`;
 			} else if (s.queuedCount > 0) statusHtml = `<span class="badge-approval" style="background:var(--amber-soft);color:#b45309;">⏳ ${s.queuedCount} 条排队</span>`;
 			else if (s.status === "running") {
 				rowStateClass = "row-state-running";
@@ -1994,7 +1974,6 @@ function initHubController() {
           `;
 		}
 		viewport.innerHTML = `
-        ${hostTelemetryStripHtml}
         ${liveBannerHtml}
         <div class="session-list">
           ${rowsHtml || emptyStateHtml}
@@ -2111,9 +2090,10 @@ function initHubController() {
 		}
 		const alertBar = document.getElementById("chatSwitchAlert");
 		if (otherApproval) {
+			const isOtherQuestion = Boolean(otherApproval.app.kind === "question" || Array.isArray(otherApproval.app.questions));
 			alertBar.style.display = "flex";
 			alertBar.innerHTML = `
-          <span>⏳ [${esc(otherApproval.host.hostName)}]「${esc(otherApproval.app.project ? `${otherApproval.app.project} / ` : "")}${esc(otherApproval.app.title || otherApproval.app.toolName)}」待你审批</span>
+          <span>${isOtherQuestion ? "💬" : "⏳"} [${esc(otherApproval.host.hostName)}]「${esc(otherApproval.app.project ? `${otherApproval.app.project} / ` : "")}${esc(otherApproval.app.title || otherApproval.app.toolName)}」${isOtherQuestion ? "待你选择" : "待你审批"}</span>
           <button style="border:none;background:#d97706;color:#fff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600;cursor:pointer;" onclick="openChat('${esc(otherApproval.app.agentId)}')">立即切换 ›</button>
         `;
 		} else alertBar.style.display = "none";
@@ -2268,9 +2248,89 @@ function initHubController() {
           </div>
         </div>
       ` : "";
-		const isAgyApproval = s.approvalObj && (s.approvalObj.harness === "antigravity-ide" || Array.isArray(s.approvalObj.options));
-		const approvalStatusNoticeHtml = s.approvalObj?.lastError ? `<div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:rgba(239,68,68,0.14);border:1px solid rgba(239,68,68,0.35);color:#ef4444;font-size:12px;font-weight:600;">⚠️ ${esc(s.approvalObj.lastError)}</div>` : s.approvalObj?.settling ? `<div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--amber-soft);color:#d97706;font-size:12px;font-weight:600;">⏳ 正在同步到电脑端执行审批（最长等待 45 秒）...</div>` : "";
-		const approvalCardHtml = s.approvalObj ? isAgyApproval ? `
+		const isQuestionApproval = Boolean(s.approvalObj && (s.approvalObj.kind === "question" || Array.isArray(s.approvalObj.questions)));
+		const isAgyApproval = s.approvalObj && !isQuestionApproval && (s.approvalObj.harness === "antigravity-ide" || Array.isArray(s.approvalObj.options));
+		const approvalStatusNoticeHtml = s.approvalObj?.lastError ? `<div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:rgba(239,68,68,0.14);border:1px solid rgba(239,68,68,0.35);color:#ef4444;font-size:12px;font-weight:600;">⚠️ ${esc(s.approvalObj.lastError)}</div>` : s.approvalObj?.settling ? `<div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--amber-soft);color:#d97706;font-size:12px;font-weight:600;">⏳ 正在同步到电脑端执行（最长等待 45 秒）...</div>` : "";
+		const qDraft = isQuestionApproval ? getDshQuestionDraft(s.approvalObj.code, s.approvalObj.questions) : null;
+		const approvalCardHtml = s.approvalObj ? isQuestionApproval ? `
+        <div class="dsh-question-card" data-question-code="${esc(s.approvalObj.code)}">
+          <div class="dsh-question-card-header">
+            <span class="dsh-question-badge-icon">💬</span>
+            <div class="dsh-question-card-title">${esc(s.approvalObj.promptTitle || "请做出选择以继续")}</div>
+          </div>
+          ${approvalStatusNoticeHtml}
+          <div class="dsh-question-list">
+            ${(Array.isArray(s.approvalObj.questions) ? s.approvalObj.questions : []).map((q, qIdx) => {
+			const qId = String(q.id || `q_${qIdx + 1}`);
+			const draftItem = qDraft?.[qId] || {
+				selected: [],
+				customText: ""
+			};
+			const selectedSet = new Set(Array.isArray(draftItem.selected) ? draftItem.selected : []);
+			const opts = Array.isArray(q.options) ? q.options : [];
+			const detailId = `q-detail-${esc(s.approvalObj.code)}-${qIdx}`;
+			return `
+                <div class="dsh-question-block" data-question-id="${esc(qId)}">
+                  <div class="dsh-question-prompt-line">
+                    ${q.header ? `<span class="dsh-question-header-pill">${esc(q.header)}</span>` : ""}
+                    <span class="dsh-question-prompt-text">${esc(q.question || q.header || "请选择一项")}</span>
+                    ${q.multiSelect ? `<span class="dsh-question-multi-tag">可多选</span>` : ""}
+                  </div>
+                  ${q.detail ? `
+                    <details class="thought-box thinking-details" data-detail-id="${detailId}" ${openDetailIds.has(detailId) ? "open" : ""} style="margin:6px 0 8px;">
+                      <summary>📄 查看完整方案内容 (点击展开)</summary>
+                      <div class="md-body" style="margin-top:8px;max-height:260px;overflow-y:auto;">${formatAssistantText(String(q.detail))}</div>
+                    </details>
+                  ` : ""}
+                  <div class="dsh-question-options">
+                    ${opts.map((opt, oIdx) => {
+				const label = String(opt.label || `选项 ${oIdx + 1}`);
+				const isSel = selectedSet.has(label);
+				return `
+                        <button
+                          type="button"
+                          class="dsh-question-opt ${isSel ? "selected" : ""}"
+                          data-q-id="${esc(qId)}"
+                          data-opt-label="${esc(label)}"
+                          ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="toggleDshQuestionOption('${esc(s.approvalObj.code)}', '${esc(qId)}', '${esc(label)}', ${Boolean(q.multiSelect)})"`}
+                        >
+                          <div class="dsh-question-opt-top">
+                            <span class="dsh-question-opt-check">${q.multiSelect ? isSel ? "☑" : "☐" : isSel ? "◉" : "○"}</span>
+                            <span class="dsh-question-opt-label">${esc(label)}</span>
+                          </div>
+                          ${opt.description ? `<div class="dsh-question-opt-desc">${esc(opt.description)}</div>` : ""}
+                        </button>
+                      `;
+			}).join("")}
+                  </div>
+                  <div class="dsh-question-custom-wrap">
+                    <input
+                      type="text"
+                      class="dsh-question-custom-input"
+                      data-q-id="${esc(qId)}"
+                      placeholder="或者直接输入自定义回答 / 补充说明..."
+                      value="${esc(draftItem.customText || "")}"
+                      ${s.approvalObj.settling ? "disabled" : `oninput="onDshQuestionCustomInput('${esc(s.approvalObj.code)}', '${esc(qId)}', this.value)"`}
+                    />
+                  </div>
+                </div>
+              `;
+		}).join("")}
+          </div>
+          <div class="dsh-question-footer">
+            <button
+              type="button"
+              class="dsh-question-btn-skip"
+              ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false, 4, '${esc(s.id)}')"`}
+            >跳过 / 取消</button>
+            <button
+              type="button"
+              class="dsh-question-btn-submit"
+              ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="submitDshQuestionAnswers('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', '${esc(s.id)}')"`}
+            >${s.approvalObj.settling ? "⏳ 正在提交..." : "提交选择 ↵"}</button>
+          </div>
+        </div>
+      ` : isAgyApproval ? `
         <div class="agy-approval-card">
           <div class="agy-approval-header">
             <span class="agy-approval-term-icon">&gt;_</span>
@@ -2837,6 +2897,112 @@ function initHubController() {
 			lastRenderedChatKey = "";
 			renderAll();
 			showToast("❌ 审批发送异常：" + (err?.message || err));
+			return;
+		}
+		setTimeout(fetchState, 200);
+		setTimeout(fetchState, 750);
+	}
+	function getDshQuestionDraft(code, questions = []) {
+		window.__dshQuestionDrafts = window.__dshQuestionDrafts || {};
+		const key = String(code || "default");
+		if (!window.__dshQuestionDrafts[key]) {
+			const init = {};
+			(Array.isArray(questions) ? questions : []).forEach((q, idx) => {
+				const qId = String(q.id || `q_${idx + 1}`);
+				const firstOpt = Array.isArray(q.options) && q.options[0]?.label ? [String(q.options[0].label)] : [];
+				init[qId] = {
+					selected: q.multiSelect ? [] : firstOpt,
+					customText: ""
+				};
+			});
+			window.__dshQuestionDrafts[key] = init;
+		}
+		return window.__dshQuestionDrafts[key];
+	}
+	function toggleDshQuestionOption(code, qId, label, multiSelect = false) {
+		const draft = getDshQuestionDraft(code, findSessionGlobal(activeSessionId)?.session?.approvalObj?.questions || []);
+		const key = String(qId || "q_1");
+		if (!draft[key]) draft[key] = {
+			selected: [],
+			customText: ""
+		};
+		const cur = Array.isArray(draft[key].selected) ? [...draft[key].selected] : [];
+		if (multiSelect) {
+			const idx = cur.indexOf(label);
+			if (idx >= 0) cur.splice(idx, 1);
+			else cur.push(label);
+			draft[key].selected = cur;
+		} else draft[key].selected = [label];
+		const card = document.querySelector(`.dsh-question-card[data-question-code="${CSS.escape(String(code))}"]`);
+		if (card) card.querySelectorAll(`.dsh-question-opt[data-q-id="${CSS.escape(key)}"]`).forEach((btn) => {
+			const optLabel = btn.getAttribute("data-opt-label") || "";
+			const isSel = draft[key].selected.includes(optLabel);
+			btn.classList.toggle("selected", isSel);
+			const checkEl = btn.querySelector(".dsh-question-opt-check");
+			if (checkEl) checkEl.textContent = multiSelect ? isSel ? "☑" : "☐" : isSel ? "◉" : "○";
+		});
+		else {
+			lastRenderedChatKey = "";
+			renderActiveChatStage();
+		}
+	}
+	function onDshQuestionCustomInput(code, qId, val) {
+		const draft = getDshQuestionDraft(code, findSessionGlobal(activeSessionId)?.session?.approvalObj?.questions || []);
+		const key = String(qId || "q_1");
+		if (!draft[key]) draft[key] = {
+			selected: [],
+			customText: ""
+		};
+		draft[key].customText = String(val ?? "");
+	}
+	async function submitDshQuestionAnswers(hostId, code, explicitAgentId = "") {
+		const targetSessionId = explicitAgentId || activeSessionId || "";
+		const appObj = findSessionGlobal(targetSessionId)?.session?.approvalObj;
+		const questions = Array.isArray(appObj?.questions) ? appObj.questions : [];
+		const draft = getDshQuestionDraft(code, questions);
+		const answers = {};
+		questions.forEach((q, idx) => {
+			const qId = String(q.id || `q_${idx + 1}`);
+			const item = draft[qId] || {
+				selected: [],
+				customText: ""
+			};
+			const picked = Array.isArray(item.selected) ? item.selected.filter(Boolean) : [];
+			const custom = String(item.customText || "").trim();
+			const combined = [...picked];
+			if (custom) combined.push(custom);
+			if (combined.length === 0 && Array.isArray(q.options) && q.options[0]?.label) combined.push(String(q.options[0].label));
+			answers[qId] = q.multiSelect ? combined : combined[0] || "";
+		});
+		window.__dshSettlingApprovals = window.__dshSettlingApprovals || {};
+		if (code) window.__dshSettlingApprovals[code] = {
+			at: Date.now(),
+			decision: "approve"
+		};
+		lastRenderedChatKey = "";
+		renderAll();
+		showToast("⏳ 正在将你的选择同步到电脑端...");
+		try {
+			const res = await dispatchHostCommand(hostId, {
+				type: "approval",
+				code,
+				agentId: targetSessionId || void 0,
+				allow: true,
+				optionIndex: 1,
+				answers
+			});
+			if (!res || res.ok === false) {
+				if (code && window.__dshSettlingApprovals) delete window.__dshSettlingApprovals[code];
+				lastRenderedChatKey = "";
+				renderAll();
+				showToast("❌ 提交选择失败：" + (res?.error || "请重试"));
+				return;
+			}
+		} catch (err) {
+			if (code && window.__dshSettlingApprovals) delete window.__dshSettlingApprovals[code];
+			lastRenderedChatKey = "";
+			renderAll();
+			showToast("❌ 提交选择异常：" + (err?.message || err));
 			return;
 		}
 		setTimeout(fetchState, 200);
@@ -4396,21 +4562,15 @@ function initHubController() {
             <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">一屏混排查看 ${hosts.length} 台电脑共 ${totalCount} 条会话</div>
           </div>
           <span style="font-size:13px;font-weight:600;color:var(--primary);">${currentHostId === "ALL_HOSTS" ? "当前视图 ✓" : "切换 ›"}</span>
-        </div>`, ...hosts.map((h) => {
-			const tm = formatHostTelemetry(h);
-			return `
+        </div>`, ...hosts.map((h) => `
           <div class="host-option ${h.hostId === currentHostId ? "selected" : ""}" onclick="selectHost('${esc(h.hostId)}')">
             <div>
               <div style="font-weight:700;font-size:15px;color:var(--text);">${h.online ? "🟢" : "⚪"} ${esc(h.hostName)}</div>
               <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${(h.bridgeState?.tasks || []).length} 条会话 · ${h.isFeishuActive ? "🎯 飞书当前主控" : h.online ? "在线待命" : "离线 (" + formatTime(h.lastSeen) + ")"}</div>
-              <div style="font-size:11.5px;color:${tm.lowBattery ? "#b45309" : "var(--text-secondary)"};margin-top:3px;font-weight:500;">
-                ${esc(tm.fullLine)}
-              </div>
             </div>
             <span style="font-size:13px;font-weight:600;color:var(--primary);">${h.hostId === currentHostId ? "当前设备 ✓" : "切换 ›"}</span>
           </div>
-        `;
-		})].join("");
+        `)].join("");
 		openSheet("hostSheet");
 	}
 	function selectHost(id) {
@@ -5159,6 +5319,10 @@ function initHubController() {
 		isStandaloneApp,
 		subscribeIphonePush,
 		sendTestPush,
+		getDshQuestionDraft,
+		toggleDshQuestionOption,
+		onDshQuestionCustomInput,
+		submitDshQuestionAnswers,
 		openHostSheet,
 		selectHost,
 		selectProject,

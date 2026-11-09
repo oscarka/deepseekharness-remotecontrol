@@ -856,16 +856,21 @@ export class HubCore {
     const approvals = Array.isArray(bridgeState.approvals) ? bridgeState.approvals : []
     const tasks = Array.isArray(bridgeState.tasks) ? bridgeState.tasks : []
 
-    // 1. Check for new pending approvals
+    // 1. Check for new pending approvals or selection questions
     for (const app of approvals) {
       if (!app?.code || this.pushedApprovalCodes.has(app.code)) continue
       this.pushedApprovalCodes.add(app.code)
       while (this.pushedApprovalCodes.size > 300) {
         this.pushedApprovalCodes.delete(this.pushedApprovalCodes.values().next().value)
       }
+      const isQuestion = app.kind === 'question' || Array.isArray(app.questions)
       void this.broadcastWebPush({
-        title: `⏳ [${hostName}] 待审批：${app.title || app.toolName}`,
-        body: `工具 ${app.toolName}：${app.reason || '请求执行权限'}（点击立即处理）`,
+        title: isQuestion
+          ? `💬 [${hostName}] 待你选择：${app.title || app.toolName}`
+          : `⏳ [${hostName}] 待审批：${app.title || app.toolName}`,
+        body: isQuestion
+          ? `${app.promptTitle || app.reason || '等待你做出选择'}（点击立即选择）`
+          : `工具 ${app.toolName}：${app.reason || '请求执行权限'}（点击立即处理）`,
         tag: `approval-${app.code}`,
         badgeCount: approvals.length,
         data: {

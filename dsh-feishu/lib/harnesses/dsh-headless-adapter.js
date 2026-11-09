@@ -235,13 +235,30 @@ export function buildDshHeadlessPatchFile(dshHome) {
       }
     }
     await agent.whenIdle();
-    if (task) {
-      const msg = Object.freeze({
-        id: "msg-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
-        role: "user",
-        content: Object.freeze([Object.freeze({ type: "text", text: task })]),
-        source: Object.freeze({ kind: "user" })
-      });
+    const qReplyRaw = String(process.env.DSH_REMOTE_QUESTION_REPLY_JSON || "").trim();
+    if (qReplyRaw || task) {
+      let msg;
+      if (qReplyRaw) {
+        let qReplyObj = {};
+        try { qReplyObj = JSON.parse(qReplyRaw); } catch {}
+        msg = Object.freeze({
+          id: "msg-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+          role: "user",
+          source: Object.freeze({
+            kind: "user-question-reply",
+            callId: String(qReplyObj.callId || ""),
+            outcome: "answered"
+          }),
+          content: Object.freeze([Object.freeze({ type: "text", text: qReplyRaw })])
+        });
+      } else {
+        msg = Object.freeze({
+          id: "msg-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+          role: "user",
+          content: Object.freeze([Object.freeze({ type: "text", text: task })]),
+          source: Object.freeze({ kind: "user" })
+        });
+      }
       agent.followup(msg);
       console.log("[dsh-headless-remote]READY:" + (agent.session?.id || sid));
       const subagents = c.get("subagents");
@@ -305,9 +322,19 @@ export class DshHeadlessRunner {
     }
   }
 
-  async runTurn({ sessionId = '', text = '', cwd = '', isNew = false, title = '', desktopBusy = false } = {}) {
+  async runTurn({
+    sessionId = '',
+    text = '',
+    cwd = '',
+    isNew = false,
+    title = '',
+    desktopBusy = false,
+    questionReply = null,
+  } = {}) {
     const cleanText = String(text || '').trim()
-    if (!isNew && !cleanText) {
+    const questionReplyJson =
+      questionReply && typeof questionReply === 'object' ? JSON.stringify(questionReply) : ''
+    if (!isNew && !cleanText && !questionReplyJson) {
       return { ok: false, error: '发送内容不能为空' }
     }
     const bin = this.binaryPath || findDshBinary()
@@ -379,6 +406,7 @@ export class DshHeadlessRunner {
             DSH_REMOTE_SESSION_ID: id,
             DSH_REMOTE_IS_NEW: isNew ? '1' : '0',
             DSH_REMOTE_TASK: cleanText,
+            DSH_REMOTE_QUESTION_REPLY_JSON: questionReplyJson,
             DSH_REMOTE_TITLE: String(title || '').trim(),
             DSH_REMOTE_CWD: targetCwd,
           },

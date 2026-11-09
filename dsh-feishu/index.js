@@ -6,6 +6,10 @@ import { acquireDaemonLock } from './lib/daemon-lock.js'
 import { FeishuTransport } from './lib/feishu-transport.js'
 import { HubAgent } from './lib/hub-agent.js'
 import { safeError } from './lib/redact.js'
+import {
+  consumePendingDshInteractionResponse,
+  readPendingDshInteractionResponses,
+} from './lib/workspace-ops.js'
 
 export const inject = ['agents']
 
@@ -99,6 +103,42 @@ export function apply(ctx, rawConfig) {
     }
     return null
   }
+  agentsFacade.answerUserQuestion = async (agentId, callId, answers, questions = []) => {
+    try {
+      const agent = (await agentsFacade.resolveOrResume(agentId)) || rawAgents?.get?.(agentId)
+      if (!agent) return { ok: false, error: '找不到该 DSH 会话' }
+      const uqService = ctx.get?.('userQuestions')
+      if (uqService && typeof uqService.answer === 'function' && callId) {
+        const answered = uqService.answer(agent, callId, { answers })
+        if (answered) return { ok: true, mode: 'userQuestions-service' }
+      }
+      const payload = JSON.stringify({
+        kind: 'answer_to_pending_question',
+        tool: 'ask_user_question',
+        callId: callId || '',
+        questions: Array.isArray(questions) ? questions : [],
+        answers: Array.isArray(answers) ? answers : [],
+      })
+      const msg = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role: 'user',
+        source: { kind: 'user-question-reply', callId: callId || '', outcome: 'answered' },
+        content: [{ type: 'text', text: payload }],
+      }
+      if (typeof agent.steer === 'function' && agent.status === 'running') {
+        agent.steer(msg)
+        return { ok: true, mode: 'steer-question-reply' }
+      }
+      if (typeof agent.followup === 'function') {
+        agent.followup(msg)
+        return { ok: true, mode: 'followup-question-reply' }
+      }
+    } catch (err) {
+      logger?.warn?.(`dsh-feishu: answerUserQuestion failed: ${safeError(err)}`)
+      return { ok: false, error: safeError(err) }
+    }
+    return { ok: false, error: '无法向该 DSH 会话发送选择回复' }
+  }
   agentsFacade.reconcileLiveWorkspaceRegistry = async () => {
     try {
       const wsRegistry = ctx.get?.('workspaceRegistry')
@@ -129,7 +169,35 @@ export function apply(ctx, rawConfig) {
         void agentsFacade.reconcileLiveWorkspaceRegistry()
         liveWsReconcileTimer = setInterval(() => {
           void agentsFacade.reconcileLiveWorkspaceRegistry()
-        }, 4000)
+          void (async () => {
+            if (!config?.dshHome) return
+            const resps = await readPendingDshInteractionResponses(config.dshHome)
+            for (const resp of resps) {
+              if (!resp || !resp.agentId || !Array.isArray(resp.answers)) continue
+              const inPendingWaterfall =
+                bridge &&
+                [...bridge.pending.values()].some(
+                  e =>
+                    !e.settled &&
+                    (e.code === resp.code || (resp.callId && e.callId === resp.callId)),
+                )
+              if (inPendingWaterfall) continue
+              const consumed = await consumePendingDshInteractionResponse(config.dshHome, {
+                code: resp.code,
+                callId: resp.callId,
+                agentId: resp.agentId,
+              })
+              if (consumed && consumed.allow !== false) {
+                await agentsFacade.answerUserQuestion(
+                  consumed.agentId,
+                  consumed.callId,
+                  consumed.answers,
+                  consumed.questions || [],
+                )
+              }
+            }
+          })()
+        }, 1200)
         liveWsReconcileTimer.unref?.()
         const settings = await loadSettings(config)
         const initialControlChat = await readControlChat(config.controlChatFile)
@@ -236,6 +304,15 @@ export function apply(ctx, rawConfig) {
     (request, next) => {
       if (!bridge) return next()
       return bridge.onApproval(request, next)
+    },
+    { prepend: true },
+  )
+
+  ctx.on(
+    'user-questions/request',
+    (request, next) => {
+      if (!bridge || typeof bridge.onUserQuestion !== 'function') return next()
+      return bridge.onUserQuestion(request, next)
     },
     { prepend: true },
   )

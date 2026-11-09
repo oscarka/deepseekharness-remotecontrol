@@ -1380,7 +1380,7 @@ test('P0 Security & Container Suite: refuse startup without password, spoof-proo
   // Verify running `node hub/server.js` CLI without HUB_TOKEN exits with code 1
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
   const cliProc = spawnSync(process.execPath, [join(repoRoot, 'hub', 'server.js')], {
-    env: { PATH: process.env.PATH, HUB_TOKEN: '', FEISHU_HUB_TOKEN: '' },
+    env: { PATH: process.env.PATH, ELECTRON_RUN_AS_NODE: '1', HUB_TOKEN: '', FEISHU_HUB_TOKEN: '' },
     encoding: 'utf8',
     timeout: 5000,
   })
@@ -1988,6 +1988,219 @@ test('Antigravity background task mid-turn push suppression & persistent session
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('DSH Selection Popups (ask_user_question & exit_plan_mode) and Disk-Logged Approvals: event folding, live waterfall interception, and mobile submission', async () => {
+  const {
+    extractPendingDshInteractionFromEvents,
+    loadDiskSessionsFromDshHome,
+  } = await import('../lib/workspace-ops.js')
+  const { HubCore } = await import('../../hub/hub-core.js')
+  const { mkdir, writeFile } = await import('node:fs/promises')
+
+  const root = await mkdtemp(join(tmpdir(), 'dsh-question-popup-'))
+  try {
+    // 1. Fold ask_user_question (open and continued via {"pending":true}) + resolution via user-question-reply
+    const openQuestionEvents = [
+      {
+        type: 'user/message',
+        data: { content: '帮我搭建前端工程' },
+      },
+      {
+        type: 'tool/call',
+        data: {
+          callId: 'call-q-101',
+          toolName: 'ask_user_question',
+          input: {
+            questions: [
+              {
+                id: 'framework',
+                header: '框架选型',
+                question: '你希望使用哪个前端框架？',
+                multiSelect: false,
+                options: [
+                  { label: 'React + Vite', description: '生态完善，适合大型应用' },
+                  { label: 'Vue 3', description: '渐进式框架，上手快' },
+                ],
+              },
+              {
+                id: 'features',
+                header: '附加特性',
+                question: '需要开启哪些附加特性？',
+                multiSelect: true,
+                options: [
+                  { label: 'TypeScript', description: '静态类型检查' },
+                  { label: 'Tailwind CSS', description: '原子化 CSS' },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        type: 'tool/result',
+        data: {
+          callId: 'call-q-101',
+          toolName: 'ask_user_question',
+          outcome: 'TOOL_OUTCOME_UNKNOWN',
+          content: JSON.stringify({ pending: true }),
+        },
+      },
+    ]
+
+    const pendingQ = extractPendingDshInteractionFromEvents(openQuestionEvents, {
+      sessionId: 'sess-q-1',
+      title: '搭建前端工程',
+      project: 'my-web-app',
+      cwd: '/tmp/my-web-app',
+    })
+    assert.ok(pendingQ)
+    assert.equal(pendingQ.kind, 'question')
+    assert.match(pendingQ.code, /^DSHQ-/)
+    assert.equal(pendingQ.toolName, 'ask_user_question')
+    assert.equal(pendingQ.questionState, 'continued')
+    assert.equal(pendingQ.questions.length, 2)
+    assert.equal(pendingQ.questions[0].id, 'framework')
+    assert.equal(pendingQ.questions[1].multiSelect, true)
+
+    // Once user-question-reply is appended, pending interaction is cleared
+    const answeredEvents = [
+      ...openQuestionEvents,
+      {
+        type: 'user/message',
+        data: {
+          content: JSON.stringify({
+            answers: { framework: 'React + Vite', features: ['TypeScript'] },
+          }),
+          source: {
+            kind: 'user-question-reply',
+            callId: 'call-q-101',
+            outcome: 'answered',
+          },
+        },
+      },
+    ]
+    const afterReply = extractPendingDshInteractionFromEvents(answeredEvents, {
+      sessionId: 'sess-q-1',
+    })
+    assert.equal(afterReply, null)
+
+    // 2. Fold exit_plan_mode into a 2-option question popup with plan detail
+    const planEvents = [
+      {
+        type: 'tool/call',
+        data: {
+          callId: 'call-plan-202',
+          toolName: 'exit_plan_mode',
+          input: {
+            title: '数据库迁移方案',
+            plan: '1. 备份旧表\n2. 执行迁移脚本\n3. 校验索引',
+          },
+        },
+      },
+    ]
+    const pendingPlan = extractPendingDshInteractionFromEvents(planEvents, {
+      sessionId: 'sess-plan-1',
+      title: '数据库迁移',
+      project: 'db-service',
+    })
+    assert.ok(pendingPlan)
+    assert.equal(pendingPlan.kind, 'question')
+    assert.match(pendingPlan.code, /^DSHQ-/)
+    assert.equal(pendingPlan.questions.length, 1)
+    assert.equal(pendingPlan.questions[0].options.length, 2)
+    assert.match(pendingPlan.questions[0].detail, /备份旧表/)
+
+    // 3. Disk session loader attaches pendingApproval and status='approval'
+    const zlib = await import('node:zlib')
+    const sessionsDir = join(root, 'sessions', 'proj-1', 'sess-disk-q')
+    await mkdir(sessionsDir, { recursive: true })
+    const zstdLines = [
+      { type: 'session', id: 'sess-disk-q', cwd: '/Users/dev/deepseekharness-remote' },
+      { type: 'session/title', data: { title: '技术栈确认会话' } },
+      {
+        type: 'user/message',
+        data: { content: [{ type: 'text', text: '帮我搭建前端工程' }] },
+      },
+      ...openQuestionEvents.slice(1),
+    ]
+    const compressed = zlib.zstdCompressSync(
+      Buffer.from(zstdLines.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf8'),
+    )
+    await writeFile(join(sessionsDir, 'session.v4.jsonl.zstd'), compressed)
+    const diskSessions = await loadDiskSessionsFromDshHome(root)
+    assert.equal(diskSessions.length, 1)
+    assert.equal(diskSessions[0].status, 'approval')
+    assert.equal(diskSessions[0].turnState, 'approval')
+    assert.equal(diskSessions[0].statusLabel, '⏳ 待你选择')
+    assert.equal(diskSessions[0].pendingApproval?.code, pendingQ.code.replace('SESSQ1', 'SDISKQ'))
+
+    // 4. Live bridge.onUserQuestion waterfall interception + mobile answer submission
+    const { bridge } = makeHarness({ config: { hubUrl: 'https://hub.example.com' } })
+    let resolvedQuestion = null
+    const qPromise = bridge.onUserQuestion(
+      {
+        agentId: 'session-abcdef12-3456',
+        callId: 'call-live-q9',
+        questions: [
+          {
+            id: 'deploy_target',
+            header: '部署环境',
+            question: '请选择部署目标平台',
+            multiSelect: false,
+            options: [
+              { label: 'Cloud Run', description: '全托管容器' },
+              { label: 'Docker Compose', description: '自托管服务器' },
+            ],
+          },
+        ],
+      },
+      async () => ({ answers: {} }),
+    )
+    qPromise.then((res) => {
+      resolvedQuestion = res
+    })
+
+    const snap = bridge.getSnapshotState()
+    assert.equal(snap.approvals.length, 1)
+    assert.equal(snap.approvals[0].kind, 'question')
+    const liveCode = snap.approvals[0].code
+    assert.ok(liveCode)
+    assert.equal(snap.approvals[0].questions.length, 1)
+
+    // HubCore Web Push notification formats question popups with "💬 [...] 待你选择"
+    const hub = new HubCore({ stateFile: join(root, 'hub-state.json') })
+    await hub.init()
+    hub.handleHeartbeat({
+      hostId: 'no2',
+      hostName: 'No2 Mac',
+      bridgeState: snap,
+    })
+    assert.equal(hub.pushHistory.length, 1)
+    assert.match(hub.pushHistory[0].title, /待你选择/)
+
+    // Submit answer from mobile via executeHubCommand
+    const cmdRes = await bridge.executeHubCommand({
+      type: 'approval',
+      code: liveCode,
+      agentId: 'session-abcdef12-3456',
+      allow: true,
+      answers: { deploy_target: 'Docker Compose' },
+    })
+    assert.equal(cmdRes.ok, true)
+    await new Promise((r) => setTimeout(r, 20))
+    assert.deepEqual(resolvedQuestion, {
+      answers: [
+        {
+          id: 'deploy_target',
+          selected: ['Docker Compose'],
+        },
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 
 
 

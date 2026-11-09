@@ -15,6 +15,7 @@ import {
 
 const execFileAsync = promisify(execFile)
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+import { buildNormalizedQuestionAnswers } from './bridge.js'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from './migration.js'
 import { decorateTaskMetadata, HarnessRouter } from './harness-router.js'
 import { ClaudeAdapter } from './harnesses/claude-adapter.js'
@@ -24,11 +25,15 @@ import { safeError } from './redact.js'
 import {
   collectHostSystemTelemetry,
   extractSessionTranscript,
+  formatUserQuestionReplyText,
   invalidateDshSessionParseCache,
   loadDiskSessionsFromDshHome,
   loadOrCreateHostIdentity,
   persistCommandAttachments,
+  readPendingDshInteractions,
+  removePendingDshInteraction,
   renameDiskSession,
+  writePendingDshInteractionResponse,
 } from './workspace-ops.js'
 
 /**
@@ -97,6 +102,8 @@ export class HubAgent {
     this.cachedPushSubscriptions = []
     this.settledAgyApprovals = new Set()
     this.recentAgyApprovals = new Map()
+    this.settledDshApprovals = new Set()
+    this.recentDshApprovals = new Map()
     this.deletedAgyIds = new Set()
     this.pendingUserPrompts = new Map()
     this.lastStatsAt = 0
@@ -373,14 +380,89 @@ export class HubAgent {
       }
       const existingIds = new Set((bridgeState.tasks || []).map(t => t.id))
       const wsSet = new Set(Array.isArray(bridgeState.workspaces) ? bridgeState.workspaces : [])
+      if (!Array.isArray(bridgeState.approvals)) bridgeState.approvals = []
+      const existingDshCodes = new Set(bridgeState.approvals.map(a => String(a?.code || '').toUpperCase()))
+      const existingDshCallIds = new Set(
+        bridgeState.approvals.map(a => `${a?.agentId || ''}:${a?.callId || ''}`).filter(k => !k.endsWith(':')),
+      )
+      for (const liveApp of bridgeState.approvals) {
+        if (liveApp?.code) {
+          const matchedLiveTask = (bridgeState.tasks || []).find(t => t.id === liveApp.agentId) || null
+          this.recentDshApprovals.set(String(liveApp.code).toUpperCase(), {
+            session: matchedLiveTask,
+            approval: liveApp,
+          })
+        }
+      }
       if (Array.isArray(this.cachedDiskSessions) && this.cachedDiskSessions.length > 0) {
         for (const ds of this.cachedDiskSessions) {
           decorateTaskMetadata(ds, { isLiveDsh: false, now: capturedAt })
+          const diskApp = ds.pendingApproval
+          if (diskApp?.code) {
+            const upperCode = String(diskApp.code).toUpperCase()
+            if (this.settledDshApprovals.has(upperCode)) {
+              ds.pendingApproval = null
+              if (ds.status === 'approval') {
+                ds.status = 'running'
+                ds.turnState = 'running'
+                ds.statusLabel = '🟢 运行中'
+              }
+            } else {
+              this.recentDshApprovals.set(upperCode, {
+                session: ds,
+                approval: diskApp,
+              })
+              while (this.recentDshApprovals.size > 200) {
+                const oldestKey = this.recentDshApprovals.keys().next().value
+                this.recentDshApprovals.delete(oldestKey)
+              }
+              const callKey = `${diskApp.agentId || ds.id}:${diskApp.callId || ''}`
+              if (!existingDshCodes.has(upperCode) && (!diskApp.callId || !existingDshCallIds.has(callKey))) {
+                bridgeState.approvals.push(diskApp)
+                existingDshCodes.add(upperCode)
+                if (diskApp.callId) existingDshCallIds.add(callKey)
+              }
+            }
+          }
           if (!existingIds.has(ds.id)) {
             bridgeState.tasks.push(ds)
             existingIds.add(ds.id)
+          } else if (ds.pendingApproval && !this.settledDshApprovals.has(String(ds.pendingApproval.code || '').toUpperCase())) {
+            const existingTask = (bridgeState.tasks || []).find(t => t.id === ds.id)
+            if (existingTask && !existingTask.pendingApproval) {
+              existingTask.pendingApproval = ds.pendingApproval
+              existingTask.status = 'approval'
+              existingTask.turnState = 'approval'
+              existingTask.statusLabel =
+                ds.pendingApproval.kind === 'question' ? '⏳ 待你选择' : '⏳ 待你授权'
+            }
           }
           if (ds.cwd) wsSet.add(ds.cwd)
+        }
+      }
+      if (this.config?.dshHome) {
+        const ipcItems = await readPendingDshInteractions(this.config.dshHome)
+        for (const ipcApp of ipcItems) {
+          if (!ipcApp?.code) continue
+          const upperCode = String(ipcApp.code).toUpperCase()
+          if (this.settledDshApprovals.has(upperCode)) continue
+          const callKey = `${ipcApp.agentId || ''}:${ipcApp.callId || ''}`
+          const matchedTask = (bridgeState.tasks || []).find(t => t.id === ipcApp.agentId) || null
+          this.recentDshApprovals.set(upperCode, {
+            session: matchedTask,
+            approval: ipcApp,
+          })
+          if (!existingDshCodes.has(upperCode) && (!ipcApp.callId || !existingDshCallIds.has(callKey))) {
+            bridgeState.approvals.push(ipcApp)
+            existingDshCodes.add(upperCode)
+            if (ipcApp.callId) existingDshCallIds.add(callKey)
+          }
+          if (matchedTask && !matchedTask.pendingApproval) {
+            matchedTask.pendingApproval = ipcApp
+            matchedTask.status = 'approval'
+            matchedTask.turnState = 'approval'
+            matchedTask.statusLabel = ipcApp.kind === 'question' ? '⏳ 待你选择' : '⏳ 待你授权'
+          }
         }
       }
       if (Array.isArray(this.cachedAgySessions) && this.cachedAgySessions.length > 0) {
@@ -854,7 +936,160 @@ export class HubAgent {
               optionIndex: cmd.optionIndex,
             })
           }
-          return await this.bridge.executeHubCommand({ ...cmd, type: effectiveType })
+          const rememberedDsh = code ? this.recentDshApprovals.get(code) : null
+          let matchedDshSession = rememberedDsh?.session || null
+          let matchedDshApproval = rememberedDsh?.approval || null
+          for (const ds of this.cachedDiskSessions || []) {
+            if (
+              ds.pendingApproval?.code?.toUpperCase() === code ||
+              (cmd.agentId && ds.id === cmd.agentId)
+            ) {
+              matchedDshSession = ds
+              if (ds.pendingApproval) {
+                matchedDshApproval = ds.pendingApproval
+                ds.pendingApproval = null
+                ds.status = effectiveType === 'approve' ? 'running' : 'idle'
+                ds.statusLabel = effectiveType === 'approve' ? '🟢 运行中' : '已完成'
+              }
+            }
+          }
+          const targetDshAgentId =
+            cmd.agentId || matchedDshApproval?.agentId || matchedDshSession?.id || ''
+          const targetCallId = cmd.callId || matchedDshApproval?.callId || ''
+          const targetQuestions =
+            Array.isArray(cmd.questions) && cmd.questions.length > 0
+              ? cmd.questions
+              : matchedDshApproval?.questions || []
+          const isQuestionInteraction =
+            matchedDshApproval?.kind === 'question' ||
+            code.startsWith('DSHQ-') ||
+            Array.isArray(cmd.answers)
+          const normalizedAnswers = isQuestionInteraction
+            ? effectiveType === 'approve'
+              ? buildNormalizedQuestionAnswers(targetQuestions, cmd.answers, cmd.optionIndex)
+              : []
+            : undefined
+
+          if (code) {
+            this.settledDshApprovals.add(code)
+          }
+
+          if (this.config?.dshHome) {
+            await writePendingDshInteractionResponse(this.config.dshHome, {
+              code,
+              callId: targetCallId,
+              agentId: targetDshAgentId,
+              allow: effectiveType === 'approve',
+              decision:
+                effectiveType === 'approve'
+                  ? isQuestionInteraction
+                    ? 'answered'
+                    : 'allowed-once'
+                  : 'rejected',
+              optionIndex: cmd.optionIndex,
+              ...(normalizedAnswers ? { answers: normalizedAnswers } : {}),
+              ...(targetQuestions.length > 0 ? { questions: targetQuestions } : {}),
+            })
+            await removePendingDshInteraction(this.config.dshHome, {
+              code,
+              callId: targetCallId,
+              agentId: targetDshAgentId,
+            })
+          }
+
+          const bridgeRes = await this.bridge.executeHubCommand({
+            ...cmd,
+            type: effectiveType,
+            agentId: targetDshAgentId,
+            callId: targetCallId,
+            questions: targetQuestions,
+            ...(normalizedAnswers ? { answers: normalizedAnswers } : {}),
+          })
+          if (bridgeRes?.ok) {
+            return bridgeRes
+          }
+
+          if (isQuestionInteraction) {
+            if (effectiveType !== 'approve') {
+              return {
+                ok: true,
+                code,
+                decision: 'rejected',
+                answers: [],
+                message: '已跳过该选择弹窗',
+              }
+            }
+            const questionReplyPayload = {
+              kind: 'answer_to_pending_question',
+              tool: matchedDshApproval?.toolName || 'ask_user_question',
+              callId: targetCallId,
+              questions: targetQuestions,
+              answers: normalizedAnswers || [],
+            }
+            const replyPreview = formatUserQuestionReplyText(JSON.stringify(questionReplyPayload))
+            if (targetDshAgentId && replyPreview) {
+              const nowTs = Date.now()
+              const list = this.pendingUserPrompts.get(targetDshAgentId) || []
+              list.push({ text: replyPreview, time: nowTs })
+              this.pendingUserPrompts.set(targetDshAgentId, list)
+              if (matchedDshSession && Array.isArray(matchedDshSession.transcript)) {
+                matchedDshSession.transcript = [
+                  ...matchedDshSession.transcript,
+                  {
+                    index: matchedDshSession.transcript.length,
+                    role: 'user',
+                    text: replyPreview,
+                    thinking: '',
+                    tools: [],
+                    toolCalls: [],
+                    time: nowTs,
+                  },
+                ]
+                matchedDshSession.lastActivity = nowTs
+                matchedDshSession.updatedAt = nowTs
+              }
+            }
+            if (targetDshAgentId && this.dshHeadlessRunner) {
+              // Give any active DSH Desktop process 350ms to consume the IPC response first
+              await new Promise(r => setTimeout(r, 350))
+              const hlRes = await this.dshHeadlessRunner.runTurn({
+                sessionId: targetDshAgentId,
+                text: replyPreview,
+                cwd: matchedDshSession?.cwd || matchedDshApproval?.cwd || cmd.cwd,
+                questionReply: questionReplyPayload,
+              })
+              if (hlRes?.ok || hlRes?.busy) {
+                return {
+                  ok: true,
+                  code,
+                  decision: 'answered',
+                  answers: normalizedAnswers || [],
+                  message: hlRes?.ok ? '✅ 已提交选择并继续执行' : '✅ 已同步选择到电脑端 DSH',
+                }
+              }
+            }
+            return {
+              ok: true,
+              code,
+              decision: 'answered',
+              answers: normalizedAnswers || [],
+              message: '✅ 已同步选择到电脑端 DSH',
+            }
+          }
+
+          if (code.startsWith('DSHA-') || matchedDshApproval) {
+            return {
+              ok: true,
+              code,
+              decision: effectiveType === 'approve' ? 'allowed-once' : 'rejected',
+              message:
+                effectiveType === 'approve'
+                  ? '✅ 已同步批准指令到电脑端 DSH'
+                  : '已拒绝该工具调用',
+            }
+          }
+
+          return bridgeRes
         }
         case 'prompt':
         case 'steer':

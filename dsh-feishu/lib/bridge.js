@@ -4,12 +4,16 @@ import { basename, extname, resolve, sep } from 'node:path'
 import { parseCommand, splitFirstArg } from './commands.js'
 import { cleanForChat, safeError } from './redact.js'
 import {
+  consumePendingDshInteractionResponse,
   createNewAgentSession,
   deleteAgentSession,
   extractSessionTranscript,
   listWorkspaceFiles,
+  normalizeUserQuestionsList,
   readWorkspaceFile,
+  removePendingDshInteraction,
   renameAgentSession,
+  upsertPendingDshInteraction,
 } from './workspace-ops.js'
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -1722,24 +1726,34 @@ export class FeishuBridge {
   onApproval(request, next) {
     if (this.disposed) return next()
     const chatId = this.controlChatId
-    if (!chatId) return next()
-    if (!this.isRemoteActive()) {
-      if (this.config.notify && this.config.notifyApprovals) void this.notifyApproval(request, chatId)
-      return next()
+    const webHubEnabled = Boolean(this.hubAgent || this.config?.hubUrl)
+    if (!webHubEnabled) {
+      if (!chatId) return next()
+      if (!this.isRemoteActive()) {
+        if (this.config.notify && this.config.notifyApprovals) void this.notifyApproval(request, chatId)
+        return next()
+      }
+    } else if (chatId && !this.isRemoteActive() && this.config.notify && this.config.notifyApprovals) {
+      void this.notifyApproval(request, chatId)
     }
     const code = this.newCode()
     const entry = {
       code,
+      kind: 'approval',
       chatId,
       agentId: request.agent.id,
+      project: projectName(cwdOf(request.agent)),
+      cwd: cwdOf(request.agent),
       toolName: request.toolName ?? 'unknown',
       callId: request.callId,
       title: this.taskTitle(request.agent),
+      promptTitle: `等待你确认工具调用：${request.toolName ?? 'unknown'}`,
       reason: reasonText(request.displayReason || request.reason) || '未提供原因',
       createdAt: this.now(),
       settled: false,
       resolve: undefined,
       timer: undefined,
+      ipcPollTimer: undefined,
       abort: undefined,
       requestSignal: request.signal,
     }
@@ -1748,10 +1762,40 @@ export class FeishuBridge {
     })
     entry.timer = setTimeout(() => {
       this.settle(entry, 'rejected', 'timeout')
-      void this.safeSend(chatId, `审批 ${code} 已超时，按拒绝处理。`)
+      if (chatId) void this.safeSend(chatId, `审批 ${code} 已超时，按拒绝处理。`)
     }, this.config.approvalTtlSeconds * 1000)
     entry.timer.unref?.()
     this.pending.set(code, entry)
+    if (this.config?.dshHome) {
+      void upsertPendingDshInteraction(this.config.dshHome, {
+        code,
+        kind: 'approval',
+        harness: 'dsh',
+        agentId: entry.agentId,
+        title: entry.title,
+        project: entry.project,
+        cwd: entry.cwd,
+        toolName: entry.toolName,
+        callId: entry.callId,
+        promptTitle: entry.promptTitle,
+        reason: cleanForChat(entry.reason, 400),
+        createdAt: entry.createdAt,
+        expiresAt: entry.createdAt + this.config.approvalTtlSeconds * 1000,
+      })
+      entry.ipcPollTimer = setInterval(async () => {
+        if (entry.settled) return
+        const resp = await consumePendingDshInteractionResponse(this.config.dshHome, {
+          code,
+          callId: entry.callId,
+          agentId: entry.agentId,
+        })
+        if (resp && !entry.settled) {
+          const decision = resp.allow === false || resp.decision === 'rejected' ? 'rejected' : 'allowed-once'
+          this.settle(entry, decision, 'web-ipc')
+        }
+      }, 250)
+      entry.ipcPollTimer.unref?.()
+    }
     if (request.signal) {
       entry.abort = () => this.settle(entry, 'cancelled', 'cancelled')
       if (request.signal.aborted) {
@@ -1760,21 +1804,179 @@ export class FeishuBridge {
       }
       request.signal.addEventListener('abort', entry.abort, { once: true })
     }
-    const reason = reasonText(request.displayReason || request.reason) || '未提供原因'
-    const text = [
-      `需要审批：${this.taskTitle(request.agent)}`,
-      `工具：${entry.toolName}`,
-      `项目：${projectName(cwdOf(request.agent))} · ${shortId(entry.agentId)}`,
-      `原因：${cleanForChat(reason, 500)}`,
-      '',
-      `回复 /approve ${code} 批准一次，或 /deny ${code} 拒绝。`,
-      `${this.config.approvalTtlSeconds} 秒内有效，仅对这一次调用有效。`,
-    ].join('\n')
-    this.safeSendCard(chatId, this.approvalCard(entry, request), text).then(ok => {
-      if (!ok) this.settle(entry, 'unavailable', 'send_failed')
-    })
+    if (chatId && this.isRemoteActive()) {
+      const reason = reasonText(request.displayReason || request.reason) || '未提供原因'
+      const text = [
+        `需要审批：${this.taskTitle(request.agent)}`,
+        `工具：${entry.toolName}`,
+        `项目：${projectName(cwdOf(request.agent))} · ${shortId(entry.agentId)}`,
+        `原因：${cleanForChat(reason, 500)}`,
+        '',
+        `回复 /approve ${code} 批准一次，或 /deny ${code} 拒绝。`,
+        `${this.config.approvalTtlSeconds} 秒内有效，仅对这一次调用有效。`,
+      ].join('\n')
+      this.safeSendCard(chatId, this.approvalCard(entry, request), text).then(ok => {
+        if (!ok && !webHubEnabled) this.settle(entry, 'unavailable', 'send_failed')
+      })
+    }
+    if (typeof next === 'function' && (!chatId || !this.isRemoteActive())) {
+      try {
+        const nextRes = next()
+        if (nextRes && typeof nextRes.then === 'function') {
+          nextRes.then(
+            res => {
+              if (res && res !== 'unavailable' && !entry.settled) {
+                this.settle(entry, res, 'desktop-ui')
+              }
+            },
+            () => {},
+          )
+        }
+      } catch {}
+    }
+    void this.hubAgent?.tick?.()
     void this.audit?.write('approval_requested', {
       chatId,
+      agentId: entry.agentId,
+      toolName: entry.toolName,
+      callId: entry.callId,
+    })
+    return promise
+  }
+
+  /**
+   * User-questions waterfall answerer (`ask_user_question` and `exit_plan_mode`).
+   * Surfaces selection popups to the Phone Web UI while also allowing Desktop UI to answer.
+   */
+  onUserQuestion(request, next) {
+    if (this.disposed) return typeof next === 'function' ? next() : undefined
+    const questions = normalizeUserQuestionsList(request?.questions)
+    if (questions.length === 0) return typeof next === 'function' ? next() : undefined
+
+    const code = this.newCode()
+    const callId = String(request?.wait?.callId || request?.callId || `q-${Date.now()}`)
+    const firstQ = questions[0]
+    const isPlanReview =
+      firstQ?.id === 'plan-review' || request?.questions?.[0]?.intent?.kind === 'plan-review'
+    const toolName = isPlanReview ? 'exit_plan_mode' : 'ask_user_question'
+    const promptTitle = isPlanReview
+      ? '📋 计划审批：是否批准该方案并退出计划模式？'
+      : firstQ?.question || '请做出选择以继续'
+    const reason = questions
+      .map(
+        q =>
+          `${q.header ? `[${q.header}] ` : ''}${q.question}${
+            q.options?.length ? ` (${q.options.map(o => o.label).join(' / ')})` : ''
+          }`,
+      )
+      .join('；')
+
+    const entry = {
+      code,
+      kind: 'question',
+      chatId: this.controlChatId,
+      agentId: request.agent?.id || '',
+      project: projectName(cwdOf(request.agent)),
+      cwd: cwdOf(request.agent),
+      toolName,
+      callId,
+      title: this.taskTitle(request.agent),
+      promptTitle,
+      reason: cleanForChat(reason, 400),
+      questions,
+      createdAt: this.now(),
+      settled: false,
+      resolve: undefined,
+      timer: undefined,
+      ipcPollTimer: undefined,
+      abort: undefined,
+      requestSignal: request.signal,
+    }
+    const promise = new Promise(resolve => {
+      entry.resolve = resolve
+    })
+    const ttlMs = Math.max(this.config.approvalTtlSeconds || 300, 300) * 1000
+    entry.timer = setTimeout(() => {
+      this.settle(entry, 'unavailable', 'timeout')
+    }, ttlMs)
+    entry.timer.unref?.()
+    this.pending.set(code, entry)
+
+    if (this.config?.dshHome) {
+      void upsertPendingDshInteraction(this.config.dshHome, {
+        code,
+        kind: 'question',
+        harness: 'dsh',
+        agentId: entry.agentId,
+        title: entry.title,
+        project: entry.project,
+        cwd: entry.cwd,
+        toolName: entry.toolName,
+        callId: entry.callId,
+        promptTitle: entry.promptTitle,
+        reason: entry.reason,
+        questions: entry.questions,
+        createdAt: entry.createdAt,
+        expiresAt: entry.createdAt + ttlMs,
+      })
+      entry.ipcPollTimer = setInterval(async () => {
+        if (entry.settled) return
+        const resp = await consumePendingDshInteractionResponse(this.config.dshHome, {
+          code,
+          callId: entry.callId,
+          agentId: entry.agentId,
+        })
+        if (resp && !entry.settled) {
+          if (resp.allow === false || resp.decision === 'rejected') {
+            this.settle(entry, { answers: [] }, 'web-ipc')
+          } else {
+            const answers = buildNormalizedQuestionAnswers(
+              entry.questions,
+              resp.answers,
+              resp.optionIndex,
+            )
+            this.settle(entry, { answers }, 'web-ipc')
+          }
+        }
+      }, 250)
+      entry.ipcPollTimer.unref?.()
+    }
+
+    if (request.signal) {
+      entry.abort = () => this.settle(entry, 'unavailable', 'cancelled')
+      if (request.signal.aborted) {
+        entry.abort()
+        return promise
+      }
+      request.signal.addEventListener('abort', entry.abort, { once: true })
+    }
+
+    if (typeof next === 'function') {
+      try {
+        const nextRes = next()
+        if (nextRes && typeof nextRes.then === 'function') {
+          nextRes.then(
+            res => {
+              const hasDesktopAnswers =
+                res &&
+                res !== 'unavailable' &&
+                ((Array.isArray(res.answers) && res.answers.length > 0) ||
+                  (res.answers &&
+                    typeof res.answers === 'object' &&
+                    !Array.isArray(res.answers) &&
+                    Object.keys(res.answers).length > 0))
+              if (hasDesktopAnswers && !entry.settled) {
+                this.settle(entry, res, 'desktop-ui')
+              }
+            },
+            () => {},
+          )
+        }
+      } catch {}
+    }
+
+    void this.hubAgent?.tick?.()
+    void this.audit?.write('question_requested', {
       agentId: entry.agentId,
       toolName: entry.toolName,
       callId: entry.callId,
@@ -1818,8 +2020,16 @@ export class FeishuBridge {
     if (entry.settled) return
     entry.settled = true
     if (entry.timer) clearTimeout(entry.timer)
+    if (entry.ipcPollTimer) clearInterval(entry.ipcPollTimer)
     if (entry.abort && entry.requestSignal) entry.requestSignal.removeEventListener('abort', entry.abort)
     this.pending.delete(entry.code)
+    if (this.config?.dshHome) {
+      void removePendingDshInteraction(this.config.dshHome, {
+        code: entry.code,
+        callId: entry.callId,
+        agentId: entry.agentId,
+      })
+    }
     void this.audit?.write('approval_settled', {
       agentId: entry.agentId,
       toolName: entry.toolName,
@@ -1982,6 +2192,26 @@ export class FeishuBridge {
     }
     if (workspaceSet.size === 0) workspaceSet.add(process.cwd())
 
+    const activeApprovals = [...this.pending.values()]
+      .filter(entry => !entry.settled && now - entry.createdAt <= Math.max(this.config.approvalTtlSeconds || 300, 300) * 1000)
+      .map(entry => ({
+        code: entry.code,
+        kind: entry.kind || 'approval',
+        harness: 'dsh',
+        agentId: entry.agentId,
+        title: entry.title || this.taskTitle(this.agents.get(entry.agentId)),
+        project: entry.project || projectName(cwdOf(this.agents.get(entry.agentId))),
+        cwd: entry.cwd || cwdOf(this.agents.get(entry.agentId)),
+        toolName: entry.toolName,
+        callId: entry.callId || '',
+        promptTitle: entry.promptTitle || '',
+        reason: cleanForChat(entry.reason, 400),
+        ...(Array.isArray(entry.questions) ? { questions: entry.questions } : {}),
+        createdAt: entry.createdAt,
+        expiresAt: entry.createdAt + Math.max(this.config.approvalTtlSeconds || 300, 300) * 1000,
+      }))
+    const approvalByAgent = new Map(activeApprovals.map(a => [a.agentId, a]))
+
     return {
       hostId: this.config.hostId || 'local',
       hostName: this.config.hostName || 'Local-Host',
@@ -1994,7 +2224,8 @@ export class FeishuBridge {
       taskCount: all.length,
       workspaces: [...workspaceSet].slice(0, 12),
       tasks: all.slice(0, 30).map(agent => {
-        const st = String(agent.status ?? 'unknown')
+        const pendingApp = approvalByAgent.get(agent.id) || null
+        const st = pendingApp ? 'approval' : String(agent.status ?? 'unknown')
         const out = cleanForChat(this.lastAssistantText(agent), 1500)
         const act = this.lastActivity(agent)
         return {
@@ -2002,10 +2233,15 @@ export class FeishuBridge {
           shortId: shortId(agent.id),
           title: this.taskTitle(agent),
           status: st,
-          isMidTurn: st === 'running',
-          turnState: st === 'running' ? 'running' : out ? 'conclusion' : 'idle',
-          lastConclusionAt: st === 'running' ? 0 : (out ? act : 0),
-          statusLabel: this.taskStateLabel(agent),
+          isMidTurn: Boolean(pendingApp) || st === 'running',
+          turnState: pendingApp ? 'approval' : st === 'running' ? 'running' : out ? 'conclusion' : 'idle',
+          lastConclusionAt: pendingApp || st === 'running' ? 0 : (out ? act : 0),
+          statusLabel: pendingApp
+            ? pendingApp.kind === 'question'
+              ? '⏳ 待你选择'
+              : '⏳ 待你授权'
+            : this.taskStateLabel(agent),
+          pendingApproval: pendingApp,
           project: projectName(cwdOf(agent)),
           cwd: cwdOf(agent),
           lastActivity: act,
@@ -2014,17 +2250,7 @@ export class FeishuBridge {
           transcript: extractSessionTranscript(agent, 40),
         }
       }),
-      approvals: [...this.pending.values()]
-        .filter(entry => !entry.settled && now - entry.createdAt <= this.config.approvalTtlSeconds * 1000)
-        .map(entry => ({
-          code: entry.code,
-          agentId: entry.agentId,
-          title: entry.title || this.taskTitle(this.agents.get(entry.agentId)),
-          toolName: entry.toolName,
-          reason: cleanForChat(entry.reason, 400),
-          createdAt: entry.createdAt,
-          expiresAt: entry.createdAt + this.config.approvalTtlSeconds * 1000,
-        })),
+      approvals: activeApprovals,
     }
   }
 
@@ -2172,21 +2398,72 @@ export class FeishuBridge {
         return { ok: true, message: '已请求停止任务' }
       }
       case 'approve':
-      case 'deny': {
+      case 'deny':
+      case 'approval': {
         const code = String(cmd.code ?? '').trim().toUpperCase()
-        const entry = this.pending.get(code)
-        if (!entry || entry.settled) return { ok: false, error: '审批码不存在或已处理' }
-        const decision = type === 'approve' ? 'allowed-once' : 'rejected'
-        this.settle(entry, decision, 'web-admin')
-        if (entry.chatId) {
-          await this.safeSend(
-            entry.chatId,
-            decision === 'allowed-once'
-              ? `🌐 已在 Web 控制台批准 ${code}（仅这一次）。`
-              : `🌐 已在 Web 控制台拒绝 ${code}。`,
-          )
+        const isAllow = type === 'approval' ? cmd.allow !== false : type === 'approve'
+        let entry = this.pending.get(code)
+        if (!entry) {
+          for (const candidate of this.pending.values()) {
+            if (candidate.settled) continue
+            if (cmd.callId && candidate.callId === cmd.callId) {
+              entry = candidate
+              break
+            }
+            if (cmd.agentId && candidate.agentId === cmd.agentId) {
+              entry = candidate
+              break
+            }
+          }
         }
-        return { ok: true, code, decision }
+        if (entry && !entry.settled) {
+          if (entry.kind === 'question') {
+            if (!isAllow) {
+              this.settle(entry, { answers: [] }, 'web-admin')
+              return { ok: true, code: entry.code, decision: 'rejected', answers: [] }
+            }
+            const answers = buildNormalizedQuestionAnswers(
+              entry.questions,
+              cmd.answers,
+              cmd.optionIndex,
+            )
+            this.settle(entry, { answers }, 'web-admin')
+            return { ok: true, code: entry.code, decision: 'answered', answers }
+          }
+          const decision = isAllow ? 'allowed-once' : 'rejected'
+          this.settle(entry, decision, 'web-admin')
+          if (entry.chatId) {
+            await this.safeSend(
+              entry.chatId,
+              decision === 'allowed-once'
+                ? `🌐 已在 Web 控制台批准 ${entry.code}（仅这一次）。`
+                : `🌐 已在 Web 控制台拒绝 ${entry.code}。`,
+            )
+          }
+          return { ok: true, code: entry.code, decision }
+        }
+        if (
+          isAllow &&
+          (Array.isArray(cmd.answers) || code.startsWith('DSHQ-')) &&
+          typeof this.agents?.answerUserQuestion === 'function' &&
+          cmd.agentId
+        ) {
+          const answers = buildNormalizedQuestionAnswers(
+            cmd.questions || [],
+            cmd.answers,
+            cmd.optionIndex,
+          )
+          const answered = await this.agents.answerUserQuestion(
+            cmd.agentId,
+            cmd.callId || '',
+            answers,
+            cmd.questions || [],
+          )
+          if (answered?.ok) {
+            return { ok: true, code, decision: 'answered', answers, mode: answered.mode }
+          }
+        }
+        return { ok: false, error: '审批码不存在或已处理' }
       }
       default:
         return { ok: false, error: `未知指令类型: ${type}` }
@@ -2360,6 +2637,70 @@ function shortCwd(cwd) {
   const parts = String(cwd).split('/').filter(Boolean)
   return parts.length <= 2 ? `/${parts.join('/')}` : `…/${parts.slice(-2).join('/')}`
 }
+
+export function buildNormalizedQuestionAnswers(questions = [], rawAnswers = [], optionIndex = 1) {
+  const byId = new Map()
+  if (Array.isArray(rawAnswers)) {
+    for (const item of rawAnswers) {
+      if (!item || typeof item !== 'object') continue
+      const id = String(item.id || '').trim()
+      if (!id) continue
+      const selected = Array.isArray(item.selected)
+        ? item.selected.map(s => String(s || '').trim()).filter(Boolean)
+        : typeof item.selected === 'string' && item.selected.trim()
+          ? [item.selected.trim()]
+          : []
+      const custom = String(item.custom || '').trim()
+      byId.set(id, { id, selected, ...(custom ? { custom } : {}) })
+    }
+  } else if (rawAnswers && typeof rawAnswers === 'object') {
+    for (const [rawId, val] of Object.entries(rawAnswers)) {
+      const id = String(rawId || '').trim()
+      if (!id) continue
+      if (Array.isArray(val)) {
+        const selected = val.map(s => String(s || '').trim()).filter(Boolean)
+        if (selected.length > 0) byId.set(id, { id, selected })
+      } else if (typeof val === 'string' && val.trim()) {
+        byId.set(id, { id, selected: [val.trim()] })
+      } else if (val && typeof val === 'object') {
+        const selected = Array.isArray(val.selected)
+          ? val.selected.map(s => String(s || '').trim()).filter(Boolean)
+          : typeof val.selected === 'string' && val.selected.trim()
+            ? [val.selected.trim()]
+            : []
+        const custom = String(val.custom || val.customText || '').trim()
+        if (selected.length > 0 || custom) {
+          byId.set(id, { id, selected, ...(custom ? { custom } : {}) })
+        }
+      }
+    }
+  }
+  const qList = Array.isArray(questions) ? questions : []
+  if (qList.length === 0) {
+    return [...byId.values()]
+  }
+  return qList
+    .map((q, idx) => {
+      const qId = String(q?.id || `q-${idx + 1}`).trim()
+      const provided = byId.get(qId) || (qList.length === 1 ? [...byId.values()][0] : null)
+      if (provided && (provided.selected.length > 0 || provided.custom)) {
+        return {
+          id: qId,
+          selected: provided.selected,
+          ...(provided.custom ? { custom: provided.custom } : {}),
+        }
+      }
+      const opts = Array.isArray(q?.options) ? q.options : []
+      const targetIdx = Math.max(0, (Number(optionIndex) || 1) - 1)
+      const fallbackOpt = opts[targetIdx] || opts[0]
+      if (fallbackOpt?.label) {
+        return { id: qId, selected: [String(fallbackOpt.label)] }
+      }
+      return null
+    })
+    .filter(Boolean)
+}
+
 
 const HELP = `飞书遥控：
 发「连接」进入远程模式，发「断开」结束。

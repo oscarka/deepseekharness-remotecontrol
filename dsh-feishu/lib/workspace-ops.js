@@ -336,7 +336,12 @@ export function extractSessionTranscript(agent, maxMessages = 24) {
       textParts.push(redactText(msg.content))
     }
 
-    const joinedText = cleanForChat(textParts.join('\n').trim(), 48000)
+    const rawJoinedText = textParts.join('\n').trim()
+    const formattedUserReply =
+      role === 'user' && msg?.source?.kind === 'user-question-reply'
+        ? formatUserQuestionReplyText(rawJoinedText)
+        : rawJoinedText
+    const joinedText = cleanForChat(formattedUserReply, 48000)
     if (role === 'user' && isSystemInjectedUserText(joinedText)) {
       continue
     }
@@ -614,6 +619,415 @@ export async function removeSessionFromDshWorkspaceStorage(dshHome, sessionId) {
  */
 const dshSessionParseCache = new Map()
 
+export function normalizeUserQuestionsList(rawQuestions) {
+  if (!Array.isArray(rawQuestions)) return []
+  return rawQuestions
+    .map((q, idx) => {
+      if (!q || typeof q !== 'object') return null
+      const question = String(q.question || q.title || '').trim()
+      if (!question) return null
+      const id = String(q.id || `q-${idx + 1}`).trim()
+      const header = String(q.header || '').trim()
+      const detail = String(q.detail || '').trim()
+      const multiSelect = Boolean(q.multi_select ?? q.multiSelect)
+      const options = Array.isArray(q.options)
+        ? q.options
+            .map(o => {
+              if (typeof o === 'string') return { label: o.trim(), description: '' }
+              if (!o || typeof o !== 'object') return null
+              const label = String(o.label || o.title || '').trim()
+              if (!label) return null
+              return {
+                label,
+                description: String(o.description || o.desc || '').trim(),
+              }
+            })
+            .filter(Boolean)
+        : []
+      return {
+        id,
+        header,
+        question,
+        ...(detail ? { detail } : {}),
+        multiSelect,
+        options,
+      }
+    })
+    .filter(Boolean)
+}
+
+export function formatUserQuestionReplyText(rawText) {
+  const clean = String(rawText ?? '').trim()
+  if (!clean) return ''
+  try {
+    const parsed = JSON.parse(clean)
+    if (
+      parsed &&
+      (parsed.kind === 'answer_to_pending_question' || Array.isArray(parsed.answers))
+    ) {
+      const qMap = new Map()
+      if (Array.isArray(parsed.questions)) {
+        for (const q of parsed.questions) {
+          if (q?.id) qMap.set(String(q.id), q.header || q.question || q.id)
+        }
+      }
+      const parts = []
+      for (const ans of parsed.answers || []) {
+        if (!ans || typeof ans !== 'object') continue
+        const selected = Array.isArray(ans.selected) ? ans.selected.filter(Boolean) : []
+        const custom = String(ans.custom || '').trim()
+        const val = [...selected, ...(custom ? [custom] : [])].join('、')
+        if (!val) continue
+        const label = qMap.get(String(ans.id || ''))
+        parts.push(label && (parsed.answers || []).length > 1 ? `[${label}] ${val}` : val)
+      }
+      if (parts.length > 0) {
+        return `✅ 已选择：${parts.join('；')}`
+      }
+    }
+  } catch {
+    // not JSON, return as-is
+  }
+  return clean
+}
+
+function extractRawPendingDshInteraction(lines = []) {
+  const questionsByCallId = new Map()
+  const approvalsById = new Map()
+
+  for (const e of lines) {
+    if (!e || typeof e !== 'object') continue
+    const toolCallName = e.data?.name || e.data?.toolName
+    if (e.type === 'tool/call' && toolCallName) {
+      const toolName = String(toolCallName)
+      const callId = String(e.data.callId || e.data.id || '').trim()
+      if (!callId) continue
+      const rawArgs = e.data.arguments ?? e.data.input ?? e.data.args
+      let parsedArgs = rawArgs
+      if (typeof rawArgs === 'string') {
+        try {
+          parsedArgs = JSON.parse(rawArgs)
+        } catch {
+          parsedArgs = null
+        }
+      }
+      if (toolName === 'ask_user_question' && parsedArgs && typeof parsedArgs === 'object') {
+        const questions = normalizeUserQuestionsList(parsedArgs.questions)
+        if (questions.length > 0) {
+          questionsByCallId.set(callId, {
+            kind: 'question',
+            toolName: 'ask_user_question',
+            callId,
+            questions,
+            state: 'open',
+            time: e.time || 0,
+          })
+        }
+      } else if (toolName === 'exit_plan_mode') {
+        const plan = String(parsedArgs?.plan || '').trim()
+        const questions = [
+          {
+            id: 'plan-review',
+            header: 'Plan review',
+            question: 'Approve this plan and leave plan mode?',
+            ...(plan ? { detail: plan } : {}),
+            multiSelect: false,
+            options: [
+              {
+                label: 'Approve',
+                description: 'Leave plan mode; the plan is carried out from the next step.',
+              },
+              {
+                label: 'Keep planning',
+                description: 'Stay in plan mode; feedback goes back to the model.',
+              },
+            ],
+          },
+        ]
+        questionsByCallId.set(callId, {
+          kind: 'question',
+          toolName: 'exit_plan_mode',
+          callId,
+          questions,
+          state: 'open',
+          time: e.time || 0,
+        })
+      }
+    } else if (e.type === 'tool/result') {
+      const msg = e.data?.message || e.data || {}
+      const cid = String(msg?.source?.callId || e.data?.callId || msg?.toolCallId || '').trim()
+      if (!cid) continue
+      for (const [appId, app] of approvalsById.entries()) {
+        if (app.callId === cid) approvalsById.delete(appId)
+      }
+      const qEntry = questionsByCallId.get(cid)
+      if (!qEntry) continue
+      const blocks = Array.isArray(msg?.content) ? msg.content : []
+      const outText =
+        typeof msg?.content === 'string'
+          ? msg.content.trim()
+          : blocks
+              .filter(b => b?.type === 'text' && typeof b.text === 'string')
+              .map(b => b.text)
+              .join('\n')
+              .trim()
+      let isContinued =
+        e.data?.error?.code === 'TOOL_OUTCOME_UNKNOWN' ||
+        e.data?.outcome === 'TOOL_OUTCOME_UNKNOWN'
+      if (!isContinued && outText) {
+        try {
+          const parsedOut = JSON.parse(outText)
+          if (parsedOut && parsedOut.pending === true) {
+            isContinued = true
+          }
+        } catch {}
+      }
+      if (isContinued && qEntry.toolName === 'ask_user_question') {
+        qEntry.state = 'continued'
+      } else {
+        questionsByCallId.delete(cid)
+      }
+    } else if (e.type === 'approval/asked' && e.data?.id) {
+      const appId = String(e.data.id).trim()
+      const rawReason = e.data.reason
+      const reasonStr =
+        typeof rawReason === 'string'
+          ? rawReason
+          : rawReason?.zh || rawReason?.en || rawReason?.reason || rawReason?.message || ''
+      approvalsById.set(appId, {
+        kind: 'approval',
+        approvalId: appId,
+        toolName: String(e.data.toolName || 'tool'),
+        callId: String(e.data.callId || ''),
+        reason: String(reasonStr || '请求执行权限').trim(),
+        time: e.time || 0,
+      })
+    } else if (e.type === 'approval/decided' && e.data?.id) {
+      approvalsById.delete(String(e.data.id).trim())
+    } else if (e.type === 'user/message') {
+      const srcKind = e.data?.source?.kind
+      if (srcKind === 'user-question-reply') {
+        const replyCallId = String(e.data?.source?.callId || '').trim()
+        if (replyCallId) {
+          questionsByCallId.delete(replyCallId)
+        } else {
+          questionsByCallId.clear()
+        }
+      } else if (!srcKind || srcKind === 'user') {
+        const blocks = Array.isArray(e.data?.content) ? e.data.content : []
+        const txt =
+          typeof e.data?.content === 'string'
+            ? e.data.content.trim()
+            : blocks
+                .filter(b => b?.type === 'text' && typeof b.text === 'string')
+                .map(b => b.text)
+                .join('\n')
+                .trim()
+        if (txt && !isSystemInjectedUserText(txt)) {
+          questionsByCallId.clear()
+          approvalsById.clear()
+        }
+      }
+    }
+  }
+
+  const latestQuestion = [...questionsByCallId.values()].at(-1) || null
+  const latestApproval = [...approvalsById.values()].at(-1) || null
+  return { latestQuestion, latestApproval }
+}
+
+function materializePendingDshInteraction(
+  rawPending,
+  { sessionId = '', title = '', project = '', cwd = '', hasLock = false, ageMs = 0 } = {},
+) {
+  if (!rawPending) return null
+  const cleanSid = String(sessionId).replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase() || 'SESS'
+  const q = rawPending.latestQuestion
+  if (q) {
+    const isFreshContinued = q.state === 'continued' && ageMs <= 24 * 60 * 60_000
+    const isFreshOpen = q.state === 'open' && (hasLock || ageMs <= 15 * 60_000)
+    if (isFreshContinued || isFreshOpen) {
+      const cleanCid = String(q.callId).replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase() || 'CALL'
+      const firstQ = q.questions[0]
+      const promptTitle =
+        q.toolName === 'exit_plan_mode'
+          ? '📋 计划审批：是否批准该方案并退出计划模式？'
+          : firstQ?.question || '请做出选择以继续'
+      const reason = q.questions
+        .map(
+          item =>
+            `${item.header ? `[${item.header}] ` : ''}${item.question}${
+              item.options?.length ? ` (${item.options.map(o => o.label).join(' / ')})` : ''
+            }`,
+        )
+        .join('；')
+      return {
+        code: `DSHQ-${cleanSid}-${cleanCid}`,
+        kind: 'question',
+        harness: 'dsh',
+        agentId: sessionId,
+        title: title || '等待你做出选择',
+        project,
+        cwd,
+        toolName: q.toolName,
+        callId: q.callId,
+        questionState: q.state,
+        promptTitle,
+        reason: cleanForChat(reason, 400),
+        questions: q.questions,
+        createdAt: q.time || Date.now(),
+      }
+    }
+  }
+  const app = rawPending.latestApproval
+  if (app && (hasLock || ageMs <= 5 * 60_000) && ageMs <= 15 * 60_000) {
+    const cleanAid = String(app.approvalId).replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase() || 'APPR'
+    return {
+      code: `DSHA-${cleanSid}-${cleanAid}`,
+      kind: 'approval',
+      harness: 'dsh',
+      agentId: sessionId,
+      title: title || app.toolName,
+      project,
+      cwd,
+      toolName: app.toolName,
+      callId: app.callId,
+      approvalId: app.approvalId,
+      promptTitle: `等待你确认工具调用：${app.toolName}`,
+      reason: cleanForChat(app.reason || '请求执行权限', 400),
+      createdAt: app.time || Date.now(),
+    }
+  }
+  return null
+}
+
+export function extractPendingDshInteractionFromEvents(lines = [], meta = {}) {
+  const raw = extractRawPendingDshInteraction(lines)
+  return materializePendingDshInteraction(raw, meta)
+}
+
+export async function readPendingDshInteractions(dshHome) {
+  if (!dshHome) return []
+  try {
+    const file = join(resolve(dshHome), 'pending-interactions.json')
+    const raw = JSON.parse(await readFile(file, 'utf8'))
+    const now = Date.now()
+    const list = Array.isArray(raw?.items) ? raw.items : []
+    return list.filter(item => item && (!item.expiresAt || item.expiresAt > now))
+  } catch {
+    return []
+  }
+}
+
+export async function upsertPendingDshInteraction(dshHome, entry) {
+  if (!dshHome || !entry?.code) return
+  try {
+    const file = join(resolve(dshHome), 'pending-interactions.json')
+    const existing = await readPendingDshInteractions(dshHome)
+    const filtered = existing.filter(
+      item =>
+        item.code !== entry.code &&
+        !(entry.callId && item.callId === entry.callId && item.agentId === entry.agentId),
+    )
+    filtered.push(entry)
+    await mkdir(resolve(dshHome), { recursive: true })
+    await writeFile(file, JSON.stringify({ updatedAt: Date.now(), items: filtered }, null, 2), {
+      mode: 0o600,
+    })
+  } catch {}
+}
+
+export async function removePendingDshInteraction(dshHome, { code = '', callId = '', agentId = '' } = {}) {
+  if (!dshHome) return
+  try {
+    const file = join(resolve(dshHome), 'pending-interactions.json')
+    const existing = await readPendingDshInteractions(dshHome)
+    const cleanCode = String(code || '').trim().toUpperCase()
+    const filtered = existing.filter(item => {
+      if (cleanCode && String(item.code || '').toUpperCase() === cleanCode) return false
+      if (callId && item.callId === callId && (!agentId || item.agentId === agentId)) return false
+      return true
+    })
+    if (filtered.length !== existing.length) {
+      await writeFile(file, JSON.stringify({ updatedAt: Date.now(), items: filtered }, null, 2), {
+        mode: 0o600,
+      })
+    }
+  } catch {}
+}
+
+export async function readPendingDshInteractionResponses(dshHome) {
+  if (!dshHome) return []
+  try {
+    const file = join(resolve(dshHome), 'pending-interaction-responses.json')
+    const raw = JSON.parse(await readFile(file, 'utf8'))
+    const now = Date.now()
+    const list = Array.isArray(raw?.items) ? raw.items : []
+    return list.filter(item => item && now - (item.at || 0) <= 60_000)
+  } catch {
+    return []
+  }
+}
+
+export async function writePendingDshInteractionResponse(dshHome, respEntry) {
+  if (!dshHome || !respEntry) return
+  try {
+    const file = join(resolve(dshHome), 'pending-interaction-responses.json')
+    const existing = await readPendingDshInteractionResponses(dshHome)
+    const cleanCode = String(respEntry.code || '').trim().toUpperCase()
+    const filtered = existing.filter(
+      item =>
+        !(cleanCode && String(item.code || '').toUpperCase() === cleanCode) &&
+        !(respEntry.callId && item.callId === respEntry.callId && item.agentId === respEntry.agentId),
+    )
+    filtered.push({
+      ...respEntry,
+      code: cleanCode,
+      at: Date.now(),
+    })
+    await mkdir(resolve(dshHome), { recursive: true })
+    await writeFile(file, JSON.stringify({ updatedAt: Date.now(), items: filtered }, null, 2), {
+      mode: 0o600,
+    })
+  } catch {}
+}
+
+export async function consumePendingDshInteractionResponse(
+  dshHome,
+  { code = '', callId = '', agentId = '' } = {},
+) {
+  if (!dshHome) return null
+  try {
+    const file = join(resolve(dshHome), 'pending-interaction-responses.json')
+    const existing = await readPendingDshInteractionResponses(dshHome)
+    const cleanCode = String(code || '').trim().toUpperCase()
+    let matched = null
+    const remaining = []
+    for (const item of existing) {
+      const codeMatch = cleanCode && String(item.code || '').toUpperCase() === cleanCode
+      const callMatch =
+        Boolean(callId && item.callId && item.callId === callId) &&
+        (!agentId || !item.agentId || item.agentId === agentId)
+      const agentFallbackMatch =
+        !cleanCode && !callId && Boolean(agentId && item.agentId === agentId)
+      if (!matched && (codeMatch || callMatch || agentFallbackMatch)) {
+        matched = item
+      } else {
+        remaining.push(item)
+      }
+    }
+    if (matched) {
+      await writeFile(file, JSON.stringify({ updatedAt: Date.now(), items: remaining }, null, 2), {
+        mode: 0o600,
+      })
+    }
+    return matched
+  } catch {
+    return null
+  }
+}
+
+
 export async function loadDiskSessionsFromDshHome(
   dshHome,
   { maxSessions = 25, maxMessages = 14, includeArchived = false, syncWorkspaceStorage = true } = {},
@@ -674,21 +1088,40 @@ export async function loadDiskSessionsFromDshHome(
         const ageNow = Date.now() - fileStat.mtimeMs
         const isActivelyRunningNow =
           hasLockNow && (ageNow <= 6000 || (ageNow <= 45000 && !cachedEntry.hasConcluded))
+        const effTitleNow = customOverride || cachedEntry.session.title
+        const pendingApprovalNow = materializePendingDshInteraction(
+          cachedEntry.rawPendingInteraction,
+          {
+            sessionId: cachedEntry.session.id,
+            title: effTitleNow,
+            project: cachedEntry.session.project,
+            cwd: cachedEntry.session.cwd,
+            hasLock: hasLockNow,
+            ageMs: ageNow,
+          },
+        )
         results.push({
           ...cachedEntry.session,
           ...(customOverride ? { title: customOverride } : {}),
-          status: isActivelyRunningNow ? 'running' : 'idle',
-          isMidTurn: !cachedEntry.hasConcluded,
-          turnState: isActivelyRunningNow
-            ? 'running'
-            : cachedEntry.hasConcluded
-              ? 'conclusion'
-              : 'idle',
-          statusLabel: isActivelyRunningNow
-            ? '🟢 运行中'
-            : cachedEntry.hasConcluded
-              ? '🔵 已出结论'
-              : '已完成',
+          status: pendingApprovalNow ? 'approval' : isActivelyRunningNow ? 'running' : 'idle',
+          isMidTurn: Boolean(pendingApprovalNow) || !cachedEntry.hasConcluded,
+          turnState: pendingApprovalNow
+            ? 'approval'
+            : isActivelyRunningNow
+              ? 'running'
+              : cachedEntry.hasConcluded
+                ? 'conclusion'
+                : 'idle',
+          statusLabel: pendingApprovalNow
+            ? pendingApprovalNow.kind === 'question'
+              ? '⏳ 待你选择'
+              : '⏳ 待你授权'
+            : isActivelyRunningNow
+              ? '🟢 运行中'
+              : cachedEntry.hasConcluded
+                ? '🔵 已出结论'
+                : '已完成',
+          pendingApproval: pendingApprovalNow || null,
           messageCount: fullTr.length,
           totalTranscriptCount: fullTr.length,
           transcript: fullTr.slice(-maxMessages),
@@ -768,16 +1201,19 @@ export async function loadDiskSessionsFromDshHome(
         for (const e of lines) {
           if (e.time && e.time > lastActivity) lastActivity = e.time
           if (e.type === 'user/message') {
-            if (e.data?.source?.kind && e.data.source.kind !== 'user') continue
+            const srcKind = e.data?.source?.kind
+            if (srcKind && srcKind !== 'user' && srcKind !== 'user-question-reply') continue
             const blocks = Array.isArray(e.data?.content) ? e.data.content : []
-            const userText = cleanForChat(
-              blocks
-                .filter(b => b?.type === 'text' && typeof b.text === 'string')
-                .map(b => redactText(b.text))
-                .join('\n')
-                .trim(),
-              48000,
-            )
+            const rawUserText = blocks
+              .filter(b => b?.type === 'text' && typeof b.text === 'string')
+              .map(b => redactText(b.text))
+              .join('\n')
+              .trim()
+            const formattedUserText =
+              srcKind === 'user-question-reply'
+                ? formatUserQuestionReplyText(rawUserText)
+                : rawUserText
+            const userText = cleanForChat(formattedUserText, 48000)
             if (!userText || isSystemInjectedUserText(userText)) continue
             lastUserInputAt = e.time || lastActivity
             lastConclusionAt = 0
@@ -869,17 +1305,42 @@ export async function loadDiskSessionsFromDshHome(
         const ageMs = Date.now() - fileStat.mtimeMs
         const isActivelyRunning =
           hasLock && (ageMs <= 6000 || (ageMs <= 45000 && !hasConcluded))
+        const effTitle = customTitles[id] || title || transcript[0]?.text?.slice(0, 36) || '历史会话'
+        const rawPendingInteraction = extractRawPendingDshInteraction(lines)
+        const pendingApproval = materializePendingDshInteraction(rawPendingInteraction, {
+          sessionId: id,
+          title: effTitle,
+          project,
+          cwd,
+          hasLock,
+          ageMs,
+        })
 
         const sessionObj = {
           id,
           shortId,
           harness: 'dsh',
           harnessLabel: 'DeepSeek Harness',
-          title: customTitles[id] || title || transcript[0]?.text?.slice(0, 36) || '历史会话',
-          status: isActivelyRunning ? 'running' : 'idle',
-          isMidTurn: !hasConcluded,
-          turnState: isActivelyRunning ? 'running' : hasConcluded ? 'conclusion' : 'idle',
-          statusLabel: isActivelyRunning ? '🟢 运行中' : hasConcluded ? '🔵 已出结论' : '已完成',
+          title: effTitle,
+          status: pendingApproval ? 'approval' : isActivelyRunning ? 'running' : 'idle',
+          isMidTurn: Boolean(pendingApproval) || !hasConcluded,
+          turnState: pendingApproval
+            ? 'approval'
+            : isActivelyRunning
+              ? 'running'
+              : hasConcluded
+                ? 'conclusion'
+                : 'idle',
+          statusLabel: pendingApproval
+            ? pendingApproval.kind === 'question'
+              ? '⏳ 待你选择'
+              : '⏳ 待你授权'
+            : isActivelyRunning
+              ? '🟢 运行中'
+              : hasConcluded
+                ? '🔵 已出结论'
+                : '已完成',
+          pendingApproval: pendingApproval || null,
           project,
           cwd,
           lastActivity,
@@ -895,6 +1356,7 @@ export async function loadDiskSessionsFromDshHome(
         dshSessionParseCache.set(zstdPath, {
           cachedKey,
           hasConcluded,
+          rawPendingInteraction,
           fullTranscript: transcript,
           session: sessionObj,
         })
