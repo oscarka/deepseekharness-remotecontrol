@@ -2201,6 +2201,108 @@ test('DSH Selection Popups (ask_user_question & exit_plan_mode) and Disk-Logged 
   }
 })
 
+test('first-time user deployment & onboarding: stateFile fallback, LAN QR origin detection, and zero-dependency plugin entry', async () => {
+  const { mkdir } = await import('node:fs/promises')
+  const { HubCore } = await import('../../hub/hub-core.js')
+  const {
+    createHubServer,
+    detectLanOrigins,
+    formatStartupBanner,
+    resolveDefaultStateFile,
+  } = await import('../../hub/server.js')
+
+  const root = await mkdtemp(join(tmpdir(), 'dsh-first-time-'))
+  try {
+    // 1. resolveDefaultStateFile falls back to ~/.dsh/hub-state.json when /data does not exist
+    const nonExistentDataDir = join(root, 'missing-data-dir')
+    const fakeHome = join(root, 'home')
+    const resolvedLocal = resolveDefaultStateFile('', {
+      dataDir: nonExistentDataDir,
+      homeDir: fakeHome,
+    })
+    assert.equal(resolvedLocal, join(fakeHome, '.dsh', 'hub-state.json'))
+
+    // When /data exists and is writable (e.g. Docker volume), it uses /data/dsh-hub-state.json
+    const writableDataDir = join(root, 'writable-data')
+    await mkdir(writableDataDir, { recursive: true })
+    const resolvedDocker = resolveDefaultStateFile('', {
+      dataDir: writableDataDir,
+      homeDir: fakeHome,
+    })
+    assert.equal(resolvedDocker, join(writableDataDir, 'dsh-hub-state.json'))
+
+    // 2. detectLanOrigins extracts real LAN IPv4 addresses and filters out loopback / virtual / link-local
+    const lanUrls = detectLanOrigins(8080, {
+      scheme: 'http',
+      interfaces: {
+        lo0: [{ family: 'IPv4', internal: true, address: '127.0.0.1' }],
+        utun0: [{ family: 'IPv4', internal: false, address: '10.8.0.2' }],
+        en0: [
+          { family: 'IPv6', internal: false, address: 'fe80::1' },
+          { family: 'IPv4', internal: false, address: '169.254.10.20' },
+          { family: 'IPv4', internal: false, address: '192.168.31.88' },
+        ],
+      },
+    })
+    assert.deepEqual(lanUrls, ['http://192.168.31.88:8080'])
+
+    // 3. formatStartupBanner prints LAN URL and 3-step onboarding instructions
+    const banner = formatStartupBanner({
+      host: '0.0.0.0',
+      port: 8080,
+      token: 'my-secret-pass',
+      stateFile: resolvedLocal,
+      lanOrigins: lanUrls,
+    })
+    assert.match(banner, /http:\/\/localhost:8080/)
+    assert.match(banner, /http:\/\/192\.168\.31\.88:8080/)
+    assert.match(banner, /首次使用 3 步闭环/)
+    assert.match(banner, /手机扫码登录/)
+
+    // 4. /api/state and /api/pairing/create include lanOrigins for localhost QR code auto-switching
+    const hub = new HubCore({ stateFile: resolvedLocal })
+    await hub.init()
+    const { fetchAdapter } = createHubServer({
+      hub,
+      token: 'my-secret-pass',
+      requireToken: true,
+    })
+    const stateRes = await fetchAdapter('http://localhost:8080/api/state', {
+      headers: { authorization: 'Bearer my-secret-pass' },
+    })
+    assert.equal(stateRes.status, 200)
+    const stateJson = await stateRes.json()
+    assert.equal(stateJson.ok, true)
+    assert.ok(Array.isArray(stateJson.lanOrigins))
+    assert.ok(stateJson.enrollment?.code)
+
+    const pairRes = await fetchAdapter('http://localhost:8080/api/pairing/create', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer my-secret-pass',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ ttlMs: 180000 }),
+    })
+    assert.equal(pairRes.status, 200)
+    const pairJson = await pairRes.json()
+    assert.equal(pairJson.ok, true)
+    assert.ok(pairJson.code)
+    assert.ok(Array.isArray(pairJson.lanOrigins))
+
+    // 5. dsh-feishu/index.js loads without top-level @larksuiteoapi/node-sdk import
+    const indexSrc = await (
+      await import('node:fs/promises')
+    ).readFile(new URL('../index.js', import.meta.url), 'utf8')
+    assert.ok(
+      !/^import\s+.*FeishuTransport.*from\s+['"]\.\/lib\/feishu-transport\.js['"]/m.test(indexSrc),
+      'dsh-feishu/index.js should not top-level import FeishuTransport so zero-Feishu users do not need @larksuiteoapi/node-sdk installed',
+    )
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 
 
 

@@ -1,7 +1,8 @@
 import { createServer } from 'node:http'
 import { timingSafeEqual } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { accessSync, constants, existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -64,12 +65,67 @@ export function validateHubStartupToken(token, { allowInsecureNoToken = false } 
   return { ok: true, token: clean }
 }
 
+export function resolveDefaultStateFile(
+  envStateFile = process.env.HUB_STATE_FILE,
+  { dataDir = '/data', homeDir = homedir() } = {},
+) {
+  const explicit = String(envStateFile ?? '').trim()
+  if (explicit) return explicit
+  try {
+    if (existsSync(dataDir)) {
+      accessSync(dataDir, constants.W_OK)
+      return join(dataDir, 'dsh-hub-state.json')
+    }
+  } catch {
+    // /data is missing or not writable (e.g. local macOS / Linux npm start outside Docker)
+  }
+  return join(homeDir, '.dsh', 'hub-state.json')
+}
+
+export function detectLanOrigins(
+  port = 8080,
+  { scheme = 'http', interfaces = networkInterfaces() } = {},
+) {
+  const cleanPort = Number(port) || 8080
+  const portSuffix =
+    (scheme === 'http' && cleanPort === 80) || (scheme === 'https' && cleanPort === 443)
+      ? ''
+      : `:${cleanPort}`
+  const preferred = []
+  const others = []
+  try {
+    for (const [ifName, list] of Object.entries(interfaces || {})) {
+      if (/^(lo|docker|br-|veth|utun|tun|tap|awdl|llw)/i.test(ifName)) continue
+      for (const addr of list || []) {
+        const family = addr?.family === 4 ? 'IPv4' : String(addr?.family || '')
+        if (family !== 'IPv4' || addr?.internal) continue
+        const ip = String(addr?.address || '').trim()
+        if (!ip || ip.startsWith('127.') || ip.startsWith('169.254.')) continue
+        const url = `${scheme}://${ip}${portSuffix}`
+        if (
+          ip.startsWith('192.168.') ||
+          ip.startsWith('10.') ||
+          /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)
+        ) {
+          if (!preferred.includes(url)) preferred.push(url)
+        } else if (!others.includes(url)) {
+          others.push(url)
+        }
+      }
+    }
+  } catch {
+    // ignore networkInterfaces errors in restricted sandboxes
+  }
+  return [...preferred, ...others]
+}
+
 export function formatStartupBanner({
   host = '0.0.0.0',
   port = 8080,
   publicUrl = process.env.PUBLIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN || '',
   token = '',
-  stateFile = '/data/dsh-hub-state.json',
+  stateFile = resolveDefaultStateFile(),
+  lanOrigins = detectLanOrigins(port),
 } = {}) {
   const displayHost = host === '0.0.0.0' || host === '::' ? 'localhost' : host
   const normalizedPublic = publicUrl
@@ -77,17 +133,25 @@ export function formatStartupBanner({
       ? publicUrl
       : `https://${publicUrl}`
     : `http://${displayHost}:${port}`
-  return [
+  const lines = [
     '============================================================',
     '🚀 DSH Remote Control 控制台已启动',
-    `🌐 访问网址: ${normalizedPublic}`,
+    `🌐 本机访问: ${normalizedPublic}`,
+  ]
+  if (!publicUrl && Array.isArray(lanOrigins) && lanOrigins.length > 0) {
+    lines.push(`📡 局域网地址: ${lanOrigins.join(' / ')} （手机连同一 Wi-Fi 可直接访问/扫码）`)
+  }
+  lines.push(
     `🔑 管理密码: ${token || '(未设置)'}`,
     `💾 数据存储: ${stateFile}`,
     '------------------------------------------------------------',
-    '👉 下一步：在电脑浏览器打开上方网址，输入密码登录，',
-    '   复制页面上的「添加电脑」一行命令到终端执行即可接入。',
+    '👉 首次使用 3 步闭环：',
+    `   ① 在电脑浏览器打开 ${normalizedPublic} ，输入上方管理密码登录`,
+    '   ② 复制页面上的「添加电脑」一行安装命令到终端执行（自动接入并刷新）',
+    '   ③ 点页面上的「📱 手机扫码登录」，用手机相机扫码即可免输密码遥控',
     '============================================================',
-  ].join('\n')
+  )
+  return lines.join('\n')
 }
 
 function resolveBuildInfo(startedAt = Date.now()) {
@@ -478,11 +542,13 @@ export function createHubServer({
       }
 
       if (method === 'GET' && pathname === '/api/state') {
+        const reqPort = Number(urlObj.port || process.env.PORT || process.env.HUB_PORT || 8080)
         return {
           status: 200,
           json: {
             ok: true,
             authRequired: Boolean(expectedToken),
+            lanOrigins: detectLanOrigins(reqPort, { scheme }),
             ...hub.getFullState(),
           },
         }
@@ -598,7 +664,17 @@ export function createHubServer({
 
       if (method === 'POST' && pathname === '/api/pairing/create') {
         const pairing = hub.createPairingCode(body)
-        return { status: 200, json: { ok: true, pairing, code: pairing.code, expiresAt: pairing.expiresAt } }
+        const reqPort = Number(urlObj.port || process.env.PORT || process.env.HUB_PORT || 8080)
+        return {
+          status: 200,
+          json: {
+            ok: true,
+            pairing,
+            code: pairing.code,
+            expiresAt: pairing.expiresAt,
+            lanOrigins: detectLanOrigins(reqPort, { scheme }),
+          },
+        }
       }
 
       // W3C Web Push + VAPID Endpoints for iPhone (iOS 16.4+) / Android Home Screen App
@@ -1191,7 +1267,7 @@ const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.arg
 if (isMain) {
   const port = Number(process.env.PORT || process.env.HUB_PORT || 8080)
   const host = process.env.HOST || '0.0.0.0'
-  const stateFile = process.env.HUB_STATE_FILE || '/data/dsh-hub-state.json'
+  const stateFile = resolveDefaultStateFile()
   const rawToken = process.env.HUB_TOKEN || process.env.FEISHU_HUB_TOKEN || ''
   const allowInsecure = process.env.ALLOW_INSECURE_NO_TOKEN === '1'
   const tokenCheck = validateHubStartupToken(rawToken, { allowInsecureNoToken: allowInsecure })

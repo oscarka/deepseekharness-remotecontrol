@@ -49,15 +49,16 @@ export function App() {
       <div class="auth-overlay" id="authOverlay">
         <div class="auth-card">
           <div style="font-size:38px;margin-bottom:8px;">🔒</div>
-          <div style="font-size:18px;font-weight:800;color:var(--text);">DSH 远控隐私锁</div>
-          <div style="font-size:13px;color:var(--text-secondary);margin-top:6px;line-height:1.5;">
-            请输入你的总控台访问密码（HUB_TOKEN）或 6 位配对码解锁对话列表
+          <div style="font-size:18px;font-weight:800;color:var(--text);">DSH 远控控制台登录</div>
+          <div style="font-size:12.5px;color:var(--text-secondary);margin-top:8px;line-height:1.6;text-align:left;background:var(--subtle);padding:10px 12px;border-radius:10px;border:1px solid var(--border);">
+            <div>💻 <strong>电脑首次接入</strong>：输入部署时设置的管理密码 (<code>HUB_TOKEN</code>)</div>
+            <div style="margin-top:4px;">📱 <strong>手机免密登录</strong>：直接扫电脑网页上的二维码，或输入 6 位配对码</div>
           </div>
           <input
             type="password"
             class="auth-input"
             id="authTokenInput"
-            placeholder="输入访问密码或 6 位配对码..."
+            placeholder="输入管理密码 (HUB_TOKEN) 或 6 位配对码..."
             onKeyDown={e => {
               if (e.key === 'Enter') (window as any).submitAuthLogin?.();
             }}

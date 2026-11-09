@@ -31,5 +31,8 @@ gcloud run deploy "${SERVICE_NAME}" \
   --set-env-vars "HUB_TOKEN=${HUB_TOKEN}"
 
 echo ""
-echo "✅ 部署完成！请将上方输出的 Service URL 填入各台电脑 ~/.dsh/feishu.env 的 FEISHU_HUB_URL，并填入 FEISHU_HUB_TOKEN=${HUB_TOKEN}"
+echo "✅ 部署完成！接下来按 3 步完成首次接入："
+echo "   ① 在电脑浏览器打开上方输出的 Service URL，输入管理密码 (${HUB_TOKEN}) 登录"
+echo "   ② 复制网页上「添加电脑」面板里的一行命令到终端执行（自动用配对码接入，无需手填配置文件）"
+echo "   ③ 点击网页上的「📱 手机扫码登录」，用手机扫码即可开始远控！"
 

@@ -3,7 +3,6 @@ import { AuditLog } from './lib/audit.js'
 import { FeishuBridge } from './lib/bridge.js'
 import { resolveConfig, loadSettings } from './lib/config.js'
 import { acquireDaemonLock } from './lib/daemon-lock.js'
-import { FeishuTransport } from './lib/feishu-transport.js'
 import { HubAgent } from './lib/hub-agent.js'
 import { safeError } from './lib/redact.js'
 import {
@@ -217,6 +216,7 @@ export function apply(ctx, rawConfig) {
           enabledHarnesses: settings.enabledHarnesses,
         }
         if (settings.appId && settings.appSecret) {
+          const { FeishuTransport } = await import('./lib/feishu-transport.js')
           const candidate = new FeishuTransport({
             appId: settings.appId,
             appSecret: settings.appSecret,

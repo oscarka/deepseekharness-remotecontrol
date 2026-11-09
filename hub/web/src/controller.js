@@ -646,7 +646,10 @@ export function initHubController() {
       const currentHostObj = hosts.find(h => h.hostId === currentHostId);
 
       const dotEl = document.getElementById('topHostDot');
-      if (currentHostId === 'ALL_HOSTS') {
+      if (hosts.length === 0) {
+        dotEl.className = 'status-dot offline';
+        document.getElementById('topHostName').textContent = '未接入电脑 (0)';
+      } else if (currentHostId === 'ALL_HOSTS') {
         const anyOnline = hosts.some(h => h.online);
         dotEl.className = 'status-dot' + (anyOnline ? '' : ' offline');
         document.getElementById('topHostName').textContent = hosts.length <= 1 && hosts[0]
@@ -682,7 +685,7 @@ export function initHubController() {
       const searchBox = document.getElementById('searchAndFilterBox');
       const normalizedSessions = getNormalizedSessions();
       if (currentTab === 'chats') {
-        searchBox.style.display = 'block';
+        searchBox.style.display = hosts.length === 0 ? 'none' : 'block';
         renderProjectStrip(normalizedSessions);
         renderSessionList(normalizedSessions);
       } else if (currentTab === 'files') {
@@ -797,16 +800,34 @@ export function initHubController() {
         pendingAppInfo &&
         (pendingAppInfo.app.kind === 'question' || Array.isArray(pendingAppInfo.app.questions))
       );
+      let step6Dismissed = false;
+      try {
+        step6Dismissed = localStorage.getItem('dsh_step6_qr_dismissed') === '1';
+      } catch {}
+      const showStep6Banner = (hubState.hosts || []).length > 0 && !step6Dismissed;
       const bannerKey = pendingAppInfo
         ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.kind || ''}:${pendingAppInfo.app.promptTitle || ''}:${pendingAppInfo.app.settling ? 1 : 0}:${pendingAppInfo.app.lastError || ''}`
         : '';
       const rowsSig = filtered
         .map(s => `${s.id}:${s.status}:${s.approvalObj?.kind || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`)
         .join('|');
-      const listKey = `${(hubState.hosts || []).length}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${bannerKey}#${rowsSig}`;
+      const enrollSig = `${hubState.enrollment?.code || ''}:${hubState.enrollment?.joinedCount || 0}`;
+      const listKey = `${(hubState.hosts || []).length}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${showStep6Banner ? 1 : 0}:${enrollSig}:${bannerKey}#${rowsSig}`;
       if (listKey === lastRenderedListKey && viewport.querySelector('.session-list')) return;
       lastRenderedListKey = listKey;
       const prevScrollTop = viewport.scrollTop;
+
+      const step6BannerHtml = showStep6Banner ? `
+        <div class="step6-onboarding-banner" style="margin:10px 12px 4px;padding:10px 12px;border-radius:12px;background:var(--primary-soft);border:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <div style="min-width:0;flex:1;font-size:12.5px;color:var(--text);line-height:1.45;">
+            🎉 <strong>电脑已接入！第 ⑥ 步</strong>：点右侧生成二维码，用<strong>手机相机扫一扫</strong>即可免输密码直接遥控
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <button class="pill-action-btn primary" style="padding:5px 10px;font-size:12px;" onclick="openPairingCodeSheet()">📱 手机扫码登录</button>
+            <button class="pill-action-btn" style="padding:4px 8px;font-size:12px;color:var(--muted);" title="关闭提示" onclick="dismissStep6QrBanner()">✕</button>
+          </div>
+        </div>
+      ` : '';
 
       const liveBannerHtml = pendingAppInfo ? `
         <div class="live-activity-bar">
@@ -900,8 +921,11 @@ export function initHubController() {
             <div style="padding:40px 20px;text-align:center;">
               <div style="font-size:30px;margin-bottom:8px;">✨</div>
               <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px;">电脑已接入，还没有对话记录</div>
-              <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px;">点击下方按钮直接在远程电脑上启动第一个任务</div>
-              <button class="pill-action-btn primary" onclick="openNewTaskSheet()">＋ 新建远程对话</button>
+              <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px;">你可以直接在远程电脑上启动第一个任务，或点击「手机扫码登录」在手机上打开</div>
+              <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;">
+                <button class="pill-action-btn primary" onclick="openNewTaskSheet()">＋ 新建远程对话</button>
+                <button class="pill-action-btn" onclick="openPairingCodeSheet()">📱 手机扫码登录</button>
+              </div>
             </div>
           `;
         } else {
@@ -916,11 +940,20 @@ export function initHubController() {
 
       viewport.innerHTML = `
         ${liveBannerHtml}
+        ${step6BannerHtml}
         <div class="session-list">
           ${rowsHtml || emptyStateHtml}
         </div>
       `;
       viewport.scrollTop = prevScrollTop;
+    }
+
+    function dismissStep6QrBanner() {
+      try {
+        localStorage.setItem('dsh_step6_qr_dismissed', '1');
+      } catch {}
+      lastRenderedListKey = '';
+      renderSessionList();
     }
 
     function resetSessionFilters() {
@@ -2473,7 +2506,14 @@ export function initHubController() {
       const hosts = hubState.hosts || [];
       const host = currentHostId === 'ALL_HOSTS' ? hosts[0] : hosts.find(h => h.hostId === currentHostId);
       if (!host) {
-        container.innerHTML = `<div style="padding:48px 20px;text-align:center;color:#94a3b8;">暂无在线电脑</div>`;
+        container.innerHTML = `
+          <div style="padding:48px 20px;text-align:center;">
+            <div style="font-size:32px;margin-bottom:8px;">💻</div>
+            <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px;">还没有接入电脑</div>
+            <div style="font-size:12.5px;color:var(--muted);margin-bottom:14px;">请先在电脑终端执行一行安装命令接入本机，即可远程浏览项目代码与文件</div>
+            <button class="pill-action-btn primary" onclick="switchTab('chats')">👉 去查看一行接入命令</button>
+          </div>
+        `;
         return;
       }
       reconcileFileLoading(host);
@@ -2658,11 +2698,19 @@ export function initHubController() {
     function renderNewTaskForm() {
       const hosts = hubState.hosts || [];
       const hostChips = document.getElementById('newTaskHostChips');
-      hostChips.innerHTML = hosts.map(h => `
-        <button class="choice-chip ${h.hostId === newTaskHostId ? 'selected' : ''}" onclick="selectNewTaskHost('${esc(h.hostId)}')">
-          🟢 ${esc(h.hostName)}
-        </button>
-      `).join('');
+      if (hosts.length === 0) {
+        hostChips.innerHTML = `
+          <div style="font-size:12.5px;color:#b45309;background:var(--amber-soft);border:1px solid #fde68a;padding:9px 11px;border-radius:10px;line-height:1.5;width:100%;">
+            ⚠️ 当前还没有已接入的电脑。请先关闭此面板，复制首页的「添加电脑」一行命令在电脑终端执行。
+          </div>
+        `;
+      } else {
+        hostChips.innerHTML = hosts.map(h => `
+          <button class="choice-chip ${h.hostId === newTaskHostId ? 'selected' : ''}" onclick="selectNewTaskHost('${esc(h.hostId)}')">
+            🟢 ${esc(h.hostName)}
+          </button>
+        `).join('');
+      }
 
       const harnessChips = document.getElementById('newTaskHarnessChips');
       if (harnessChips) {
@@ -2719,7 +2767,11 @@ export function initHubController() {
       const inputEl = document.getElementById('newTaskInput');
       const rawText = inputEl ? inputEl.value.trim() : '';
       const pendingAttachments = composerAttachments.newTask.slice();
-      if ((!rawText && pendingAttachments.length === 0) || !newTaskHostId) {
+      if (!newTaskHostId || (hubState.hosts || []).length === 0) {
+        showToast('⚠️ 请先接入一台电脑后再创建远程任务');
+        return;
+      }
+      if (!rawText && pendingAttachments.length === 0) {
         showToast('请输入任务指令或上传截图');
         return;
       }
@@ -2924,6 +2976,8 @@ export function initHubController() {
     }
 
     let pairingCountdownTimer = null;
+    let activePairingCodeStr = '';
+    let activePairingLink = '';
     async function openPairingCodeSheet() {
       openSheet('pairingCodeSheet');
       await generateNewPairingCode();
@@ -2935,6 +2989,28 @@ export function initHubController() {
         pairingCountdownTimer = null;
       }
       closeSheet('pairingCodeSheet');
+    }
+
+    function updatePairingQrBaseOrigin(rawOrigin) {
+      if (!activePairingCodeStr) return;
+      const cleanOrigin = String(rawOrigin || '').trim().replace(/\/+$/, '') || location.origin;
+      activePairingLink = `${cleanOrigin}/?pair=${encodeURIComponent(activePairingCodeStr)}`;
+      const qrBox = document.getElementById('pairingQrSvgWrap');
+      if (qrBox) {
+        qrBox.innerHTML = renderQrCodeSvg(activePairingLink, { sizePx: 184, margin: 3 });
+      }
+      const previewEl = document.getElementById('pairingFullLinkPreview');
+      if (previewEl) {
+        previewEl.textContent = activePairingLink;
+      }
+    }
+
+    function copyCurrentPairingLink() {
+      if (!activePairingLink) return;
+      void copyText(activePairingLink, {
+        successMessage: '📋 手机免密登录链接已复制',
+        title: '📋 复制手机免密登录链接',
+      });
     }
 
     async function generateNewPairingCode() {
@@ -2956,9 +3032,27 @@ export function initHubController() {
           return;
         }
         const codeStr = String(data.code);
+        activePairingCodeStr = codeStr;
         const expiresAt = Number(data.expiresAt || (Date.now() + 180000));
-        const pairLink = `${location.origin}/?pair=${encodeURIComponent(codeStr)}`;
-        const qrSvgHtml = renderQrCodeSvg(pairLink, { sizePx: 184, margin: 3 });
+        const isLocalhost =
+          location.hostname === 'localhost' ||
+          location.hostname === '127.0.0.1' ||
+          location.hostname === '[::1]';
+        const lanCandidates = Array.isArray(data.lanOrigins) && data.lanOrigins.length > 0
+          ? data.lanOrigins
+          : (Array.isArray(hubState.lanOrigins) ? hubState.lanOrigins : []);
+        const defaultBaseOrigin = isLocalhost && lanCandidates[0] ? lanCandidates[0] : location.origin;
+        activePairingLink = `${defaultBaseOrigin}/?pair=${encodeURIComponent(codeStr)}`;
+        const qrSvgHtml = renderQrCodeSvg(activePairingLink, { sizePx: 184, margin: 3 });
+        const localhostNoticeHtml = isLocalhost
+          ? lanCandidates[0]
+            ? `<div id="pairingLocalhostNotice" style="text-align:left;font-size:11.5px;line-height:1.5;color:#b45309;background:var(--amber-soft);border:1px solid #fde68a;padding:8px 10px;border-radius:10px;margin-bottom:10px;">
+                 📡 <strong>局域网自动修正</strong>：你当前在电脑上用 <code>${esc(location.hostname)}</code> 打开（手机扫 localhost 会连不上），已自动将二维码切换为本机局域网地址 <code>${esc(lanCandidates[0])}</code>。请确保手机与电脑连同一 Wi-Fi，或在下方改为公网/隧道地址：
+               </div>`
+            : `<div id="pairingLocalhostNotice" style="text-align:left;font-size:11.5px;line-height:1.5;color:#b45309;background:var(--amber-soft);border:1px solid #fde68a;padding:8px 10px;border-radius:10px;margin-bottom:10px;">
+                 ⚠️ <strong>注意</strong>：你当前使用 <code>${esc(location.hostname)}</code> 打开，手机无法直接访问 localhost！请在下方把地址改为电脑的局域网 IP（如 <code>http://192.168.1.x:8080</code>）或公网域名后再扫码：
+               </div>`
+          : '';
         const renderCountdown = () => {
           const remainSec = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
           const timerEl = document.getElementById('pairingCodeTimerText');
@@ -2978,18 +3072,30 @@ export function initHubController() {
             <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;">
               用手机相机直接<strong>扫下方二维码</strong>即可免输密码登录（也可在手机端输入 6 位码）：
             </div>
-            <div style="display:flex;justify-content:center;margin:8px 0 12px;">
+            ${localhostNoticeHtml}
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;text-align:left;">
+              <span style="font-size:11.5px;font-weight:600;color:var(--muted);white-space:nowrap;">扫码网址:</span>
+              <input
+                id="pairingBaseOriginInput"
+                type="text"
+                value="${esc(defaultBaseOrigin)}"
+                oninput="updatePairingQrBaseOrigin(this.value)"
+                style="flex:1;min-width:0;padding:6px 9px;border-radius:8px;border:1px solid var(--border);background:var(--subtle);color:var(--text);font-family:var(--mono);font-size:11.5px;outline:none;"
+              />
+            </div>
+            <div id="pairingQrSvgWrap" style="display:flex;justify-content:center;margin:8px 0 12px;">
               ${qrSvgHtml}
             </div>
             <div
               style="font-family:var(--mono);font-size:28px;font-weight:800;letter-spacing:6px;padding:10px 12px;border-radius:12px;background:var(--primary-soft);color:var(--primary);border:1px solid var(--border);user-select:all;"
             >${esc(codeStr)}</div>
-            <div id="pairingCodeTimerText" style="margin-top:10px;font-size:12.5px;font-weight:600;color:var(--primary);"></div>
+            <div id="pairingFullLinkPreview" style="margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--muted);word-break:break-all;">${esc(activePairingLink)}</div>
+            <div id="pairingCodeTimerText" style="margin-top:8px;font-size:12.5px;font-weight:600;color:var(--primary);"></div>
             <div style="display:flex;gap:8px;margin-top:14px;">
               <button
                 class="primary-block-btn"
                 style="margin-top:0;flex:1;"
-                onclick="copyCodeText('${encodeURIComponent(pairLink)}', '📋 手机免密登录链接已复制')"
+                onclick="copyCurrentPairingLink()"
               >
                 📋 复制免密链接
               </button>
@@ -3092,12 +3198,26 @@ export function initHubController() {
         `;
       }
 
+      const firstTimeStepsHtml = isEmptyState || !hasHosts ? `
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:12px;font-size:11.5px;line-height:1.4;">
+          <div style="padding:7px 8px;border-radius:9px;background:var(--primary-soft);border:1px solid var(--border);color:var(--primary);font-weight:700;">
+            ① 终端执行命令<br/><span style="font-weight:500;font-size:11px;color:var(--text-secondary);">复制下方一行命令</span>
+          </div>
+          <div style="padding:7px 8px;border-radius:9px;background:var(--subtle);border:1px solid var(--border);color:var(--text);">
+            <strong>② 自动连上刷新</strong><br/><span style="font-size:11px;color:var(--muted);">无需重启或手填</span>
+          </div>
+          <div style="padding:7px 8px;border-radius:9px;background:var(--subtle);border:1px solid var(--border);color:var(--text);">
+            <strong>③ 手机扫码遥控</strong><br/><span style="font-size:11px;color:var(--muted);">免输密码直接进</span>
+          </div>
+        </div>
+      ` : '';
+
       return `
         <div class="settings-card" style="padding:15px;${isEmptyState ? 'max-width:440px;margin:20px auto;text-align:left;border:1.5px solid var(--primary);' : ''}">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
             <div style="min-width:0;flex:1;">
               <div style="font-size:14.5px;font-weight:800;color:var(--text);">
-                ${isEmptyState ? '💻 本机未接入 · 复制下方命令接入电脑' : '➕ 添加电脑（凭配对码加入，无需主密码）'}
+                ${isEmptyState ? '💻 本机未接入 · 3 步开启手机远控' : '➕ 添加电脑（凭配对码加入，无需主密码）'}
               </div>
               <div style="font-size:11.5px;color:var(--muted);margin-top:2px;">
                 每台电脑独立凭证可单机吊销；有效期内可连加多台电脑
@@ -3114,6 +3234,8 @@ export function initHubController() {
               ` : ''}
             </div>
           </div>
+
+          ${firstTimeStepsHtml}
 
           <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
             <div style="flex:1;min-width:110px;padding:7px 10px;border-radius:10px;background:var(--primary-soft);border:1px solid var(--border);">
@@ -3444,13 +3566,6 @@ export function initHubController() {
                   <div class="settings-item-desc">将源电脑 ~/.dsh 会话打包同步至目标电脑并可选清理源机</div>
                 </div>
                 <button class="pill-action-btn primary" onclick="openMigrateWizard()">📦 打开迁移向导</button>
-              </div>
-              <div class="settings-item">
-                <div>
-                  <div class="settings-item-title">接入新电脑（含你的私密认证密钥）</div>
-                  <div class="settings-item-desc">公开 GitHub 仓库不含密码，点击复制带密钥的专属接入命令</div>
-                </div>
-                <button class="pill-action-btn" onclick="copyCodeText('${encodeURIComponent(onboardingCmd)}', '📋 专属接入命令已复制')">📋 复制专属命令</button>
               </div>
             </div>
           </div>
@@ -4073,9 +4188,9 @@ export function initHubController() {
 
     function openTurboGuideSheet() {
       const hosts = hubState.hosts || [];
-      const currentTk = getToken();
+      const enrollCode = hubState.enrollment?.code || '配对码';
       const body = document.getElementById('turboGuideBody');
-      const oneStepCmd = `git clone https://github.com/oscarka/deepseekharness-remotecontrol.git ~/deepseekharness-remote && cd ~/deepseekharness-remote && ./connect-host.sh "电脑名称" "${currentTk}"`;
+      const oneStepCmd = `curl -fsSL ${location.origin}/install.sh | bash -s -- --code ${enrollCode}`;
 
       body.innerHTML = `
         <div style="background:var(--green-soft);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:14px;font-size:13px;color:var(--text);line-height:1.5;">
@@ -4726,6 +4841,9 @@ export function initHubController() {
       openPairingCodeSheet,
       closePairingCodeSheet,
       generateNewPairingCode,
+      updatePairingQrBaseOrigin,
+      copyCurrentPairingLink,
+      dismissStep6QrBanner,
       toggleAddHostPanel,
       toggleHostSettingsCard,
       syncSessionReadToServer,
@@ -4789,6 +4907,7 @@ export function initHubController() {
       setConnectionBanner,
       manualReconnectNow,
       applyHubState,
+      getHubState: () => hubState,
       fetchState,
       connectSSE,
     });

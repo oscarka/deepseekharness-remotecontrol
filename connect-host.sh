@@ -91,6 +91,13 @@ RAW_HOST_ID="${OPT_ID:-${POS_ARGS[2]:-${FEISHU_HOST_ID:-${EXISTING_HOST_ID:-$(ho
 HOST_ID="$(echo "$RAW_HOST_ID" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-_')"
 if [ -z "$HOST_ID" ]; then
   HOST_ID="mac-$(date +%s)"
+elif [ -z "${OPT_ID:-}" ] && [ -z "${POS_ARGS[2]:-}" ] && [ -z "${FEISHU_HOST_ID:-}" ] && [ -z "${EXISTING_HOST_ID:-}" ]; then
+  case "$HOST_ID" in
+    localhost|bogon|macbook|macbook-pro|macbook-air|mac|ubuntu|debian|archlinux|fedora)
+      RAND_SUFFIX="$(openssl rand -hex 2 2>/dev/null || date +%S%M)"
+      HOST_ID="${HOST_ID}-${RAND_SUFFIX}"
+      ;;
+  esac
 fi
 
 HUB_URL="${OPT_URL:-${FEISHU_HUB_URL:-${DEFAULT_HUB_URL:-$EXISTING_HUB_URL}}}"
@@ -184,13 +191,23 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-# 支持通过 curl -fsSL <HUB_URL>/install.sh | bash 一键安装：若当前不在仓库目录则自动克隆到 ~/.dsh/remotecontrol
+# 支持通过 curl -fsSL <HUB_URL>/install.sh | bash 一键安装：若当前已在仓库目录则直接复用，否则克隆到 ~/.dsh/remotecontrol
 SCRIPT_DIR="${DSH_CLIENT_DIR:-}"
 if [ -z "$SCRIPT_DIR" ] && [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
   CANDIDATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   if [ -f "$CANDIDATE_DIR/dsh-feishu/daemon.mjs" ]; then
     SCRIPT_DIR="$CANDIDATE_DIR"
   fi
+fi
+
+if [ -z "$SCRIPT_DIR" ]; then
+  for local_candidate in "$PWD" "$HOME/deepseekharness-remote" "$HOME/deepseekharness-remotecontrol"; do
+    if [ -f "$local_candidate/dsh-feishu/daemon.mjs" ]; then
+      SCRIPT_DIR="$(cd "$local_candidate" && pwd)"
+      echo "📦 检测到本地客户端代码目录，直接复用: $SCRIPT_DIR"
+      break
+    fi
+  done
 fi
 
 if [ -z "$SCRIPT_DIR" ]; then
@@ -303,7 +320,8 @@ fi
 if [ "$NO_SERVICE" = "1" ]; then
   echo ""
   echo "🎉 接入与首次状态同步完成！(no-service 模式)"
-  echo "👉 打开总控台即可查看并遥控【${HOST_NAME}】：${HUB_URL}"
+  echo "👉 第 ⑤ 步：你刚才打开的电脑总控台网页 (${HUB_URL}) 现已自动刷新并显示【${HOST_NAME}】"
+  echo "👉 第 ⑥ 步：点击电脑网页上的「📱 手机扫码登录」按钮，用手机相机扫一扫即可免密遥控！"
   exit 0
 fi
 
@@ -402,4 +420,5 @@ fi
 
 echo ""
 echo "🎉 接入成功！后台守护进程已启动 (PID: ${NEW_PID:-running}，日志: ${DSH_DIR}/hub-daemon.log)"
-echo "👉 打开总控台即可查看并遥控【${HOST_NAME}】：${HUB_URL}"
+echo "👉 第 ⑤ 步：你刚才打开的电脑总控台网页 (${HUB_URL}) 现已自动刷新并显示【${HOST_NAME}】"
+echo "👉 第 ⑥ 步：点击电脑网页上的「📱 手机扫码登录」按钮，用手机相机扫一扫即可免密遥控！"
