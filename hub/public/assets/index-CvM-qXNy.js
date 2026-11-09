@@ -1523,6 +1523,9 @@ var EXACT_ZH_TO_EN = {
 	"🔕 飞书通知: 关": "🔕 Host Alerts: OFF",
 	"⚡ 极速详情": "⚡ Turbo Status",
 	"🚀 一键提速": "🚀 Enable Turbo",
+	"🔄 一键升级": "🔄 1-Click Upgrade",
+	"⏳ 正在升级重启...": "⏳ Upgrading & Restarting...",
+	"🔄 检查/重装更新": "🔄 Check / Reinstall Update",
 	"恢复接入": "Restore Access",
 	"🚫 吊销凭证": "🚫 Revoke Token",
 	"各后端功能边界（诚实矩阵）": "Supported AI Tools & Capability Matrix",
@@ -1674,6 +1677,9 @@ var REGEX_ZH_TO_EN = [
 	[/^ · 🔑 独立凭证 \((.+)\)$/, " · 🔑 Dedicated Token ($1)"],
 	[/^ · 🔑 管理员凭证$/, " · 🔑 Admin Token"],
 	[/^同步序号 #(\d+)$/, "Sync #$1"],
+	[/^⬆️ 可升 v(.+)$/, "⬆️ Update to v$1"],
+	[/^v(.+) 最新$/, "v$1 Latest"],
+	[/^🔄 一键升级 \(v(.+)\)$/, "🔄 Upgrade (v$1)"],
 	[/^DSH 远控总控台 v(.+) · 构建 $/, "DSH Remote Control Hub v$1 · Build "],
 	[/^ · 云端启动于 (.+)$/, " · Started $1"],
 	[/^刚刚$/, "just now"],
@@ -1926,6 +1932,18 @@ function initHubController() {
 	let cachedPushStatusColor = "";
 	let cachedPushDeviceListText = "";
 	let lastAutoPushSyncAt = 0;
+	const upgradingHostMap = {};
+	function clearHomeScreenAppBadge() {
+		try {
+			if (navigator && typeof navigator.clearAppBadge === "function") navigator.clearAppBadge().catch(() => {});
+			if (navigator && typeof navigator.setAppBadge === "function") navigator.setAppBadge(0).catch(() => {});
+			if (navigator && navigator.serviceWorker && typeof navigator.serviceWorker.getRegistration === "function") navigator.serviceWorker.getRegistration().then((reg) => reg && typeof reg.getNotifications === "function" ? reg.getNotifications() : []).then((list) => {
+				for (const n of list || []) try {
+					n.close();
+				} catch {}
+			}).catch(() => {});
+		} catch {}
+	}
 	let themePref = localStorage.getItem("dsh_theme_pref") || "system";
 	function applyTheme(pref = themePref) {
 		themePref = pref || "system";
@@ -2576,6 +2594,7 @@ function initHubController() {
 			localStorage.setItem("dsh_seen_sig_v1", JSON.stringify(seenSigMap));
 		} catch {}
 		syncSessionReadToServer(activeSessionId, found.session.conclusionSig || "", readTs);
+		clearHomeScreenAppBadge();
 		document.getElementById("chatFullscreen").classList.add("open");
 		document.body.classList.add("mobile-chat-open");
 		lastRenderedChatKey = "";
@@ -4699,6 +4718,8 @@ function initHubController() {
 				taskCount: (h.bridgeState?.tasks || []).length,
 				runningCount: h.runningCount || 0,
 				totalBytesBucket: expandedHostCardIds[h.hostId] ? Math.round((h.totalBytes || 0) / 10240) : 0,
+				agentVersion: h.bridgeState?.agentVersion || "",
+				upgrading: Boolean(upgradingHostMap[h.hostId] && Date.now() - upgradingHostMap[h.hostId] < 25e3),
 				turbo: h.bridgeState?.turbo?.engineLabel || "",
 				power: h.bridgeState?.systemTelemetry?.power?.shortLabel || "",
 				net: h.bridgeState?.systemTelemetry?.network?.kindLabel || "",
@@ -4745,6 +4766,11 @@ function initHubController() {
 			const runCount = h.runningCount || 0;
 			const turboShort = h.bridgeState?.turbo?.enabled ? "⚡ 极速" : "🐢 轮询";
 			const shortFp = (h.fingerprint || "已锁定").slice(0, 14);
+			const hubVer = String(buildInfo.version || "0.5.1");
+			const hostVer = String(h.bridgeState?.agentVersion || "");
+			const isUpgradingHost = Boolean(upgradingHostMap[h.hostId] && Date.now() - upgradingHostMap[h.hostId] < 25e3);
+			const isHostOutdated = Boolean(h.online && !isRevoked && (!hostVer || hostVer !== hubVer));
+			const versionBadgeHtml = isUpgradingHost ? `<span style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--amber-soft);color:#d97706;">⏳ 正在升级重启...</span>` : isHostOutdated ? `<span style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--amber-soft);color:#d97706;">⬆️ 可升 v${esc(hubVer)} (${hostVer ? "当前 v" + esc(hostVer) : "旧版"})</span>` : hostVer ? `<span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:999px;background:var(--green-soft);color:var(--green);">v${esc(hostVer)} 最新</span>` : "";
 			return `
                 <div class="host-visual-card ${h.isFeishuActive ? "active-feishu" : ""}" style="padding:12px 14px;">
                   <div
@@ -4757,6 +4783,7 @@ function initHubController() {
                         <span style="font-size:14.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;">${esc(h.hostName)}</span>
                         ${h.isFeishuActive ? `<span style="font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--primary-soft);color:var(--primary);">🎯 主控</span>` : ""}
                         ${isRevoked ? `<span style="font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--red-soft);color:var(--red);">🚫 已吊销</span>` : ""}
+                        ${versionBadgeHtml}
                       </div>
                       <div style="font-size:11.5px;color:var(--muted);margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                         <span>${h.online ? `${tm.powerIcon} ${esc(tm.powerShort)}` : `⚪ 离线 (${formatTime(h.lastSeen)})`}</span>
@@ -4769,6 +4796,13 @@ function initHubController() {
                       </div>
                     </div>
                     <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                      ${isHostOutdated && !isUpgradingHost ? `
+                        <button
+                          class="pill-action-btn primary"
+                          style="padding:4px 9px;font-size:11.5px;"
+                          onclick="event.stopPropagation(); upgradeHostTurbo('${esc(h.hostId)}', '${esc(h.hostName)}')"
+                        >🔄 一键升级</button>
+                      ` : ""}
                       <span style="font-size:11.5px;font-weight:600;color:var(--text-secondary);padding:4px 8px;border-radius:999px;background:var(--subtle);">
                         ${isCardExpanded ? "▴ 收起" : "▾ 详情"}
                       </span>
@@ -4821,6 +4855,9 @@ function initHubController() {
                           </button>
                           <button class="pill-action-btn" style="padding:5px 10px;font-size:11.5px;" onclick="openTurboGuideSheet()">
                             ${h.bridgeState?.turbo?.enabled ? "⚡ 极速详情" : "🚀 一键提速"}
+                          </button>
+                          <button class="pill-action-btn ${isHostOutdated ? "primary" : ""}" style="padding:5px 10px;font-size:11.5px;" onclick="upgradeHostTurbo('${esc(h.hostId)}', '${esc(h.hostName)}')" ${isUpgradingHost ? "disabled" : ""}>
+                            ${isUpgradingHost ? "⏳ 正在升级重启..." : isHostOutdated ? `🔄 一键升级 (v${esc(hubVer)})` : "🔄 检查/重装更新"}
                           </button>
                         </div>
                         <div>
@@ -5540,13 +5577,38 @@ function initHubController() {
 			if (document.getElementById("turboGuideSheet").classList.contains("open")) openTurboGuideSheet();
 		}, 900);
 	}
-	async function upgradeHostTurbo(hostId) {
-		showToast("🚀 已发送远程升级并启用 Rust 极速引擎指令...");
-		await dispatchHostCommand(hostId, { type: "upgrade_turbo" });
-		setTimeout(fetchState, 600);
-		setTimeout(() => {
-			if (document.getElementById("turboGuideSheet").classList.contains("open")) openTurboGuideSheet();
-		}, 1200);
+	async function upgradeHostTurbo(hostId, hostName = "") {
+		const label = hostName || hostId;
+		upgradingHostMap[hostId] = Date.now();
+		lastRenderedSettingsSig = "";
+		if (currentTab === "settings") renderSettingsTab();
+		showToast(`🚀 正在为「${label}」拉取最新代码并自动热重启守护进程...`);
+		try {
+			await dispatchHostCommand(hostId, { type: "upgrade_turbo" });
+		} catch {}
+		const startWait = Date.now();
+		const pollUpgrade = async () => {
+			await fetchState();
+			const targetVer = String(hubState.version || "0.5.1").trim();
+			const updatedHost = (hubState.hosts || []).find((h) => h.hostId === hostId);
+			const curVer = String(updatedHost?.bridgeState?.agentVersion || "").trim();
+			if (curVer && curVer === targetVer) {
+				delete upgradingHostMap[hostId];
+				lastRenderedSettingsSig = "";
+				if (currentTab === "settings") renderSettingsTab();
+				if (document.getElementById("turboGuideSheet")?.classList.contains("open")) openTurboGuideSheet();
+				showToast(`✅ 电脑「${label}」已升级至最新版本 v${targetVer}！`);
+				return;
+			}
+			if (Date.now() - startWait < 15e3) setTimeout(pollUpgrade, 1500);
+			else {
+				delete upgradingHostMap[hostId];
+				lastRenderedSettingsSig = "";
+				if (currentTab === "settings") renderSettingsTab();
+				if (document.getElementById("turboGuideSheet")?.classList.contains("open")) openTurboGuideSheet();
+			}
+		};
+		setTimeout(pollUpgrade, 1800);
 	}
 	function rawCloseSheet(id) {
 		if (id === "newTaskSheet") stopVoiceInput();
@@ -6170,6 +6232,13 @@ function initHubController() {
 	setupOverlayGestures();
 	setupChatScrollWatcher();
 	setupInstallHint();
+	clearHomeScreenAppBadge();
+	if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => {
+		if (document.visibilityState === "visible") clearHomeScreenAppBadge();
+	});
+	if (typeof window !== "undefined") window.addEventListener("focus", () => {
+		clearHomeScreenAppBadge();
+	});
 	if (queryPairCode) (async () => {
 		try {
 			const exRes = await fetch("/api/pairing/exchange", {

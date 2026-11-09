@@ -1,5 +1,6 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { createCipheriv, randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,6 +16,11 @@ import {
 
 const execFileAsync = promisify(execFile)
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+let AGENT_VERSION = '0.5.1'
+try {
+  const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'))
+  if (pkg?.version) AGENT_VERSION = String(pkg.version)
+} catch {}
 import { buildNormalizedQuestionAnswers } from './bridge.js'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from './migration.js'
 import { decorateTaskMetadata, HarnessRouter } from './harness-router.js'
@@ -508,6 +514,7 @@ export class HubAgent {
       bridgeState.taskCount = (bridgeState.tasks || []).length
       bridgeState.runningCount = (bridgeState.tasks || []).filter(t => t.status === 'running').length
       bridgeState.workspaces = [...wsSet]
+      bridgeState.agentVersion = AGENT_VERSION
       bridgeState.harnesses = this.harnessRouter ? await this.harnessRouter.getAdaptersHealth() : []
       bridgeState.turbo = this.turbo
         ? this.turbo.getTelemetry()
@@ -1387,6 +1394,7 @@ export class HubAgent {
               : '🔓 已在电脑端弹出 macOS「系统设置 → 辅助功能」授权窗口，请勾选开启',
           }
         }
+        case 'upgrade_agent':
         case 'upgrade_turbo': {
           const runExec = this.execImpl || execFileAsync
           try {
@@ -1395,7 +1403,7 @@ export class HubAgent {
             await runExec('git', ['-C', REPO_ROOT, 'pull', '--ff-only', 'origin', 'main'], { timeout: 15_000 })
           } catch {
             try {
-              await runExec('git', ['-C', REPO_ROOT, 'pull', '--ff-only'], { timeout: 15_000 })
+              await runExec('git', ['-C', REPO_ROOT, 'reset', '--hard', 'origin/main'], { timeout: 15_000 })
             } catch {}
           }
           try {
@@ -1404,10 +1412,22 @@ export class HubAgent {
           if (this.turbo) {
             await this.turbo.refreshAccessibilityState(true)
           }
+          if (this.timer && !this.execImpl) {
+            setTimeout(() => {
+              try {
+                const child = spawn(
+                  process.execPath,
+                  [join(REPO_ROOT, 'dsh-feishu', 'daemon.mjs'), '--replace'],
+                  { detached: true, stdio: 'ignore' },
+                )
+                child.unref()
+              } catch {}
+            }, 1800).unref?.()
+          }
           return {
             ok: true,
             engine: getTurboNativeBinaryPath() ? 'rust-native' : 'node-fsevents',
-            message: '⚡ 已启用 Rust 原生加速引擎并同步最新代码',
+            message: '⚡ 已同步最新代码并在后台热重启电脑端服务',
           }
         }
         // 兼容两种叫法：Web UI 早期发 remote_toggle/enable，插件内部统一用 remote_mode/active

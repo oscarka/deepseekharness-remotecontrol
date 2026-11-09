@@ -1207,7 +1207,7 @@ export class HubCore {
       ? b.approvals.map(a => `${a.code}:${a.promptTitle || ''}:${Boolean(a.settling)}:${a.lastError || ''}`).join('|')
       : ''
     const fsSig = `${record?.lastFsListing?.at || 0}:${record?.lastFilePreview?.at || 0}:${record?.lastShareResult?.at || 0}`
-    return `${record?.hostName || ''}:${record?.trust?.status || ''}:${Boolean(b.remoteActive)}:${Boolean(b.feishuConnected)}:${tasksSig}#${appSig}#${fsSig}`
+    return `${record?.hostName || ''}:${record?.trust?.status || ''}:${b.agentVersion || ''}:${Boolean(b.remoteActive)}:${Boolean(b.feishuConnected)}:${tasksSig}#${appSig}#${fsSig}`
   }
 
   manageHostTrust(hostId, { action = 'pin' } = {}) {

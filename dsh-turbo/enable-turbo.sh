@@ -37,7 +37,18 @@ else
   echo "⚡ 已启用 Node FSEvents 实时加速流模式"
 fi
 
-# 3. 如果是由远端 upgrade_turbo 触发（非 connect-host.sh 初次引导），延迟热重启后台 daemon 以加载最新代码
+# 3. 如果是由远端 upgrade_turbo 触发（非 connect-host.sh 初次引导），确保工作区对齐最新 origin/main 并延迟热重启后台 daemon
+if [ -z "${CONNECT_HOST_RUNNING:-}" ]; then
+  if command -v git >/dev/null 2>&1 && [ -d "$REPO_DIR/.git" ]; then
+    git -C "$REPO_DIR" fetch origin main >/dev/null 2>&1 || true
+    LOCAL_HEAD="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
+    REMOTE_HEAD="$(git -C "$REPO_DIR" rev-parse origin/main 2>/dev/null || true)"
+    if [ -n "$LOCAL_HEAD" ] && [ -n "$REMOTE_HEAD" ] && [ "$LOCAL_HEAD" != "$REMOTE_HEAD" ]; then
+      git -C "$REPO_DIR" reset --hard origin/main >/dev/null 2>&1 || true
+    fi
+  fi
+fi
+
 if [ -z "${CONNECT_HOST_RUNNING:-}" ] && { [ -f "$HOME/.dsh/hub-daemon.pid" ] || [ -f "$HOME/.dsh/daemon.lock" ]; }; then
   (
     sleep 2.5
