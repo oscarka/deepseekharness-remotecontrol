@@ -18,6 +18,10 @@
 </p>
 
 <p align="center">
+  <strong>🇨🇳 简体中文</strong> · <a href="README.en.md"><strong>🇺🇸 English</strong></a> · <a href="#2-30-秒跑起来docker-一条命令">30 秒启动</a> · <a href="#3-完整七步流程唯一主线">七步流程</a> · <a href="#4-部署方式选择表六条路同一个终点">六种部署</a> · <a href="docs/self-hosting.md">自托管文档</a> · <a href="SECURITY.md">安全说明</a>
+</p>
+
+<p align="center">
   <img src="docs/assets/demo.svg" alt="DSH Remote Control 7-Step Flow Demo" width="100%" />
 </p>
 
