@@ -5,148 +5,145 @@
 <h1 align="center">DSH Remote Control</h1>
 
 <p align="center">
-  <strong>在手机上盯着并指挥你的 AI 编码任务——看进度、发指令、停止，装了 DSH 还能直接批准危险操作。</strong><br/>
-  不是“又一个 ChatGPT 客户端”，也不是“托管服务”。数据留在你自己机器上，控制台放哪由你决定。
+  <strong>把电脑上正在跑的 AI 编码任务装进手机口袋——随时看进度、发指令、紧急叫停，或者点一下批准操作。</strong><br/>
+  代码与对话全部留在你自己的电脑上，不经过任何第三方托管平台。
 </p>
 
 <p align="center">
   <a href="https://railway.app/template?referralCode=dsh-remote"><img src="https://railway.app/button.svg" alt="Deploy on Railway" height="28" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3B82F6.svg" alt="License: MIT" /></a>
-  <img src="https://img.shields.io/badge/arch-amd64%20%7C%20arm64%20%7C%20armv7-10B981.svg" alt="Multi-Arch" />
+  <img src="https://img.shields.io/badge/Docker-Mac%20%7C%20Linux%20%7C%20NAS%20%7C%20树莓派-10B981.svg" alt="Multi-Arch" />
   <img src="https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white" alt="Node >= 20" />
-  <a href="SECURITY.md"><img src="https://img.shields.io/badge/self--hosted-zero--trust-0EA5E9.svg" alt="Self-Hosted" /></a>
 </p>
 
 <p align="center">
-  <strong>🇨🇳 简体中文</strong> · <a href="README.en.md"><strong>🇺🇸 English</strong></a> · <a href="#2-30-秒跑起来docker-一条命令">30 秒启动</a> · <a href="#3-完整七步流程唯一主线">七步流程</a> · <a href="#4-部署方式选择表六条路同一个终点">六种部署</a> · <a href="docs/self-hosting.md">自托管文档</a> · <a href="SECURITY.md">安全说明</a>
+  <strong>🇨🇳 简体中文</strong> · <a href="README.en.md"><strong>🇺🇸 English</strong></a> · <a href="#三步用起来">三步上手</a> · <a href="#支持哪些-ai-编程工具">支持工具</a> · <a href="#常见问题">常见问题</a> · <a href="docs/self-hosting.md">进阶部署</a> · <a href="SECURITY.md">安全说明</a>
 </p>
 
 <p align="center">
-  <img src="docs/assets/demo.svg" alt="DSH Remote Control 7-Step Flow Demo" width="100%" />
+  <img src="docs/assets/demo.svg" alt="DSH Remote Control Demo" width="100%" />
 </p>
 
 ---
 
-## 1. 支持矩阵（功能边界诚实版）
+## 为什么要做这个？
 
-界面严格按这张表渲染：**做不到的就不显示按钮，绝不放假按钮**。安装时会自动检测本机已装的工具并明确提示当前所处模式。
+当你在电脑上让 AI 跑一个耗时半小时的重构或测试，人离开工位去喝咖啡、开会或坐地铁时，往往会遇到这三件事：
 
-| 后端工具 | 看会话 | 发指令 | 停止 | **手机审批** | 实时插话 |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **DSH (DeepSeek Harness)** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Antigravity IDE** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Claude Code** | ✅ | ✅ | ✅ | 计划中 | ❌ |
-| **Codex** | ✅ | ✅ | ✅ | 计划中 | ❌ |
+- ☕ **卡在半路等确认**：AI 要执行终端命令或弹出选择题等你拍板，你不在电脑前，任务就一直干等。
+- 🚇 **跑偏了想插句话**：在路上突然发现它改错了方向，想立刻喊停，或者补一句“别动测试文件”。
+- 🎉 **跑完了想马上知道**：不想每隔五分钟回工位看一眼，跑完直接锁屏通知你，顺手在手机上接着布置下一步。
 
-> 只装了 Codex 或 Claude Code 时，安装脚本会直接提示：“当前为观察模式，审批功能需要 DSH（支持看会话、发指令、停止）”。
+**DSH Remote Control** 就是为了解决这三件事：在手机网页（或添加到桌面当 App 用）里直接盯着并指挥你名下所有的电脑。
 
 ---
 
-## 2. 30 秒跑起来（Docker 一条命令）
+## 三步用起来
 
-镜像支持多架构（`linux/amd64`、`linux/arm64`、`linux/arm/v7`），苹果电脑、普通服务器、NAS、树莓派都能直接跑；强制要求设置管理员密码 `HUB_TOKEN`（不带密码拒绝启动），并挂载 `/data` 持久化数据卷：
+不需要配飞书，也不用改任何代码，总共就 **3 步**：
 
-```bash
-docker run -d --name dsh-hub \
-  --restart unless-stopped \
-  -p 8080:8080 \
-  -v dsh-hub-data:/data \
-  -e HUB_TOKEN="自定义一个强密码" \
-  ghcr.io/oscarka/deepseekharness-remotecontrol:latest
-```
+### 第 1 步：启动你的控制台（二选一）
 
-或者使用源码直接启动（零第三方运行时依赖）：
+- **🏠 只在家里 / 办公室同一 Wi-Fi 下用（0 成本，30 秒跑起）**  
+  在电脑终端运行这一条 Docker 命令（把 `自定义一个密码` 换成你自己的密码）：
+  ```bash
+  docker run -d --name dsh-hub \
+    --restart unless-stopped \
+    -p 8080:8080 \
+    -v dsh-hub-data:/data \
+    -e HUB_TOKEN="自定义一个密码" \
+    ghcr.io/oscarka/deepseekharness-remotecontrol:latest
+  ```
+  *(没装 Docker？也可以克隆仓库直接跑：`HUB_TOKEN="自定义一个密码" PORT=8080 npm start`)*
 
-```bash
-git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
-cd deepseekharness-remotecontrol
-HUB_TOKEN="自定义一个强密码" PORT=8080 npm start
-```
-
----
-
-## 3. 完整七步流程（唯一主线）
-
-无论你把控制台部署在哪里，使用流程只有这一条主线（**不需要配置飞书也能完整使用**）：
-
-| 步骤 | 在哪台设备 | 做什么 |
-|:---:|---|---|
-| **①** | 部署平台 | 部署控制台，得到 **一个网址 + 一个密码**（启动日志会直接打印） |
-| **②** | **电脑** | 打开网址，输入管理员密码登录 |
-| **③** | **电脑** | 页面提示“本机未接入”，给出一条 **安装命令** + 一个 **配对码** |
-| **④** | **电脑** | 复制命令到终端执行（自动装好、自动连上、注册开机自启） |
-| **⑤** | **电脑** | 页面自动刷新，出现这台电脑 |
-| **⑥** | **手机** | 打开同一网址，**扫电脑上的二维码**直接登录（不用在手机上输密码） |
-| **⑦** | **手机** | 看任务、发指令、停止、批准危险操作（取决于后端能力） |
-
-- **加第二台电脑**：重复 ②–⑤，直接用同一个配对码（15 分钟有效期内可多次使用），无需重启控制台。
-- **三个东西各司其职**：**网址**是唯一入口，**密码**证明你是主人，**配对码**让电脑加入并为每台电脑签发可单独吊销的独立凭证。
-
----
-
-## 4. 部署方式选择表（六条路，同一个终点）
-
-所有部署方式最后都汇入上面的**七步流程**。完整配置详见 **[docs/self-hosting.md](docs/self-hosting.md)**：
-
-| 你的情况 | 方案 | 成本 | 难度 | 入口 / 说明 |
-|---|---|---|:---:|---|
-| 小白，想最快试 | **Railway 一键部署** | 30 天免费试用，之后约 \$5/月 | ★ | [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template?referralCode=dsh-remote) |
-| 有云服务器 | **Docker + 域名 HTTPS** | 服务器本身 | ★★ | 使用仓库自带 `docker-compose.yml` + Caddy/Nginx |
-| 有域名、无公网 IP | **Cloudflare 固定隧道** | 域名年费 | ★★ | 本地跑 Docker，`cloudflared tunnel` 暴露 HTTPS |
-| 国内网络、要稳定 | **国内内网穿透服务** | 0 起（免费版有限制） | ★★ | 本地跑 Docker + cpolar / frp / natapp |
-| 能顺利登录 Tailscale | **Tailscale Funnel** | 0 | ★★★ | `tailscale serve` / `tailscale funnel`（国内登录可能需代理） |
-| 只在家用 | **局域网 / NAS / 树莓派** | 0 | ★ | 直接跑上面的 Docker 命令，手机连家庭 Wi-Fi 访问 |
+- **🚇 出门在外、坐地铁也要随时连（最省心）**  
+  点一下这个按钮，3 分钟自动部署一台专属控制台，拿到一个公网网址：  
+  [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template?referralCode=dsh-remote) *(前 30 天免费体验，之后约 \$5/月)*
 
 <details>
-<summary><b>可选扩展：同时接入飞书机器人通知与卡片控制</b>（点开查看）</summary>
+<summary>💡 <b>还有自己的云服务器 / 域名 / 内网穿透 / NAS？点此查看另外 4 种部署方式</b></summary>
 
-不配飞书，网页与手机 PWA 功能一点不少。如果你希望在飞书里也收到任务完成卡片与审批提醒：
-1. 在[飞书开放平台](https://open.feishu.cn/)创建企业自建应用，启用机器人，申请 `im:message.p2p_msg:readonly` 与 `im:message:send_as_bot` 权限，事件订阅选择**长连接**并添加 `im.message.receive_v1`。
-2. 在本机 `~/.dsh/feishu.env` 中补充 `FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_ALLOWED_OPEN_IDS` 即可。
+| 你的情况 | 推荐做法 | 成本 |
+|---|---|---|
+| 有云服务器 (VPS) | 用仓库自带的 `docker-compose.yml` + 域名反代 | 服务器本身 |
+| 家里有域名、无公网 IP | 本地跑 Docker + Cloudflare 免费固定隧道 | 域名年费 |
+| 国内网络、无公网 IP | 本地跑 Docker + 国内内网穿透（cpolar / frp / natapp） | 0 起 |
+| 群晖 NAS / 树莓派 | 镜像原生支持 `amd64` / `arm64` / `armv7`，直接跑上面的 Docker 命令 | 0 |
+
+完整配置命令请看 👉 **[自托管与反代配置指南 (docs/self-hosting.md)](docs/self-hosting.md)**
 
 </details>
 
 ---
 
-## 5. 为什么手机审批目前只有 DSH / Antigravity 能用 + 路线图
+### 第 2 步：把你的电脑连上去
 
-AI 编码工具的危险操作审批（如执行 `rm`、联网或写盘命令）需要工具本体暴露“执行前拦截挂钩（Pre-Tool Hook）”或进程内 RPC 接口：
-
-- **DSH 与 Antigravity IDE**：已内置实时插件/RPC 通道，因此能做到手机端一键批准/拒绝、45 秒超时保护与冲突拦截。
-- **后续审批扩展路线图（P3）**：
-  1. **Claude Code 审批（优先）** —— 官方提供 `PreToolUse` 执行前钩子与权限代理机制，技术路径明确。
-  2. **Codex 审批** —— 需从单次 CLI 续聊切换到常驻服务模式。
-  3. **通用终端兜底** —— 终端抓屏 + 远程按键注入，覆盖其余 CLI 工具。
-
-### 明确不做
-
-- ❌ **不做托管服务** —— 数据留在你自己的机器与控制台里。
-- ❌ **不做多渠道抽象（Telegram / 微信）** —— 保持轻量聚焦。
-- ❌ **不做多实例集群** —— 单实例 + `/data` 持久化卷就是最简单可靠的设计前提。
+1. 在**电脑浏览器**打开控制台网址，输入你刚才设的密码登录。
+2. 页面会直接给你**一行安装命令**（自带临时配对码），点「复制」粘贴到电脑终端回车。
+3. 脚本会自动连上并注册开机自启，**网页会自动刷新出现你这台电脑**。
 
 ---
 
-## 6. 安全说明
+### 第 3 步：拿手机扫个码，装进口袋
 
-- **不带密码拒绝启动**：控制台未配置 `HUB_TOKEN` 时直接报错退出，杜绝公网空密码裸奔。
-- **每台电脑独立凭证、可随时单独吊销**：电脑通过配对码加入后自动获取受限的独立凭证（`hst_...`），仅能上报本机心跳，不能查看其他电脑或调用管理接口；在网页上点一下「吊销」即可立即切断该电脑权限，无需更换主密码。
-- **防伪造真实 IP 限流 + 配对码熔断**：默认取底层 Socket 真实 IP（可信反代下取最右侧网关追加 IP），并对配对码设置全局失败次数熔断，防止伪造 `X-Forwarded-For` 暴力枚举。
-- **非 root 容器运行**：Docker 镜像以非特权 `node` 用户运行，本机 `~/.dsh/feishu.env` 强制校验 `0600` 权限。
-- **端到端加密分享**：会话分享采用 AES-256-GCM 浏览器本地加解密，密钥仅存在于 URL `#key=` 锚点中，服务端只存密文。
-
-完整威胁模型与漏洞披露流程见 **[SECURITY.md](SECURITY.md)**。
+1. 点击电脑网页上的 **「📱 手机扫码登录」** 按钮。
+2. 用**手机相机扫一下屏幕上的二维码**，不用在手机上输长密码，直接解锁进入！  
+   *(小贴士：iPhone 用 Safari 打开后点底部「分享 → 添加到主屏幕」，就能像原生 App 一样全屏用并收锁屏通知。)*
 
 ---
 
-## 7. 贡献与许可
+## 支持哪些 AI 编程工具？
 
-欢迎提交 Issue 与 PR，开始前请阅读 **[CONTRIBUTING.md](CONTRIBUTING.md)** 与详细工程计划 **[docs/PLAN.md](docs/PLAN.md)**。
+界面上**能做到的才显示按钮，做不到的绝不放假按钮**：
+
+| 你电脑上的工具 | 手机看进度 | 手机发指令 / 新建 | 手机紧急停止 | **手机弹窗审批 / 做选择题** | 运行中实时插话 |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **DSH (DeepSeek Harness)** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Antigravity IDE** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Claude Code** | ✅ | ✅ | ✅ | 计划中 | — |
+| **Codex** | ✅ | ✅ | ✅ | 计划中 | — |
+
+> **为什么手机审批目前只有 DSH 和 Antigravity 能用？**  
+> 因为拦截危险命令需要在工具执行前挂钩（Hook）。DSH 与 Antigravity 已内置实时通道；Claude Code 的执行前钩子与 Codex 的常驻审批模式正在适配中。即使你只装了 Claude Code 或 Codex，依然可以在手机上看进度、发新指令和随时喊停。
+
+---
+
+## 常见问题
+
+**Q：我有两台电脑（比如公司 Mac + 家里电脑），怎么一起管？**  
+A：在第 2 台电脑上同样复制那行安装命令运行即可（同一个配对码 15 分钟内可连加多台），无需重启控制台。左上角可以随时切换电脑或混排查看全部对话。
+
+**Q：我不想折腾飞书企业应用，能用吗？**  
+A：**完全可以，默认就不需要飞书。** 打开手机网页或添加到主屏幕就能用全部功能。如果你平时重度用飞书、想顺便在飞书里收卡片，可以展开下方说明按需开启：
+
+<details>
+<summary>🔌 <b>可选：同时接入飞书机器人通知（点开查看）</b></summary>
+
+1. 在[飞书开放平台](https://open.feishu.cn/)创建企业自建应用并开启机器人，开通 `im:message.p2p_msg:readonly` 与 `im:message:send_as_bot` 权限，事件订阅选**长连接**并添加 `im.message.receive_v1`。
+2. 在电脑的 `~/.dsh/feishu.env` 中填入 `FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_ALLOWED_OPEN_IDS` 即可。
+
+</details>
+
+**Q：把控制台放在公网上安全吗？**  
+A：
+- **不设密码拒绝启动**：防止误把空密码服务暴露在公网。
+- **每台电脑独立凭证**：电脑凭临时配对码加入，不接触你的管理员主密码；哪台电脑不用了，在手机「设置」里点一下「吊销凭证」就能单独踢掉。
+- **防爆破保护**：登录与配对码均带真实 IP 限流与错误次数自动熔断。更多细节见 **[SECURITY.md](SECURITY.md)**。
+
+<details>
+<summary>🛠️ <b>本地开发与贡献代码（点开查看）</b></summary>
+
+欢迎提 Issue 和 PR！开始前可参考 **[CONTRIBUTING.md](CONTRIBUTING.md)** 与 **[docs/PLAN.md](docs/PLAN.md)**。
 
 ```bash
 npm install                      # 安装前端构建依赖
 npm --prefix dsh-feishu install  # 安装插件测试依赖
-npm test                         # 运行完整单元测试与集成测试套件
-npm run build                    # 构建前端静态产物
+npm test                         # 运行完整测试套件
+npm run build                    # 构建前端静态页面
 ```
 
-[MIT](LICENSE) © 2026 oscarka
+</details>
+
+---
+
+[MIT License](LICENSE) © 2026 oscarka
