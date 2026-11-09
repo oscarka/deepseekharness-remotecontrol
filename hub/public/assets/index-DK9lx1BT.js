@@ -3658,6 +3658,24 @@ function initHubController() {
 			window.__dshInlineImgInflight[imgPath] = true;
 			(async () => {
 				try {
+					const tryResolveCached = async () => {
+						const checkRes = await apiFetch(`/api/hosts/${encodeURIComponent(session.hostId)}/file-preview?path=${encodeURIComponent(imgPath)}&format=json`).catch(() => null);
+						if (checkRes && checkRes.ok) {
+							const data = await checkRes.json().catch(() => ({}));
+							if (data?.preview?.kind === "image") {
+								const tk = getToken();
+								const srcUrl = `/api/hosts/${encodeURIComponent(session.hostId)}/file-preview?path=${encodeURIComponent(imgPath)}` + (tk ? `&token=${encodeURIComponent(tk)}` : "");
+								window.__dshInlineImgCache[imgPath] = srcUrl;
+								document.querySelectorAll(`.md-local-img-pending[data-local-img-path="${CSS.escape(imgPath)}"]`).forEach((el) => {
+									el.classList.remove("md-local-img-pending");
+									el.innerHTML = `<img class="md-inline-img" src="${srcUrl}" alt="${esc(data.preview.name || "image")}" />`;
+								});
+								return true;
+							}
+						}
+						return false;
+					};
+					if (await tryResolveCached()) return;
 					const relPath = toWorkspaceRelPath(session.cwd || "", imgPath);
 					const baseName = relPath.split("/").filter(Boolean).pop() || "";
 					await dispatchHostCommand(session.hostId, {
@@ -3672,22 +3690,9 @@ function initHubController() {
 						cwd: session.cwd || "",
 						relPath: `out/${baseName}`
 					});
-					for (let i = 0; i < 10; i++) {
-						await sleepMs(380);
-						const checkRes = await apiFetch(`/api/hosts/${encodeURIComponent(session.hostId)}/file-preview?path=${encodeURIComponent(imgPath)}&format=json`).catch(() => null);
-						if (checkRes && checkRes.ok) {
-							const data = await checkRes.json().catch(() => ({}));
-							if (data?.preview?.kind === "image") {
-								const tk = getToken();
-								const srcUrl = `/api/hosts/${encodeURIComponent(session.hostId)}/file-preview?path=${encodeURIComponent(imgPath)}` + (tk ? `&token=${encodeURIComponent(tk)}` : "");
-								window.__dshInlineImgCache[imgPath] = srcUrl;
-								document.querySelectorAll(`.md-local-img-pending[data-local-img-path="${CSS.escape(imgPath)}"]`).forEach((el) => {
-									el.classList.remove("md-local-img-pending");
-									el.innerHTML = `<img class="md-inline-img" src="${srcUrl}" alt="${esc(data.preview.name || "image")}" />`;
-								});
-								return;
-							}
-						}
+					for (let i = 0; i < 18; i++) {
+						await sleepMs(180);
+						if (await tryResolveCached()) return;
 					}
 				} catch {} finally {
 					delete window.__dshInlineImgInflight[imgPath];
@@ -3866,8 +3871,9 @@ function initHubController() {
 			renderAll();
 			return;
 		}
-		for (let i = 0; i < 10 && fileLoading; i++) {
-			await sleepMs(400);
+		for (let i = 0; i < 22 && fileLoading; i++) {
+			await sleepMs(180);
+			if (!fileLoading) break;
 			if (!(await fetchState()).ok) break;
 		}
 		if (fileLoading) {
@@ -3908,8 +3914,9 @@ function initHubController() {
 			renderAll();
 			return;
 		}
-		for (let i = 0; i < 10 && filePreviewLoading; i++) {
-			await sleepMs(400);
+		for (let i = 0; i < 22 && filePreviewLoading; i++) {
+			await sleepMs(180);
+			if (!filePreviewLoading) break;
 			if (!(await fetchState()).ok) break;
 		}
 		if (filePreviewLoading) {

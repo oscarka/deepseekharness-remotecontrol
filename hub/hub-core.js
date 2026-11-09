@@ -7,7 +7,7 @@ const ONLINE_TTL_MS = 30 * 60_000
 const ACTIVE_HEARTBEAT_WINDOW_MS = 90_000
 const DEFAULT_COMMAND_TTL_MS = 10 * 60_000
 const INLINE_TEXT_PREVIEW_MAX_CHARS = 16_384
-const FILE_PREVIEW_BLOB_TTL_MS = 10 * 60_000
+const FILE_PREVIEW_BLOB_TTL_MS = 6 * 60 * 60_000
 const PAIRING_RATE_WINDOW_MS = 60_000
 const PAIRING_MAX_FAILS_PER_WINDOW = 10
 const MAX_SNAPSHOTS = 15
@@ -201,7 +201,7 @@ export class HubCore {
         if (preview.name) {
           this.filePreviewHistory.set(`${hostId}:name:${preview.name}`, blobObj)
         }
-        while (this.filePreviewHistory.size > 64) {
+        while (this.filePreviewHistory.size > 120) {
           const oldestKey = this.filePreviewHistory.keys().next().value
           this.filePreviewHistory.delete(oldestKey)
         }

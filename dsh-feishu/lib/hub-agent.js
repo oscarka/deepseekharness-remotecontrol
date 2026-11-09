@@ -556,6 +556,7 @@ export class HubAgent {
       }
       await this.reconcileFeishuActiveState(data.shouldConnectFeishu !== false, data.activeHostId)
       if (Array.isArray(data.commands) && data.commands.length > 0) {
+        let hasFastReadCmd = false
         for (const cmd of data.commands) {
           if (cmd?.id && this.executedIds.has(cmd.id)) continue
           if (cmd?.id) {
@@ -566,6 +567,9 @@ export class HubAgent {
             }
           }
           executedAny = true
+          if (cmd?.type === 'read_file' || cmd?.type === 'list_files' || cmd?.type === 'load_full_transcript') {
+            hasFastReadCmd = true
+          }
           const outcome = await this.handleHubCommand(cmd)
           this.pendingResults.push({
             id: cmd.id,
@@ -573,6 +577,32 @@ export class HubAgent {
             at: Date.now(),
             ...outcome,
           })
+        }
+        // In live daemon mode, immediately flush read_file / list_files results back to Hub
+        // without waiting for a second full disk & RPC scan tick (~500ms saved).
+        if (this.timer && hasFastReadCmd && this.pendingResults.length > 0) {
+          const fastResults = this.pendingResults.splice(0)
+          try {
+            const fastRes = await this.fetch(`${this.config.hubUrl}/api/heartbeat`, {
+              method: 'POST',
+              headers: this.headers(),
+              body: JSON.stringify({
+                hostId: this.config.hostId,
+                hostName: this.config.hostName,
+                platform: process.platform,
+                arch: process.arch,
+                identity,
+                commandResults: fastResults,
+              }),
+            })
+            if (!fastRes.ok) {
+              this.pendingResults.unshift(...fastResults)
+            } else {
+              executedAny = false
+            }
+          } catch {
+            this.pendingResults.unshift(...fastResults)
+          }
         }
       }
     } catch (error) {

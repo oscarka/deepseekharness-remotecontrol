@@ -2334,24 +2334,7 @@ export function initHubController() {
         window.__dshInlineImgInflight[imgPath] = true;
         (async () => {
           try {
-            const relPath = toWorkspaceRelPath(session.cwd || '', imgPath);
-            const baseName = relPath.split('/').filter(Boolean).pop() || '';
-            await dispatchHostCommand(session.hostId, {
-              type: 'read_file',
-              agentId: session.id,
-              cwd: session.cwd || '',
-              relPath,
-            });
-            if (imgPath.includes('/.gemini/antigravity/brain/') && baseName) {
-              await dispatchHostCommand(session.hostId, {
-                type: 'read_file',
-                agentId: session.id,
-                cwd: session.cwd || '',
-                relPath: `out/${baseName}`,
-              });
-            }
-            for (let i = 0; i < 10; i++) {
-              await sleepMs(380);
+            const tryResolveCached = async () => {
               const checkRes = await apiFetch(
                 `/api/hosts/${encodeURIComponent(session.hostId)}/file-preview?path=${encodeURIComponent(imgPath)}&format=json`
               ).catch(() => null);
@@ -2369,9 +2352,33 @@ export function initHubController() {
                       el.classList.remove('md-local-img-pending');
                       el.innerHTML = `<img class="md-inline-img" src="${srcUrl}" alt="${esc(data.preview.name || 'image')}" />`;
                     });
-                  return;
+                  return true;
                 }
               }
+              return false;
+            };
+            // 先查 Hub 内存缓存（命中则 0ms 直接渲染，无需再向电脑发指令）
+            if (await tryResolveCached()) return;
+
+            const relPath = toWorkspaceRelPath(session.cwd || '', imgPath);
+            const baseName = relPath.split('/').filter(Boolean).pop() || '';
+            await dispatchHostCommand(session.hostId, {
+              type: 'read_file',
+              agentId: session.id,
+              cwd: session.cwd || '',
+              relPath,
+            });
+            if (imgPath.includes('/.gemini/antigravity/brain/') && baseName) {
+              await dispatchHostCommand(session.hostId, {
+                type: 'read_file',
+                agentId: session.id,
+                cwd: session.cwd || '',
+                relPath: `out/${baseName}`,
+              });
+            }
+            for (let i = 0; i < 18; i++) {
+              await sleepMs(180);
+              if (await tryResolveCached()) return;
             }
           } catch {} finally {
             delete window.__dshInlineImgInflight[imgPath];
@@ -2592,8 +2599,9 @@ export function initHubController() {
         return;
       }
       // 先快速轮询几次，拿到结果就停；超时交给 reconcileFileLoading
-      for (let i = 0; i < 10 && fileLoading; i++) {
-        await sleepMs(400);
+      for (let i = 0; i < 22 && fileLoading; i++) {
+        await sleepMs(180);
+        if (!fileLoading) break;
         const state = await fetchState();
         if (!state.ok) break;
       }
@@ -2632,8 +2640,9 @@ export function initHubController() {
         renderAll();
         return;
       }
-      for (let i = 0; i < 10 && filePreviewLoading; i++) {
-        await sleepMs(400);
+      for (let i = 0; i < 22 && filePreviewLoading; i++) {
+        await sleepMs(180);
+        if (!filePreviewLoading) break;
         const state = await fetchState();
         if (!state.ok) break;
       }
