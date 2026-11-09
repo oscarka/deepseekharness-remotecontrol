@@ -1943,7 +1943,7 @@ test('Antigravity background task mid-turn push suppression & persistent session
     })
     assert.equal(hub.pushHistory.length, 0)
 
-    // Real conclusion arrives -> triggers exactly 1 completion push
+    // Real conclusion arrives -> triggers exactly 1 completion push and marks sessionReadState.unread = true
     hub.handleHeartbeat({
       hostId: 'no2',
       hostName: 'No2 Mac',
@@ -1951,6 +1951,7 @@ test('Antigravity background task mid-turn push suppression & persistent session
     })
     assert.equal(hub.pushHistory.length, 1)
     assert.match(hub.pushHistory[0].title, /任务完成/)
+    assert.equal(hub.getFullState().sessionReadState[finalSession.id]?.unread, true)
 
     // If status briefly flaps running -> idle with the SAME conclusion, deduplication prevents duplicate push
     hub.handleHeartbeat({
@@ -1965,18 +1966,20 @@ test('Antigravity background task mid-turn push suppression & persistent session
     })
     assert.equal(hub.pushHistory.length, 1)
 
-    // Mark session read and verify persistence across HubCore restart
+    // Mark session read and verify unread=false + sig persistence across HubCore restart
     const readRes = hub.markSessionRead({
       sessionId: finalSession.id,
       sig: 'conclusion:2:✅ Cloud Run 部署已完成！',
       at: now,
     })
     assert.equal(readRes.ok, true)
+    assert.equal(hub.getFullState().sessionReadState[finalSession.id]?.unread, false)
     await hub.persist()
 
     const hub2 = new HubCore({ stateFile })
     await hub2.init()
     const fullState = hub2.getFullState()
+    assert.equal(fullState.sessionReadState[finalSession.id]?.unread, false)
     assert.equal(
       fullState.sessionReadState[finalSession.id]?.sig,
       'conclusion:2:✅ Cloud Run 部署已完成！',

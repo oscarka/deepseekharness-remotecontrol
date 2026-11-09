@@ -1435,6 +1435,7 @@ function initHubController() {
 		if (!sessionId) return;
 		hubState.sessionReadState = hubState.sessionReadState || {};
 		hubState.sessionReadState[sessionId] = {
+			unread: false,
 			sig: String(sig || ""),
 			at: Number(at) || Date.now()
 		};
@@ -1579,7 +1580,7 @@ function initHubController() {
 				const harness = t.harness || (rawIdStr.startsWith("agy-ide:") ? "antigravity-ide" : rawIdStr.startsWith("codex:") ? "codex" : rawIdStr.startsWith("claude:") ? "claude" : "dsh");
 				const harnessLabel = t.harnessLabel || (harness === "antigravity-ide" ? "Antigravity IDE" : harness === "codex" ? "Codex" : harness === "claude" ? "Claude Code" : "DeepSeek Harness");
 				let lastConclusionAt = Number(t.lastConclusionAt) || 0;
-				if (!lastConclusionAt && status === "idle" && lastMsg?.role === "assistant" && Boolean(lastMsg?.text) && (!lastMsg.tools || lastMsg.tools.length === 0)) lastConclusionAt = ts;
+				if (!lastConclusionAt && status === "idle" && lastMsg?.role === "assistant" && Boolean(lastMsg?.text)) lastConclusionAt = ts;
 				const lastInterruptedAt = Number(t.lastInterruptedAt) || 0;
 				const turnState = status === "approval" ? "approval" : status === "running" ? "running" : t.turnState === "interrupted" ? "interrupted" : t.turnState === "conclusion" || lastConclusionAt > 0 ? "conclusion" : "idle";
 				const rawPreview = status === "running" ? t.runningSummary || t.lastOutput || lastMsg?.text || "正在思考与执行任务..." : status === "approval" ? pendingApp?.promptTitle || pendingApp?.reason || t.lastOutput || "等待你批准工具执行" : t.lastOutput || lastMsg?.text || t.cwd || "点击查看对话详情";
@@ -1633,7 +1634,7 @@ function initHubController() {
 		const serverReadMap = hubState.sessionReadState || {};
 		sortedByTime.forEach((s) => {
 			const srvRead = serverReadMap[s.id];
-			if (srvRead) {
+			if (srvRead && !srvRead.unread) {
 				if (srvRead.at && (!seenMap[s.id] || srvRead.at > seenMap[s.id])) {
 					seenMap[s.id] = srvRead.at;
 					seenDirty = true;
@@ -1649,7 +1650,7 @@ function initHubController() {
 					seenMap[s.id] = maxTs;
 					if (s.turnState === "conclusion") {
 						seenSigMap[s.id] = s.conclusionSig;
-						if (!srvRead || srvRead.sig !== s.conclusionSig) syncSessionReadToServer(s.id, s.conclusionSig, maxTs);
+						if (!srvRead || srvRead.unread || srvRead.sig !== s.conclusionSig) syncSessionReadToServer(s.id, s.conclusionSig, maxTs);
 					}
 					seenDirty = true;
 				}
@@ -1665,14 +1666,18 @@ function initHubController() {
 				return;
 			}
 			if (!seenMap[s.id]) {
-				seenMap[s.id] = Math.max(s.updatedAt || 0, s.lastConclusionAt || 0, Date.now());
-				if (s.turnState === "conclusion") seenSigMap[s.id] = s.conclusionSig;
+				if (srvRead?.unread && s.turnState === "conclusion" && s.id !== activeSessionId) seenMap[s.id] = Math.max(1, (s.lastConclusionAt || s.updatedAt || 2) - 1e3);
+				else {
+					seenMap[s.id] = Math.max(s.updatedAt || 0, s.lastConclusionAt || 0, Date.now());
+					if (s.turnState === "conclusion") seenSigMap[s.id] = s.conclusionSig;
+				}
 				seenDirty = true;
 			}
 			const seenAt = Number(seenMap[s.id]) || 0;
 			const seenSig = String(seenSigMap[s.id] || "");
 			const isCurrentOpen = s.id === activeSessionId && isChatOpenNow;
-			s.hasUnreadConclusion = !isCurrentOpen && s.turnState === "conclusion" && s.lastConclusionAt > 0 && s.lastConclusionAt > seenAt && s.conclusionSig !== seenSig;
+			const serverSaysUnread = Boolean(srvRead?.unread && s.conclusionSig !== seenSig);
+			s.hasUnreadConclusion = !isCurrentOpen && s.turnState === "conclusion" && s.conclusionSig !== seenSig && (serverSaysUnread || s.lastConclusionAt > 0 && s.lastConclusionAt > seenAt);
 			s.isUnreadInterrupted = !isCurrentOpen && s.turnState === "interrupted" && (s.lastInterruptedAt || s.updatedAt) > seenAt;
 			s.unread = s.hasUnreadConclusion || s.isUnreadInterrupted;
 		});
@@ -1944,7 +1949,6 @@ function initHubController() {
 				rowStateClass = "row-state-interrupted";
 				statusHtml = `<span class="badge-interrupted">⚠️ 中断待继续</span>`;
 			}
-			const unreadDotHtml = s.hasUnreadConclusion ? `<span class="unread-completion-dot" title="新完成的回复（点击查看后消失）"></span>` : "";
 			const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : "";
 			const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag">${esc(s.hostName)}</span>` : "";
 			const harnessTagHtml = s.harness === "antigravity-ide" ? `<span class="harness-mini-tag agy">⚡ IDE</span>` : s.harness === "codex" ? `<span class="harness-mini-tag agy">🧠 Codex</span>` : s.harness === "claude" ? `<span class="harness-mini-tag agy">✴️ Claude</span>` : "";
@@ -1955,7 +1959,6 @@ function initHubController() {
             <div class="session-main">
               <div class="session-top-line">
                 <div class="session-title-wrap">
-                  ${unreadDotHtml}
                   ${pinHtml}
                   <div class="session-title">${esc(displayTitle)}</div>
                 </div>

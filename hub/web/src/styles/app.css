@@ -616,16 +616,6 @@
       flex-shrink: 0;
     }
 
-    .unread-completion-dot {
-      width: 9px;
-      height: 9px;
-      border-radius: 50%;
-      background: #10b981;
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.22);
-      flex-shrink: 0;
-      display: inline-block;
-    }
-
     .pin-tag {
       font-size: 12px;
       flex-shrink: 0;

@@ -288,6 +288,9 @@ export class ClaudeAdapter {
         extractCleanPromptTitle(firstUser?.text)
         || `Claude (${sessionId.slice(0, 8)})`
 
+      const hasConcluded = status !== 'running' && lastRole === 'assistant' && Boolean(lastAssistant?.text)
+      const lastConclusionAt = hasConcluded ? Math.round(file.mtimeMs) : 0
+
       results.push({
         id: fullId,
         rawId: sessionId,
@@ -296,7 +299,8 @@ export class ClaudeAdapter {
         title,
         status,
         statusLabel,
-        turnState: status === 'running' ? 'running' : 'idle',
+        turnState: status === 'running' ? 'running' : hasConcluded ? 'conclusion' : 'idle',
+        lastConclusionAt,
         controlMode,
         cwd: cwd || '',
         model: model || 'claude',

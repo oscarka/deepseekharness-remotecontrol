@@ -144,6 +144,7 @@ export class HubCore {
         for (const [k, v] of Object.entries(data.sessionReadState)) {
           if (k && v && typeof v === 'object') {
             this.sessionReadState.set(String(k), {
+              unread: Boolean(v.unread),
               sig: String(v.sig || ''),
               at: Number(v.at) || 0,
             })
@@ -719,13 +720,13 @@ export class HubCore {
     const prev = this.sessionReadState.get(cleanId)
     const nextAt = Math.max(Number(at) || 0, Number(prev?.at) || 0, now)
     const nextSig = String(sig || prev?.sig || '')
-    this.sessionReadState.set(cleanId, { sig: nextSig, at: nextAt })
+    this.sessionReadState.set(cleanId, { unread: false, sig: nextSig, at: nextAt })
     while (this.sessionReadState.size > 500) {
       const oldestKey = this.sessionReadState.keys().next().value
       this.sessionReadState.delete(oldestKey)
     }
     void this.persist()
-    return { ok: true, sessionId: cleanId, readState: { sig: nextSig, at: nextAt } }
+    return { ok: true, sessionId: cleanId, readState: { unread: false, sig: nextSig, at: nextAt } }
   }
 
   getVapidPublicKey() {
@@ -903,6 +904,11 @@ export class HubCore {
             this.pushedCompletionSigs.delete(this.pushedCompletionSigs.keys().next().value)
           }
         }
+        this.sessionReadState.set(task.id, {
+          unread: true,
+          sig: '',
+          at: Number(task.lastConclusionAt) || Number(task.updatedAt) || this.now(),
+        })
         void this.broadcastWebPush({
           title: `✅ [${hostName}] 任务完成：${task.title}`,
           body: task.lastOutput ? String(task.lastOutput).slice(0, 120) : '任务已执行完毕，点击查看结果或继续指令',

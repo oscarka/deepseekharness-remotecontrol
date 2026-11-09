@@ -327,6 +327,9 @@ export class CodexAdapter {
         || cleanTitle(firstUser?.text)
         || `Codex (${sessionId.slice(0, 8)})`
 
+      const hasConcluded = status !== 'running' && Boolean(lastAssistant?.text)
+      const lastConclusionAt = hasConcluded ? Math.round(file.mtimeMs) : 0
+
       results.push({
         id: fullId,
         rawId: sessionId,
@@ -335,7 +338,8 @@ export class CodexAdapter {
         title,
         status,
         statusLabel,
-        turnState: status === 'running' ? 'running' : 'idle',
+        turnState: status === 'running' ? 'running' : hasConcluded ? 'conclusion' : 'idle',
+        lastConclusionAt,
         controlMode,
         cwd: cwd || '',
         model: model || 'codex',

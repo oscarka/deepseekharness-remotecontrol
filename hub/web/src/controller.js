@@ -202,7 +202,7 @@ export function initHubController() {
     function syncSessionReadToServer(sessionId, sig, at) {
       if (!sessionId) return;
       hubState.sessionReadState = hubState.sessionReadState || {};
-      hubState.sessionReadState[sessionId] = { sig: String(sig || ''), at: Number(at) || Date.now() };
+      hubState.sessionReadState[sessionId] = { unread: false, sig: String(sig || ''), at: Number(at) || Date.now() };
       void apiFetch('/api/sessions/read', {
         method: 'POST',
         body: JSON.stringify({ sessionId, sig: String(sig || ''), at: Number(at) || Date.now() }),
@@ -399,7 +399,7 @@ export function initHubController() {
           );
 
           let lastConclusionAt = Number(t.lastConclusionAt) || 0;
-          if (!lastConclusionAt && status === 'idle' && lastMsg?.role === 'assistant' && Boolean(lastMsg?.text) && (!lastMsg.tools || lastMsg.tools.length === 0)) {
+          if (!lastConclusionAt && status === 'idle' && lastMsg?.role === 'assistant' && Boolean(lastMsg?.text)) {
             lastConclusionAt = ts;
           }
           const lastInterruptedAt = Number(t.lastInterruptedAt) || 0;
@@ -478,13 +478,13 @@ export function initHubController() {
 
       const sortedByTime = [...list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
-      // 仅针对「真正完结给出最终结论」或「异常断流中断」计算未读态，Thinking / 工具执行过程中不再刷假未读
+      // 仅针对「真正完结给出最终结论」或「异常断流中断」计算统一的未读态（🔵 已出结论）
       // 同时结合本地 localStorage 与服务端 sessionReadState + 结论内容签名，确保点击已读后刷新绝不重复变回未读
       let seenDirty = false;
       const serverReadMap = hubState.sessionReadState || {};
       sortedByTime.forEach((s) => {
         const srvRead = serverReadMap[s.id];
-        if (srvRead) {
+        if (srvRead && !srvRead.unread) {
           if (srvRead.at && (!seenMap[s.id] || srvRead.at > seenMap[s.id])) {
             seenMap[s.id] = srvRead.at;
             seenDirty = true;
@@ -501,7 +501,7 @@ export function initHubController() {
             seenMap[s.id] = maxTs;
             if (s.turnState === 'conclusion') {
               seenSigMap[s.id] = s.conclusionSig;
-              if (!srvRead || srvRead.sig !== s.conclusionSig) {
+              if (!srvRead || srvRead.unread || srvRead.sig !== s.conclusionSig) {
                 syncSessionReadToServer(s.id, s.conclusionSig, maxTs);
               }
             }
@@ -520,11 +520,15 @@ export function initHubController() {
           return;
         }
 
-        // 首次加载时：所有既有历史完结会话自动归入已读基线，仅后续新产出的结论才触发小绿点与「已出结论」
+        // 首次加载时：除服务端明确标记为新完结未读 (srvRead.unread === true) 的会话外，旧历史完结会话自动归入已读基线
         if (!seenMap[s.id]) {
-          seenMap[s.id] = Math.max(s.updatedAt || 0, s.lastConclusionAt || 0, Date.now());
-          if (s.turnState === 'conclusion') {
-            seenSigMap[s.id] = s.conclusionSig;
+          if (srvRead?.unread && s.turnState === 'conclusion' && s.id !== activeSessionId) {
+            seenMap[s.id] = Math.max(1, (s.lastConclusionAt || s.updatedAt || 2) - 1000);
+          } else {
+            seenMap[s.id] = Math.max(s.updatedAt || 0, s.lastConclusionAt || 0, Date.now());
+            if (s.turnState === 'conclusion') {
+              seenSigMap[s.id] = s.conclusionSig;
+            }
           }
           seenDirty = true;
         }
@@ -532,11 +536,11 @@ export function initHubController() {
         const seenAt = Number(seenMap[s.id]) || 0;
         const seenSig = String(seenSigMap[s.id] || '');
         const isCurrentOpen = s.id === activeSessionId && isChatOpenNow;
+        const serverSaysUnread = Boolean(srvRead?.unread && s.conclusionSig !== seenSig);
         s.hasUnreadConclusion = !isCurrentOpen
           && s.turnState === 'conclusion'
-          && s.lastConclusionAt > 0
-          && s.lastConclusionAt > seenAt
-          && s.conclusionSig !== seenSig;
+          && s.conclusionSig !== seenSig
+          && (serverSaysUnread || (s.lastConclusionAt > 0 && s.lastConclusionAt > seenAt));
         s.isUnreadInterrupted = !isCurrentOpen
           && s.turnState === 'interrupted'
           && (s.lastInterruptedAt || s.updatedAt) > seenAt;
@@ -877,9 +881,6 @@ export function initHubController() {
           statusHtml = `<span class="badge-interrupted">⚠️ 中断待继续</span>`;
         }
 
-        const unreadDotHtml = s.hasUnreadConclusion
-          ? `<span class="unread-completion-dot" title="新完成的回复（点击查看后消失）"></span>`
-          : '';
         const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : '';
         const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag">${esc(s.hostName)}</span>` : '';
         const harnessTagHtml = s.harness === 'antigravity-ide'
@@ -899,7 +900,6 @@ export function initHubController() {
             <div class="session-main">
               <div class="session-top-line">
                 <div class="session-title-wrap">
-                  ${unreadDotHtml}
                   ${pinHtml}
                   <div class="session-title">${esc(displayTitle)}</div>
                 </div>
