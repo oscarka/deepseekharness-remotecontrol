@@ -66,10 +66,25 @@ export function apply(ctx, rawConfig) {
   agentsFacade.createViaController = async ({ cwd, title }) => {
     try {
       const ctrl = ctx.get?.('sessionController')
+      const wsRegistry = ctx.get?.('workspaceRegistry')
+      let workspace = null
+      if (wsRegistry && cwd) {
+        try {
+          workspace = (await wsRegistry.resolveByPath?.(cwd)) || (await wsRegistry.create?.(cwd))
+        } catch {}
+      }
       if (ctrl && typeof ctrl.create === 'function') {
-        const res = await ctrl.create({ cwd })
+        // sessionController.create accepts workspaceId OR cwd (not both),
+        // and only attaches the session to the workspace sidebar when workspaceId is passed!
+        const createReq = workspace?.id ? { workspaceId: workspace.id } : { cwd }
+        const res = await ctrl.create(createReq)
         const sessionId = res?.sessionId || res?.id
         if (sessionId) {
+          if (workspace && typeof workspace.attachSession === 'function') {
+            try {
+              await workspace.attachSession(sessionId)
+            } catch {}
+          }
           if (title && typeof ctrl.rename === 'function') {
             try {
               await ctrl.rename({ sessionId, title })
@@ -84,10 +99,38 @@ export function apply(ctx, rawConfig) {
     }
     return null
   }
+  agentsFacade.reconcileLiveWorkspaceRegistry = async () => {
+    try {
+      const wsRegistry = ctx.get?.('workspaceRegistry')
+      const persistence = ctx.get?.('sessionPersistence')
+      if (!wsRegistry || !persistence || typeof persistence.list !== 'function') return
+      const archivedSet = new Set(wsRegistry.archivedSessionIds || [])
+      const snapshots = await persistence.list()
+      for (const snap of snapshots || []) {
+        const header = snap?.header
+        if (!header?.id || !header?.cwd || header.origin === 'subagent') continue
+        if (archivedSet.has(header.id)) continue
+        const ws =
+          (await wsRegistry.resolveByPath?.(header.cwd)) ||
+          (await wsRegistry.create?.(header.cwd).catch(() => null))
+        if (ws && Array.isArray(ws.sessionIds) && !ws.sessionIds.includes(header.id)) {
+          try {
+            await ws.attachSession(header.id)
+          } catch {}
+        }
+      }
+    } catch {}
+  }
 
+  let liveWsReconcileTimer = null
   ctx.effect(() => {
     void (async () => {
       try {
+        void agentsFacade.reconcileLiveWorkspaceRegistry()
+        liveWsReconcileTimer = setInterval(() => {
+          void agentsFacade.reconcileLiveWorkspaceRegistry()
+        }, 4000)
+        liveWsReconcileTimer.unref?.()
         const settings = await loadSettings(config)
         const initialControlChat = await readControlChat(config.controlChatFile)
         const initialRemoteState = await readRemoteState(config.remoteStateFile)
@@ -173,6 +216,10 @@ export function apply(ctx, rawConfig) {
 
     return () => {
       stopped = true
+      if (liveWsReconcileTimer) {
+        clearInterval(liveWsReconcileTimer)
+        liveWsReconcileTimer = null
+      }
       try {
         daemonLock?.release?.()
       } catch {}

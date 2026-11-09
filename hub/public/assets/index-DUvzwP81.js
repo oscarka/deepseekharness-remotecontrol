@@ -1662,6 +1662,35 @@ function initHubController() {
 			host: (hubState.hosts || []).find((h) => h.hostId === found.hostId)
 		};
 	}
+	function formatHostTelemetry(host) {
+		const sys = host?.bridgeState?.systemTelemetry || host?.systemTelemetry || null;
+		const power = sys?.power || null;
+		const net = sys?.network || null;
+		const isOnline = Boolean(host && host.online !== false && host.activelyConnected !== false);
+		const powerIcon = power?.icon || (power?.hasBattery ? "🔋" : "🔌");
+		const powerShort = power?.shortLabel || (power?.hasBattery && power?.percent != null ? `${power.percent}%` : power ? "电源直供" : "供电正常");
+		const powerDetail = power?.label || (power ? powerShort : "供电正常");
+		const netIcon = net?.icon || "📶";
+		const rttStr = net?.rttMs ? `${net.rttMs}ms` : "";
+		const netShort = net?.shortLabel || `${net?.kindLabel || "网络"}${rttStr ? ` ${rttStr}` : ""}`;
+		const netDetail = net?.label || `${net?.kindLabel || "在线"}${net?.localIp ? ` (${net.localIp})` : ""}${rttStr ? ` · ${rttStr}` : ""}`;
+		const lowBattery = Boolean(power?.lowBattery);
+		const slowNet = Boolean(net?.rttMs && net.rttMs > 600);
+		return {
+			hasTelemetry: Boolean(sys),
+			isOnline,
+			lowBattery,
+			slowNet,
+			powerIcon,
+			powerShort,
+			powerDetail,
+			netIcon,
+			netShort,
+			netDetail,
+			compactBadge: `${powerIcon} ${powerShort} · ${netIcon} ${netShort}`,
+			fullLine: `${powerIcon} ${powerDetail} · ${netIcon} ${netDetail}`
+		};
+	}
 	function getHostProjects(host) {
 		if (!host) return [];
 		const map = /* @__PURE__ */ new Map();
@@ -1806,14 +1835,38 @@ function initHubController() {
 			if (!q) return true;
 			return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || s.lastPreview.toLowerCase().includes(q);
 		});
+		const visibleHosts = (hubState.hosts || []).filter((h) => !currentHostId || currentHostId === "ALL_HOSTS" || h.hostId === currentHostId);
+		const hostTelemetrySig = visibleHosts.map((h) => {
+			const tm = formatHostTelemetry(h);
+			return `${h.hostId}:${h.online ? 1 : 0}:${tm.powerShort}:${tm.netShort}:${tm.lowBattery ? 1 : 0}`;
+		}).join("|");
 		const showHostTag = currentHostId === "ALL_HOSTS" && (hubState.hosts || []).length > 1;
 		const bannerKey = pendingAppInfo ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.promptTitle || ""}:${pendingAppInfo.app.settling ? 1 : 0}:${pendingAppInfo.app.lastError || ""}` : "";
 		const rowsSig = filtered.map((s) => `${s.id}:${s.status}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`).join("|");
-		const enrollSig = `${hubState.enrollment?.code || ""}:${hubState.enrollment?.joinedCount || 0}`;
-		const listKey = `${(hubState.hosts || []).length}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${enrollSig}:${bannerKey}#${rowsSig}`;
+		const listKey = `${(hubState.hosts || []).length}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${hostTelemetrySig}:${bannerKey}#${rowsSig}`;
 		if (listKey === lastRenderedListKey && viewport.querySelector(".session-list")) return;
 		lastRenderedListKey = listKey;
 		const prevScrollTop = viewport.scrollTop;
+		const hostTelemetryStripHtml = visibleHosts.length > 0 ? `
+        <div class="host-telemetry-strip" style="display:flex;gap:6px;overflow-x:auto;padding:7px 12px;border-bottom:1px solid var(--hairline);background:var(--subtle);font-size:11.5px;align-items:center;">
+          ${visibleHosts.map((h) => {
+			const tm = formatHostTelemetry(h);
+			const warnStyle = !tm.isOnline ? "background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.28);" : tm.lowBattery ? "background:var(--amber-soft);color:#b45309;border:1px solid #fde68a;" : "background:var(--card);color:var(--text-secondary);border:1px solid var(--border);";
+			const statusText = tm.isOnline ? `${tm.compactBadge}${tm.lowBattery ? " (低电量预警)" : ""}` : `⚪ 离线 (${formatTime(h.lastSeen)}${tm.hasTelemetry ? ` · 断连前 ${tm.powerIcon}${tm.powerShort} ${tm.netShort}` : ""})`;
+			return `
+              <button
+                type="button"
+                onclick="openHostSheet()"
+                style="display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap;cursor:pointer;${warnStyle}"
+                title="${esc(tm.fullLine)}"
+              >
+                <span>${tm.isOnline ? "🟢" : "🔴"} ${esc(h.hostName)}:</span>
+                <span>${esc(statusText)}</span>
+              </button>
+            `;
+		}).join("")}
+        </div>
+      ` : "";
 		const liveBannerHtml = pendingAppInfo ? `
         <div class="live-activity-bar">
           <div class="live-activity-left" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">
@@ -1892,6 +1945,7 @@ function initHubController() {
           `;
 		}
 		viewport.innerHTML = `
+        ${hostTelemetryStripHtml}
         ${liveBannerHtml}
         <div class="session-list">
           ${rowsHtml || emptyStateHtml}
@@ -3550,7 +3604,6 @@ function initHubController() {
 			if (data?.ok && data.enrollment) {
 				hubState.enrollment = data.enrollment;
 				lastRenderedSettingsKey = "";
-				lastRenderedListKey = "";
 				renderAll();
 				showToast("🔄 已生成新的电脑配对码（15 分钟有效）");
 			}
@@ -3616,6 +3669,8 @@ function initHubController() {
 				runningCount: h.runningCount || 0,
 				totalBytes: h.totalBytes || 0,
 				turbo: h.bridgeState?.turbo?.engineLabel || "",
+				power: h.bridgeState?.systemTelemetry?.power?.label || "",
+				net: h.bridgeState?.systemTelemetry?.network?.label || "",
 				shareUrl: h.lastShareResult?.shareUrl || ""
 			})),
 			shares: shares.map((s) => ({
@@ -3691,6 +3746,15 @@ function initHubController() {
                       <span class="metric-val">${formatBytes(h.totalBytes)}</span>
                     </div>
                   </div>
+                  ${(() => {
+				const tm = formatHostTelemetry(h);
+				return `
+                      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;font-size:12px;color:var(--text-secondary);padding:7px 10px;margin-bottom:8px;border-radius:10px;background:${tm.lowBattery ? "var(--amber-soft)" : "var(--subtle)"};border:1px solid ${tm.lowBattery ? "#fde68a" : "var(--border)"};">
+                        <span>${tm.powerIcon} 供电状态：<strong>${esc(tm.powerDetail)}</strong>${tm.lowBattery ? " <span style=\"color:var(--red);font-weight:700;\">⚠️ 低电量防休眠预警</span>" : ""}</span>
+                        <span>${tm.netIcon} 网络状态：<strong>${esc(tm.netDetail)}</strong>${!h.online ? " <span style=\"color:var(--red);\">(离线前最后状态)</span>" : ""}</span>
+                      </div>
+                    `;
+			})()}
                   <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--text-secondary);padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--hairline);">
                     <span>⚡ 同步引擎：<strong>${esc(h.bridgeState?.turbo?.engineLabel || "🐢 标准轮询 (可升级)")}</strong>${h.syncMeta?.seq ? ` · 序号 #${h.syncMeta.seq}` : ""}</span>
                     <button class="pill-action-btn primary" style="padding:4px 10px;font-size:11.5px;" onclick="openTurboGuideSheet()">
@@ -4208,15 +4272,21 @@ function initHubController() {
             <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">一屏混排查看 ${hosts.length} 台电脑共 ${totalCount} 条会话</div>
           </div>
           <span style="font-size:13px;font-weight:600;color:var(--primary);">${currentHostId === "ALL_HOSTS" ? "当前视图 ✓" : "切换 ›"}</span>
-        </div>`, ...hosts.map((h) => `
+        </div>`, ...hosts.map((h) => {
+			const tm = formatHostTelemetry(h);
+			return `
           <div class="host-option ${h.hostId === currentHostId ? "selected" : ""}" onclick="selectHost('${esc(h.hostId)}')">
             <div>
               <div style="font-weight:700;font-size:15px;color:var(--text);">${h.online ? "🟢" : "⚪"} ${esc(h.hostName)}</div>
-              <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${(h.bridgeState?.tasks || []).length} 条会话 · ${h.isFeishuActive ? "🎯 飞书当前主控" : h.online ? "在线待命" : "离线"}</div>
+              <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${(h.bridgeState?.tasks || []).length} 条会话 · ${h.isFeishuActive ? "🎯 飞书当前主控" : h.online ? "在线待命" : "离线 (" + formatTime(h.lastSeen) + ")"}</div>
+              <div style="font-size:11.5px;color:${tm.lowBattery ? "#b45309" : "var(--text-secondary)"};margin-top:3px;font-weight:500;">
+                ${esc(tm.fullLine)}
+              </div>
             </div>
             <span style="font-size:13px;font-weight:600;color:var(--primary);">${h.hostId === currentHostId ? "当前设备 ✓" : "切换 ›"}</span>
           </div>
-        `)].join("");
+        `;
+		})].join("");
 		openSheet("hostSheet");
 	}
 	function selectHost(id) {
@@ -5016,13 +5086,14 @@ function initHubController() {
 				showToast("🔓 扫码登录成功");
 			} else showToast("⚠️ 扫码配对码已过期或无效，请重新扫码");
 		} catch {}
-		if ((await fetchState())?.ok) connectSSE();
+		await fetchState();
+		connectSSE();
 	})();
-	else fetchState().then((res) => {
-		if (res?.ok) connectSSE();
-	});
+	else {
+		fetchState();
+		connectSSE();
+	}
 	setInterval(() => {
-		if (!getToken() && document.getElementById("authOverlay")?.classList.contains("show")) return;
 		if (!sseConnected || Date.now() - lastSseEventAt > 15e3) fetchState();
 	}, 5e3);
 }

@@ -22,6 +22,7 @@ import { CodexAdapter } from './harnesses/codex-adapter.js'
 import { DshHeadlessRunner } from './harnesses/dsh-headless-adapter.js'
 import { safeError } from './redact.js'
 import {
+  collectHostSystemTelemetry,
   extractSessionTranscript,
   invalidateDshSessionParseCache,
   loadDiskSessionsFromDshHome,
@@ -435,7 +436,14 @@ export class HubAgent {
             engineLabel: getTurboNativeBinaryPath() ? '🦀 Rust 原生极速引擎 + 实时流' : '⚡ FSEvents 实时事件流',
             accessibilityGranted: true,
           }
+      try {
+        bridgeState.systemTelemetry = await collectHostSystemTelemetry({
+          lastRttMs: this.lastHeartbeatRttMs,
+          execImpl: this.execImpl,
+        })
+      } catch {}
       const resultsToSend = this.pendingResults.splice(0)
+      const hbReqStart = Date.now()
       const response = await this.fetch(`${this.config.hubUrl}/api/heartbeat`, {
         method: 'POST',
         headers: this.headers(),
@@ -456,6 +464,7 @@ export class HubAgent {
         if (resultsToSend.length > 0) this.pendingResults.unshift(...resultsToSend)
         return
       }
+      this.lastHeartbeatRttMs = Math.max(1, Date.now() - hbReqStart)
       const data = await response.json()
       if (Array.isArray(data.hostsSummary)) {
         this.fleetSummary = data.hostsSummary

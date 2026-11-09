@@ -1674,6 +1674,178 @@ test('P1 & P2 Onboarding Loop: multi-use enrollment code, per-host independent t
   }
 })
 
+test('DSH workspace.json bidirectional sync: filters archived sessions & registers phone-created sessions for DSH Desktop', async () => {
+  const zlib = await import('node:zlib')
+  const { mkdir, readFile } = await import('node:fs/promises')
+  const {
+    loadDiskSessionsFromDshHome,
+    invalidateDshSessionParseCache,
+    deleteAgentSession,
+    parsePmsetBatteryOutput,
+    collectHostSystemTelemetry,
+  } = await import('../lib/workspace-ops.js')
+
+  const root = await mkdtemp(join(tmpdir(), 'dsh-ws-sync-'))
+  try {
+    const dshHome = join(root, 'dsh-home')
+    const projectDir = join(root, 'deepseekharness-remote')
+    await mkdir(projectDir, { recursive: true })
+    await mkdir(join(dshHome, 'storages'), { recursive: true })
+
+    // Simulate 4 sessions on disk (matching no2's exact scenario):
+    // 1 & 2: already in workspace.json sessionIds
+    // 3: archived in workspace.json global.archivedSessionIds
+    // 4: newly created from Phone (missing from workspace.json sessionIds)
+    const makeZstdSession = async (sid, title, timeOffsetMs) => {
+      const sDir = join(dshHome, 'sessions', 'proj-hash-1', sid)
+      await mkdir(sDir, { recursive: true })
+      const lines = [
+        JSON.stringify({
+          type: 'session',
+          id: sid,
+          cwd: projectDir,
+          createdAt: Date.now() + timeOffsetMs,
+        }),
+        JSON.stringify({
+          type: 'session/title',
+          time: Date.now() + timeOffsetMs,
+          data: { title },
+        }),
+        JSON.stringify({
+          type: 'user/message',
+          time: Date.now() + timeOffsetMs + 10,
+          data: {
+            source: { kind: 'user' },
+            content: [{ type: 'text', text: `请执行任务：${title}` }],
+          },
+        }),
+        JSON.stringify({
+          type: 'assistant/message',
+          time: Date.now() + timeOffsetMs + 20,
+          data: {
+            message: {
+              content: [{ type: 'text', text: `已完成：${title}` }],
+            },
+          },
+        }),
+      ].join('\n') + '\n'
+      const compressed = zlib.zstdCompressSync(Buffer.from(lines, 'utf8'))
+      await writeFile(join(sDir, 'session.v4.jsonl.zstd'), compressed)
+    }
+
+    await makeZstdSession('session-desk-1', '优化', 1000)
+    await makeZstdSession('session-desk-2', '检查本地项目并拉取更新', 2000)
+    await makeZstdSession('session-archived-3', '项目文件与Git同步调查', 3000)
+    await makeZstdSession('session-phone-new-4', '我听说我项目想出名就需要先找对应领域的awesome项目', 4000)
+
+    const wsJsonPath = join(dshHome, 'storages', 'workspace.json')
+    await writeFile(
+      wsJsonPath,
+      JSON.stringify(
+        {
+          unit: { name: 'workspace', version: 2 },
+          global: {
+            initialized: true,
+            workspaceIds: ['ws-remote-1'],
+            archivedSessionIds: ['session-archived-3'],
+            pinnedSessionIds: [],
+          },
+          tables: {
+            workspaces: {
+              'ws-remote-1': {
+                path: projectDir,
+                title: 'deepseekharness-remote',
+                sessionIds: ['session-desk-2', 'session-desk-1'],
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    )
+
+    invalidateDshSessionParseCache()
+    const activeSessions = await loadDiskSessionsFromDshHome(dshHome)
+
+    // 1. Archived session ('session-archived-3') must be excluded on Phone so Phone & Computer counts match (3 active)
+    assert.equal(activeSessions.length, 3)
+    assert.deepEqual(
+      activeSessions.map(s => s.id),
+      ['session-phone-new-4', 'session-desk-2', 'session-desk-1'],
+    )
+
+    // 2. Phone-created session ('session-phone-new-4') must be automatically registered into workspace.json for DSH Desktop!
+    const updatedWsJson = JSON.parse(await readFile(wsJsonPath, 'utf8'))
+    assert.deepEqual(updatedWsJson.tables.workspaces['ws-remote-1'].sessionIds, [
+      'session-phone-new-4',
+      'session-desk-2',
+      'session-desk-1',
+    ])
+
+    // 3. Deleting a session also cleans it from workspace.json
+    await deleteAgentSession({ list: () => [], get: () => undefined }, 'session-phone-new-4', dshHome)
+    const afterDeleteWsJson = JSON.parse(await readFile(wsJsonPath, 'utf8'))
+    assert.deepEqual(afterDeleteWsJson.tables.workspaces['ws-remote-1'].sessionIds, [
+      'session-desk-2',
+      'session-desk-1',
+    ])
+
+    // 4. Verify host power/battery & network telemetry parsing
+    const macBookCharged = parsePmsetBatteryOutput(
+      "Now drawing from 'AC Power'\n -InternalBattery-0 (id=26804323)\t100%; charged; 0:00 remaining present: true\n",
+    )
+    assert.equal(macBookCharged.hasBattery, true)
+    assert.equal(macBookCharged.acPower, true)
+    assert.equal(macBookCharged.percent, 100)
+    assert.equal(macBookCharged.lowBattery, false)
+    assert.equal(macBookCharged.shortLabel, '100%⚡')
+
+    const macBookLowBatt = parsePmsetBatteryOutput(
+      "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=26804323)\t15%; discharging; 0:42 remaining present: true\n",
+    )
+    assert.equal(macBookLowBatt.hasBattery, true)
+    assert.equal(macBookLowBatt.acPower, false)
+    assert.equal(macBookLowBatt.percent, 15)
+    assert.equal(macBookLowBatt.lowBattery, true)
+    assert.equal(macBookLowBatt.icon, '🪫')
+
+    const macMiniDesktop = parsePmsetBatteryOutput("Now drawing from 'AC Power'\n")
+    assert.equal(macMiniDesktop.hasBattery, false)
+    assert.equal(macMiniDesktop.acPower, true)
+    assert.equal(macMiniDesktop.shortLabel, '电源直供')
+
+    const telemetry = await collectHostSystemTelemetry({
+      lastRttMs: 42,
+      force: true,
+      execImpl: async (cmd) => {
+        if (cmd.includes('pmset')) {
+          return {
+            stdout:
+              "Now drawing from 'AC Power'\n -InternalBattery-0 (id=26804323)\t96%; charging; 0:18 remaining present: true\n",
+          }
+        }
+        if (cmd.includes('scutil')) {
+          return {
+            stdout:
+              'IPv4 network interface information\n   en0 : flags : 0x5\n         address : 192.168.1.88\n',
+          }
+        }
+        return { stdout: 'Hardware Port: Wi-Fi\nDevice: en0\n' }
+      },
+    })
+    assert.equal(telemetry.power.percent, 96)
+    assert.equal(telemetry.network.rttMs, 42)
+    assert.equal(telemetry.network.quality, 'excellent')
+    assert.match(telemetry.network.label, /42ms/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+
 
 
 

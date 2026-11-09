@@ -361,6 +361,7 @@ export class HubCore {
         hasDedicatedToken: Boolean(host.hostToken),
         hostTokenPreview: host.hostTokenPreview || '',
         hostTokenCreatedAt: host.hostTokenCreatedAt || 0,
+        systemTelemetry: bridge.systemTelemetry || null,
       })
     }
     return list

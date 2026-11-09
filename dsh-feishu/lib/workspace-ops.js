@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
-import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto'
+import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
 import { chmod, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { networkInterfaces } from 'node:os'
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import * as zlib from 'node:zlib'
@@ -395,15 +396,232 @@ export async function renameDiskSession(dshHome, sessionId, newTitle) {
 }
 
 /**
+ * Read `<dshHome>/storages/workspace.json` so the remote controller and DSH Desktop
+ * share the exact same `archivedSessionIds` filter and workspace session membership.
+ */
+export async function readDshWorkspaceStorage(dshHome) {
+  if (!dshHome) {
+    return { raw: null, storagePath: '', archivedSet: new Set(), pinnedSet: new Set() }
+  }
+  const storagePath = join(resolve(dshHome), 'storages', 'workspace.json')
+  try {
+    const parsed = JSON.parse(await readFile(storagePath, 'utf8'))
+    const archived = Array.isArray(parsed?.global?.archivedSessionIds)
+      ? parsed.global.archivedSessionIds.map(id => String(id || '').trim()).filter(Boolean)
+      : []
+    const pinned = Array.isArray(parsed?.global?.pinnedSessionIds)
+      ? parsed.global.pinnedSessionIds.map(id => String(id || '').trim()).filter(Boolean)
+      : []
+    return {
+      raw: parsed,
+      storagePath,
+      archivedSet: new Set(archived),
+      pinnedSet: new Set(pinned),
+    }
+  } catch {
+    return { raw: null, storagePath, archivedSet: new Set(), pinnedSet: new Set() }
+  }
+}
+
+/**
+ * Ensure any unarchived DSH sessions created from the Phone Web UI or headless CLI
+ * are registered inside `<dshHome>/storages/workspace.json` (`tables.workspaces[wsId].sessionIds`)
+ * so DSH Desktop's workspace sidebar displays the exact same conversation list.
+ */
+export async function syncDshWorkspaceStorage(dshHome, activeSessions = [], preloadedStorage = null) {
+  if (!dshHome || !Array.isArray(activeSessions) || activeSessions.length === 0) {
+    return { updated: false, addedSessionIds: [] }
+  }
+  const { raw, storagePath, archivedSet } =
+    preloadedStorage && preloadedStorage.raw !== undefined
+      ? preloadedStorage
+      : await readDshWorkspaceStorage(dshHome)
+  if (
+    !raw ||
+    typeof raw !== 'object' ||
+    !raw.tables ||
+    typeof raw.tables.workspaces !== 'object' ||
+    !raw.tables.workspaces
+  ) {
+    return { updated: false, addedSessionIds: [] }
+  }
+
+  const workspacesTable = raw.tables.workspaces
+  const accounted = new Set(archivedSet)
+  const wsByPath = new Map()
+  let isV2Schema = raw.unit?.version === 2
+
+  for (const [wsId, record] of Object.entries(workspacesTable)) {
+    if (!record || typeof record !== 'object') continue
+    if (typeof record.title === 'string' || typeof record.createdAt === 'string') {
+      isV2Schema = true
+    }
+    const wsPath = String(record.path || '').trim()
+    if (wsPath) {
+      wsByPath.set(wsPath, [wsId, record])
+      const cleanPath = wsPath.replace(/\/+$/, '')
+      if (cleanPath) wsByPath.set(cleanPath, [wsId, record])
+      try {
+        const realWsPath = await resolveRealRoot(wsPath)
+        if (realWsPath) wsByPath.set(realWsPath, [wsId, record])
+      } catch {}
+    }
+    if (Array.isArray(record.sessionIds)) {
+      for (const sid of record.sessionIds) {
+        if (sid) accounted.add(String(sid))
+      }
+    }
+  }
+
+  let dirty = false
+  const addedSessionIds = []
+  // Iterate from oldest to newest so prepending places newest at index 0
+  const ordered = [...activeSessions].sort((a, b) => (a.lastActivity || 0) - (b.lastActivity || 0))
+  for (const item of ordered) {
+    const sid = String(item?.id || item?.sessionId || '').trim()
+    const rawCwd = String(item?.cwd || '').trim()
+    if (!sid || !rawCwd || accounted.has(sid)) continue
+
+    let canonicalCwd = rawCwd
+    try {
+      canonicalCwd = await resolveRealRoot(rawCwd)
+    } catch {
+      canonicalCwd = rawCwd
+    }
+    const cleanRaw = rawCwd.replace(/\/+$/, '')
+    const cleanCanon = canonicalCwd.replace(/\/+$/, '')
+    let matched =
+      wsByPath.get(canonicalCwd) ||
+      wsByPath.get(cleanCanon) ||
+      wsByPath.get(rawCwd) ||
+      wsByPath.get(cleanRaw)
+
+    if (!matched) {
+      let dirExists = false
+      try {
+        const st = await stat(canonicalCwd)
+        dirExists = st.isDirectory()
+      } catch {
+        dirExists = false
+      }
+      if (!dirExists) continue
+      const newWsId = randomUUID()
+      const nowIso = new Date().toISOString()
+      const wsTitle = basename(canonicalCwd) || canonicalCwd
+      const newRecord = isV2Schema
+        ? {
+            path: canonicalCwd,
+            title: wsTitle,
+            sessionIds: [sid],
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          }
+        : {
+            id: newWsId,
+            path: canonicalCwd,
+            sessionIds: [sid],
+            createdAt: Date.now(),
+          }
+      workspacesTable[newWsId] = newRecord
+      if (!raw.global || typeof raw.global !== 'object') {
+        raw.global = { workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] }
+      }
+      if (!Array.isArray(raw.global.workspaceIds)) {
+        raw.global.workspaceIds = []
+      }
+      if (!raw.global.workspaceIds.includes(newWsId)) {
+        raw.global.workspaceIds = [newWsId, ...raw.global.workspaceIds]
+      }
+      matched = [newWsId, newRecord]
+      wsByPath.set(canonicalCwd, matched)
+      wsByPath.set(cleanCanon, matched)
+      accounted.add(sid)
+      addedSessionIds.push(sid)
+      dirty = true
+      continue
+    }
+
+    const [, record] = matched
+    if (!Array.isArray(record.sessionIds)) {
+      record.sessionIds = []
+    }
+    if (!record.sessionIds.includes(sid)) {
+      record.sessionIds = [sid, ...record.sessionIds]
+      if (typeof record.updatedAt === 'string' || isV2Schema) {
+        record.updatedAt = new Date().toISOString()
+      }
+      accounted.add(sid)
+      addedSessionIds.push(sid)
+      dirty = true
+    }
+  }
+
+  if (dirty && storagePath) {
+    try {
+      await mkdir(dirname(storagePath), { recursive: true })
+      await writeFile(storagePath, `${JSON.stringify(raw, null, 2)}\n`, { mode: 0o600 })
+    } catch {
+      return { updated: false, addedSessionIds: [] }
+    }
+  }
+  return { updated: dirty, addedSessionIds }
+}
+
+/**
+ * Remove a deleted session ID from `<dshHome>/storages/workspace.json`.
+ */
+export async function removeSessionFromDshWorkspaceStorage(dshHome, sessionId) {
+  const sid = String(sessionId || '').trim()
+  if (!dshHome || !sid) return false
+  const { raw, storagePath } = await readDshWorkspaceStorage(dshHome)
+  if (!raw || typeof raw !== 'object') return false
+  let dirty = false
+  if (Array.isArray(raw.global?.archivedSessionIds) && raw.global.archivedSessionIds.includes(sid)) {
+    raw.global.archivedSessionIds = raw.global.archivedSessionIds.filter(id => id !== sid)
+    dirty = true
+  }
+  if (Array.isArray(raw.global?.pinnedSessionIds) && raw.global.pinnedSessionIds.includes(sid)) {
+    raw.global.pinnedSessionIds = raw.global.pinnedSessionIds.filter(id => id !== sid)
+    dirty = true
+  }
+  const workspacesTable = raw.tables?.workspaces
+  if (workspacesTable && typeof workspacesTable === 'object') {
+    for (const record of Object.values(workspacesTable)) {
+      if (record && Array.isArray(record.sessionIds) && record.sessionIds.includes(sid)) {
+        record.sessionIds = record.sessionIds.filter(id => id !== sid)
+        if (typeof record.updatedAt === 'string') {
+          record.updatedAt = new Date().toISOString()
+        }
+        dirty = true
+      }
+    }
+  }
+  if (dirty && storagePath) {
+    try {
+      await writeFile(storagePath, `${JSON.stringify(raw, null, 2)}\n`, { mode: 0o600 })
+      return true
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
+/**
  * Read real historical DSH v4 sessions (`session.v4.jsonl.zstd`) directly from `~/.dsh/sessions`
  * so the Web UI displays all of the user's real projects & conversations even when DSH Desktop
  * hasn't hydrated them into memory yet.
  */
 const dshSessionParseCache = new Map()
 
-export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, maxMessages = 14 } = {}) {
+export async function loadDiskSessionsFromDshHome(
+  dshHome,
+  { maxSessions = 25, maxMessages = 14, includeArchived = false, syncWorkspaceStorage = true } = {},
+) {
   if (!dshHome) return []
   const sessionsRoot = join(resolve(dshHome), 'sessions')
+  const wsStorage = await readDshWorkspaceStorage(dshHome)
+  const archivedSet = includeArchived ? new Set() : wsStorage.archivedSet
   let customTitles = {}
   try {
     customTitles = JSON.parse(await readFile(join(resolve(dshHome), 'session-titles.json'), 'utf8'))
@@ -430,6 +648,7 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
 
     for (const sessEntry of sessDirs) {
       if (!sessEntry.isDirectory()) continue
+      if (archivedSet.has(sessEntry.name)) continue
       const zstdPath = join(projPath, sessEntry.name, 'session.v4.jsonl.zstd')
       let fileStat
       try {
@@ -442,6 +661,7 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
       const cachedKey = `${Math.round(fileStat.mtimeMs)}:${fileStat.size}:${customTitles[sessEntry.name] || ''}`
       const cachedEntry = dshSessionParseCache.get(zstdPath)
       if (cachedEntry && cachedEntry.cachedKey === cachedKey && cachedEntry.session) {
+        if (archivedSet.has(cachedEntry.session.id)) continue
         const customOverride = customTitles[cachedEntry.session.id]
         const fullTr = Array.isArray(cachedEntry.fullTranscript)
           ? cachedEntry.fullTranscript
@@ -493,6 +713,9 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
           .filter(Boolean)
 
         const header = lines.find(e => e.type === 'session') || {}
+        if (header.origin === 'subagent') continue
+        const headerId = String(header.id || sessEntry.name).trim()
+        if (archivedSet.has(headerId)) continue
         const cwd = String(header.cwd || '').trim()
         const titles = lines.filter(e => e.type === 'session/title' && e.data?.title)
         const title = String(titles.at(-1)?.data?.title || '').trim()
@@ -676,11 +899,272 @@ export async function loadDiskSessionsFromDshHome(dshHome, { maxSessions = 25, m
   }
 
   results.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0))
+  if (syncWorkspaceStorage && results.length > 0) {
+    try {
+      await syncDshWorkspaceStorage(dshHome, results, wsStorage)
+    } catch {
+      // ignore storage sync errors
+    }
+  }
   return results.slice(0, maxSessions)
 }
 
 export function invalidateDshSessionParseCache() {
   dshSessionParseCache.clear()
+}
+
+/**
+ * Parse macOS `pmset -g batt` output into structured battery & power source telemetry.
+ */
+export function parsePmsetBatteryOutput(rawText = '') {
+  const text = String(rawText || '')
+  const acPower = /Now drawing from\s+'AC Power'/i.test(text)
+  const battMatch = /InternalBattery[^\n\t]*\t\s*(\d+)%;\s*([^;]+);\s*([^;\n]+)/i.exec(text)
+  if (battMatch) {
+    const percent = Math.max(0, Math.min(100, Number(battMatch[1]) || 0))
+    const stateRaw = String(battMatch[2] || '').trim().toLowerCase()
+    const remRaw = String(battMatch[3] || '')
+      .replace(/present:\s*(true|false)/gi, '')
+      .replace(/remaining/gi, '')
+      .trim()
+    const timeRemaining =
+      remRaw && !/^0:00$|^no estimate$|^\(no estimate\)$/i.test(remRaw) ? remRaw : ''
+    const charging =
+      acPower ||
+      stateRaw === 'charging' ||
+      stateRaw === 'charged' ||
+      stateRaw === 'finishing charge'
+    const lowBattery = !acPower && percent <= 20
+    const icon = lowBattery ? '🪫' : acPower ? '🔋⚡' : '🔋'
+    let label = ''
+    if (acPower && (stateRaw === 'charged' || percent >= 99)) {
+      label = `${percent}% · 电源供电`
+    } else if (acPower) {
+      label = `${percent}% · 充电中${timeRemaining ? ` (${timeRemaining})` : ''}`
+    } else {
+      label = `${percent}% · 电池放电${timeRemaining ? ` (约剩 ${timeRemaining})` : ''}`
+    }
+    return {
+      hasBattery: true,
+      acPower,
+      percent,
+      charging,
+      state: stateRaw || (acPower ? 'charged' : 'discharging'),
+      timeRemaining,
+      lowBattery,
+      icon,
+      label,
+      shortLabel: `${percent}%${acPower ? '⚡' : ''}`,
+    }
+  }
+  return {
+    hasBattery: false,
+    acPower: true,
+    percent: null,
+    charging: true,
+    state: 'ac-only',
+    timeRemaining: '',
+    lowBattery: false,
+    icon: '🔌',
+    label: '台式机电源常供',
+    shortLabel: '电源直供',
+  }
+}
+
+let cachedSystemTelemetry = null
+let cachedSystemTelemetryAt = 0
+let cachedHwPortMap = null
+let cachedHwPortMapAt = 0
+
+/**
+ * Collect real-time host power/battery & network interface/latency telemetry.
+ * Cached for 15s (with instant RTT updates) so 1.5s heartbeats incur zero overhead.
+ */
+export async function collectHostSystemTelemetry({
+  lastRttMs = null,
+  execImpl = execFileAsync,
+  force = false,
+} = {}) {
+  const now = Date.now()
+  const rttMs = Number(lastRttMs) > 0 ? Math.round(Number(lastRttMs)) : null
+
+  if (!force && cachedSystemTelemetry && now - cachedSystemTelemetryAt < 15_000) {
+    const net = cachedSystemTelemetry.network || {}
+    const effectiveRtt = rttMs ?? net.rttMs ?? null
+    const quality = !effectiveRtt
+      ? 'good'
+      : effectiveRtt <= 180
+        ? 'excellent'
+        : effectiveRtt <= 450
+          ? 'good'
+          : 'slow'
+    const qualityLabel = quality === 'excellent' ? '极佳' : quality === 'good' ? '良好' : '较慢'
+    return {
+      ...cachedSystemTelemetry,
+      network: {
+        ...net,
+        rttMs: effectiveRtt,
+        quality,
+        qualityLabel,
+        label: `${net.kindLabel || '在线'}${net.localIp ? ` (${net.localIp})` : ''}${effectiveRtt ? ` · ${effectiveRtt}ms` : ''}`,
+        shortLabel: `${net.kindLabel || '在线'}${effectiveRtt ? ` ${effectiveRtt}ms` : ''}`,
+      },
+      updatedAt: now,
+    }
+  }
+
+  let power = {
+    hasBattery: false,
+    acPower: true,
+    percent: null,
+    charging: true,
+    state: 'ac-only',
+    timeRemaining: '',
+    lowBattery: false,
+    icon: '🔌',
+    label: '电源直供',
+    shortLabel: '电源直供',
+  }
+
+  if (process.platform === 'darwin') {
+    try {
+      const res = await execImpl('/usr/bin/pmset', ['-g', 'batt'], { timeout: 1500 })
+      const stdout = typeof res === 'string' ? res : res?.stdout || ''
+      power = parsePmsetBatteryOutput(stdout)
+    } catch {
+      // keep default AC power
+    }
+  } else if (process.platform === 'linux') {
+    try {
+      let capStr = ''
+      let statusStr = ''
+      for (const batDir of ['BAT0', 'BAT1', 'battery']) {
+        try {
+          capStr = await readFile(`/sys/class/power_supply/${batDir}/capacity`, 'utf8')
+          statusStr = await readFile(`/sys/class/power_supply/${batDir}/status`, 'utf8')
+          break
+        } catch {}
+      }
+      if (capStr) {
+        const percent = Math.max(0, Math.min(100, Number(capStr.trim()) || 0))
+        const stateRaw = statusStr.trim().toLowerCase()
+        const acPower = stateRaw !== 'discharging'
+        const lowBattery = !acPower && percent <= 20
+        power = {
+          hasBattery: true,
+          acPower,
+          percent,
+          charging: acPower,
+          state: stateRaw,
+          timeRemaining: '',
+          lowBattery,
+          icon: lowBattery ? '🪫' : acPower ? '🔋⚡' : '🔋',
+          label: `${percent}% · ${acPower ? '电源供电' : '电池放电'}`,
+          shortLabel: `${percent}%${acPower ? '⚡' : ''}`,
+        }
+      }
+    } catch {}
+  }
+
+  // Hardware port mapping on macOS (e.g., en0 -> Wi-Fi, en5 -> LAN)
+  if (process.platform === 'darwin' && (!cachedHwPortMap || now - cachedHwPortMapAt > 300_000)) {
+    const map = new Map()
+    try {
+      const res = await execImpl('/usr/sbin/networksetup', ['-listallhardwareports'], { timeout: 1500 })
+      const out = typeof res === 'string' ? res : res?.stdout || ''
+      const blocks = out.split(/\n\s*\n/)
+      for (const blk of blocks) {
+        const portMatch = /Hardware Port:\s*([^\n]+)/i.exec(blk)
+        const devMatch = /Device:\s*([^\s\n]+)/i.exec(blk)
+        if (portMatch && devMatch) {
+          map.set(devMatch[1].trim(), portMatch[1].trim())
+        }
+      }
+    } catch {}
+    cachedHwPortMap = map
+    cachedHwPortMapAt = now
+  }
+
+  let primaryIface = ''
+  let localIp = ''
+  let hasVpn = false
+
+  if (process.platform === 'darwin') {
+    try {
+      const res = await execImpl('/usr/sbin/scutil', ['--nwi'], { timeout: 1200 })
+      const out = typeof res === 'string' ? res : res?.stdout || ''
+      const m = /^\s*([a-z0-9]+)\s*:\s*flags[^\n]*\n\s*address\s*:\s*([0-9.]+)/im.exec(out)
+      if (m) {
+        primaryIface = m[1].trim()
+        localIp = m[2].trim()
+      }
+    } catch {}
+  }
+
+  try {
+    const ifaces = networkInterfaces()
+    for (const [name, addrs] of Object.entries(ifaces || {})) {
+      for (const addr of addrs || []) {
+        const isV4 = addr.family === 'IPv4' || addr.family === 4
+        if (!isV4 || addr.internal) continue
+        if (/^(utun|tun|tap|wg|tailscale)/i.test(name)) {
+          hasVpn = true
+          continue
+        }
+        if (!primaryIface || (!localIp && name === primaryIface)) {
+          primaryIface = name
+          localIp = addr.address
+        }
+      }
+    }
+  } catch {}
+
+  const hwPortName = (cachedHwPortMap && primaryIface && cachedHwPortMap.get(primaryIface)) || ''
+  let kind = 'network'
+  let kindLabel = '在线'
+  let netIcon = '🌐'
+  if (/wi-fi|airport|wlan/i.test(hwPortName) || /^wl/i.test(primaryIface)) {
+    kind = 'wifi'
+    kindLabel = 'Wi-Fi'
+    netIcon = '📶'
+  } else if (/ethernet|lan|thunderbolt|usb/i.test(hwPortName) || /^eth/i.test(primaryIface)) {
+    kind = 'ethernet'
+    kindLabel = '有线网络'
+    netIcon = '🌐'
+  } else if (primaryIface === 'en0') {
+    kind = 'wifi'
+    kindLabel = 'Wi-Fi'
+    netIcon = '📶'
+  } else if (primaryIface) {
+    kindLabel = primaryIface
+  }
+
+  const quality = !rttMs ? 'good' : rttMs <= 180 ? 'excellent' : rttMs <= 450 ? 'good' : 'slow'
+  const qualityLabel = quality === 'excellent' ? '极佳' : quality === 'good' ? '良好' : '较慢'
+
+  const network = {
+    online: true,
+    kind,
+    kindLabel,
+    iface: primaryIface,
+    hwPort: hwPortName,
+    localIp,
+    hasVpn,
+    rttMs,
+    quality,
+    qualityLabel,
+    icon: netIcon,
+    label: `${kindLabel}${localIp ? ` (${localIp})` : ''}${rttMs ? ` · ${rttMs}ms` : ''}`,
+    shortLabel: `${kindLabel}${rttMs ? ` ${rttMs}ms` : ''}`,
+  }
+
+  cachedSystemTelemetry = {
+    power,
+    network,
+    updatedAt: now,
+  }
+  cachedSystemTelemetryAt = now
+  return cachedSystemTelemetry
 }
 
 /**
@@ -823,6 +1307,11 @@ export async function deleteAgentSession(agents, agentId, dshHome = '') {
       } catch {
         // ignore missing file
       }
+    }
+    try {
+      await removeSessionFromDshWorkspaceStorage(dshHome, id)
+    } catch {
+      // ignore workspace.json cleanup error
     }
   }
 

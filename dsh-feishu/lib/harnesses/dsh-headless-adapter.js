@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync,
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import * as zlib from 'node:zlib'
+import { syncDshWorkspaceStorage } from '../workspace-ops.js'
 
 const ZSTD_MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
 
@@ -391,6 +392,9 @@ export class DshHeadlessRunner {
         stdoutBuf = (stdoutBuf + String(chunk)).slice(-1500)
         if (!settledQuickly && stdoutBuf.includes('[dsh-headless-remote]READY:')) {
           settledQuickly = true
+          void syncDshWorkspaceStorage(this.dshHome, [{ id, cwd: targetCwd, lastActivity: Date.now() }]).catch(
+            () => {},
+          )
           resolvePromise({
             ok: true,
             agentId: id,
@@ -420,6 +424,11 @@ export class DshHeadlessRunner {
 
       proc.on('exit', code => {
         this.activeProcs.delete(id)
+        if (code === 0) {
+          void syncDshWorkspaceStorage(this.dshHome, [{ id, cwd: targetCwd, lastActivity: Date.now() }]).catch(
+            () => {},
+          )
+        }
         try {
           this.onTurnSettled?.(id, code, stderrBuf)
         } catch {}
