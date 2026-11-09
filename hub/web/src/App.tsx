@@ -43,11 +43,26 @@ export function App() {
         >
           🖥️ 电脑双栏同屏视图
         </button>
+        <button
+          type="button"
+          data-lang-toggle="1"
+          onClick={() => (window as any).toggleLangPreference?.()}
+        >
+          🌐 EN
+        </button>
       </div>
 
       {/* 密码保护锁屏遮罩（未登录或密码错误时自动拦截，保护你的任务隐私） */}
       <div class="auth-overlay" id="authOverlay">
-        <div class="auth-card">
+        <div class="auth-card" style="position:relative;">
+          <button
+            type="button"
+            data-lang-toggle="1"
+            onClick={() => (window as any).toggleLangPreference?.()}
+            style="position:absolute;top:14px;right:14px;border:1px solid var(--border);background:var(--subtle);color:var(--text-secondary);border-radius:999px;padding:4px 10px;font-size:11.5px;font-weight:700;cursor:pointer;"
+          >
+            🌐 EN
+          </button>
           <div style="font-size:38px;margin-bottom:8px;">🔒</div>
           <div style="font-size:18px;font-weight:800;color:var(--text);">DSH 远控控制台登录</div>
           <div style="font-size:12.5px;color:var(--text-secondary);margin-top:8px;line-height:1.6;text-align:left;background:var(--subtle);padding:10px 12px;border-radius:10px;border:1px solid var(--border);">

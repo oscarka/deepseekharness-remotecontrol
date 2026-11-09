@@ -1,168 +1,212 @@
-<p align="center">
-  <img src="docs/assets/banner.svg" alt="DSH Remote Control" width="100%" />
-</p>
+<div align="center">
+  <img src="docs/assets/hero-banner-en.svg" alt="DSH Remote Control — Put your computer's AI coding sessions in your pocket" width="100%" />
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3B82F6.svg" alt="License: MIT" /></a>
-  <img src="https://img.shields.io/badge/平台-Mac%20%7C%20Linux%20%7C%20NAS%20%7C%20树莓派-10B981.svg" alt="Platform" />
-  <img src="https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white" alt="Node >= 20" />
-  <a href="https://railway.app/template?referralCode=dsh-remote"><img src="https://img.shields.io/badge/Railway-云端一键部署-7B3FE4?logo=railway&logoColor=white" alt="Deploy on Railway" /></a>
-</p>
+  <p align="center">
+    <strong>Monitor live progress, steer running tasks, stop runaway loops, or tap to approve commands &amp; multiple-choice popups from your phone.<br/>100% self-hosted — your source code and full transcripts stay on your own machines.</strong>
+  </p>
 
-<p align="center">
-  <strong>🇨🇳 简体中文</strong> · <a href="README.en.md"><strong>🇺🇸 English</strong></a> · <a href="#三步用起来">三步上手</a> · <a href="#支持哪些-ai-编程工具">支持工具</a> · <a href="#常见问题">常见问题</a> · <a href="docs/self-hosting.md">进阶部署</a> · <a href="SECURITY.md">安全说明</a>
-</p>
+  <p align="center">
+    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" />
+    <img src="https://img.shields.io/badge/Host-macOS%20%7C%20Linux%20%7C%20NAS%20%7C%20Raspberry%20Pi-0f766e" alt="Supported Platforms" />
+    <img src="https://img.shields.io/badge/node-%3E%3D20-43853d?logo=node.js&logoColor=white" alt="Node >= 20" />
+    <img src="https://img.shields.io/badge/Web%20Console-English%20%26%20%E4%B8%AD%E6%96%87%20Auto-2563eb" alt="Bilingual Web Console" />
+  </p>
 
----
+  <p align="center">
+    <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Foscarka%2Fdeepseekharness-remotecontrol"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="32" /></a>
+  </p>
 
-## 为什么要做这个？
-
-当你在电脑上让 AI 跑一个耗时半小时的重构或测试，人离开工位去喝咖啡、开会或坐地铁时，往往会遇到这三件事：
-
-- ☕ **卡在半路等确认**：AI 要执行终端命令或弹出选择题等你拍板，你不在电脑前，任务就一直干等。
-- 🚇 **跑偏了想插句话**：在路上突然发现它改错了方向，想立刻喊停，或者补一句“别动测试文件”。
-- 🎉 **跑完了想马上知道**：不想每隔五分钟回工位看一眼，跑完直接锁屏通知你，顺手在手机上接着布置下一步。
-
-**DSH Remote Control** 就是为了解决这三件事：在手机网页（或添加到桌面当 App 用）里直接盯着并指挥你名下所有的电脑，代码与对话全部留在你自己的电脑上。
+  <p align="center">
+    <strong>🇺🇸 English</strong> · <a href="./README.zh-CN.md">🇨🇳 简体中文</a> · <a href="#get-started-in-3-steps">3-Step Setup</a> · <a href="#supported-ai-coding-tools">Supported Tools</a> · <a href="#whats-new">What's New</a> · <a href="#faq">FAQ</a>
+  </p>
+</div>
 
 <table align="center">
   <tr>
     <td align="center" width="33%">
-      <b>① 电脑配对与手机扫码</b><br/>
-      <sub>一行命令接入电脑 · 手机相机扫码免密登录</sub><br/><br/>
-      <img src="docs/assets/screen-pair.png" width="260" alt="电脑配对与手机扫码登录" />
+      <img src="docs/assets/screen-sessions-en.png" width="250" alt="Unified Multi-Tool Session List" /><br/>
+      <sub><strong>① Unified Session List</strong><br/>Live tasks across DSH, Antigravity IDE, Claude &amp; Codex with top approval bar &amp; unread dot</sub>
     </td>
     <td align="center" width="33%">
-      <b>② 手机看进度与命令审批</b><br/>
-      <sub>多工具统一看板 · 危险命令在顶部一键放行</sub><br/><br/>
-      <img src="docs/assets/screen-sessions.png" width="260" alt="手机端多工具会话列表与命令审批" />
+      <img src="docs/assets/screen-approve-en.png" width="250" alt="Mobile Command Approval & Multiple-Choice Popups" /><br/>
+      <sub><strong>② Approve &amp; Answer on Phone</strong><br/>Tap to approve shell commands or answer interactive multiple-choice popups</sub>
     </td>
     <td align="center" width="33%">
-      <b>③ 手机做选择题与发指令</b><br/>
-      <sub>同步电脑弹窗选择题 · 随时发消息或点快捷指令</sub><br/><br/>
-      <img src="docs/assets/screen-approve.png" width="260" alt="手机端弹窗选择题与交互" />
+      <img src="docs/assets/screen-settings-en.png" width="250" alt="Multi-Host Management & Battery/Network Telemetry" /><br/>
+      <sub><strong>③ Multi-Host &amp; Telemetry</strong><br/>Monitor connected computers (battery %, AC power, Wi-Fi latency) &amp; switch EN/中文</sub>
     </td>
   </tr>
 </table>
 
 ---
 
-## 三步用起来
+## Why DSH Remote Control?
 
-不需要配飞书，也不用改任何代码，总共就 **3 步**：
+When you kick off a long refactoring, test suite, or deployment in **DeepSeek Harness (DSH)**, **Antigravity IDE**, **Claude Code**, or **Codex**, stepping away from your desk usually means flying blind:
 
-### 第 1 步：启动你的控制台（二选一）
+- **Stuck on a popup**: The agent asks *"Allow `npm run test:integration`?"* or pops up an architecture multiple-choice question — and waits for hours until you return to your keyboard.
+- **No visibility on the go**: You want to check whether the task finished, send a quick follow-up instruction, attach a phone screenshot, or hit emergency stop while away from your desk.
+- **Multiple computers**: You have both an office Mac and a home workstation running tasks and want one unified mobile view.
 
-- **🏠 方式 A：直接在电脑上跑（推荐 · 0 成本、不用装 Docker、连 `npm install` 都不用）**  
-  控制台使用纯 Node.js 原生内置模块编写（零第三方运行时依赖），前端页面已预编译在仓库里，克隆下来直接带密码启动即可：
-  ```bash
-  git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
-  cd deepseekharness-remotecontrol
-  HUB_TOKEN="自定义一个密码" PORT=8080 npm start
-  ```
+**DSH Remote Control** puts all of your computers' AI coding sessions into a clean mobile web app (with iOS 16.4+ Home Screen lock-screen push notifications and automatic English/Chinese UI detection).
 
-- **🚇 方式 B：出门在外、坐地铁也要随时连（云端一键部署）**  
-  点下方按钮，自动从 GitHub 源码部署一台专属云端控制台，拿到一个公网网址 *(前 30 天免费体验，之后约 \$5/月)*：
+---
 
-  <p align="left">
-    <a href="https://railway.app/template?referralCode=dsh-remote"><img src="https://railway.app/button.svg" alt="Deploy on Railway" height="32" /></a>
-  </p>
+## How It Works: What is the "Control Hub"?
 
-<details>
-<summary>💡 <b>想用 Docker 跑在云服务器 / 群晖 NAS / 树莓派，或配内网穿透？点此展开</b></summary>
+Before starting, it helps to understand the two lightweight pieces:
 
-如果你习惯用 Docker（每次推送到 GitHub `main` 分支时，GitHub Actions 会自动构建并发布多架构镜像，无需手动上传）：
+1. **Control Hub (`控制台`)**: A tiny, zero-dependency Node.js web server that serves the mobile UI and relays encrypted commands between your phone and your computers. **It never stores your source code.**
+2. **Computer Daemon (`connect-host.sh`)**: A background agent installed on each of your Mac/Linux computers via a 1-line command. It watches your local AI coding sessions and connects outbound to your Control Hub (so your computer does **not** need a public IP or port forwarding).
+
+---
+
+## Get Started in 3 Steps
+
+### Step 1: Start Your Control Hub (Pick 1 of 4 Ways)
+
+Choose the deployment method that best fits how you use your phone:
+
+#### 🌟 Option A: Google Cloud Run (Author's Daily Setup · Recommended for 24/7 4G/5G Access Anywhere)
+If you want to control your home/office computers from anywhere on cellular 4G/5G without keeping a VPS running, deploy the Control Hub to Google Cloud Run (scales to zero when idle, free-tier friendly, built-in HTTPS):
+
+```bash
+git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
+cd deepseekharness-remotecontrol
+
+# Replace with your GCP project ID and your chosen password
+GCP_PROJECT_ID="your-gcp-project-id" \
+HUB_TOKEN="choose-a-strong-password" \
+./deploy-cloudrun.sh
+```
+Once deployed, the script prints your `https://dsh-remotecontrol-hub-xxx.run.app` URL.
+
+#### 🏠 Option B: Run Locally on Your Computer (Fastest 30s Tryout · Same Wi-Fi, $0 Cost)
+No cloud account or Docker needed. Clone the repo and start the Control Hub directly on your computer (requires Node.js >= 20):
+
+```bash
+git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
+cd deepseekharness-remotecontrol
+
+# Replace choose-a-password with your own password
+HUB_TOKEN="choose-a-password" PORT=8080 npm start
+```
+The terminal will print both `http://localhost:8080` and your LAN URL (e.g. `http://192.168.1.x:8080`).
+
+#### ☁️ Option C: 1-Click Cloud Deploy on Railway (No CLI Required)
+Click the **Deploy on Railway** button at the top of this README, set the `HUB_TOKEN` environment variable to your password, and Railway will give you a ready-to-use `https://...` URL in ~1 minute.
+
+#### 🐳 Option D: VPS / NAS / Raspberry Pi (Docker or Cloudflare Tunnel)
+If you have a home server, NAS, or VPS, you can run the prebuilt Docker image (or run `npm start` + a free tunnel like `cloudflared tunnel --url http://localhost:8080`):
 
 ```bash
 docker run -d --name dsh-hub \
   --restart unless-stopped \
   -p 8080:8080 \
   -v dsh-hub-data:/data \
-  -e HUB_TOKEN="自定义一个密码" \
+  -e HUB_TOKEN="choose-a-password" \
   ghcr.io/oscarka/deepseekharness-remotecontrol:latest
 ```
 
-| 你的情况 | 推荐做法 | 成本 |
-|---|---|---|
-| 有云服务器 (VPS) | 克隆仓库跑 `npm start`，或用 `docker-compose.yml` + 域名反代 | 服务器本身 |
-| 家里有域名、无公网 IP | 本地跑 `npm start` + Cloudflare 免费固定隧道 | 域名年费 |
-| 国内网络、无公网 IP | 本地跑 `npm start` + 国内内网穿透（cpolar / frp / natapp） | 0 起 |
-| 群晖 NAS / 树莓派 | 直接跑上面的 Docker 命令（原生支持 `amd64` / `arm64` / `armv7`） | 0 |
-
-完整配置命令请看 👉 **[自托管与反代配置指南 (docs/self-hosting.md)](docs/self-hosting.md)**
-
-</details>
+<div align="center">
+  <img src="docs/assets/step1-login-en.png" width="260" alt="Step 1: Open Control Hub URL and unlock with HUB_TOKEN" /><br/>
+  <sub><strong>Step 1 Result:</strong> Open your Control Hub URL in your computer browser and enter your <code>HUB_TOKEN</code> password (tap <code>🌐 EN / 中文</code> top-right to switch language).</sub>
+</div>
 
 ---
 
-### 第 2 步：把你的电脑连上去
+### Step 2: Connect Your Computer (1-Line Command)
 
-1. 在**电脑浏览器**打开控制台网址，输入你刚才设的密码登录。
-2. 页面会直接给你**一行安装命令**（自带临时配对码），点「复制」粘贴到电脑终端回车。
-3. 脚本会自动连上并注册开机自启，**网页会自动刷新出现你这台电脑**。
+After unlocking the Control Hub on your computer browser, you will see the **Connect Your Computer in 3 Steps** card with a 15-minute enrollment code:
 
----
+1. Click **`📋 Copy 1-Line Install Command`** (or **`📋 Copy Local Repo Command`** if you already cloned the repo).
+2. Paste and run it in your computer's terminal:
+   ```bash
+   curl -fsSL https://your-hub-url/install.sh | bash -s -- --code ABCD-1234
+   ```
+3. The script automatically registers your computer with a dedicated revocable credential, installs the background LaunchAgent/systemd service, and connects live within 2 seconds.
 
-### 第 3 步：拿手机扫个码，装进口袋
-
-1. 点击电脑网页上的 **「📱 手机扫码登录」** 按钮。
-2. 用**手机相机扫一下屏幕上的二维码**，不用在手机上输长密码，直接解锁进入！  
-   *(小贴士：iPhone 用 Safari 打开后点底部「分享 → 添加到主屏幕」，就能像原生 App 一样全屏用并收锁屏通知。)*
-
----
-
-## 支持哪些 AI 编程工具？
-
-界面上**能做到的才显示按钮，做不到的绝不放假按钮**：
-
-| 你电脑上的工具 | 手机看进度 | 手机发指令 / 新建 | 手机紧急停止 | **手机弹窗审批 / 做选择题** | 运行中实时插话 |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **DSH (DeepSeek Harness)** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Antigravity IDE** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Claude Code** | ✅ | ✅ | ✅ | 计划中 | — |
-| **Codex** | ✅ | ✅ | ✅ | 计划中 | — |
-
-> **为什么手机审批目前只有 DSH 和 Antigravity 能用？**  
-> 因为拦截危险命令需要在工具执行前挂钩（Hook）。DSH 与 Antigravity 已内置实时通道；Claude Code 的执行前钩子与 Codex 的常驻审批模式正在适配中。即使你只装了 Claude Code 或 Codex，依然可以在手机上看进度、发新指令和随时喊停。
+<div align="center">
+  <img src="docs/assets/step2-pair-en.png" width="260" alt="Step 2: Copy the 1-line enrollment command" /><br/>
+  <sub><strong>Step 2 Screen:</strong> Copy the 1-line command from the onboarding card and run it in your computer terminal.</sub>
+</div>
 
 ---
 
-## 常见问题
+### Step 3: Scan QR Code on Your Phone (Passwordless Login)
 
-**Q：我有两台电脑（比如公司 Mac + 家里电脑），怎么一起管？**  
-A：在第 2 台电脑上同样复制那行安装命令运行即可（同一个配对码 15 分钟内可连加多台），无需重启控制台。左上角可以随时切换电脑或混排查看全部对话。
+1. In your computer browser, click **`📱 Phone QR Login`**.
+2. Point your phone's camera at the QR code on screen — your phone logs in immediately without typing the password!
+   - *Smart LAN Detection*: If you opened `http://localhost:8080` on your computer, the QR sheet automatically switches the QR code URL to your computer's LAN IP (`http://192.168.x.x:8080`) so your phone on the same Wi-Fi connects on the first try.
+3. **Optional (Recommended on iPhone)**: In Safari, tap **Share → Add to Home Screen**, open the app from your Home Screen, and enable **Lock-Screen Push** in **Settings** to receive instant alerts when a task finishes or needs approval.
 
-**Q：我不想折腾飞书企业应用，能用吗？**  
-A：**完全可以，默认就不需要飞书。** 打开手机网页或添加到主屏幕就能用全部功能。如果你平时重度用飞书、想顺便在飞书里收卡片，可以展开下方说明按需开启：
+<div align="center">
+  <img src="docs/assets/step3-qr-en.png" width="260" alt="Step 3: Scan QR code with your phone camera" /><br/>
+  <sub><strong>Step 3 Screen:</strong> Scan the QR code with your phone camera for instant passwordless login.</sub>
+</div>
+
+---
+
+## Supported AI Coding Tools
+
+The background daemon automatically discovers local sessions from all 4 coding tools on your machine:
+
+| AI Coding Tool | View Live Sessions | New / Resume Prompt | Emergency Stop | Mobile Approval & Question Popups | Live Mid-Run Steer |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **DeepSeek Harness (DSH)** | ✅ | ✅ | ✅ | ✅ *(Shell approvals + `ask_user_question` / `exit_plan_mode` cards)* | ✅ |
+| **Antigravity IDE** | ✅ | ✅ | ✅ | ✅ *(Connect-RPC + native keystroke injection)* | ✅ |
+| **Claude Code** | ✅ | ✅ *(via `claude --resume`)* | ✅ | ⏳ *Planned* | — |
+| **OpenAI Codex** | ✅ | ✅ *(via `codex exec resume`)* | ✅ | ⏳ *Planned* | — |
+
+---
+
+## 📅 What's New (Recent Releases)
+
+- **`2026-11-09 · v0.5.0` — Bilingual Console (`EN` / `中文`), Interactive Question Cards & Zero-Trap Onboarding**
+  - **Bilingual Web Console**: Added automatic browser language detection (`en` / `zh`) plus a 1-tap `🌐 EN / 中文` switcher in the Login screen, Top Bar, and Settings.
+  - **DSH Multiple-Choice & Plan Popups**: Full mobile support for DSH `ask_user_question` (single/multi-select + custom note) and `exit_plan_mode` plan confirmation cards.
+  - **First-Time Onboarding Fixes**: Automatic `~/.dsh/hub-state.json` fallback when running without Docker, automatic LAN IP substitution when generating QR codes from `localhost`, and zero external SDK dependencies required for local startup.
+  - **Host Power & Network Telemetry**: Settings cards now display real-time laptop battery percentage, charging/AC status, low-battery warnings, and Wi-Fi/LAN latency (`rttMs`), while keeping the session list clean.
+- **`2026-11-07 · v0.4.0` — 1-Line Enrollment, Per-Host Revocable Credentials & Mobile Screenshot Upload**
+  - Added 15-minute multi-host enrollment codes (`/install.sh`), per-host Ed25519 fingerprint pinning & independent token revocation, and mobile camera/photo-library screenshot attachments with client-side Canvas compression.
+- **`2026-11-06 · v0.3.0` — Multi-Harness Support (Antigravity IDE, Claude Code, Codex) & Rust Turbo Engine**
+  - Added unified session discovery and remote control for Antigravity IDE, Claude Code, and OpenAI Codex alongside DSH, powered by the `dsh-turbo` native accelerator and bidirectional SSE streaming.
+- **`2026-11-05 · v0.2.0` — iOS 16.4+ Lock-Screen Web Push, Cross-Host Migration & E2EE Session Replay**
+  - Added RFC 8291/8292 zero-dependency Web Push lock-screen notifications, 1-click cross-computer session migration, and AES-256-GCM end-to-end encrypted shareable replay links (`#k=`).
+
+---
+
+## Security & Privacy
+
+- **Mandatory Password Gate**: The Control Hub refuses to start unless `HUB_TOKEN` is set, and protects login/pairing endpoints with brute-force rate limiting.
+- **Per-Computer Isolated Tokens**: Each enrolled computer receives its own token (`hst_...`) and Ed25519 device fingerprint. You can revoke any single computer in **Settings** without affecting other machines.
+- **End-to-End Encrypted Sharing**: When you generate a session replay link, encryption happens on your computer using AES-256-GCM; the decryption key stays in the URL `#k=` fragment and is never sent to the server.
+
+---
+
+## FAQ
 
 <details>
-<summary>🔌 <b>可选：同时接入飞书机器人通知（点开查看）</b></summary>
-
-1. 在[飞书开放平台](https://open.feishu.cn/)创建企业自建应用并开启机器人，开通 `im:message.p2p_msg:readonly` 与 `im:message:send_as_bot` 权限，事件订阅选**长连接**并添加 `im.message.receive_v1`。
-2. 在电脑的 `~/.dsh/feishu.env` 中填入 `FEISHU_APP_ID`、`FEISHU_APP_SECRET`、`FEISHU_ALLOWED_OPEN_IDS` 即可。
-
+<summary><strong>1. I clicked "Approve" on my phone, why didn't Antigravity IDE press confirm on my Mac?</strong></summary>
+<br/>
+On macOS, open <strong>System Settings → Privacy &amp; Security → Accessibility</strong> and enable the switch for Terminal / Node (or tap <strong>🚀 Boost Speed → Unlock Accessibility Permission</strong> inside the mobile console to pop up the macOS authorization dialog remotely).
 </details>
 
-**Q：把控制台放在公网上安全吗？**  
-A：
-- **不设密码拒绝启动**：防止误把空密码服务暴露在公网。
-- **每台电脑独立凭证**：电脑凭临时配对码加入，不接触你的管理员主密码；哪台电脑不用了，在手机「设置」里点一下「吊销凭证」就能单独踢掉。
-- **防爆破保护**：登录与配对码均带真实 IP 限流与错误次数自动熔断。更多细节见 **[SECURITY.md](SECURITY.md)**。
+<details>
+<summary><strong>2. Why didn't my iPhone receive lock-screen push notifications?</strong></summary>
+<br/>
+iOS only allows Web Push for web apps added to the Home Screen. Open your Control Hub URL in <strong>Safari</strong>, tap <strong>Share → Add to Home Screen</strong>, launch it from your Home Screen icon, and tap <strong>Settings → Enable Push</strong>.
+</details>
 
 <details>
-<summary>🛠️ <b>本地开发与贡献代码（点开查看）</b></summary>
-
-欢迎提 Issue 和 PR！开始前可参考 **[CONTRIBUTING.md](CONTRIBUTING.md)** 与 **[docs/PLAN.md](docs/PLAN.md)**。
-
-```bash
-npm install                      # 安装前端构建依赖
-npm --prefix dsh-feishu install  # 安装插件测试依赖
-npm test                         # 运行完整测试套件
-npm run build                    # 构建前端静态页面
-```
-
+<summary><strong>3. How do I uninstall or stop the background agent on my computer?</strong></summary>
+<br/>
+Run <code>./connect-host.sh --uninstall</code> in the repo directory, or unload the LaunchAgent with:<br/>
+<code>launchctl unload ~/Library/LaunchAgents/com.dsh.remotecontrol.agent.plist</code>
 </details>
 
 ---
 
-[MIT License](LICENSE) © 2026 oscarka
+## License
+
+Released under the [MIT License](./LICENSE).

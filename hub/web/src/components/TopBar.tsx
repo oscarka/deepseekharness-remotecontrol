@@ -26,14 +26,24 @@ export function TopBar() {
               ⚡ 极速
             </button>
           </div>
-          <button
-            type="button"
-            class="new-chat-btn"
-            onClick={() => (window as any).openNewTaskSheet?.()}
-          >
-            <span>＋</span>
-            <span>新建对话</span>
-          </button>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <button
+              type="button"
+              data-lang-toggle="1"
+              onClick={() => (window as any).toggleLangPreference?.()}
+              style="border:1px solid var(--border);background:var(--subtle);color:var(--text-secondary);border-radius:999px;padding:4px 9px;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;"
+            >
+              🌐 EN
+            </button>
+            <button
+              type="button"
+              class="new-chat-btn"
+              onClick={() => (window as any).openNewTaskSheet?.()}
+            >
+              <span>＋</span>
+              <span>新建对话</span>
+            </button>
+          </div>
       </header>
 
       {/* 断线重连状态细条 (#11) */}

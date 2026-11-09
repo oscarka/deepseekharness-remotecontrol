@@ -35,6 +35,12 @@ import {
   toggleVoiceInput,
 } from './hooks/useVoiceInput';
 import { renderQrCodeSvg } from './utils/qrcode';
+import {
+  getLangPref,
+  setLangPreference as persistLangPref,
+  applyLangToDom,
+  translateZhStringToEn,
+} from './utils/i18n';
 
 export function initHubController() {
     // ==================== 1. 认证与安全 Token 管理（自动清除 URL 尾巴防止截图泄露） ====================
@@ -188,6 +194,24 @@ export function initHubController() {
     }
     applyTheme(themePref);
 
+    // 界面语言偏好 (zh | en)：支持 ?lang=en|zh、localStorage 与浏览器自动识别
+    let langPref = getLangPref();
+    function setLangPreference(nextLang) {
+      langPref = persistLangPref(nextLang);
+      lastRenderedChatKey = '';
+      lastRenderedComposerKey = '';
+      lastRenderedStripKey = '';
+      lastRenderedListKey = '';
+      lastRenderedSettingsKey = '';
+      lastRenderedFilesKey = '';
+      renderAll();
+      applyLangToDom(document.body, langPref);
+    }
+    function toggleLangPreference() {
+      setLangPreference(langPref === 'en' ? 'zh' : 'en');
+    }
+    setTimeout(() => applyLangToDom(document.body, langPref), 0);
+
     // 置顶与已读记录（含内容签名防刷新重复弹出未读 + 服务端跨设备已读同步）
     let pinnedMap = {};
     let seenMap = {};
@@ -266,7 +290,7 @@ export function initHubController() {
 
     function showToast(msg) {
       const el = document.getElementById('toastPill');
-      el.textContent = msg;
+      el.textContent = langPref === 'en' ? translateZhStringToEn(String(msg || '')) : msg;
       el.classList.add('show');
       clearTimeout(window.__toastTimer);
       window.__toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
@@ -714,6 +738,7 @@ export function initHubController() {
       if (document.getElementById('inChatFileSheet').classList.contains('open')) {
         renderInChatFileDrawerBody();
       }
+      applyLangToDom(document.body, langPref);
     }
 
     function renderProjectStrip(sessionsArg) {
@@ -3110,9 +3135,14 @@ export function initHubController() {
           </div>
         `;
         renderCountdown();
-        pairingCountdownTimer = setInterval(renderCountdown, 1000);
+        applyLangToDom(body, langPref);
+        pairingCountdownTimer = setInterval(() => {
+          renderCountdown();
+          if (langPref === 'en') applyLangToDom(body, langPref);
+        }, 1000);
       } catch (err) {
         body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--red);">❌ 生成失败：${esc((err && err.message) || String(err))}</div>`;
+        applyLangToDom(body, langPref);
       }
     }
 
@@ -3344,6 +3374,7 @@ export function initHubController() {
       // 内容签名去抖 (#4)：当设置页数据未发生变化时跳过整页 innerHTML 重建，并保留滚动位置
       const settingsSignature = JSON.stringify({
         themePref,
+        langPref,
         addHostPanelExpanded,
         expandedHostCardIds,
         tokenTail: currentTk.slice(-4),
@@ -3543,6 +3574,16 @@ export function initHubController() {
           <div>
             <div class="settings-group-title">外观与显示模式</div>
             <div class="settings-card">
+              <div class="settings-item" style="gap:8px;">
+                <div style="min-width:0;flex:1;">
+                  <div class="settings-item-title" style="white-space:nowrap;">界面语言 / Language</div>
+                  <div class="settings-item-desc" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">自动识别浏览器语言或手动切换</div>
+                </div>
+                <div class="theme-seg-group">
+                  <button class="theme-seg-btn ${langPref === 'zh' ? 'active' : ''}" onclick="setLangPreference('zh')">🇨🇳 中文</button>
+                  <button class="theme-seg-btn ${langPref === 'en' ? 'active' : ''}" onclick="setLangPreference('en')">🇺🇸 English</button>
+                </div>
+              </div>
               <div class="settings-item" style="gap:8px;">
                 <div style="min-width:0;flex:1;">
                   <div class="settings-item-title" style="white-space:nowrap;">深色 / 浅色主题</div>
@@ -3753,6 +3794,7 @@ export function initHubController() {
       if (!('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') {
         statusEl.textContent = '本机：当前浏览器不支持锁屏推送（iPhone 需从主屏幕 App 打开）';
         statusEl.style.color = '#d97706';
+        if (langPref === 'en') applyLangToDom(document.body, langPref);
         return;
       }
       try {
@@ -3778,10 +3820,12 @@ export function initHubController() {
           statusEl.textContent = '本机：未开启（点下方「开启推送」）';
           statusEl.style.color = '#d97706';
         }
+        if (langPref === 'en') applyLangToDom(document.body, langPref);
         if (manual) showToast('已刷新推送状态');
       } catch (err) {
         statusEl.textContent = '本机：状态读取失败（' + ((err && err.message) || err) + '）';
         statusEl.style.color = '#dc2626';
+        if (langPref === 'en') applyLangToDom(document.body, langPref);
       }
     }
 
@@ -4291,6 +4335,7 @@ export function initHubController() {
       const el = document.getElementById(id);
       if (!el) return;
       el.classList.add('open');
+      applyLangToDom(el, langPref);
       trackOverlay('sheet:' + id, () => rawCloseSheet(id));
     }
 
@@ -4751,6 +4796,10 @@ export function initHubController() {
       setPreviewMode,
       applyTheme,
       setThemePreference,
+      getLangPref: () => langPref,
+      setLangPreference,
+      toggleLangPreference,
+      applyLangToDom,
       esc,
       cleanPreviewText,
       formatTime,
