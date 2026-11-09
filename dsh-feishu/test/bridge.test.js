@@ -1551,6 +1551,14 @@ test('P1 & P2 Onboarding Loop: multi-use enrollment code, per-host independent t
     })
     assert.equal(hbSpoof.status, 401)
 
+    // - Computer #1's hostToken CAN switch Feishu active host when fromHostId matches its own hostId
+    const activateFromHost1 = await fetchAdapter('http://localhost/api/hosts/mac-mini-2/activate', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${join1.hostToken}` },
+      body: { fromHostId: 'macbook-pro-1' },
+    })
+    assert.equal(activateFromHost1.status, 200)
+
     // - Computer #1's hostToken CANNOT access admin /api/state or queue commands (401)
     const adminSpoof = await fetchAdapter('http://localhost/api/state', {
       method: 'GET',

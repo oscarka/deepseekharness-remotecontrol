@@ -1809,7 +1809,8 @@ function initHubController() {
 		const showHostTag = currentHostId === "ALL_HOSTS" && (hubState.hosts || []).length > 1;
 		const bannerKey = pendingAppInfo ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.promptTitle || ""}:${pendingAppInfo.app.settling ? 1 : 0}:${pendingAppInfo.app.lastError || ""}` : "";
 		const rowsSig = filtered.map((s) => `${s.id}:${s.status}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`).join("|");
-		const listKey = `${(hubState.hosts || []).length}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${bannerKey}#${rowsSig}`;
+		const enrollSig = `${hubState.enrollment?.code || ""}:${hubState.enrollment?.joinedCount || 0}`;
+		const listKey = `${(hubState.hosts || []).length}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${enrollSig}:${bannerKey}#${rowsSig}`;
 		if (listKey === lastRenderedListKey && viewport.querySelector(".session-list")) return;
 		lastRenderedListKey = listKey;
 		const prevScrollTop = viewport.scrollTop;
@@ -3549,6 +3550,7 @@ function initHubController() {
 			if (data?.ok && data.enrollment) {
 				hubState.enrollment = data.enrollment;
 				lastRenderedSettingsKey = "";
+				lastRenderedListKey = "";
 				renderAll();
 				showToast("🔄 已生成新的电脑配对码（15 分钟有效）");
 			}
@@ -5014,14 +5016,13 @@ function initHubController() {
 				showToast("🔓 扫码登录成功");
 			} else showToast("⚠️ 扫码配对码已过期或无效，请重新扫码");
 		} catch {}
-		await fetchState();
-		connectSSE();
+		if ((await fetchState())?.ok) connectSSE();
 	})();
-	else {
-		fetchState();
-		connectSSE();
-	}
+	else fetchState().then((res) => {
+		if (res?.ok) connectSSE();
+	});
 	setInterval(() => {
+		if (!getToken() && document.getElementById("authOverlay")?.classList.contains("show")) return;
 		if (!sseConnected || Date.now() - lastSseEventAt > 15e3) fetchState();
 	}, 5e3);
 }

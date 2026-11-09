@@ -34,7 +34,7 @@ if [ -f "$ENV_FILE" ]; then
   EXISTING_HARNESSES="$(grep -E '^FEISHU_ENABLED_HARNESSES=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 fi
 
-# 支持 --url / --code / --name / --token / --id / --dry-run 具名参数与位置参数
+# 支持 --url / --code / --name / --token / --id / --dry-run / --no-service 具名参数与位置参数
 POS_ARGS=()
 OPT_URL=""
 OPT_CODE=""
@@ -42,6 +42,7 @@ OPT_NAME=""
 OPT_TOKEN=""
 OPT_ID=""
 DRY_RUN=0
+NO_SERVICE="${DSH_NO_SERVICE:-0}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --url)
@@ -68,6 +69,10 @@ while [ $# -gt 0 ]; do
       DRY_RUN=1
       shift
       ;;
+    --no-service)
+      NO_SERVICE=1
+      shift
+      ;;
     *)
       POS_ARGS+=("$1")
       shift
@@ -88,7 +93,7 @@ if [ -z "$HOST_ID" ]; then
   HOST_ID="mac-$(date +%s)"
 fi
 
-HUB_URL="${OPT_URL:-${FEISHU_HUB_URL:-${EXISTING_HUB_URL:-$DEFAULT_HUB_URL}}}"
+HUB_URL="${OPT_URL:-${FEISHU_HUB_URL:-${DEFAULT_HUB_URL:-$EXISTING_HUB_URL}}}"
 HUB_URL="${HUB_URL%/}"
 
 if [ -z "$HUB_URL" ]; then
@@ -180,8 +185,8 @@ if [ "$DRY_RUN" = "1" ]; then
 fi
 
 # 支持通过 curl -fsSL <HUB_URL>/install.sh | bash 一键安装：若当前不在仓库目录则自动克隆到 ~/.dsh/remotecontrol
-SCRIPT_DIR=""
-if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+SCRIPT_DIR="${DSH_CLIENT_DIR:-}"
+if [ -z "$SCRIPT_DIR" ] && [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
   CANDIDATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   if [ -f "$CANDIDATE_DIR/dsh-feishu/daemon.mjs" ]; then
     SCRIPT_DIR="$CANDIDATE_DIR"
@@ -246,7 +251,7 @@ if [ -z "$NODE_BIN" ]; then
 fi
 
 # 自动启用 dsh-turbo (Rust 原生加速引擎 + 辅助功能权限自检与弹窗引导)
-if [ -x "$SCRIPT_DIR/dsh-turbo/enable-turbo.sh" ]; then
+if [ "$NO_SERVICE" != "1" ] && [ -x "$SCRIPT_DIR/dsh-turbo/enable-turbo.sh" ]; then
   CONNECT_HOST_RUNNING=1 "$SCRIPT_DIR/dsh-turbo/enable-turbo.sh" || true
 fi
 
@@ -262,26 +267,31 @@ if [ -z "$DSH_CLI" ]; then
   done
 fi
 
-if [ -n "$DSH_CLI" ]; then
+if [ -n "$DSH_CLI" ] && [ "$NO_SERVICE" != "1" ]; then
   echo "🔌 正在向 DeepSeek Harness 注册 dsh-feishu 插件..."
   "$DSH_CLI" plugin --profile desktop add "$SCRIPT_DIR/dsh-feishu" >/dev/null 2>&1 || true
 fi
 
-# 停止所有旧的后台同步进程（防止多实例并发消费队列指令）
 PID_FILE="$DSH_DIR/hub-daemon.pid"
 PLIST_DIR="$HOME/Library/LaunchAgents"
 PLIST_FILE="$PLIST_DIR/com.dsh.remotecontrol.plist"
-if [ -f "$PLIST_FILE" ]; then
-  launchctl unload "$PLIST_FILE" >/dev/null 2>&1 || true
-fi
-if [ -f "$PID_FILE" ]; then
-  OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
-  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-    kill "$OLD_PID" 2>/dev/null || true
+SYSTEMD_USER_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+SYSTEMD_UNIT_FILE="$SYSTEMD_USER_DIR/dsh-remotecontrol.service"
+
+if [ "$NO_SERVICE" != "1" ]; then
+  # 停止所有旧的后台同步进程（防止多实例并发消费队列指令）
+  if [ -f "$PLIST_FILE" ]; then
+    launchctl unload "$PLIST_FILE" >/dev/null 2>&1 || true
   fi
+  if [ -f "$PID_FILE" ]; then
+    OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+      kill "$OLD_PID" 2>/dev/null || true
+    fi
+  fi
+  pkill -f "dsh-feishu/daemon.mjs" 2>/dev/null || true
+  sleep 0.5
 fi
-pkill -f "dsh-feishu/daemon.mjs" 2>/dev/null || true
-sleep 0.5
 
 # 先执行一次同步验证
 if [ "$USE_ELECTRON_NODE" = "1" ]; then
@@ -290,8 +300,16 @@ else
   "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" --once
 fi
 
-# 在 macOS 上优先注册 LaunchAgent 常驻守护（开机自启 + 异常自动拉起 + 脱离终端生命周期）
-LAUNCHD_OK=0
+if [ "$NO_SERVICE" = "1" ]; then
+  echo ""
+  echo "🎉 接入与首次状态同步完成！(no-service 模式)"
+  echo "👉 打开总控台即可查看并遥控【${HOST_NAME}】：${HUB_URL}"
+  exit 0
+fi
+
+# 在 macOS 上优先注册 LaunchAgent 常驻守护，在 Linux 上优先注册 systemd --user 常驻服务（开机自启 + 异常自动拉起）
+SERVICE_OK=0
+NEW_PID=""
 if [ "$(uname -s)" = "Darwin" ] && mkdir -p "$PLIST_DIR" 2>/dev/null; then
   cat > "$PLIST_FILE" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -334,7 +352,7 @@ if [ "$(uname -s)" = "Darwin" ] && mkdir -p "$PLIST_DIR" 2>/dev/null; then
 </plist>
 EOF
   if launchctl load -w "$PLIST_FILE" >/dev/null 2>&1; then
-    LAUNCHD_OK=1
+    SERVICE_OK=1
     for _ in 1 2 3 4 5; do
       sleep 0.3
       NEW_PID="$(pgrep -f "dsh-feishu/daemon.mjs" | tail -n 1 || true)"
@@ -344,9 +362,35 @@ EOF
       fi
     done
   fi
+elif [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1 && mkdir -p "$SYSTEMD_USER_DIR" 2>/dev/null; then
+  cat > "$SYSTEMD_UNIT_FILE" <<EOF
+[Unit]
+Description=DSH Remote Control Host Daemon
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=${SCRIPT_DIR}
+Environment=HOME=${HOME}
+Environment=DSH_HOME=${DSH_DIR}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=${NODE_BIN} ${SCRIPT_DIR}/dsh-feishu/daemon.mjs --replace
+Restart=always
+RestartSec=3
+StandardOutput=append:${DSH_DIR}/hub-daemon.log
+StandardError=append:${DSH_DIR}/hub-daemon.log
+
+[Install]
+WantedBy=default.target
+EOF
+  if systemctl --user daemon-reload >/dev/null 2>&1 && systemctl --user enable --now dsh-remotecontrol.service >/dev/null 2>&1; then
+    SERVICE_OK=1
+    NEW_PID="$(systemctl --user show --property MainPID --value dsh-remotecontrol.service 2>/dev/null || true)"
+    [ -n "$NEW_PID" ] && [ "$NEW_PID" != "0" ] && echo "$NEW_PID" > "$PID_FILE"
+  fi
 fi
 
-if [ "$LAUNCHD_OK" != "1" ]; then
+if [ "$SERVICE_OK" != "1" ]; then
   if [ "$USE_ELECTRON_NODE" = "1" ]; then
     nohup env ELECTRON_RUN_AS_NODE=1 "$NODE_BIN" "$SCRIPT_DIR/dsh-feishu/daemon.mjs" < /dev/null > "$DSH_DIR/hub-daemon.log" 2>&1 &
   else
@@ -357,5 +401,5 @@ if [ "$LAUNCHD_OK" != "1" ]; then
 fi
 
 echo ""
-echo "🎉 接入成功！后台守护进程已启动 (PID: ${NEW_PID}，日志: ${DSH_DIR}/hub-daemon.log)"
+echo "🎉 接入成功！后台守护进程已启动 (PID: ${NEW_PID:-running}，日志: ${DSH_DIR}/hub-daemon.log)"
 echo "👉 打开总控台即可查看并遥控【${HOST_NAME}】：${HUB_URL}"

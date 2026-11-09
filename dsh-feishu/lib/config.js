@@ -53,10 +53,23 @@ export function resolveConfig(raw = {}) {
   config.notifyApprovals = config.notifyApprovals !== false && process.env.FEISHU_NOTIFY_APPROVALS !== 'false'
   config.notifyIntervalMs = clampInt(config.notifyIntervalMs, 500, 10000, 1000)
   config.notifyDigestMs = clampInt(config.notifyDigestMs, 1000, 60_000, 5000)
-  config.appSecretFile = expandHome(process.env.FEISHU_APP_SECRET_FILE || config.appSecretFile)
-  config.auditFile = expandHome(process.env.FEISHU_AUDIT_FILE || config.auditFile)
-  config.controlChatFile = expandHome(process.env.FEISHU_CONTROL_CHAT_FILE || config.controlChatFile)
-  config.remoteStateFile = expandHome(process.env.FEISHU_REMOTE_STATE_FILE || config.remoteStateFile)
+  config.dshHome = expandHome(process.env.FEISHU_DSH_HOME || process.env.DSH_HOME || config.dshHome || '~/.dsh')
+  config.appSecretFile = expandHome(
+    process.env.FEISHU_APP_SECRET_FILE ||
+      (raw?.appSecretFile ? raw.appSecretFile : join(config.dshHome, 'feishu.env')),
+  )
+  config.auditFile = expandHome(
+    process.env.FEISHU_AUDIT_FILE ||
+      (raw?.auditFile ? raw.auditFile : join(config.dshHome, 'feishu-audit.jsonl')),
+  )
+  config.controlChatFile = expandHome(
+    process.env.FEISHU_CONTROL_CHAT_FILE ||
+      (raw?.controlChatFile ? raw.controlChatFile : join(config.dshHome, 'feishu-control-chat')),
+  )
+  config.remoteStateFile = expandHome(
+    process.env.FEISHU_REMOTE_STATE_FILE ||
+      (raw?.remoteStateFile ? raw.remoteStateFile : join(config.dshHome, 'feishu-remote.json')),
+  )
   config.remoteIdleMs = clampInt(config.remoteIdleMs, 5 * 60_000, 24 * 60 * 60_000, 2 * 60 * 60_000)
 
   const defaultHost = sanitizeHostId(hostname() || 'local-host')
@@ -66,7 +79,6 @@ export function resolveConfig(raw = {}) {
   config.hubToken = String(process.env.FEISHU_HUB_TOKEN || config.hubToken || '').trim()
   config.hubPollMs = clampInt(config.hubPollMs, 300, 30_000, 1200)
   config.localWebPort = clampInt(process.env.FEISHU_WEB_PORT || config.localWebPort, 0, 65535, 0)
-  config.dshHome = expandHome(process.env.FEISHU_DSH_HOME || process.env.DSH_HOME || config.dshHome || '~/.dsh')
   return config
 }
 

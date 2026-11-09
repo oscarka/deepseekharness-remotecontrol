@@ -426,12 +426,13 @@ export function createHubServer({
         (method === 'POST' && pathname === '/api/shares') ||
         (method === 'POST' && pathname === '/api/snapshots') ||
         (method === 'GET' && /^\/api\/snapshots\/([^/]+)\/download$/.test(pathname)) ||
+        (method === 'POST' && /^\/api\/hosts\/([^/]+)\/activate$/.test(pathname)) ||
         pathname === '/api/v1/signaling' ||
         /^\/api\/v1\/signaling\/([^/]+)$/.test(pathname) ||
         pathname === '/api/v1/turn/credentials'
 
       if (isSharedHostEndpoint) {
-        const claimedHostId = String(body?.hostId || body?.meta?.hostId || '').trim()
+        const claimedHostId = String(body?.hostId || body?.fromHostId || body?.meta?.hostId || '').trim()
         if (!checkHostOrAdminAuth(headers, urlObj, claimedHostId)) {
           return {
             status: 401,
