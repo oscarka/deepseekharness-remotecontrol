@@ -44,31 +44,38 @@
 
 ### 第 1 步：启动你的控制台（二选一）
 
-- **🏠 只在家里 / 办公室同一 Wi-Fi 下用（0 成本，30 秒跑起）**  
-  在电脑终端运行这一条 Docker 命令（把 `自定义一个密码` 换成你自己的密码）：
+- **🏠 方式 A：直接在电脑上跑（推荐 · 0 成本、不用装 Docker、连 `npm install` 都不用）**  
+  控制台使用纯 Node.js 原生内置模块编写（零第三方运行时依赖），前端页面已预编译在仓库里，克隆下来直接带密码启动即可：
   ```bash
-  docker run -d --name dsh-hub \
-    --restart unless-stopped \
-    -p 8080:8080 \
-    -v dsh-hub-data:/data \
-    -e HUB_TOKEN="自定义一个密码" \
-    ghcr.io/oscarka/deepseekharness-remotecontrol:latest
+  git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
+  cd deepseekharness-remotecontrol
+  HUB_TOKEN="自定义一个密码" PORT=8080 npm start
   ```
-  *(没装 Docker？也可以克隆仓库直接跑：`HUB_TOKEN="自定义一个密码" PORT=8080 npm start`)*
 
-- **🚇 出门在外、坐地铁也要随时连（最省心）**  
-  点一下这个按钮，3 分钟自动部署一台专属控制台，拿到一个公网网址：  
+- **🚇 方式 B：出门在外、坐地铁也要随时连（云端一键部署）**  
+  点一下这个按钮，自动从 GitHub 源码部署一台专属云端控制台，拿到一个公网网址：  
   [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template?referralCode=dsh-remote) *(前 30 天免费体验，之后约 \$5/月)*
 
 <details>
-<summary>💡 <b>还有自己的云服务器 / 域名 / 内网穿透 / NAS？点此查看另外 4 种部署方式</b></summary>
+<summary>💡 <b>想用 Docker 跑在云服务器 / 群晖 NAS / 树莓派，或配内网穿透？点此展开</b></summary>
+
+如果你习惯用 Docker（每次推送到 GitHub `main` 分支时，GitHub Actions 会自动构建并发布多架构镜像，无需手动上传）：
+
+```bash
+docker run -d --name dsh-hub \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -v dsh-hub-data:/data \
+  -e HUB_TOKEN="自定义一个密码" \
+  ghcr.io/oscarka/deepseekharness-remotecontrol:latest
+```
 
 | 你的情况 | 推荐做法 | 成本 |
 |---|---|---|
-| 有云服务器 (VPS) | 用仓库自带的 `docker-compose.yml` + 域名反代 | 服务器本身 |
-| 家里有域名、无公网 IP | 本地跑 Docker + Cloudflare 免费固定隧道 | 域名年费 |
-| 国内网络、无公网 IP | 本地跑 Docker + 国内内网穿透（cpolar / frp / natapp） | 0 起 |
-| 群晖 NAS / 树莓派 | 镜像原生支持 `amd64` / `arm64` / `armv7`，直接跑上面的 Docker 命令 | 0 |
+| 有云服务器 (VPS) | 克隆仓库跑 `npm start`，或用 `docker-compose.yml` + 域名反代 | 服务器本身 |
+| 家里有域名、无公网 IP | 本地跑 `npm start` + Cloudflare 免费固定隧道 | 域名年费 |
+| 国内网络、无公网 IP | 本地跑 `npm start` + 国内内网穿透（cpolar / frp / natapp） | 0 起 |
+| 群晖 NAS / 树莓派 | 直接跑上面的 Docker 命令（原生支持 `amd64` / `arm64` / `armv7`） | 0 |
 
 完整配置命令请看 👉 **[自托管与反代配置指南 (docs/self-hosting.md)](docs/self-hosting.md)**
 

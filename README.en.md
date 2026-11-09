@@ -44,31 +44,38 @@ No Feishu/Lark account required, and zero changes to your existing workflow:
 
 ### Step 1: Start Your Control Hub (Pick One)
 
-- **🏠 Using on Home / Office Wi-Fi (Free, 30 seconds)**  
-  Run this single Docker command on your computer (replace `choose-a-password` with your own password):
+- **🏠 Option A: Run Directly on Your Computer (Recommended · Free, No Docker or `npm install` Needed)**  
+  The Hub is built with 100% native Node.js modules (zero runtime dependencies) and pre-built web assets. Just clone and start with a password:
   ```bash
-  docker run -d --name dsh-hub \
-    --restart unless-stopped \
-    -p 8080:8080 \
-    -v dsh-hub-data:/data \
-    -e HUB_TOKEN="choose-a-password" \
-    ghcr.io/oscarka/deepseekharness-remotecontrol:latest
+  git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
+  cd deepseekharness-remotecontrol
+  HUB_TOKEN="choose-a-password" PORT=8080 npm start
   ```
-  *(No Docker? Clone the repo and run `HUB_TOKEN="choose-a-password" PORT=8080 npm start`)*
 
-- **🚇 Controlling from Anywhere Outside (Subway / Coffee Shop)**  
-  Click below to deploy your own private Hub in 3 minutes and get an HTTPS URL:  
+- **🚇 Option B: Control from Anywhere Outside (1-Click Cloud Deploy)**  
+  Click below to automatically deploy your own private Hub from GitHub in 3 minutes and get an HTTPS URL:  
   [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template?referralCode=dsh-remote) *(30-day free trial, then ~\$5/month)*
 
 <details>
-<summary>💡 <b>Have your own VPS, Domain, NAT Traversal, or NAS? Click for 4 more deployment options</b></summary>
+<summary>💡 <b>Want to use Docker on a VPS / NAS / Raspberry Pi, or use a Tunnel? Click to expand</b></summary>
+
+If you prefer Docker (GitHub Actions automatically builds and publishes multi-arch images on every push to `main` — no manual upload required):
+
+```bash
+docker run -d --name dsh-hub \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  -v dsh-hub-data:/data \
+  -e HUB_TOKEN="choose-a-password" \
+  ghcr.io/oscarka/deepseekharness-remotecontrol:latest
+```
 
 | Your Setup | Recommended Option | Cost |
 |---|---|---|
-| Own Cloud Server (VPS) | Built-in `docker-compose.yml` + Caddy/Nginx HTTPS | Server cost |
-| Own Domain at Home (No Public IP) | Local Docker + Cloudflare Named Tunnel | Domain renewal |
-| Behind NAT / Domestic Network | Local Docker + NAT traversal (frp / cpolar / Tailscale) | Free tier available |
-| Synology NAS / Raspberry Pi | Multi-arch image (`amd64` / `arm64` / `armv7`) runs out of the box | Free |
+| Own Cloud Server (VPS) | Clone & run `npm start`, or `docker-compose.yml` + Caddy/Nginx | Server cost |
+| Own Domain at Home (No Public IP) | Local `npm start` + Cloudflare Named Tunnel | Domain renewal |
+| Behind NAT / Domestic Network | Local `npm start` + NAT traversal (frp / cpolar / Tailscale) | Free tier available |
+| Synology NAS / Raspberry Pi | Run the Docker command above (`amd64` / `arm64` / `armv7`) | Free |
 
 See the full configuration guide 👉 **[docs/self-hosting.md](docs/self-hosting.md)**
 
