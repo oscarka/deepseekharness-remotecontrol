@@ -1453,6 +1453,7 @@ export async function collectHostSystemTelemetry({
   lastRttMs = null,
   execImpl = execFileAsync,
   force = false,
+  platform = execImpl !== execFileAsync ? 'darwin' : process.platform,
 } = {}) {
   const now = Date.now()
   const rttMs = Number(lastRttMs) > 0 ? Math.round(Number(lastRttMs)) : null
@@ -1495,7 +1496,7 @@ export async function collectHostSystemTelemetry({
     shortLabel: '电源直供',
   }
 
-  if (process.platform === 'darwin') {
+  if (platform === 'darwin') {
     try {
       const res = await execImpl('/usr/bin/pmset', ['-g', 'batt'], { timeout: 1500 })
       const stdout = typeof res === 'string' ? res : res?.stdout || ''
@@ -1503,7 +1504,7 @@ export async function collectHostSystemTelemetry({
     } catch {
       // keep default AC power
     }
-  } else if (process.platform === 'linux') {
+  } else if (platform === 'linux') {
     try {
       let capStr = ''
       let statusStr = ''
@@ -1536,7 +1537,7 @@ export async function collectHostSystemTelemetry({
   }
 
   // Hardware port mapping on macOS (e.g., en0 -> Wi-Fi, en5 -> LAN)
-  if (process.platform === 'darwin' && (!cachedHwPortMap || now - cachedHwPortMapAt > 300_000)) {
+  if (platform === 'darwin' && (!cachedHwPortMap || now - cachedHwPortMapAt > 300_000)) {
     const map = new Map()
     try {
       const res = await execImpl('/usr/sbin/networksetup', ['-listallhardwareports'], { timeout: 1500 })
@@ -1558,7 +1559,7 @@ export async function collectHostSystemTelemetry({
   let localIp = ''
   let hasVpn = false
 
-  if (process.platform === 'darwin') {
+  if (platform === 'darwin') {
     try {
       const res = await execImpl('/usr/sbin/scutil', ['--nwi'], { timeout: 1200 })
       const out = typeof res === 'string' ? res : res?.stdout || ''
