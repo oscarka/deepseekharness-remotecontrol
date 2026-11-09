@@ -3592,6 +3592,12 @@ function initHubController() {
 		document.getElementById("inChatFileTitle").textContent = `📂 ${found.session.project} (${found.session.hostName})`;
 		await requestDirList(found.session.hostId, found.session.id, fileProjectCwd, "", true);
 	}
+	function toWorkspaceRelPath(cwd, rawPath) {
+		let clean = String(rawPath || "").replace(/^file:\/\//i, "").replace(/#L\d+(?:-L?\d+)?$/i, "").trim();
+		const cleanCwd = String(cwd || "").replace(/\/+$/, "").trim();
+		if (cleanCwd && clean.startsWith(cleanCwd + "/")) return clean.slice(cleanCwd.length + 1);
+		return clean;
+	}
 	async function openChatFileLink(encodedPath) {
 		let rawPath = String(encodedPath || "").trim();
 		try {
@@ -3601,11 +3607,37 @@ function initHubController() {
 		const found = findSessionGlobal(activeSessionId);
 		if (!found) return;
 		fileProjectCwd = found.session.cwd || "";
+		const relPath = toWorkspaceRelPath(fileProjectCwd, rawPath);
+		const baseName = relPath.split("/").filter(Boolean).pop() || relPath || "file";
 		openSheet("inChatFileSheet");
 		document.body.classList.add("mobile-file-open");
 		const titleEl = document.getElementById("inChatFileTitle");
 		if (titleEl) titleEl.textContent = `📂 ${found.session.project} (${found.session.hostName})`;
-		await clickRealFileEntry(found.session.hostId, found.session.id, fileProjectCwd, rawPath, false, true);
+		if (/\.(blend|blend1|fbx|obj|glb|gltf|dae|abc|usd|usdz|zip|tar|gz|dmg|pkg|mp4|mov)$/i.test(baseName)) {
+			const ext = "." + (baseName.split(".").pop() || "").toLowerCase();
+			found.host.lastFilePreview = {
+				at: Date.now(),
+				agentId: found.session.id,
+				relPath,
+				name: baseName,
+				ext,
+				size: 0,
+				kind: "binary",
+				mime: "application/octet-stream",
+				_showInDrawer: true,
+				_showInMain: false
+			};
+			filePreviewLoading = null;
+			renderInChatFileDrawerBody();
+			return;
+		}
+		if (rawPath.includes("/.gemini/antigravity/brain/") && baseName) dispatchHostCommand(found.session.hostId, {
+			type: "read_file",
+			agentId: found.session.id,
+			cwd: fileProjectCwd,
+			relPath: `out/${baseName}`
+		}).catch(() => {});
+		await clickRealFileEntry(found.session.hostId, found.session.id, fileProjectCwd, relPath, false, true);
 	}
 	async function hydrateInlineChatImages(session, containerEl) {
 		if (!session || !containerEl) return;
@@ -3626,11 +3658,19 @@ function initHubController() {
 			window.__dshInlineImgInflight[imgPath] = true;
 			(async () => {
 				try {
+					const relPath = toWorkspaceRelPath(session.cwd || "", imgPath);
+					const baseName = relPath.split("/").filter(Boolean).pop() || "";
 					await dispatchHostCommand(session.hostId, {
 						type: "read_file",
 						agentId: session.id,
 						cwd: session.cwd || "",
-						relPath: imgPath
+						relPath
+					});
+					if (imgPath.includes("/.gemini/antigravity/brain/") && baseName) await dispatchHostCommand(session.hostId, {
+						type: "read_file",
+						agentId: session.id,
+						cwd: session.cwd || "",
+						relPath: `out/${baseName}`
 					});
 					for (let i = 0; i < 10; i++) {
 						await sleepMs(380);
@@ -3784,7 +3824,8 @@ function initHubController() {
 		}
 		if (filePreviewLoading && filePreviewLoading.hostId === host.hostId) {
 			const box = host.lastFilePreview;
-			if (box && box.at !== filePreviewLoading.prevAt && box.relPath === filePreviewLoading.relPath) {
+			const expectedBase = String(filePreviewLoading.relPath || "").split("/").filter(Boolean).pop() || "";
+			if (box && box.at !== filePreviewLoading.prevAt && (box.relPath === filePreviewLoading.relPath || expectedBase && box.name === expectedBase)) {
 				box._showInDrawer = Boolean(filePreviewLoading.drawer);
 				box._showInMain = !filePreviewLoading.drawer;
 				filePreviewLoading = null;
@@ -5818,7 +5859,16 @@ function initHubController() {
 			banner.style.display = "flex";
 		} else banner.style.display = "none";
 	}
+	let initialUiBuild = "";
 	function applyHubState(nextState) {
+		const incomingBuild = String(nextState?.build?.uiBuild || "").trim();
+		if (incomingBuild && incomingBuild !== "dev") {
+			if (!initialUiBuild) initialUiBuild = incomingBuild;
+			else if (initialUiBuild !== incomingBuild && typeof window !== "undefined" && window.location && typeof window.location.reload === "function") {
+				window.location.reload();
+				return;
+			}
+		}
 		preservePreviewUiState(nextState);
 		hubState = nextState;
 	}

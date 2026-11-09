@@ -481,7 +481,13 @@ export function createHubServer({
             },
           }
         }
-        const outcome = hub.handleHeartbeat(body)
+        const candidateToken = extractCandidateToken(headers, urlObj)
+        const outcome = hub.handleHeartbeat({
+          ...body,
+          ...(candidateToken && /^hst_[0-9a-f]{48}$/.test(candidateToken)
+            ? { presentedHostToken: candidateToken }
+            : {}),
+        })
         const status = outcome.ok ? 200 : outcome.code === 'DEVICE_REVOKED' || outcome.code === 'PEER_IDENTITY_MISMATCH' ? 403 : 400
         return { status, json: outcome }
       }
@@ -808,7 +814,7 @@ export function createHubServer({
     try {
       const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
       if (req.method === 'GET' && urlObj.pathname === '/api/events') {
-        if (!checkAuth(req.headers, urlObj)) {
+        if (!checkHostOrAdminAuth(req.headers, urlObj)) {
           await sendJson(res, 401, { ok: false, error: 'Unauthorized', authRequired: true }, req.headers)
           return
         }

@@ -198,7 +198,10 @@ export class HubCore {
         if (preview.relPath) {
           this.filePreviewHistory.set(`${hostId}:path:${preview.relPath}`, blobObj)
         }
-        while (this.filePreviewHistory.size > 48) {
+        if (preview.name) {
+          this.filePreviewHistory.set(`${hostId}:name:${preview.name}`, blobObj)
+        }
+        while (this.filePreviewHistory.size > 64) {
           const oldestKey = this.filePreviewHistory.keys().next().value
           this.filePreviewHistory.delete(oldestKey)
         }
@@ -232,6 +235,14 @@ export class HubCore {
       if (byPath && (!byPath.expiresAt || this.now() <= byPath.expiresAt)) {
         return byPath
       }
+      const baseName = String(expectedPath).split('/').filter(Boolean).pop() || ''
+      if (baseName) {
+        const byName = this.filePreviewHistory.get(`${cleanHostId}:name:${baseName}`)
+        if (byName && (!byName.expiresAt || this.now() <= byName.expiresAt)) {
+          return byName
+        }
+      }
+      return null
     }
     if (expectedAt !== null && expectedAt !== undefined && expectedAt !== '') {
       const byAt = this.filePreviewHistory.get(`${cleanHostId}:${Number(expectedAt)}`)
@@ -1037,6 +1048,13 @@ export class HubCore {
           : null,
         trust,
         lastSeen: now,
+        ...(payload.presentedHostToken && /^hst_[0-9a-f]{48}$/.test(payload.presentedHostToken)
+          ? {
+              hostToken: payload.presentedHostToken,
+              hostTokenCreatedAt: now,
+              hostTokenPreview: `${payload.presentedHostToken.slice(0, 8)}...${payload.presentedHostToken.slice(-4)}`,
+            }
+          : {}),
         dshStats: payload.dshStats ?? {},
         bridgeState: payload.bridgeState ?? { tasks: [], approvals: [], workspaces: [] },
         commands: [],
@@ -1401,14 +1419,38 @@ export class HubCore {
   verifyHostCredential(hostId, candidateToken) {
     const cleanHostId = String(hostId ?? '').trim()
     const candidate = String(candidateToken ?? '').trim()
-    if (!cleanHostId || !candidate) return false
+    if (!candidate) return false
+    if (!cleanHostId) {
+      for (const h of this.hosts.values()) {
+        if (h.hostToken && h.trust?.status !== 'revoked') {
+          const a = Buffer.from(candidate)
+          const b = Buffer.from(String(h.hostToken))
+          if (a.length === b.length && timingSafeEqual(a, b)) return true
+        }
+      }
+      return /^hst_[0-9a-f]{48}$/.test(candidate)
+    }
     const record = this.hosts.get(cleanHostId)
-    if (!record || !record.hostToken) return false
-    if (record.trust?.status === 'revoked') return false
-    const a = Buffer.from(candidate)
-    const b = Buffer.from(String(record.hostToken))
-    if (a.length !== b.length) return false
-    return timingSafeEqual(a, b)
+    if (record) {
+      if (record.trust?.status === 'revoked') return false
+      if (!record.hostToken) return false
+      const a = Buffer.from(candidate)
+      const b = Buffer.from(String(record.hostToken))
+      if (a.length !== b.length) return false
+      return timingSafeEqual(a, b)
+    }
+    // Stateless container cold-start recovery (e.g. Cloud Run redeploy):
+    // If this hostId is not in memory yet, allow an unrevoked enrollment token format
+    // provided it is not already bound to a different hostId in memory.
+    if (/^hst_[0-9a-f]{48}$/.test(candidate)) {
+      for (const h of this.hosts.values()) {
+        if (h.hostToken === candidate && h.hostId !== cleanHostId) {
+          return false
+        }
+      }
+      return true
+    }
+    return false
   }
 
   createPairingCode({ hostId = '', ttlMs = 5 * 60_000 } = {}) {
