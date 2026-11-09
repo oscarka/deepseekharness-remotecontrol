@@ -1125,8 +1125,14 @@ export class HubAgent {
         case 'upgrade_turbo': {
           const runExec = this.execImpl || execFileAsync
           try {
-            await runExec('git', ['-C', REPO_ROOT, 'pull', '--ff-only'], { timeout: 15_000 })
-          } catch {}
+            await runExec('git', ['-C', REPO_ROOT, 'fetch', 'origin', 'main'], { timeout: 15_000 })
+            await runExec('git', ['-C', REPO_ROOT, 'checkout', 'main'], { timeout: 10_000 })
+            await runExec('git', ['-C', REPO_ROOT, 'pull', '--ff-only', 'origin', 'main'], { timeout: 15_000 })
+          } catch {
+            try {
+              await runExec('git', ['-C', REPO_ROOT, 'pull', '--ff-only'], { timeout: 15_000 })
+            } catch {}
+          }
           try {
             await runExec(join(REPO_ROOT, 'dsh-turbo', 'enable-turbo.sh'), [], { timeout: 10_000 })
           } catch {}
