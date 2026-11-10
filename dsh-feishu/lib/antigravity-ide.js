@@ -598,14 +598,15 @@ export function parseAntigravityTranscript(jsonlText, {
       pendingApproval = null
       lastConclusionAt = 0
       if (typeof step.content === 'string') {
-        const bgMatch = step.content.match(/Tool is running as a background task with task id:\s*([^\s\r\n"]+)/i)
+        const bgMatch = step.content.match(/^(?:Created At:[^\r\n]+\r?\n)?Tool is running as a background task with task id:\s*([^\s\r\n"]+)/i)
         if (bgMatch && bgMatch[1]) {
           const prevAsst = transcript.at(-1)
           const isDaemonTask = Boolean(
-            prevAsst
-            && prevAsst.role === 'assistant'
-            && Array.isArray(prevAsst.tools)
-            && prevAsst.tools.some(t => t.isDaemon),
+            (prevAsst
+              && prevAsst.role === 'assistant'
+              && Array.isArray(prevAsst.tools)
+              && prevAsst.tools.some(t => t.isDaemon))
+            || step.content.includes('daemon.mjs'),
           )
           if (!isDaemonTask) {
             pendingBackgroundTaskIds.add(bgMatch[1].trim().replace(/[.,;]+$/, ''))
