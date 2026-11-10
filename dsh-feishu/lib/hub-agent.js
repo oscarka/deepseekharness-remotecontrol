@@ -1029,7 +1029,10 @@ export class HubAgent {
           const enrichedCmd = (!cmd.cwd && diskSession?.cwd)
             ? { ...cmd, cwd: diskSession.cwd }
             : cmd
-          return await this.bridge.executeHubCommand(enrichedCmd)
+          const out = await this.bridge.executeHubCommand(enrichedCmd)
+          return cmd.silentPreview && out && typeof out === 'object'
+            ? { ...out, silentPreview: true }
+            : out
         }
         case 'approve':
         case 'deny':

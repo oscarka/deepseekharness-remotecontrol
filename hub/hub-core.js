@@ -187,7 +187,7 @@ export class HubCore {
     }
   }
 
-  sanitizeFilePreviewForState(hostId, preview) {
+  sanitizeFilePreviewForState(hostId, preview, { silentPreview = false } = {}) {
     if (!preview || typeof preview !== 'object') return null
     const at = Number(preview.at) || this.now()
     const hasBinaryOrLarge =
@@ -196,7 +196,12 @@ export class HubCore {
 
     if (hasBinaryOrLarge) {
       const existing = this.filePreviewBlobs.get(hostId)
-      if (!existing || existing.at !== at || (preview.dataBase64 && !existing.dataBase64)) {
+      if (
+        !existing ||
+        existing.at !== at ||
+        existing.relPath !== (preview.relPath || '') ||
+        (preview.dataBase64 && !existing.dataBase64)
+      ) {
         const blobObj = {
           at,
           agentId: preview.agentId || '',
@@ -210,7 +215,9 @@ export class HubCore {
           dataBase64: preview.dataBase64,
           expiresAt: this.now() + FILE_PREVIEW_BLOB_TTL_MS,
         }
-        this.filePreviewBlobs.set(hostId, blobObj)
+        if (!silentPreview) {
+          this.filePreviewBlobs.set(hostId, blobObj)
+        }
         this.filePreviewHistory.set(`${hostId}:${at}`, blobObj)
         if (preview.relPath) {
           this.filePreviewHistory.set(`${hostId}:path:${preview.relPath}`, blobObj)
@@ -1900,6 +1907,14 @@ export class HubCore {
       })
     }
     host.commands.push(cmd)
+    if (cmd.silentPreview) {
+      this.silentPreviewCommandIds = this.silentPreviewCommandIds || new Set()
+      this.silentPreviewCommandIds.add(cmd.id)
+      if (this.silentPreviewCommandIds.size > 500) {
+        const oldest = this.silentPreviewCommandIds.values().next().value
+        this.silentPreviewCommandIds.delete(oldest)
+      }
+    }
     void this.persist()
     this.emitHostCommand(cleanHostId, host.commands.length)
     this.emitStateChange('command_queued')
@@ -2127,18 +2142,31 @@ export class HubCore {
         }
       } else if (res.type === 'read_file' && res.ok) {
         const at = this.now()
-        host.lastFilePreview = this.sanitizeFilePreviewForState(hostId, {
-          at,
-          agentId: res.agentId || '',
-          relPath: res.relPath,
-          name: res.name,
-          ext: res.ext,
-          size: res.size,
-          kind: res.kind,
-          mime: res.mime || res.mimeType,
-          content: res.content,
-          dataBase64: res.dataBase64,
-        })
+        const isSilent = Boolean(
+          res.silentPreview || (res.id && this.silentPreviewCommandIds && this.silentPreviewCommandIds.has(res.id)),
+        )
+        if (res.id && this.silentPreviewCommandIds) {
+          this.silentPreviewCommandIds.delete(res.id)
+        }
+        const sanitized = this.sanitizeFilePreviewForState(
+          hostId,
+          {
+            at,
+            agentId: res.agentId || '',
+            relPath: res.relPath,
+            name: res.name,
+            ext: res.ext,
+            size: res.size,
+            kind: res.kind,
+            mime: res.mime || res.mimeType,
+            content: res.content,
+            dataBase64: res.dataBase64,
+          },
+          { silentPreview: isSilent },
+        )
+        if (!isSilent) {
+          host.lastFilePreview = sanitized
+        }
       } else if (res.type === 'share_session' && res.ok) {
         host.lastShareResult = {
           at: this.now(),

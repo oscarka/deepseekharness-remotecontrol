@@ -2286,6 +2286,8 @@ function initHubController() {
 	let fileProjectCwd = "";
 	let fileLoading = null;
 	let filePreviewLoading = null;
+	const pinnedDrawerPreviewByHost = {};
+	const pinnedMainPreviewByHost = {};
 	let actionTargetSession = null;
 	let actionTargetHostId = "";
 	let confirmSheetDelete = false;
@@ -3954,6 +3956,7 @@ function initHubController() {
 				_showInDrawer: true,
 				_showInMain: false
 			};
+			pinnedDrawerPreviewByHost[found.session.hostId] = found.host.lastFilePreview;
 			filePreviewLoading = null;
 			renderInChatFileDrawerBody();
 			return;
@@ -3998,18 +4001,12 @@ function initHubController() {
 					};
 					if (await tryResolveCached()) return;
 					const relPath = toWorkspaceRelPath(session.cwd || "", imgPath);
-					const baseName = relPath.split("/").filter(Boolean).pop() || "";
 					await dispatchHostCommand(session.hostId, {
 						type: "read_file",
 						agentId: session.id,
 						cwd: session.cwd || "",
-						relPath
-					});
-					if (imgPath.includes("/.gemini/antigravity/brain/") && baseName) await dispatchHostCommand(session.hostId, {
-						type: "read_file",
-						agentId: session.id,
-						cwd: session.cwd || "",
-						relPath: `out/${baseName}`
+						relPath,
+						silentPreview: true
 					});
 					for (let i = 0; i < 18; i++) {
 						await sleepMs(180);
@@ -4047,7 +4044,7 @@ function initHubController() {
 		if (!host) return;
 		const body = document.getElementById("inChatFileBody");
 		reconcileFileLoading(host);
-		const preview = host.lastFilePreview;
+		const preview = pinnedDrawerPreviewByHost[host.hostId] || (host.lastFilePreview?._showInDrawer ? host.lastFilePreview : null);
 		const listing = host.lastFsListing;
 		if (filePreviewLoading && filePreviewLoading.hostId === host.hostId && filePreviewLoading.drawer) {
 			body.dataset.dshDrawerListKey = "";
@@ -4135,7 +4132,10 @@ function initHubController() {
 	}
 	function backFromDrawerPreview() {
 		const found = findSessionGlobal(activeSessionId);
-		if (found?.host?.lastFilePreview) found.host.lastFilePreview._showInDrawer = false;
+		if (found?.host) {
+			delete pinnedDrawerPreviewByHost[found.host.hostId];
+			if (found.host.lastFilePreview) found.host.lastFilePreview._showInDrawer = false;
+		}
 		renderInChatFileDrawerBody();
 	}
 	function quoteFileIntoChat(relPath) {
@@ -4162,6 +4162,8 @@ function initHubController() {
 			if (box && box.at !== filePreviewLoading.prevAt && (box.relPath === filePreviewLoading.relPath || expectedBase && box.name === expectedBase)) {
 				box._showInDrawer = Boolean(filePreviewLoading.drawer);
 				box._showInMain = !filePreviewLoading.drawer;
+				if (filePreviewLoading.drawer) pinnedDrawerPreviewByHost[host.hostId] = box;
+				else pinnedMainPreviewByHost[host.hostId] = box;
 				filePreviewLoading = null;
 			} else if (Date.now() - filePreviewLoading.at > 15e3) filePreviewLoading = null;
 		}
@@ -4169,9 +4171,11 @@ function initHubController() {
 	async function requestDirList(hostId, agentId, cwd, subDir, inDrawer = false) {
 		fileProjectCwd = cwd;
 		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
+		if (inDrawer) delete pinnedDrawerPreviewByHost[hostId];
+		else delete pinnedMainPreviewByHost[hostId];
 		if (host?.lastFilePreview) {
-			host.lastFilePreview._showInMain = false;
-			host.lastFilePreview._showInDrawer = false;
+			if (inDrawer) host.lastFilePreview._showInDrawer = false;
+			else host.lastFilePreview._showInMain = false;
 		}
 		fileLoading = {
 			hostId,
@@ -4289,7 +4293,7 @@ function initHubController() {
 		if (!fileProjectCwd && projects[0]) fileProjectCwd = projects[0].cwd;
 		const firstSession = (host.bridgeState?.tasks || []).find((t) => t.cwd === fileProjectCwd) || (host.bridgeState?.tasks || [])[0];
 		const agentId = firstSession?.id || "";
-		const preview = host.lastFilePreview;
+		const preview = pinnedMainPreviewByHost[host.hostId] || (host.lastFilePreview?._showInMain ? host.lastFilePreview : null);
 		if (filePreviewLoading && filePreviewLoading.hostId === host.hostId && !filePreviewLoading.drawer) {
 			container.innerHTML = `
           <div class="breadcrumbs-bar" style="justify-content:space-between;">
@@ -4386,6 +4390,7 @@ function initHubController() {
 		container.scrollTop = prevScrollTop;
 	}
 	function closeMainFilePreview(hostId) {
+		delete pinnedMainPreviewByHost[hostId];
 		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
 		if (host?.lastFilePreview) host.lastFilePreview._showInMain = false;
 		renderAll();
@@ -6207,10 +6212,22 @@ function initHubController() {
 		for (const host of nextState.hosts || []) {
 			const prev = prevHosts.find((h) => h.hostId === host.hostId)?.lastFilePreview;
 			const next = host.lastFilePreview;
-			if (!prev || !next) continue;
-			if (prev.at === next.at && prev.relPath === next.relPath) {
+			if (prev && next && prev.at === next.at && prev.relPath === next.relPath) {
 				next._showInMain = Boolean(prev._showInMain);
 				next._showInDrawer = Boolean(prev._showInDrawer);
+				if (next.content === void 0 && prev.content !== void 0) next.content = prev.content;
+			}
+			const pinnedDrawer = pinnedDrawerPreviewByHost[host.hostId];
+			if (pinnedDrawer && next && next.relPath === pinnedDrawer.relPath && next.at >= (pinnedDrawer.at || 0)) {
+				if (next.content === void 0 && pinnedDrawer.content !== void 0) next.content = pinnedDrawer.content;
+				next._showInDrawer = true;
+				pinnedDrawerPreviewByHost[host.hostId] = next;
+			}
+			const pinnedMain = pinnedMainPreviewByHost[host.hostId];
+			if (pinnedMain && next && next.relPath === pinnedMain.relPath && next.at >= (pinnedMain.at || 0)) {
+				if (next.content === void 0 && pinnedMain.content !== void 0) next.content = pinnedMain.content;
+				next._showInMain = true;
+				pinnedMainPreviewByHost[host.hostId] = next;
 			}
 		}
 	}

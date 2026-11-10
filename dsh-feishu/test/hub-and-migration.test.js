@@ -2712,6 +2712,47 @@ test('antigravity-ide walkthrough & artifacts: surfaces tool-call and disk walkt
     })
     assert.equal(compacted.tasks[0].artifacts.length, 1)
     assert.equal(compacted.tasks[0].transcript.at(-1).artifacts[0].path, walkthroughPath)
+
+    // Verify background image hydration (`silentPreview: true`) caches image blob without overwriting `host.lastFilePreview`
+    hub.handleHeartbeat({
+      hostId: 'mac-wt',
+      hostName: 'Walkthrough Mac',
+      bridgeState: { tasks: [sess], approvals: [], workspaces: [] },
+    })
+    hub.onCommandResult('mac-wt', {
+      id: 'cmd-wt-doc',
+      type: 'read_file',
+      ok: true,
+      relPath: walkthroughPath,
+      name: 'walkthrough.md',
+      ext: '.md',
+      size: 42,
+      kind: 'text',
+      mime: 'text/markdown',
+      content: '# Walkthrough\n\n![img](/tmp/shot.png)\n',
+    })
+    assert.equal(hub.getFullState().hosts[0].lastFilePreview.name, 'walkthrough.md')
+
+    const silentCmd = hub.queueCommand('mac-wt', {
+      type: 'read_file',
+      relPath: '/tmp/shot.png',
+      silentPreview: true,
+    })
+    hub.onCommandResult('mac-wt', {
+      id: silentCmd.command.id,
+      type: 'read_file',
+      ok: true,
+      relPath: '/tmp/shot.png',
+      name: 'shot.png',
+      ext: '.png',
+      size: 16,
+      kind: 'image',
+      mime: 'image/png',
+      dataBase64: Buffer.from('fake-png-bytes').toString('base64'),
+    })
+    // `host.lastFilePreview` must remain `walkthrough.md`, while `/tmp/shot.png` is still cached in `filePreviewHistory`!
+    assert.equal(hub.getFullState().hosts[0].lastFilePreview.name, 'walkthrough.md')
+    assert.equal(hub.getFilePreviewBlob('mac-wt', null, '/tmp/shot.png')?.name, 'shot.png')
   } finally {
     await rm(tmpBrain, { recursive: true, force: true })
   }

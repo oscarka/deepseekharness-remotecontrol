@@ -474,6 +474,8 @@ export function initHubController() {
   // 加载态：目录/文件读取是「命令下发 + 等电脑心跳回传」，不显示状态会像卡死
   let fileLoading = null;        // { hostId, cwd, subDir, at, drawer }
   let filePreviewLoading = null; // { hostId, at, drawer }
+  const pinnedDrawerPreviewByHost = {};
+  const pinnedMainPreviewByHost = {};
   let actionTargetSession = null;
   let actionTargetHostId = '';
   let confirmSheetDelete = false;
@@ -2574,6 +2576,7 @@ export function initHubController() {
         _showInDrawer: true,
         _showInMain: false,
       };
+      pinnedDrawerPreviewByHost[found.session.hostId] = found.host.lastFilePreview;
       filePreviewLoading = null;
       renderInChatFileDrawerBody();
       return;
@@ -2628,21 +2631,13 @@ export function initHubController() {
           if (await tryResolveCached()) return;
 
           const relPath = toWorkspaceRelPath(session.cwd || '', imgPath);
-          const baseName = relPath.split('/').filter(Boolean).pop() || '';
           await dispatchHostCommand(session.hostId, {
             type: 'read_file',
             agentId: session.id,
             cwd: session.cwd || '',
             relPath,
+            silentPreview: true,
           });
-          if (imgPath.includes('/.gemini/antigravity/brain/') && baseName) {
-            await dispatchHostCommand(session.hostId, {
-              type: 'read_file',
-              agentId: session.id,
-              cwd: session.cwd || '',
-              relPath: `out/${baseName}`,
-            });
-          }
           for (let i = 0; i < 18; i++) {
             await sleepMs(180);
             if (await tryResolveCached()) return;
@@ -2683,7 +2678,7 @@ export function initHubController() {
     if (!host) return;
     const body = document.getElementById('inChatFileBody');
     reconcileFileLoading(host);
-    const preview = host.lastFilePreview;
+    const preview = pinnedDrawerPreviewByHost[host.hostId] || (host.lastFilePreview?._showInDrawer ? host.lastFilePreview : null);
     const listing = host.lastFsListing;
     const previewLoading = filePreviewLoading
       && filePreviewLoading.hostId === host.hostId
@@ -2795,8 +2790,11 @@ export function initHubController() {
 
   function backFromDrawerPreview() {
     const found = findSessionGlobal(activeSessionId);
-    if (found?.host?.lastFilePreview) {
-      found.host.lastFilePreview._showInDrawer = false;
+    if (found?.host) {
+      delete pinnedDrawerPreviewByHost[found.host.hostId];
+      if (found.host.lastFilePreview) {
+        found.host.lastFilePreview._showInDrawer = false;
+      }
     }
     renderInChatFileDrawerBody();
   }
@@ -2840,6 +2838,11 @@ export function initHubController() {
       ) {
         box._showInDrawer = Boolean(filePreviewLoading.drawer);
         box._showInMain = !filePreviewLoading.drawer;
+        if (filePreviewLoading.drawer) {
+          pinnedDrawerPreviewByHost[host.hostId] = box;
+        } else {
+          pinnedMainPreviewByHost[host.hostId] = box;
+        }
         filePreviewLoading = null;
       } else if (Date.now() - filePreviewLoading.at > 15000) {
         filePreviewLoading = null;
@@ -2851,9 +2854,14 @@ export function initHubController() {
     fileProjectCwd = cwd;
     fileSubDir = subDir;
     const host = (hubState.hosts || []).find(h => h.hostId === hostId);
+    if (inDrawer) {
+      delete pinnedDrawerPreviewByHost[hostId];
+    } else {
+      delete pinnedMainPreviewByHost[hostId];
+    }
     if (host?.lastFilePreview) {
-      host.lastFilePreview._showInMain = false;
-      host.lastFilePreview._showInDrawer = false;
+      if (inDrawer) host.lastFilePreview._showInDrawer = false;
+      else host.lastFilePreview._showInMain = false;
     }
     fileLoading = {
       hostId,
@@ -2973,7 +2981,7 @@ export function initHubController() {
     const firstSession = (host.bridgeState?.tasks || []).find(t => t.cwd === fileProjectCwd) || (host.bridgeState?.tasks || [])[0];
     const agentId = firstSession?.id || '';
 
-    const preview = host.lastFilePreview;
+    const preview = pinnedMainPreviewByHost[host.hostId] || (host.lastFilePreview?._showInMain ? host.lastFilePreview : null);
     const previewLoading = filePreviewLoading
       && filePreviewLoading.hostId === host.hostId
       && !filePreviewLoading.drawer;
@@ -3097,6 +3105,7 @@ export function initHubController() {
   }
 
   function closeMainFilePreview(hostId) {
+    delete pinnedMainPreviewByHost[hostId];
     const host = (hubState.hosts || []).find(h => h.hostId === hostId);
     if (host?.lastFilePreview) host.lastFilePreview._showInMain = false;
     renderAll();
@@ -5120,10 +5129,28 @@ export function initHubController() {
     for (const host of nextState.hosts || []) {
       const prev = prevHosts.find(h => h.hostId === host.hostId)?.lastFilePreview;
       const next = host.lastFilePreview;
-      if (!prev || !next) continue;
-      if (prev.at === next.at && prev.relPath === next.relPath) {
+      if (prev && next && prev.at === next.at && prev.relPath === next.relPath) {
         next._showInMain = Boolean(prev._showInMain);
         next._showInDrawer = Boolean(prev._showInDrawer);
+        if (next.content === undefined && prev.content !== undefined) {
+          next.content = prev.content;
+        }
+      }
+      const pinnedDrawer = pinnedDrawerPreviewByHost[host.hostId];
+      if (pinnedDrawer && next && next.relPath === pinnedDrawer.relPath && next.at >= (pinnedDrawer.at || 0)) {
+        if (next.content === undefined && pinnedDrawer.content !== undefined) {
+          next.content = pinnedDrawer.content;
+        }
+        next._showInDrawer = true;
+        pinnedDrawerPreviewByHost[host.hostId] = next;
+      }
+      const pinnedMain = pinnedMainPreviewByHost[host.hostId];
+      if (pinnedMain && next && next.relPath === pinnedMain.relPath && next.at >= (pinnedMain.at || 0)) {
+        if (next.content === undefined && pinnedMain.content !== undefined) {
+          next.content = pinnedMain.content;
+        }
+        next._showInMain = true;
+        pinnedMainPreviewByHost[host.hostId] = next;
       }
     }
   }
