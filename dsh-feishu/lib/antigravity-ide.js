@@ -121,13 +121,101 @@ export function parseAntigravityUserInput(content) {
   }
 }
 
+function parseArtifactMetadata(rawMeta) {
+  if (!rawMeta) return null
+  if (typeof rawMeta === 'object') return rawMeta
+  if (typeof rawMeta === 'string') {
+    const trimmed = rawMeta.trim()
+    try {
+      const first = JSON.parse(trimmed)
+      if (typeof first === 'string') {
+        try {
+          return JSON.parse(first)
+        } catch {
+          return { Summary: first }
+        }
+      }
+      return first
+    } catch {
+      const unquoted = trimmed.replace(/^"(.*)"$/s, '$1').replace(/\\"/g, '"').replace(/\\n/g, '\n')
+      try {
+        return JSON.parse(unquoted)
+      } catch {
+        return { Summary: unquoted }
+      }
+    }
+  }
+  return null
+}
+
+function isBrainArtifactPath(rawPath) {
+  if (!rawPath || typeof rawPath !== 'string') return false
+  const cleaned = rawPath.replace(/^file:\/\//i, '').trim()
+  if (!cleaned.includes('/.gemini/antigravity/brain/') && !cleaned.includes('/.gemini/antigravity-ide/brain/')) {
+    return false
+  }
+  if (
+    cleaned.includes('/scratch/')
+    || cleaned.includes('/.system_generated/')
+    || cleaned.includes('/.user_uploaded/')
+    || cleaned.includes('/tempmediaStorage/')
+  ) {
+    return false
+  }
+  return /\.(md|markdown|html)$/i.test(cleaned) && !/\.metadata\.json$/i.test(cleaned)
+}
+
+export function buildArtifactDescriptor(filePath, rawMeta = null) {
+  const cleanPath = String(filePath || '').replace(/^file:\/\//i, '').trim()
+  if (!cleanPath) return null
+  const name = basename(cleanPath)
+  if (!name || name.startsWith('.') || /\.metadata\.json$/i.test(name)) return null
+  const lower = name.toLowerCase()
+  const meta = parseArtifactMetadata(rawMeta)
+  const rawType = String(meta?.ArtifactType || meta?.artifactType || '').toLowerCase()
+  const artifactType = rawType.includes('walkthrough') || lower === 'walkthrough.md' || lower.includes('walkthrough')
+    ? 'walkthrough'
+    : rawType.includes('plan') || lower === 'implementation_plan.md' || lower.includes('_plan.md') || lower.includes('plan')
+      ? 'plan'
+      : rawType.includes('task') || lower === 'task.md'
+        ? 'task'
+        : 'artifact'
+  const title = artifactType === 'walkthrough'
+    ? 'Walkthrough'
+    : artifactType === 'plan'
+      ? 'Implementation Plan'
+      : artifactType === 'task'
+        ? 'Task List'
+        : name.replace(/\.(md|markdown)$/i, '')
+  const summary = String(meta?.Summary || meta?.summary || '').replace(/\s+/g, ' ').trim().slice(0, 320)
+  const requestFeedback = Boolean(meta?.RequestFeedback ?? meta?.requestFeedback)
+  const userFacing = meta?.UserFacing !== undefined
+    ? Boolean(meta.UserFacing)
+    : meta?.userFacing !== undefined
+      ? Boolean(meta.userFacing)
+      : true
+  return {
+    path: cleanPath,
+    name,
+    title,
+    kind: artifactType,
+    artifactType,
+    summary,
+    requestFeedback,
+    userFacing,
+  }
+}
+
 /**
  * Parse tool_calls array from an Antigravity PLANNER_RESPONSE step.
  */
 export function parseAntigravityToolCalls(rawToolCalls) {
-  if (!Array.isArray(rawToolCalls)) return { tools: [], inferredWs: null, approvalRequest: null, fileChanges: [] }
+  if (!Array.isArray(rawToolCalls)) {
+    return { tools: [], inferredWs: null, approvalRequest: null, fileChanges: [], artifacts: [] }
+  }
   const tools = []
   const fileChanges = []
+  const artifacts = []
   let inferredWs = null
   let approvalRequest = null
 
@@ -153,9 +241,25 @@ export function parseAntigravityToolCalls(rawToolCalls) {
       inferredWs = inferWorkspaceFromPath(pathArg)
     }
 
-    if ((name === 'edit_file' || name === 'write_file' || name === 'replace_file_content' || name === 'multi_replace_file_content') && pathArg && !pathArg.includes('/.gemini/antigravity')) {
+    const isWriteOrEdit =
+      name === 'edit_file'
+      || name === 'write_file'
+      || name === 'write_to_file'
+      || name === 'replace_file_content'
+      || name === 'multi_replace_file_content'
+
+    const rawArtifactMeta = args.ArtifactMetadata ?? args.artifactMetadata ?? null
+    let detectedArtifact = null
+    if (isWriteOrEdit && (rawArtifactMeta || isBrainArtifactPath(pathArg))) {
+      detectedArtifact = buildArtifactDescriptor(pathArg, rawArtifactMeta)
+      if (detectedArtifact && detectedArtifact.userFacing !== false) {
+        artifacts.push(detectedArtifact)
+      }
+    }
+
+    if (isWriteOrEdit && pathArg && !pathArg.includes('/.gemini/antigravity')) {
       const targetStr = String(unquote(args.Target || args.TargetContent || '') || '')
-      const replacementStr = String(unquote(args.Replacement || args.ReplacementContent || args.Content || '') || '')
+      const replacementStr = String(unquote(args.Replacement || args.ReplacementContent || args.Content || args.CodeContent || '') || '')
       const removed = targetStr ? targetStr.split('\n').length : 0
       const added = replacementStr ? replacementStr.split('\n').length : 0
       fileChanges.push({
@@ -174,11 +278,27 @@ export function parseAntigravityToolCalls(rawToolCalls) {
     const isDaemonRaw = args.IsDaemon
     const isDaemon = isDaemonRaw === true || isDaemonRaw === 'true' || isDaemonRaw === '"true"'
 
+    const defaultToolSummary = detectedArtifact
+      ? `${name === 'edit_file' || name.includes('replace') ? 'Updated' : 'Created'} ${detectedArtifact.title} (${detectedArtifact.name})`
+      : isWriteOrEdit && pathArg
+        ? `${name === 'edit_file' || name.includes('replace') ? 'Edited' : 'Wrote'} ${basename(pathArg)}`
+        : (name === 'read_file' || name === 'view_file') && pathArg
+          ? `Read ${basename(pathArg)}`
+          : name
+
+    const defaultCommandLine = cmdLine
+      ? cmdLine.slice(0, 2000)
+      : detectedArtifact
+        ? `${detectedArtifact.path}${detectedArtifact.summary ? `\n${detectedArtifact.summary}` : ''}`
+        : pathArg || ''
+
     tools.push({
       name,
       id: String(tc.id || ''),
-      summary: toolSummary || (cmdLine ? `执行: ${cmdLine.slice(0, 80)}` : name),
-      commandLine: cmdLine ? cmdLine.slice(0, 2000) : '',
+      summary: toolSummary || (cmdLine ? `执行: ${cmdLine.slice(0, 80)}` : defaultToolSummary),
+      commandLine: defaultCommandLine,
+      ...(pathArg ? { filePath: pathArg } : {}),
+      ...(rawArtifactMeta ? { artifactMeta: parseArtifactMetadata(rawArtifactMeta) } : {}),
       bypassSandbox,
       isDaemon,
     })
@@ -213,7 +333,7 @@ export function parseAntigravityToolCalls(rawToolCalls) {
     }
   }
 
-  return { tools, inferredWs, approvalRequest, fileChanges }
+  return { tools, inferredWs, approvalRequest, fileChanges, artifacts }
 }
 
 /**
@@ -280,6 +400,7 @@ export function parseAntigravityTranscript(jsonlText, {
   hasLiveSummary = false,
   liveWaitingSteps = null,
   fullContentByStepIndex = null,
+  diskArtifacts = [],
 } = {}) {
   const rawLines = String(jsonlText ?? '')
     .split('\n')
@@ -352,6 +473,12 @@ export function parseAntigravityTranscript(jsonlText, {
   let pendingApproval = null
   const pendingBackgroundTaskIds = new Set()
   const changedFilesMap = new Map()
+  const artifactsMap = new Map()
+  if (Array.isArray(diskArtifacts)) {
+    for (const da of diskArtifacts) {
+      if (da && da.path) artifactsMap.set(da.path, { ...da })
+    }
+  }
 
   for (let i = 0; i < lines.length; i += 1) {
     const step = lines[i]
@@ -451,7 +578,7 @@ export function parseAntigravityTranscript(jsonlText, {
       }
       const rawContent = fullStepContent.trim()
       const rawThinking = String(step.thinking ?? '').trim()
-      const { tools, inferredWs, approvalRequest, fileChanges } = parseAntigravityToolCalls(step.tool_calls)
+      const { tools, inferredWs, approvalRequest, fileChanges, artifacts } = parseAntigravityToolCalls(step.tool_calls)
       if (inferredWs && !boundWs && (!cwd || project === 'Antigravity IDE')) {
         cwd = inferredWs.cwd
         project = inferredWs.project
@@ -469,16 +596,47 @@ export function parseAntigravityTranscript(jsonlText, {
         }
       }
 
+      if (Array.isArray(artifacts) && artifacts.length > 0) {
+        for (let aIdx = 0; aIdx < artifacts.length; aIdx += 1) {
+          const art = artifacts[aIdx]
+          if (art && art.path) {
+            const existing = artifactsMap.get(art.path)
+            const merged = existing
+              ? {
+                ...existing,
+                ...art,
+                summary: art.summary || existing.summary || '',
+              }
+              : art
+            artifacts[aIdx] = merged
+            artifactsMap.set(art.path, { ...merged, updatedAt: stepTime || lastActivity })
+          }
+        }
+      }
+
       // Filter silent read-only steps or pure thinking-only steps that have no user-facing content, unless it's the very last step
       const allSilent = tools.length > 0 && tools.every(t => SILENT_TOOLS.has(t.name))
-      if ((allSilent || tools.length === 0) && !rawContent && i < lines.length - 1) {
+      if ((allSilent || tools.length === 0) && !rawContent && (!artifacts || artifacts.length === 0) && i < lines.length - 1) {
         continue
       }
       if (!rawContent && !rawThinking && tools.length === 0) {
         continue
       }
 
-      const asstText = cleanForChat(redactText(rawContent), 48000)
+      let asstText = cleanForChat(redactText(rawContent), 48000)
+      if (Array.isArray(artifacts) && artifacts.length > 0) {
+        const missingLinks = artifacts
+          .filter(art => art?.path && !asstText.includes(art.path) && !asstText.includes(art.name))
+          .map(art => {
+            const summaryLine = art.summary ? `\n> ${art.summary.replace(/\r?\n/g, ' ').slice(0, 180)}` : ''
+            return `📋 **[${art.title || 'Walkthrough'}: ${art.name}](file://${art.path})**${summaryLine}`
+          })
+        if (missingLinks.length > 0) {
+          asstText = asstText
+            ? `${asstText}\n\n${missingLinks.join('\n\n')}`
+            : missingLinks.join('\n\n')
+        }
+      }
       const thinkingText = cleanForChat(redactText(rawThinking), 8000)
       if (asstText) {
         lastOutput = asstText.slice(0, 600)
@@ -555,11 +713,12 @@ export function parseAntigravityTranscript(jsonlText, {
         index: transcript.length,
         role: 'assistant',
         text: asstText || toolDisplayLine,
-        isToolStepOnly: !asstText && tools.length > 0,
+        isToolStepOnly: !asstText && tools.length > 0 && (!artifacts || artifacts.length === 0),
         waitingForInput: isWaitingApproval,
         thinking: thinkingText,
         tools,
         toolCalls: tools,
+        artifacts: Array.isArray(artifacts) && artifacts.length > 0 ? artifacts : undefined,
         time: stepTime || lastActivity,
       })
 
@@ -597,6 +756,31 @@ export function parseAntigravityTranscript(jsonlText, {
     } else if (stepType === 'RUN_COMMAND' || stepType === 'CODE_ACTION' || stepType === 'GENERIC') {
       pendingApproval = null
       lastConclusionAt = 0
+      if (stepType === 'CODE_ACTION' && typeof step.content === 'string') {
+        const createdMatch = step.content.match(/Created file file:\/\/(\/[^\s\r\n]+)/i)
+          || step.content.match(/\bto:\s*(\/[^\s\r\n]+\.md)\b/i)
+        if (createdMatch && createdMatch[1] && isBrainArtifactPath(createdMatch[1])) {
+          const desc = buildArtifactDescriptor(createdMatch[1], null)
+          if (desc) {
+            const existing = artifactsMap.get(desc.path)
+            const merged = existing ? { ...desc, ...existing } : desc
+            artifactsMap.set(desc.path, { ...merged, updatedAt: stepTime || lastActivity })
+            const prevAsst = transcript.at(-1)
+            if (prevAsst && prevAsst.role === 'assistant') {
+              const curArts = Array.isArray(prevAsst.artifacts) ? prevAsst.artifacts : []
+              if (!curArts.some(a => a.path === merged.path)) {
+                prevAsst.artifacts = [...curArts, merged]
+              }
+              if (!String(prevAsst.text || '').includes(merged.path) && !String(prevAsst.text || '').includes(merged.name)) {
+                const summaryLine = merged.summary ? `\n> ${merged.summary.replace(/\r?\n/g, ' ').slice(0, 180)}` : ''
+                const linkLine = `📋 **[${merged.title || 'Walkthrough'}: ${merged.name}](file://${merged.path})**${summaryLine}`
+                prevAsst.text = prevAsst.isToolStepOnly ? linkLine : `${prevAsst.text}\n\n${linkLine}`
+                prevAsst.isToolStepOnly = false
+              }
+            }
+          }
+        }
+      }
       if (typeof step.content === 'string') {
         const bgMatch = step.content.match(/^(?:Created At:[^\r\n]+\r?\n)?Tool is running as a background task with task id:\s*([^\s\r\n"]+)/i)
         if (bgMatch && bgMatch[1]) {
@@ -697,6 +881,92 @@ export function parseAntigravityTranscript(jsonlText, {
     || `Antigravity 会话 ${String(conversationId).slice(0, 8)}`
 
   const changedFiles = [...changedFilesMap.values()].slice(-8)
+  const artifacts = [...artifactsMap.values()].sort((a, b) => {
+    const rank = k => (k === 'walkthrough' ? 0 : k === 'plan' ? 1 : k === 'task' ? 2 : 3)
+    return rank(a.kind) - rank(b.kind)
+  })
+
+  // Merge consecutive non-waiting assistant steps within the same turn BEFORE slicing to `maxMessages`
+  // so multi-step tool turns do not evict earlier user turns or artifact creation steps when sliced.
+  const mergedTranscript = []
+  for (const item of transcript) {
+    const prev = mergedTranscript.at(-1)
+    if (
+      prev
+      && prev.role === 'assistant'
+      && item.role === 'assistant'
+      && !prev.waitingForInput
+      && !item.waitingForInput
+    ) {
+      if (!prev._thoughtList) {
+        prev._thoughtList = prev.thinking ? [String(prev.thinking).trim()] : []
+        prev._textList = prev.text && !prev.isToolStepOnly ? [String(prev.text).trim()] : []
+        prev._toolList = [...(Array.isArray(prev.tools) ? prev.tools : [])]
+        prev._artifactMap = new Map(
+          (Array.isArray(prev.artifacts) ? prev.artifacts : []).filter(a => a?.path).map(a => [a.path, a]),
+        )
+        prev._stepCount = prev.thinkingStepCount || (prev.thinking ? 1 : 0)
+      }
+      if (item.thinking && String(item.thinking).trim()) {
+        prev._thoughtList.push(String(item.thinking).trim())
+        prev._stepCount += item.thinkingStepCount || 1
+      }
+      if (item.text && !item.isToolStepOnly && String(item.text).trim()) {
+        prev._textList.push(String(item.text).trim())
+      }
+      for (const t of (Array.isArray(item.tools) ? item.tools : [])) {
+        if (t) prev._toolList.push(t)
+      }
+      for (const a of (Array.isArray(item.artifacts) ? item.artifacts : [])) {
+        if (a?.path) prev._artifactMap.set(a.path, a)
+      }
+      prev.thinkingStepCount = prev._stepCount
+      prev.thinking = prev._thoughtList.length <= 1
+        ? (prev._thoughtList[0] || '')
+        : prev._thoughtList
+          .map((th, idx) => (th.startsWith('【思考') ? th : `【思考 ${idx + 1}】\n${th}`))
+          .join('\n\n')
+          .slice(-8000)
+      const joinedText = prev._textList.join('\n\n')
+      prev.tools = prev._toolList.slice(-24)
+      prev.toolCalls = prev.tools
+      prev.artifacts = prev._artifactMap.size > 0 ? [...prev._artifactMap.values()] : undefined
+      prev.isToolStepOnly = !joinedText && prev.tools.length > 0 && (!prev.artifacts || prev.artifacts.length === 0)
+      prev.text = joinedText || (prev.tools.map(t => t.summary || t.name).join(' · '))
+      prev.time = item.time || prev.time
+    } else {
+      mergedTranscript.push({ ...item })
+    }
+  }
+  for (const m of mergedTranscript) {
+    delete m._thoughtList
+    delete m._textList
+    delete m._toolList
+    delete m._artifactMap
+    delete m._stepCount
+    m.index = mergedTranscript.indexOf(m)
+  }
+
+  const slicedTranscript = mergedTranscript.slice(-maxMessages)
+  // Ensure that if the conversation has a Walkthrough artifact on disk, and none of the messages in
+  // `slicedTranscript` currently carry it, we attach it to the latest assistant conclusion message so it's always clickable.
+  const walkthroughArt = artifacts.find(a => a.kind === 'walkthrough')
+  if (walkthroughArt && slicedTranscript.length > 0) {
+    const alreadyInSlice = slicedTranscript.some(
+      m =>
+        (Array.isArray(m.artifacts) && m.artifacts.some(a => a.path === walkthroughArt.path))
+        || String(m.text || '').includes(walkthroughArt.path),
+    )
+    if (!alreadyInSlice) {
+      for (let idx = slicedTranscript.length - 1; idx >= 0; idx -= 1) {
+        const msg = slicedTranscript[idx]
+        if (msg.role === 'assistant' && !msg.waitingForInput) {
+          msg.artifacts = [...(Array.isArray(msg.artifacts) ? msg.artifacts : []), walkthroughArt]
+          break
+        }
+      }
+    }
+  }
 
   const lastStep = lines.at(-1) || {}
   const lastStepType = String(lastStep.type || '')
@@ -795,8 +1065,10 @@ export function parseAntigravityTranscript(jsonlText, {
     runningSummary: runningSummary || lastOutput,
     queuedSteers: [],
     changedFiles,
+    artifacts,
+    messageCount: mergedTranscript.length,
     hasLiveSummary: Boolean(hasLiveSummary),
-    transcript: transcript.slice(-maxMessages),
+    transcript: slicedTranscript,
     pendingApproval: pendingApproval
       ? {
         ...pendingApproval,
@@ -804,6 +1076,7 @@ export function parseAntigravityTranscript(jsonlText, {
         title,
         project,
         changedFiles,
+        artifacts,
       }
       : null,
   }
@@ -950,6 +1223,52 @@ async function loadAntigravityMetadataForCandidates(brainDirs, candidates) {
 }
 
 /**
+ * Inspect `<brainDir>/<convId>` for top-level Markdown artifacts (`walkthrough.md`, `implementation_plan.md`, `task.md`,
+ * or any `*.md` accompanied by `*.md.metadata.json`).
+ */
+async function loadDiskArtifactsForConversation(transcriptPath) {
+  try {
+    const convDir = dirname(dirname(dirname(resolve(String(transcriptPath || '')))))
+    const entries = await readdir(convDir)
+    const entrySet = new Set(entries)
+    const mdFiles = entries.filter(name => {
+      if (!name.toLowerCase().endsWith('.md')) return false
+      const lower = name.toLowerCase()
+      return (
+        lower === 'walkthrough.md'
+        || lower === 'implementation_plan.md'
+        || lower === 'task.md'
+        || entrySet.has(`${name}.metadata.json`)
+      )
+    })
+    if (mdFiles.length === 0) return []
+    const out = []
+    for (const mdName of mdFiles) {
+      const fullPath = join(convDir, mdName)
+      let meta = null
+      if (entrySet.has(`${mdName}.metadata.json`)) {
+        try {
+          meta = JSON.parse(await readFile(join(convDir, `${mdName}.metadata.json`), 'utf8'))
+        } catch {
+          meta = null
+        }
+      }
+      const desc = buildArtifactDescriptor(fullPath, meta)
+      if (desc) {
+        if (meta?.updatedAt) {
+          const t = Date.parse(meta.updatedAt)
+          if (Number.isFinite(t)) desc.updatedAt = t
+        }
+        out.push(desc)
+      }
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
+/**
  * Load Antigravity IDE sessions across configured brain directories.
  */
 export async function loadAntigravityIdeSessions({
@@ -1060,7 +1379,7 @@ export async function loadAntigravityIdeSessions({
       const effectiveNativeTitle = nativeMeta?.title || liveTitle || ''
       const sessionId = `${AGY_IDE_PREFIX}${item.convId}`
       const customTitle = customTitles[sessionId] || customTitles[item.convId] || ''
-      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${customTitle}:${effectiveNativeTitle}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}:${hasLiveSummary ? 1 : 0}:${waitingKey}`
+      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${maxMessages}:${customTitle}:${effectiveNativeTitle}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}:${hasLiveSummary ? 1 : 0}:${waitingKey}`
       const cached = sessionParseCache.get(item.convId)
       if (cached && cached.cacheKey === cacheKey && cached.session) {
         // Recompute dynamic running/idle status against current `now` while skipping disk read & JSONL parse
@@ -1098,7 +1417,10 @@ export async function loadAntigravityIdeSessions({
         continue
       }
 
-      const rawText = await readFile(item.path, 'utf8')
+      const [rawText, diskArtifacts] = await Promise.all([
+        readFile(item.path, 'utf8'),
+        loadDiskArtifactsForConversation(item.path),
+      ])
       const fullContentByStepIndex = await loadTruncatedStepContents(item.path, rawText)
       const parsed = parseAntigravityTranscript(rawText, {
         conversationId: item.convId,
@@ -1115,6 +1437,7 @@ export async function loadAntigravityIdeSessions({
         hasLiveSummary,
         liveWaitingSteps,
         fullContentByStepIndex,
+        diskArtifacts,
       })
       if (parsed) {
         sessionParseCache.set(item.convId, { cacheKey, session: parsed })

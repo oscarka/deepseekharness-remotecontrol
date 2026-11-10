@@ -41,19 +41,25 @@ export function renderInlineMarkdown(rawLine: string): string {
     );
   });
 
-  // 2. 本地文件链接：[label](file:///... 或 /Users/... 或 /home/...) -> 渲染为可点击文件胶囊
-  safe = safe.replace(/\[((?:[^\[\]]|\[[^\]]*\])+)\]\(((?:file:\/\/\/|\/Users\/|\/home\/)[^)\n]+)\)/g, (_m, rawLabel, rawUrl) => {
-    const cleanLabel = String(rawLabel || '').replace(/^`+|`+$/g, '').trim();
-    const lineAnchorMatch = /#(L\d+(?:-L?\d+)?)$/i.exec(rawUrl);
-    const lineSuffix = lineAnchorMatch ? ` (${lineAnchorMatch[1]})` : '';
-    const cleanPath = String(rawUrl || '').replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim();
-    const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, '%27');
-    const isImg = /\.(png|jpe?g|webp|gif|svg)$/i.test(cleanPath);
-    const icon = isImg ? '🖼️' : /\.blend$/i.test(cleanPath) ? '🧊' : '📄';
-    return stash(
-      `<button type="button" class="md-file-chip" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">${icon} ${cleanLabel}${lineSuffix}</button>`
-    );
-  });
+  // 2. 本地文件链接：[label](file:///... 或 /Users/... 或 /home/... 或 相对路径文件如 walkthrough.md / src/index.ts#L10) -> 渲染为可点击文件胶囊
+  safe = safe.replace(
+    /\[((?:[^\[\]]|\[[^\]]*\])+)\]\(((?:file:\/\/\/?|\/Users\/|\/home\/|(?!https?:\/\/|mailto:|javascript:)[a-zA-Z0-9_.\-/~]+\.[a-zA-Z0-9]{1,8}(?:#L\d+(?:-L?\d+)?)?)[^)\n]*)\)/g,
+    (_m, rawLabel, rawUrl) => {
+      const cleanLabel = String(rawLabel || '').replace(/^`+|`+$/g, '').trim();
+      const lineAnchorMatch = /#(L\d+(?:-L?\d+)?)$/i.exec(rawUrl);
+      const lineSuffix = lineAnchorMatch ? ` (${lineAnchorMatch[1]})` : '';
+      const cleanPath = String(rawUrl || '').replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim();
+      const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, '%27');
+      const isWalkthrough = /walkthrough\.md$/i.test(cleanPath) || /^walkthrough$/i.test(cleanLabel);
+      const isPlan = /implementation_plan\.md$/i.test(cleanPath);
+      const isImg = /\.(png|jpe?g|webp|gif|svg)$/i.test(cleanPath);
+      const icon = isWalkthrough ? '📋' : isPlan ? '🗺️' : isImg ? '🖼️' : /\.blend$/i.test(cleanPath) ? '🧊' : '📄';
+      const extraClass = isWalkthrough || isPlan ? ' md-artifact-chip' : '';
+      return stash(
+        `<button type="button" class="md-file-chip${extraClass}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">${icon} ${cleanLabel}${lineSuffix}</button>`
+      );
+    }
+  );
 
   // 3. 行内代码和普通网页链接先「藏起来」，避免里面的 * 或 _ 被当成加粗/斜体
   safe = safe.replace(/`([^`\n]+)`/g, (_m, code) => stash(`<code>${code}</code>`));

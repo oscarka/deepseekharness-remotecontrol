@@ -1855,8 +1855,6 @@ export async function listWorkspaceFiles(workspaceRoot, subDir = '') {
  */
 export async function readWorkspaceFile(workspaceRoot, relPath = '') {
   try {
-    if (!workspaceRoot) return { ok: false, error: '该任务未关联工作区目录' }
-    const root = await resolveRealRoot(workspaceRoot)
     const originalRel = String(relPath || '').trim()
     let cleanedInput = originalRel.replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim()
     try {
@@ -1871,14 +1869,16 @@ export async function readWorkspaceFile(workspaceRoot, relPath = '') {
       return { ok: false, error: '拒绝越界访问工作区外部文件' }
     }
 
+    const root = workspaceRoot ? await resolveRealRoot(workspaceRoot) : ''
     let realFile = ''
     if (cleanedInput.startsWith('/')) {
       const candidateAbs = resolve(cleanedInput)
       const allowedArtifactRoots = [
         root,
         await resolveRealRoot(join(homedir(), '.gemini', 'antigravity', 'brain')),
+        await resolveRealRoot(join(homedir(), '.gemini', 'antigravity-ide', 'brain')),
         await resolveRealRoot(join(homedir(), '.dsh')),
-      ]
+      ].filter(Boolean)
       let matchedRoot = null
       for (const ar of allowedArtifactRoots) {
         if (ar && (candidateAbs === ar || candidateAbs.startsWith(ar + sep))) {
@@ -1888,20 +1888,45 @@ export async function readWorkspaceFile(workspaceRoot, relPath = '') {
       }
       if (matchedRoot) {
         realFile = await resolveSafeTarget(matchedRoot, candidateAbs)
-      } else {
+      } else if (root) {
         const targetFile = resolve(root, rawRel)
         realFile = await resolveSafeTarget(root, targetFile)
+      } else {
+        return { ok: false, error: '该任务未关联工作区目录' }
       }
-    } else {
+    } else if (root) {
       const targetFile = resolve(root, rawRel)
       realFile = await resolveSafeTarget(root, targetFile)
+    } else {
+      return { ok: false, error: '该任务未关联工作区目录' }
     }
 
     const returnRelPath = originalRel.startsWith('/') || originalRel.startsWith('file://')
       ? originalRel
       : rawRel
 
-    const info = await stat(realFile)
+    let info = null
+    try {
+      info = await stat(realFile)
+    } catch (statErr) {
+      if (root && /\/\.gemini\/antigravity(?:-ide)?\/brain\//.test(cleanedInput)) {
+        const baseName = basename(cleanedInput)
+        for (const fallbackCandidate of [resolve(root, 'out', baseName), resolve(root, baseName)]) {
+          try {
+            const safeFallback = await resolveSafeTarget(root, fallbackCandidate)
+            const fbInfo = await stat(safeFallback)
+            if (fbInfo.isFile()) {
+              realFile = safeFallback
+              info = fbInfo
+              break
+            }
+          } catch {
+            // continue
+          }
+        }
+      }
+      if (!info) throw statErr
+    }
     if (!info.isFile()) {
       return { ok: false, error: '目标路径不是普通文件' }
     }

@@ -647,6 +647,9 @@ export function initHubController() {
         const changedFiles = Array.isArray(t.changedFiles)
           ? t.changedFiles
           : (Array.isArray(pendingApp?.changedFiles) ? pendingApp.changedFiles : []);
+        const artifacts = Array.isArray(t.artifacts)
+          ? t.artifacts
+          : (Array.isArray(pendingApp?.artifacts) ? pendingApp.artifacts : []);
 
         const totalTranscriptCount = Math.max(
           Number(t.totalTranscriptCount) || 0,
@@ -681,6 +684,7 @@ export function initHubController() {
           conclusionSig,
           approvalObj: pendingApp || null,
           changedFiles,
+          artifacts,
           queuedCount,
           msgCount: msgCountVal,
           totalTranscriptCount,
@@ -1387,9 +1391,9 @@ export function initHubController() {
     // DOM Diffing：如果会话内容和状态没变，不重绘 #chatMessages，保留用户展开的思考过程与滚动位置！
     const trSig = s.transcript
       .slice(-6)
-      .map(m => `${m.role}:${m.queuedCmdId || ''}:${m.expiredCmdId || ''}:${(m.text || '').length}:${(m.text || '').slice(-32)}:${(m.thinking || '').length}:${(m.tools || []).length}:${m.waitingForInput ? 1 : 0}`)
+      .map(m => `${m.role}:${m.queuedCmdId || ''}:${m.expiredCmdId || ''}:${(m.text || '').length}:${(m.text || '').slice(-32)}:${(m.thinking || '').length}:${(m.tools || []).length}:${(m.artifacts || []).length}:${m.waitingForInput ? 1 : 0}`)
       .join('|');
-    const chatKey = `${s.id}:${s.status}:${s.sessionRev || ''}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${(s.changedFiles || []).length}`;
+    const chatKey = `${s.id}:${s.status}:${s.sessionRev || ''}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${(s.changedFiles || []).length}:${(s.artifacts || []).length}`;
     if (chatKey === lastRenderedChatKey) return;
     lastRenderedChatKey = chatKey;
     selectedAgyOptionIndex = 1;
@@ -1426,6 +1430,9 @@ export function initHubController() {
           prev._toolList = [
             ...(Array.isArray(prev.toolCalls) && prev.toolCalls.length > 0 ? prev.toolCalls : (prev.tools || [])),
           ];
+          prev._artifactMap = new Map(
+            (Array.isArray(prev.artifacts) ? prev.artifacts : []).filter(a => a && a.path).map(a => [a.path, a])
+          );
           prev._stepCount = prev.thinkingStepCount || (prev.thinking ? 1 : 0);
         }
         if (item.thinking && String(item.thinking).trim()) {
@@ -1440,6 +1447,9 @@ export function initHubController() {
         for (const t of nextTools) {
           if (t) prev._toolList.push(t);
         }
+        for (const a of (Array.isArray(item.artifacts) ? item.artifacts : [])) {
+          if (a && a.path) prev._artifactMap.set(a.path, a);
+        }
         prev.thinkingStepCount = prev._stepCount;
         prev.thinking =
           prev._thoughtList.length <= 1
@@ -1450,6 +1460,7 @@ export function initHubController() {
         prev.text = prev._textList.join('\n\n');
         prev.tools = prev._toolList;
         prev.toolCalls = prev._toolList;
+        prev.artifacts = prev._artifactMap.size > 0 ? [...prev._artifactMap.values()] : undefined;
         prev.isToolStepOnly = false;
       } else {
         msgs.push({ ...item });
@@ -1514,6 +1525,31 @@ export function initHubController() {
           tools = `<div class="tool-chips" style="margin-bottom:8px;">${toolItemsHtml}</div>`;
         }
       }
+      const msgArtifacts = Array.isArray(m.artifacts) ? m.artifacts.filter(a => a && a.path) : [];
+      const artifactsCardHtml = msgArtifacts.length > 0 ? `
+        <div class="agy-artifact-card-list">
+          ${msgArtifacts.map(art => {
+        const encArtPath = encodeURIComponent(art.path || '').replace(/'/g, '%27');
+        const badgeIcon = art.kind === 'walkthrough' ? '📋' : art.kind === 'plan' ? '🗺️' : art.kind === 'task' ? '☑️' : '📄';
+        const badgeTitle = art.title || (art.kind === 'walkthrough' ? 'Walkthrough' : 'Artifact');
+        return `
+              <div class="agy-artifact-card" onclick="openChatFileLink('${encArtPath}')">
+                <div class="agy-artifact-card-head">
+                  <span class="agy-artifact-icon">${badgeIcon}</span>
+                  <div class="agy-artifact-titles">
+                    <div class="agy-artifact-title-row">
+                      <span class="agy-artifact-kind-pill">${esc(badgeTitle)}</span>
+                      <span class="agy-artifact-name">${esc(art.name || 'walkthrough.md')}</span>
+                    </div>
+                    ${art.summary ? `<div class="agy-artifact-summary">${esc(String(art.summary).replace(/\s+/g, ' ').slice(0, 140))}</div>` : ''}
+                  </div>
+                  <button type="button" class="agy-artifact-open-btn" onclick="event.stopPropagation(); openChatFileLink('${encArtPath}')">打开 ›</button>
+                </div>
+              </div>
+            `;
+      }).join('')}
+        </div>
+      ` : '';
       const cleanReplyText = m.text ? String(m.text).trim() : '';
       if (cleanReplyText) {
         lastRenderedAssistantTexts[msgIdx] = cleanReplyText;
@@ -1524,8 +1560,32 @@ export function initHubController() {
       const bodyHtml = cleanReplyText
         ? `<div class="md-body">${formatAssistantText(cleanReplyText)}</div>${copyFooterHtml}`
         : `<div style="font-size:12.5px;color:var(--muted);margin-top:4px;">⚙️ 正在思考与执行工具调用...</div>`;
-      return `<div class="bubble assistant">${thought}${tools}${bodyHtml}</div>`;
+      return `<div class="bubble assistant">${thought}${tools}${bodyHtml}${artifactsCardHtml}</div>`;
     }).join('');
+
+    const sessionArtifacts = Array.isArray(s.artifacts) ? s.artifacts.filter(a => a && a.path) : [];
+    const sessionArtifactsHtml = sessionArtifacts.length > 0 ? `
+        <div class="agy-files-changed-card agy-session-artifacts-card">
+          <div class="agy-session-artifacts-header">
+            <span>📋 AI 交付文档 / Walkthrough (${sessionArtifacts.length})</span>
+            <span style="font-size:11px;color:#94a3b8;">点击直接预览全文与配图</span>
+          </div>
+          ${sessionArtifacts.map(art => {
+      const encArtPath = encodeURIComponent(art.path || '').replace(/'/g, '%27');
+      const badgeIcon = art.kind === 'walkthrough' ? '📋' : art.kind === 'plan' ? '🗺️' : art.kind === 'task' ? '☑️' : '📄';
+      const badgeTitle = art.title || (art.kind === 'walkthrough' ? 'Walkthrough' : 'Artifact');
+      return `
+            <div class="agy-file-row agy-artifact-row" style="cursor:pointer;" onclick="openChatFileLink('${encArtPath}')">
+              <span class="agy-artifact-row-icon">${badgeIcon}</span>
+              <span class="agy-artifact-kind-badge">${esc(badgeTitle)}</span>
+              <span class="agy-file-name" style="color:#f8fafc;font-weight:700;">${esc(art.name || '')}</span>
+              <span class="agy-file-path" style="flex:1;">${esc(art.summary ? String(art.summary).replace(/\s+/g, ' ').slice(0, 80) : (art.name || ''))}</span>
+              <span class="agy-artifact-open-tag">打开 ›</span>
+            </div>
+          `;
+    }).join('')}
+        </div>
+      ` : '';
 
     const filesChangedHtml = (s.harness === 'antigravity-ide' && Array.isArray(s.changedFiles) && s.changedFiles.length > 0) ? `
         <div class="agy-files-changed-card">
@@ -1705,7 +1765,7 @@ export function initHubController() {
 
     // 正在往上翻历史时，新内容到达不要把用户拽回底部
     const sessionChanged = lastRenderedChatSessionId !== s.id;
-    box.innerHTML = loadEarlierHtml + bubblesHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
+    box.innerHTML = loadEarlierHtml + bubblesHtml + sessionArtifactsHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
     void hydrateInlineChatImages(s, box);
     if (sessionChanged || nearBottom) {
       box.scrollTop = box.scrollHeight;
@@ -2481,6 +2541,16 @@ export function initHubController() {
     if (!rawPath) return;
     const found = findSessionGlobal(activeSessionId);
     if (!found) return;
+    const sessionArts = Array.isArray(found.session.artifacts) ? found.session.artifacts : [];
+    const cleanLookup = rawPath.replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim();
+    if (!cleanLookup.startsWith('/') && sessionArts.length > 0) {
+      const matchedArt = sessionArts.find(
+        a => a?.path && (a.name?.toLowerCase() === cleanLookup.toLowerCase() || a.path.endsWith('/' + cleanLookup))
+      );
+      if (matchedArt?.path) {
+        rawPath = matchedArt.path;
+      }
+    }
     fileProjectCwd = found.session.cwd || '';
     const relPath = toWorkspaceRelPath(fileProjectCwd, rawPath);
     const baseName = relPath.split('/').filter(Boolean).pop() || relPath || 'file';
@@ -2507,14 +2577,6 @@ export function initHubController() {
       filePreviewLoading = null;
       renderInChatFileDrawerBody();
       return;
-    }
-    if (rawPath.includes('/.gemini/antigravity/brain/') && baseName) {
-      void dispatchHostCommand(found.session.hostId, {
-        type: 'read_file',
-        agentId: found.session.id,
-        cwd: fileProjectCwd,
-        relPath: `out/${baseName}`,
-      }).catch(() => { });
     }
     await clickRealFileEntry(found.session.hostId, found.session.id, fileProjectCwd, relPath, false, true);
   }
@@ -2647,7 +2709,9 @@ export function initHubController() {
       body.dataset.dshDrawerListKey = '';
       void ensureTextPreviewLoaded(host.hostId, preview);
       const kind = previewKind(preview);
-      const previewKey = `${preview.at || 0}:${preview.relPath || ''}:${kind}:${(preview.content || '').length}`;
+      const isMarkdown = kind === 'text' && /\.(md|markdown|mdx)$/i.test(preview.name || preview.relPath || '');
+      const rawMdMode = Boolean(window.__dshRawMdPreview);
+      const previewKey = `${preview.at || 0}:${preview.relPath || ''}:${kind}:${isMarkdown ? (rawMdMode ? 'raw' : 'md') : ''}:${(preview.content || '').length}`;
       if (body.dataset.dshPreviewKey === previewKey && body.querySelector('.file-preview-body')) return;
       body.dataset.dshPreviewKey = previewKey;
       const lines = String(preview.content || '').split('\n');
@@ -2665,17 +2729,27 @@ export function initHubController() {
                  <div style="font-size:14px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
                  <div style="font-size:12.5px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
                </div>`
-          : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
+          : (isMarkdown && !rawMdMode)
+            ? `<div class="file-preview-body walkthrough-md-preview md-body" style="padding:16px 14px;background:var(--card-bg, #ffffff);color:var(--text, #0f172a);min-height:340px;overflow-x:auto;">
+                 ${formatAssistantText(preview.content || '')}
+               </div>`
+            : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
                  ${numberedHtml}
                </div>`;
       body.innerHTML = `
-          <div class="breadcrumbs-bar" style="justify-content:space-between;">
+          <div class="breadcrumbs-bar" style="justify-content:space-between;gap:6px;">
             <button class="back-btn" style="padding:0;font-size:13px;" onclick="backFromDrawerPreview()">‹ 返回目录</button>
-            <span style="font-weight:700;color:var(--text);">${esc(preview.name)}</span>
-            <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="quoteFileIntoChat('${esc(preview.relPath || preview.name)}')">📎 插入到输入框</button>
+            <span style="font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(preview.name)}</span>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+              ${isMarkdown ? `<button class="icon-pill-btn" onclick="toggleMdPreviewMode()">${rawMdMode ? '📖 渲染' : '</> 源码'}</button>` : ''}
+              <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="quoteFileIntoChat('${esc(preview.relPath || preview.name)}')">📎 引用</button>
+            </div>
           </div>
           ${previewBodyHtml}
         `;
+      if (isMarkdown && !rawMdMode) {
+        void hydrateInlineChatImages(found.session, body);
+      }
       return;
     }
 
@@ -2866,6 +2940,12 @@ export function initHubController() {
     renderFilesTab(pane);
   }
 
+  function toggleMdPreviewMode() {
+    window.__dshRawMdPreview = !window.__dshRawMdPreview;
+    renderAll();
+    renderFilePanes();
+  }
+
   function cancelFilePreviewLoading() {
     filePreviewLoading = null;
     renderAll();
@@ -2916,8 +2996,10 @@ export function initHubController() {
       container.dataset.dshFilesListKey = '';
       void ensureTextPreviewLoaded(host.hostId, preview);
       const kind = previewKind(preview);
+      const isMarkdown = kind === 'text' && /\.(md|markdown|mdx)$/i.test(preview.name || preview.relPath || '');
+      const rawMdMode = Boolean(window.__dshRawMdPreview);
       // 图片/长文件在每次 2 秒轮询里都重建 DOM 会卡顿，内容没变就复用
-      const previewKey = `${preview.at || 0}:${preview.relPath || ''}:${kind}:${(preview.content || '').length}`;
+      const previewKey = `${preview.at || 0}:${preview.relPath || ''}:${kind}:${isMarkdown ? (rawMdMode ? 'raw' : 'md') : ''}:${(preview.content || '').length}`;
       if (container.dataset.dshPreviewKey === previewKey && container.querySelector('.file-preview-body')) return;
       container.dataset.dshPreviewKey = previewKey;
       const lines = String(preview.content || '').split('\n');
@@ -2935,7 +3017,11 @@ export function initHubController() {
                  <div style="font-size:14.5px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
                  <div style="font-size:13px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
                </div>`
-          : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:calc(100% - 44px);overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;">
+          : (isMarkdown && !rawMdMode)
+            ? `<div class="file-preview-body walkthrough-md-preview md-body" style="padding:16px 14px;background:var(--card-bg, #ffffff);color:var(--text, #0f172a);min-height:calc(100% - 44px);overflow-x:auto;">
+                 ${formatAssistantText(preview.content || '')}
+               </div>`
+            : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:calc(100% - 44px);overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;">
                  ${numberedHtml}
                </div>`;
       container.innerHTML = `
@@ -2943,12 +3029,16 @@ export function initHubController() {
             <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="closeMainFilePreview('${esc(host.hostId)}')">‹ 返回文件列表</button>
             <span style="font-weight:700;color:var(--text);">${esc(preview.name)}</span>
             <div style="display:flex;gap:6px;">
+              ${isMarkdown ? `<button class="icon-pill-btn" onclick="toggleMdPreviewMode()">${rawMdMode ? '📖 渲染' : '</> 源码'}</button>` : ''}
               ${kind !== 'text' ? '' : `<button class="icon-pill-btn" onclick="copyCodeText('${encodeURIComponent(preview.content || '')}')">📋 复制</button>`}
               <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="askAiAboutFile('${esc(host.hostId)}', '${esc(fileProjectCwd)}', '${esc(preview.relPath || preview.name)}')">💬 让 AI 分析</button>
             </div>
           </div>
           ${previewBodyHtml}
         `;
+      if (isMarkdown && !rawMdMode && firstSession) {
+        void hydrateInlineChatImages({ ...firstSession, hostId: host.hostId }, container);
+      }
       return;
     }
 
@@ -5370,6 +5460,7 @@ export function initHubController() {
     trackOverlay,
     openSheet,
     openChatFileLink,
+    toggleMdPreviewMode,
     dismissOverlay,
     shouldDismissHorizontalSwipe,
     shouldDismissVerticalSwipe,

@@ -1804,7 +1804,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.5.3')
+  assert.equal(healthRes.build.version, '0.5.4')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 
@@ -2589,6 +2589,134 @@ test('Phase 2: CodexAdapter & ClaudeAdapter parse real JSONL schemas, detect con
     await rm(tmpDir, { recursive: true, force: true })
   }
 })
+
+test('antigravity-ide walkthrough & artifacts: surfaces tool-call and disk walkthroughs across multi-step turns and wire compaction', async () => {
+  const tmpBrain = await mkdtemp(join(tmpdir(), 'dsh-agy-walkthrough-'))
+  try {
+    const convId = '0c207017-d77d-4e20-b6f6-4476dd169553'
+    const convDir = join(tmpBrain, convId)
+    const logsDir = join(convDir, '.system_generated', 'logs')
+    await mkdir(logsDir, { recursive: true })
+
+    const walkthroughPath = join(convDir, 'walkthrough.md')
+    await writeFile(walkthroughPath, '# Walkthrough\n\nVerified all mobile fixes.\n', 'utf8')
+    await writeFile(
+      `${walkthroughPath}.metadata.json`,
+      JSON.stringify({
+        artifactType: 'ARTIFACT_TYPE_WALKTHROUGH',
+        summary: 'Complete verification walkthrough with screenshots.',
+        updatedAt: '2026-11-10T05:00:00Z',
+      }),
+      'utf8',
+    )
+
+    const t0 = Date.now() - 60_000
+    // Simulate a multi-step turn: USER_INPUT -> write_file(walkthrough.md) -> 8 run_command steps -> final PLANNER_RESPONSE without explicit link
+    const steps = [
+      JSON.stringify({
+        step_index: 1,
+        type: 'USER_INPUT',
+        status: 'DONE',
+        created_at: new Date(t0).toISOString(),
+        content: '<USER_REQUEST>\n请完成修改并生成 walkthrough\n</USER_REQUEST>',
+      }),
+      JSON.stringify({
+        step_index: 2,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: new Date(t0 + 1000).toISOString(),
+        thinking: '先写 walkthrough.md',
+        content: '',
+        tool_calls: [
+          {
+            id: 'tc-wt',
+            name: 'write_file',
+            arguments: JSON.stringify({
+              Path: walkthroughPath,
+              Content: '# Walkthrough\n\nVerified all mobile fixes.\n',
+              Overwrite: true,
+              ArtifactMetadata: {
+                Summary: 'Complete verification walkthrough with screenshots.',
+                UserFacing: true,
+                RequestFeedback: false,
+              },
+            }),
+          },
+        ],
+      }),
+    ]
+    for (let k = 0; k < 8; k += 1) {
+      steps.push(
+        JSON.stringify({
+          step_index: 3 + k * 2,
+          type: 'PLANNER_RESPONSE',
+          status: 'DONE',
+          created_at: new Date(t0 + 2000 + k * 500).toISOString(),
+          thinking: `执行验证步骤 ${k + 1}`,
+          content: '',
+          tool_calls: [
+            {
+              id: `tc-cmd-${k}`,
+              name: 'run_command',
+              arguments: JSON.stringify({
+                CommandLine: `echo step-${k + 1}`,
+                BypassSandbox: false,
+                toolSummary: `Verify step ${k + 1}`,
+              }),
+            },
+          ],
+        }),
+      )
+    }
+    steps.push(
+      JSON.stringify({
+        step_index: 20,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: new Date(t0 + 10_000).toISOString(),
+        thinking: '全部验证通过，汇报结果。',
+        content: '所有修改已完成并通过验证，详情请查看 Walkthrough。',
+      }),
+    )
+
+    await writeFile(join(logsDir, 'transcript.jsonl'), steps.join('\n') + '\n', 'utf8')
+
+    const sessions = await loadAntigravityIdeSessions({
+      brainDirs: [tmpBrain],
+      maxSessions: 10,
+      maxMessages: 25,
+    })
+    assert.equal(sessions.length, 1)
+    const sess = sessions[0]
+    assert.ok(Array.isArray(sess.artifacts))
+    assert.equal(sess.artifacts.length, 1)
+    assert.equal(sess.artifacts[0].kind, 'walkthrough')
+    assert.equal(sess.artifacts[0].name, 'walkthrough.md')
+    assert.equal(sess.artifacts[0].path, walkthroughPath)
+    assert.match(sess.artifacts[0].summary, /Complete verification walkthrough/)
+
+    // Consecutive non-waiting assistant steps in the turn are merged into 1 assistant message containing the walkthrough link & artifact card
+    assert.equal(sess.transcript.length, 2)
+    const asstMsg = sess.transcript[1]
+    assert.equal(asstMsg.role, 'assistant')
+    assert.ok(asstMsg.text.includes(walkthroughPath))
+    assert.ok(Array.isArray(asstMsg.artifacts))
+    assert.equal(asstMsg.artifacts[0].path, walkthroughPath)
+
+    // Verify HubCore wire compaction preserves session.artifacts and message.artifacts
+    const hub = new HubCore()
+    const compacted = hub.compactBridgeStateForWire({
+      tasks: [sess],
+      approvals: [],
+      workspaces: [],
+    })
+    assert.equal(compacted.tasks[0].artifacts.length, 1)
+    assert.equal(compacted.tasks[0].transcript.at(-1).artifacts[0].path, walkthroughPath)
+  } finally {
+    await rm(tmpBrain, { recursive: true, force: true })
+  }
+})
+
 
 
 

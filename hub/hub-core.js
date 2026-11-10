@@ -581,6 +581,25 @@ export class HubCore {
               ),
             }
           })
+          const walkthroughArt = Array.isArray(nextTask?.artifacts)
+            ? nextTask.artifacts.find(a => a?.kind === 'walkthrough')
+            : null
+          if (walkthroughArt && compactedTr.length > 0) {
+            const alreadyInCompacted = compactedTr.some(
+              m =>
+                (Array.isArray(m?.artifacts) && m.artifacts.some(a => a?.path === walkthroughArt.path))
+                || String(m?.text || '').includes(walkthroughArt.path),
+            )
+            if (!alreadyInCompacted) {
+              for (let idx = compactedTr.length - 1; idx >= 0; idx -= 1) {
+                const msg = compactedTr[idx]
+                if (msg && msg.role === 'assistant' && !msg.waitingForInput) {
+                  msg.artifacts = [...(Array.isArray(msg.artifacts) ? msg.artifacts : []), walkthroughArt]
+                  break
+                }
+              }
+            }
+          }
           return {
             ...nextTask,
             lastOutput:
@@ -1240,7 +1259,7 @@ export class HubCore {
           .map(t => {
             const tr = Array.isArray(t.transcript) ? t.transcript : []
             const last = tr.at(-1)
-            return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${(t.lastOutput || '').slice(0, 120)}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}`
+            return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${(t.lastOutput || '').slice(0, 120)}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}:${(t.artifacts || []).length}`
           })
           .join('|')
       : ''

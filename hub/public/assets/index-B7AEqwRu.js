@@ -809,14 +809,17 @@ function renderInlineMarkdown(rawLine) {
 		if (cachedSrc) return stash(`<span class="md-inline-img-card" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><img class="md-inline-img" src="${cachedSrc}" alt="${cleanAlt || esc(baseName)}" />${cleanAlt ? `<span class="md-inline-img-cap">🖼️ ${cleanAlt}</span>` : ""}</span>`);
 		return stash(`<span class="md-inline-img-card md-local-img-pending" data-local-img-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🖼️ ${cleanAlt || esc(baseName)} · 正在从电脑加载图片…（点此直接查看）</span></span>`);
 	});
-	safe = safe.replace(/\[((?:[^\[\]]|\[[^\]]*\])+)\]\(((?:file:\/\/\/|\/Users\/|\/home\/)[^)\n]+)\)/g, (_m, rawLabel, rawUrl) => {
+	safe = safe.replace(/\[((?:[^\[\]]|\[[^\]]*\])+)\]\(((?:file:\/\/\/?|\/Users\/|\/home\/|(?!https?:\/\/|mailto:|javascript:)[a-zA-Z0-9_.\-/~]+\.[a-zA-Z0-9]{1,8}(?:#L\d+(?:-L?\d+)?)?)[^)\n]*)\)/g, (_m, rawLabel, rawUrl) => {
 		const cleanLabel = String(rawLabel || "").replace(/^`+|`+$/g, "").trim();
 		const lineAnchorMatch = /#(L\d+(?:-L?\d+)?)$/i.exec(rawUrl);
 		const lineSuffix = lineAnchorMatch ? ` (${lineAnchorMatch[1]})` : "";
 		const cleanPath = String(rawUrl || "").replace(/^file:\/\//i, "").replace(/#L\d+(?:-L?\d+)?$/i, "").trim();
 		const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, "%27");
-		const icon = /\.(png|jpe?g|webp|gif|svg)$/i.test(cleanPath) ? "🖼️" : /\.blend$/i.test(cleanPath) ? "🧊" : "📄";
-		return stash(`<button type="button" class="md-file-chip" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">${icon} ${cleanLabel}${lineSuffix}</button>`);
+		const isWalkthrough = /walkthrough\.md$/i.test(cleanPath) || /^walkthrough$/i.test(cleanLabel);
+		const isPlan = /implementation_plan\.md$/i.test(cleanPath);
+		const isImg = /\.(png|jpe?g|webp|gif|svg)$/i.test(cleanPath);
+		const icon = isWalkthrough ? "📋" : isPlan ? "🗺️" : isImg ? "🖼️" : /\.blend$/i.test(cleanPath) ? "🧊" : "📄";
+		return stash(`<button type="button" class="md-file-chip${isWalkthrough || isPlan ? " md-artifact-chip" : ""}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">${icon} ${cleanLabel}${lineSuffix}</button>`);
 	});
 	safe = safe.replace(/`([^`\n]+)`/g, (_m, code) => stash(`<code>${code}</code>`));
 	safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label, url) => stash(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`));
@@ -2391,6 +2394,7 @@ function initHubController() {
 				const turnState = status === "approval" ? "approval" : status === "running" ? "running" : t.turnState === "interrupted" ? "interrupted" : t.turnState === "conclusion" || lastConclusionAt > 0 ? "conclusion" : "idle";
 				const rawPreview = status === "running" ? t.runningSummary || t.lastOutput || lastMsg?.text || "正在思考与执行任务..." : status === "approval" ? pendingApp?.promptTitle || pendingApp?.reason || t.lastOutput || "等待你批准工具执行" : t.lastOutput || lastMsg?.text || t.cwd || "点击查看对话详情";
 				const changedFiles = Array.isArray(t.changedFiles) ? t.changedFiles : Array.isArray(pendingApp?.changedFiles) ? pendingApp.changedFiles : [];
+				const artifacts = Array.isArray(t.artifacts) ? t.artifacts : Array.isArray(pendingApp?.artifacts) ? pendingApp.artifacts : [];
 				const totalTranscriptCount = Math.max(Number(t.totalTranscriptCount) || 0, Number(t.messageCount) || 0, transcript.length);
 				const omittedTranscriptCount = expandedEntry ? 0 : Math.max(0, Number(t.omittedTranscriptCount) || totalTranscriptCount - wireTranscript.length);
 				const cleanPrev = cleanPreviewText(String(rawPreview || "").slice(0, 360)) || "点击查看对话详情";
@@ -2416,6 +2420,7 @@ function initHubController() {
 					conclusionSig,
 					approvalObj: pendingApp || null,
 					changedFiles,
+					artifacts,
 					queuedCount,
 					msgCount: msgCountVal,
 					totalTranscriptCount,
@@ -2975,8 +2980,8 @@ function initHubController() {
 				sendBtn.textContent = "发送";
 			}
 		}
-		const trSig = s.transcript.slice(-6).map((m) => `${m.role}:${m.queuedCmdId || ""}:${m.expiredCmdId || ""}:${(m.text || "").length}:${(m.text || "").slice(-32)}:${(m.thinking || "").length}:${(m.tools || []).length}:${m.waitingForInput ? 1 : 0}`).join("|");
-		const chatKey = `${s.id}:${s.status}:${s.sessionRev || ""}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${(s.changedFiles || []).length}`;
+		const trSig = s.transcript.slice(-6).map((m) => `${m.role}:${m.queuedCmdId || ""}:${m.expiredCmdId || ""}:${(m.text || "").length}:${(m.text || "").slice(-32)}:${(m.thinking || "").length}:${(m.tools || []).length}:${(m.artifacts || []).length}:${m.waitingForInput ? 1 : 0}`).join("|");
+		const chatKey = `${s.id}:${s.status}:${s.sessionRev || ""}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${(s.changedFiles || []).length}:${(s.artifacts || []).length}`;
 		if (chatKey === lastRenderedChatKey) return;
 		lastRenderedChatKey = chatKey;
 		selectedAgyOptionIndex = 1;
@@ -2998,6 +3003,7 @@ function initHubController() {
 					prev._thoughtList = prev.thinking ? [String(prev.thinking).trim()] : [];
 					prev._textList = prev.text && !prev.isToolStepOnly ? [String(prev.text).trim()] : [];
 					prev._toolList = [...Array.isArray(prev.toolCalls) && prev.toolCalls.length > 0 ? prev.toolCalls : prev.tools || []];
+					prev._artifactMap = new Map((Array.isArray(prev.artifacts) ? prev.artifacts : []).filter((a) => a && a.path).map((a) => [a.path, a]));
 					prev._stepCount = prev.thinkingStepCount || (prev.thinking ? 1 : 0);
 				}
 				if (item.thinking && String(item.thinking).trim()) {
@@ -3007,11 +3013,13 @@ function initHubController() {
 				if (item.text && !item.isToolStepOnly && String(item.text).trim()) prev._textList.push(String(item.text).trim());
 				const nextTools = Array.isArray(item.toolCalls) && item.toolCalls.length > 0 ? item.toolCalls : item.tools || [];
 				for (const t of nextTools) if (t) prev._toolList.push(t);
+				for (const a of Array.isArray(item.artifacts) ? item.artifacts : []) if (a && a.path) prev._artifactMap.set(a.path, a);
 				prev.thinkingStepCount = prev._stepCount;
 				prev.thinking = prev._thoughtList.length <= 1 ? prev._thoughtList[0] || "" : prev._thoughtList.map((th, idx) => th.startsWith("【思考") ? th : `【思考 ${idx + 1}】\n${th}`).join("\n\n");
 				prev.text = prev._textList.join("\n\n");
 				prev.tools = prev._toolList;
 				prev.toolCalls = prev._toolList;
+				prev.artifacts = prev._artifactMap.size > 0 ? [...prev._artifactMap.values()] : void 0;
 				prev.isToolStepOnly = false;
 			} else msgs.push({ ...item });
 		}
@@ -3063,12 +3071,55 @@ function initHubController() {
 					tools = `<details class="thought-box thinking-details" data-detail-id="${groupId}" ${openDetailIds.has(groupId) ? "open" : ""} style="margin-bottom:8px;"><summary>🔧 执行过程 · 共 ${rawTools.length} 次工具调用 (${esc(uniqueToolNames)}) (点击展开)</summary><div class="tool-chips" style="margin-top:6px;">${toolItemsHtml}</div></details>`;
 				} else tools = `<div class="tool-chips" style="margin-bottom:8px;">${toolItemsHtml}</div>`;
 			}
+			const msgArtifacts = Array.isArray(m.artifacts) ? m.artifacts.filter((a) => a && a.path) : [];
+			const artifactsCardHtml = msgArtifacts.length > 0 ? `
+        <div class="agy-artifact-card-list">
+          ${msgArtifacts.map((art) => {
+				const encArtPath = encodeURIComponent(art.path || "").replace(/'/g, "%27");
+				return `
+              <div class="agy-artifact-card" onclick="openChatFileLink('${encArtPath}')">
+                <div class="agy-artifact-card-head">
+                  <span class="agy-artifact-icon">${art.kind === "walkthrough" ? "📋" : art.kind === "plan" ? "🗺️" : art.kind === "task" ? "☑️" : "📄"}</span>
+                  <div class="agy-artifact-titles">
+                    <div class="agy-artifact-title-row">
+                      <span class="agy-artifact-kind-pill">${esc(art.title || (art.kind === "walkthrough" ? "Walkthrough" : "Artifact"))}</span>
+                      <span class="agy-artifact-name">${esc(art.name || "walkthrough.md")}</span>
+                    </div>
+                    ${art.summary ? `<div class="agy-artifact-summary">${esc(String(art.summary).replace(/\s+/g, " ").slice(0, 140))}</div>` : ""}
+                  </div>
+                  <button type="button" class="agy-artifact-open-btn" onclick="event.stopPropagation(); openChatFileLink('${encArtPath}')">打开 ›</button>
+                </div>
+              </div>
+            `;
+			}).join("")}
+        </div>
+      ` : "";
 			const cleanReplyText = m.text ? String(m.text).trim() : "";
 			if (cleanReplyText) lastRenderedAssistantTexts[msgIdx] = cleanReplyText;
 			const copyFooterHtml = cleanReplyText ? `<div class="assistant-copy-footer"><span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 一键复制全文</button></div>` : "";
 			const bodyHtml = cleanReplyText ? `<div class="md-body">${formatAssistantText(cleanReplyText)}</div>${copyFooterHtml}` : `<div style="font-size:12.5px;color:var(--muted);margin-top:4px;">⚙️ 正在思考与执行工具调用...</div>`;
-			return `<div class="bubble assistant">${thought}${tools}${bodyHtml}</div>`;
+			return `<div class="bubble assistant">${thought}${tools}${bodyHtml}${artifactsCardHtml}</div>`;
 		}).join("");
+		const sessionArtifacts = Array.isArray(s.artifacts) ? s.artifacts.filter((a) => a && a.path) : [];
+		const sessionArtifactsHtml = sessionArtifacts.length > 0 ? `
+        <div class="agy-files-changed-card agy-session-artifacts-card">
+          <div class="agy-session-artifacts-header">
+            <span>📋 AI 交付文档 / Walkthrough (${sessionArtifacts.length})</span>
+            <span style="font-size:11px;color:#94a3b8;">点击直接预览全文与配图</span>
+          </div>
+          ${sessionArtifacts.map((art) => {
+			return `
+            <div class="agy-file-row agy-artifact-row" style="cursor:pointer;" onclick="openChatFileLink('${encodeURIComponent(art.path || "").replace(/'/g, "%27")}')">
+              <span class="agy-artifact-row-icon">${art.kind === "walkthrough" ? "📋" : art.kind === "plan" ? "🗺️" : art.kind === "task" ? "☑️" : "📄"}</span>
+              <span class="agy-artifact-kind-badge">${esc(art.title || (art.kind === "walkthrough" ? "Walkthrough" : "Artifact"))}</span>
+              <span class="agy-file-name" style="color:#f8fafc;font-weight:700;">${esc(art.name || "")}</span>
+              <span class="agy-file-path" style="flex:1;">${esc(art.summary ? String(art.summary).replace(/\s+/g, " ").slice(0, 80) : art.name || "")}</span>
+              <span class="agy-artifact-open-tag">打开 ›</span>
+            </div>
+          `;
+		}).join("")}
+        </div>
+      ` : "";
 		const filesChangedHtml = s.harness === "antigravity-ide" && Array.isArray(s.changedFiles) && s.changedFiles.length > 0 ? `
         <div class="agy-files-changed-card">
           ${s.changedFiles.slice(-8).map((fc) => {
@@ -3243,7 +3294,7 @@ function initHubController() {
           </div>
         ` : expandedTranscriptBySession.has(s.id) ? `<div style="text-align:center;font-size:11.5px;color:var(--muted);margin:4px 0 10px;">✅ 已加载全部历史对话（共 ${s.transcript.length} 条）</div>` : "";
 		const sessionChanged = lastRenderedChatSessionId !== s.id;
-		box.innerHTML = loadEarlierHtml + bubblesHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
+		box.innerHTML = loadEarlierHtml + bubblesHtml + sessionArtifactsHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
 		hydrateInlineChatImages(s, box);
 		if (sessionChanged || nearBottom) {
 			box.scrollTop = box.scrollHeight;
@@ -3876,6 +3927,12 @@ function initHubController() {
 		if (!rawPath) return;
 		const found = findSessionGlobal(activeSessionId);
 		if (!found) return;
+		const sessionArts = Array.isArray(found.session.artifacts) ? found.session.artifacts : [];
+		const cleanLookup = rawPath.replace(/^file:\/\//i, "").replace(/#L\d+(?:-L?\d+)?$/i, "").trim();
+		if (!cleanLookup.startsWith("/") && sessionArts.length > 0) {
+			const matchedArt = sessionArts.find((a) => a?.path && (a.name?.toLowerCase() === cleanLookup.toLowerCase() || a.path.endsWith("/" + cleanLookup)));
+			if (matchedArt?.path) rawPath = matchedArt.path;
+		}
 		fileProjectCwd = found.session.cwd || "";
 		const relPath = toWorkspaceRelPath(fileProjectCwd, rawPath);
 		const baseName = relPath.split("/").filter(Boolean).pop() || relPath || "file";
@@ -3901,12 +3958,6 @@ function initHubController() {
 			renderInChatFileDrawerBody();
 			return;
 		}
-		if (rawPath.includes("/.gemini/antigravity/brain/") && baseName) dispatchHostCommand(found.session.hostId, {
-			type: "read_file",
-			agentId: found.session.id,
-			cwd: fileProjectCwd,
-			relPath: `out/${baseName}`
-		}).catch(() => {});
 		await clickRealFileEntry(found.session.hostId, found.session.id, fileProjectCwd, relPath, false, true);
 	}
 	async function hydrateInlineChatImages(session, containerEl) {
@@ -4016,7 +4067,9 @@ function initHubController() {
 			body.dataset.dshDrawerListKey = "";
 			ensureTextPreviewLoaded(host.hostId, preview);
 			const kind = previewKind(preview);
-			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${(preview.content || "").length}`;
+			const isMarkdown = kind === "text" && /\.(md|markdown|mdx)$/i.test(preview.name || preview.relPath || "");
+			const rawMdMode = Boolean(window.__dshRawMdPreview);
+			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${(preview.content || "").length}`;
 			if (body.dataset.dshPreviewKey === previewKey && body.querySelector(".file-preview-body")) return;
 			body.dataset.dshPreviewKey = previewKey;
 			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
@@ -4027,17 +4080,23 @@ function initHubController() {
                  <div style="font-size:32px;">📦</div>
                  <div style="font-size:14px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
                  <div style="font-size:12.5px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
+               </div>` : isMarkdown && !rawMdMode ? `<div class="file-preview-body walkthrough-md-preview md-body" style="padding:16px 14px;background:var(--card-bg, #ffffff);color:var(--text, #0f172a);min-height:340px;overflow-x:auto;">
+                 ${formatAssistantText(preview.content || "")}
                </div>` : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
                  ${numberedHtml}
                </div>`;
 			body.innerHTML = `
-          <div class="breadcrumbs-bar" style="justify-content:space-between;">
+          <div class="breadcrumbs-bar" style="justify-content:space-between;gap:6px;">
             <button class="back-btn" style="padding:0;font-size:13px;" onclick="backFromDrawerPreview()">‹ 返回目录</button>
-            <span style="font-weight:700;color:var(--text);">${esc(preview.name)}</span>
-            <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="quoteFileIntoChat('${esc(preview.relPath || preview.name)}')">📎 插入到输入框</button>
+            <span style="font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(preview.name)}</span>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+              ${isMarkdown ? `<button class="icon-pill-btn" onclick="toggleMdPreviewMode()">${rawMdMode ? "📖 渲染" : "</> 源码"}</button>` : ""}
+              <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="quoteFileIntoChat('${esc(preview.relPath || preview.name)}')">📎 引用</button>
+            </div>
           </div>
           ${previewBodyHtml}
         `;
+			if (isMarkdown && !rawMdMode) hydrateInlineChatImages(found.session, body);
 			return;
 		}
 		body.dataset.dshPreviewKey = "";
@@ -4202,6 +4261,11 @@ function initHubController() {
 		if (!pane || pane.style.display === "none") return;
 		renderFilesTab(pane);
 	}
+	function toggleMdPreviewMode() {
+		window.__dshRawMdPreview = !window.__dshRawMdPreview;
+		renderAll();
+		renderFilePanes();
+	}
 	function cancelFilePreviewLoading() {
 		filePreviewLoading = null;
 		renderAll();
@@ -4223,7 +4287,8 @@ function initHubController() {
 		reconcileFileLoading(host);
 		const projects = getHostProjects(host);
 		if (!fileProjectCwd && projects[0]) fileProjectCwd = projects[0].cwd;
-		const agentId = ((host.bridgeState?.tasks || []).find((t) => t.cwd === fileProjectCwd) || (host.bridgeState?.tasks || [])[0])?.id || "";
+		const firstSession = (host.bridgeState?.tasks || []).find((t) => t.cwd === fileProjectCwd) || (host.bridgeState?.tasks || [])[0];
+		const agentId = firstSession?.id || "";
 		const preview = host.lastFilePreview;
 		if (filePreviewLoading && filePreviewLoading.hostId === host.hostId && !filePreviewLoading.drawer) {
 			container.innerHTML = `
@@ -4242,7 +4307,9 @@ function initHubController() {
 			container.dataset.dshFilesListKey = "";
 			ensureTextPreviewLoaded(host.hostId, preview);
 			const kind = previewKind(preview);
-			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${(preview.content || "").length}`;
+			const isMarkdown = kind === "text" && /\.(md|markdown|mdx)$/i.test(preview.name || preview.relPath || "");
+			const rawMdMode = Boolean(window.__dshRawMdPreview);
+			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${(preview.content || "").length}`;
 			if (container.dataset.dshPreviewKey === previewKey && container.querySelector(".file-preview-body")) return;
 			container.dataset.dshPreviewKey = previewKey;
 			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
@@ -4253,6 +4320,8 @@ function initHubController() {
                  <div style="font-size:36px;">📦</div>
                  <div style="font-size:14.5px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
                  <div style="font-size:13px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
+               </div>` : isMarkdown && !rawMdMode ? `<div class="file-preview-body walkthrough-md-preview md-body" style="padding:16px 14px;background:var(--card-bg, #ffffff);color:var(--text, #0f172a);min-height:calc(100% - 44px);overflow-x:auto;">
+                 ${formatAssistantText(preview.content || "")}
                </div>` : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:calc(100% - 44px);overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;">
                  ${numberedHtml}
                </div>`;
@@ -4261,12 +4330,17 @@ function initHubController() {
             <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="closeMainFilePreview('${esc(host.hostId)}')">‹ 返回文件列表</button>
             <span style="font-weight:700;color:var(--text);">${esc(preview.name)}</span>
             <div style="display:flex;gap:6px;">
+              ${isMarkdown ? `<button class="icon-pill-btn" onclick="toggleMdPreviewMode()">${rawMdMode ? "📖 渲染" : "</> 源码"}</button>` : ""}
               ${kind !== "text" ? "" : `<button class="icon-pill-btn" onclick="copyCodeText('${encodeURIComponent(preview.content || "")}')">📋 复制</button>`}
               <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="askAiAboutFile('${esc(host.hostId)}', '${esc(fileProjectCwd)}', '${esc(preview.relPath || preview.name)}')">💬 让 AI 分析</button>
             </div>
           </div>
           ${previewBodyHtml}
         `;
+			if (isMarkdown && !rawMdMode && firstSession) hydrateInlineChatImages({
+				...firstSession,
+				hostId: host.hostId
+			}, container);
 			return;
 		}
 		container.dataset.dshPreviewKey = "";
@@ -6459,6 +6533,7 @@ function initHubController() {
 		trackOverlay,
 		openSheet,
 		openChatFileLink,
+		toggleMdPreviewMode,
 		dismissOverlay,
 		shouldDismissHorizontalSwipe,
 		shouldDismissVerticalSwipe,

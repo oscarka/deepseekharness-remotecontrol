@@ -369,7 +369,7 @@ export class HubAgent {
           .map(t => {
             const tr = Array.isArray(t.transcript) ? t.transcript : []
             const last = tr.at(-1)
-            return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${(t.lastOutput || '').slice(0, 120)}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}:${t.model || ''}:${t.pendingApproval?.code || ''}`
+            return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${(t.lastOutput || '').slice(0, 120)}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}:${(t.artifacts || []).length}:${t.model || ''}:${t.pendingApproval?.code || ''}`
           })
           .join('|')
       : ''
@@ -1464,7 +1464,13 @@ export class HubAgent {
           const targetId = String(cmd.agentId || '').trim()
           if (!targetId) return { ok: false, error: 'agentId is required' }
           if (isAntigravityIdeSessionId(targetId)) {
-            const agySessions = await loadAntigravityIdeSessions(this.agyBrainDirs, { maxMessages: 120 })
+            const agySessions = await loadAntigravityIdeSessions({
+              brainDirs: this.config.antigravityBrainDirs || undefined,
+              dshHome: this.config.dshHome,
+              maxSessions: 40,
+              maxMessages: 120,
+              settledApprovals: this.settledAgyApprovals,
+            })
             const found = agySessions.find(s => s.id === targetId)
             if (found) {
               return {
