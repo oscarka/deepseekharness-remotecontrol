@@ -128,8 +128,15 @@ export function findDshBinary() {
   return ''
 }
 
+const dshModelsCache = new Map()
+
 export function discoverDshModels(dshHome) {
   const resolvedHome = resolve(dshHome || join(homedir(), '.dsh'))
+  const now = Date.now()
+  const cached = dshModelsCache.get(resolvedHome)
+  if (cached && now - cached.at < 30_000) {
+    return cached.catalog
+  }
   const models = []
   const seen = new Set()
   let defaultProvider = ''
@@ -203,11 +210,13 @@ export function discoverDshModels(dshHome) {
     )
     defaultLabel = matched ? matched.label : `${defaultModel}${defaultEffort ? ` (${defaultEffort})` : ''}`
   }
-  return {
+  const catalog = {
     defaultModel: defaultValue,
     defaultLabel,
     models,
   }
+  dshModelsCache.set(resolvedHome, { at: now, catalog })
+  return catalog
 }
 
 export function buildDshHeadlessPatchFile(dshHome) {

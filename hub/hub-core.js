@@ -45,12 +45,29 @@ export class HubCore {
     this.hostTaskStates = new Map()
     this.pushHistory = []
     this.sseListeners = new Set()
+    this.hostCommandListeners = new Set()
     this.fullTranscriptCache = new Map()
   }
 
   onStateChange(listener) {
     this.sseListeners.add(listener)
     return () => this.sseListeners.delete(listener)
+  }
+
+  onHostCommand(listener) {
+    this.hostCommandListeners.add(listener)
+    return () => this.hostCommandListeners.delete(listener)
+  }
+
+  emitHostCommand(hostId, pendingCommandsCount) {
+    if (this.hostCommandListeners.size === 0) return
+    for (const listener of this.hostCommandListeners) {
+      try {
+        listener(hostId, pendingCommandsCount)
+      } catch {
+        // ignore listener error
+      }
+    }
   }
 
   emitStateChange(event = 'state') {
@@ -1087,9 +1104,27 @@ export class HubCore {
           }
         }
         if (payload.dshStats) record.dshStats = payload.dshStats
-        if (payload.bridgeState) record.bridgeState = payload.bridgeState
+        if (payload.bridgeState) {
+          record.bridgeState = payload.bridgeState
+          if (payload.bridgeStateSig) {
+            record._lastBridgeStateSig = String(payload.bridgeStateSig)
+          }
+        } else if (payload.liteHeartbeat && record.bridgeState && payload.systemTelemetry) {
+          record.bridgeState.systemTelemetry = payload.systemTelemetry
+        }
       }
     }
+
+    const existingTasksCount = Array.isArray(record?.bridgeState?.tasks) ? record.bridgeState.tasks.length : 0
+    const expectedTasksCount = Number(payload.expectedTaskCount) || 0
+    const needFullSync = Boolean(
+      payload.liteHeartbeat
+      && (
+        !record?._lastBridgeStateSig
+        || (payload.bridgeStateSig && record._lastBridgeStateSig !== String(payload.bridgeStateSig))
+        || (expectedTasksCount > 0 && existingTasksCount === 0)
+      ),
+    )
 
     if (!this.activeHostId) {
       this.activeHostId = hostId
@@ -1140,11 +1175,12 @@ export class HubCore {
       }
     }
 
-    if (payload.bridgeState && !isStaleSnapshot) {
+    if ((payload.bridgeState || Array.isArray(payload.liveApprovalCodes)) && !isStaleSnapshot) {
+      const rawCodes = payload.bridgeState
+        ? (Array.isArray(payload.bridgeState.approvals) ? payload.bridgeState.approvals.map(a => a?.code) : [])
+        : payload.liveApprovalCodes
       const liveCodes = new Set(
-        Array.isArray(payload.bridgeState.approvals)
-          ? payload.bridgeState.approvals.map(a => String(a?.code || '').trim().toUpperCase()).filter(Boolean)
-          : [],
+        (rawCodes || []).map(c => String(c || '').trim().toUpperCase()).filter(Boolean),
       )
       const prefix = `${hostId}:`
       for (const [k, entry] of this.approvalLedger.entries()) {
@@ -1155,7 +1191,9 @@ export class HubCore {
           entry.expiresAt = now + APPROVAL_SETTLED_COOL_MS
         }
       }
-      this.detectAndTriggerWebPush(hostId, hostName, payload.bridgeState)
+      if (payload.bridgeState) {
+        this.detectAndTriggerWebPush(hostId, hostName, payload.bridgeState)
+      }
     }
 
     const hasCommandActivity = (Array.isArray(payload.commandResults) && payload.commandResults.length > 0)
@@ -1174,7 +1212,7 @@ export class HubCore {
     }
     const nextFingerprint = this.computeHostFingerprint(record)
     const stateChanged = hasCommandActivity || nextFingerprint !== record._lastFingerprint
-    if (stateChanged || now - (record._lastBroadcastAt || 0) >= 12_000) {
+    if (stateChanged || now - (record._lastBroadcastAt || 0) >= 60_000) {
       record._lastFingerprint = nextFingerprint
       record._lastBroadcastAt = now
       void this.persist()
@@ -1184,11 +1222,14 @@ export class HubCore {
     return {
       ok: true,
       staleSnapshotIgnored: isStaleSnapshot,
+      ...(needFullSync ? { needFullSync: true } : {}),
       activeHostId: this.activeHostId,
       shouldConnectFeishu: this.activeHostId === hostId,
       commands,
       hostsSummary: this.getHostsSummary(),
-      pushSubscriptionsBackup: [...this.pushSubscriptions.values()],
+      ...(!payload.liteHeartbeat || needFullSync
+        ? { pushSubscriptionsBackup: [...this.pushSubscriptions.values()] }
+        : {}),
     }
   }
 
@@ -1841,6 +1882,7 @@ export class HubCore {
     }
     host.commands.push(cmd)
     void this.persist()
+    this.emitHostCommand(cleanHostId, host.commands.length)
     this.emitStateChange('command_queued')
     const { attachments: rawAttachments, ...echoCmd } = cmd
     return {

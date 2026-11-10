@@ -340,6 +340,7 @@ if [ "$(uname -s)" = "Darwin" ] && mkdir -p "$PLIST_DIR" 2>/dev/null; then
   <array>
     <string>${NODE_BIN}</string>
     <string>${SCRIPT_DIR}/dsh-feishu/daemon.mjs</string>
+    <string>--replace</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>

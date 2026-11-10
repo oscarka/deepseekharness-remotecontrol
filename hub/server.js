@@ -6,7 +6,7 @@ import { homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { gzip } from 'node:zlib'
+import { createGzip, gunzipSync, gzip, constants as zlibConstants } from 'node:zlib'
 import { HubCore } from './hub-core.js'
 
 const gzipAsync = promisify(gzip)
@@ -818,17 +818,67 @@ export function createHubServer({
           await sendJson(res, 401, { ok: false, error: 'Unauthorized', authRequired: true }, req.headers)
           return
         }
-        res.writeHead(200, {
-          'content-type': 'text/event-stream; charset=utf-8',
-          'cache-control': 'no-cache, no-transform',
-          connection: 'keep-alive',
-          'access-control-allow-origin': '*',
-        })
+        const isHostMode =
+          urlObj.searchParams.get('mode') === 'host' ||
+          /^node\b/i.test(String(req.headers['user-agent'] || ''))
+        const watchHostId = String(urlObj.searchParams.get('hostId') || '').trim()
+
+        if (isHostMode) {
+          res.writeHead(200, {
+            'content-type': 'text/event-stream; charset=utf-8',
+            'cache-control': 'no-cache, no-transform',
+            connection: 'keep-alive',
+            'access-control-allow-origin': '*',
+          })
+          const sendHostWake = (targetHostId = '') => {
+            const hostsLite = [...hub.hosts.values()]
+              .filter(h => !targetHostId || h.hostId === targetHostId)
+              .map(h => ({ hostId: h.hostId, pendingCommandsCount: (h.commands || []).length }))
+            res.write(`event: state\ndata: ${JSON.stringify({ ok: true, mode: 'host', hosts: hostsLite })}\n\n`)
+          }
+          sendHostWake(watchHostId)
+          const unsubscribe = hub.onHostCommand(cmdHostId => {
+            if (!watchHostId || cmdHostId === watchHostId) {
+              sendHostWake(cmdHostId)
+            }
+          })
+          const keepAlive = setInterval(() => {
+            res.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
+          }, 20_000)
+          keepAlive.unref?.()
+          req.on('close', () => {
+            clearInterval(keepAlive)
+            unsubscribe()
+          })
+          return
+        }
+
+        const useGzip = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''))
+        let outStream = res
+        if (useGzip) {
+          res.writeHead(200, {
+            'content-type': 'text/event-stream; charset=utf-8',
+            'content-encoding': 'gzip',
+            'cache-control': 'no-cache, no-transform',
+            connection: 'keep-alive',
+            'access-control-allow-origin': '*',
+          })
+          const gzStream = createGzip({ flush: zlibConstants.Z_SYNC_FLUSH })
+          gzStream.pipe(res)
+          outStream = gzStream
+        } else {
+          res.writeHead(200, {
+            'content-type': 'text/event-stream; charset=utf-8',
+            'cache-control': 'no-cache, no-transform',
+            connection: 'keep-alive',
+            'access-control-allow-origin': '*',
+          })
+        }
         const sendEvent = stateData => {
-          res.write(`event: state\ndata: ${JSON.stringify({ ok: true, ...stateData })}\n\n`)
+          outStream.write(`event: state\ndata: ${JSON.stringify({ ok: true, ...stateData })}\n\n`)
         }
         if (urlObj.searchParams.get('initial') === '0') {
-          res.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
+          outStream.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
         } else {
           sendEvent(hub.getFullState())
         }
@@ -836,12 +886,15 @@ export function createHubServer({
           sendEvent(stateData)
         })
         const keepAlive = setInterval(() => {
-          res.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
-        }, 10_000)
+          outStream.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
+        }, 15_000)
         keepAlive.unref?.()
         req.on('close', () => {
           clearInterval(keepAlive)
           unsubscribe()
+          if (outStream !== res) {
+            try { outStream.end() } catch {}
+          }
         })
         return
       }
@@ -875,7 +928,13 @@ export function createHubServer({
       const method = (init.method || 'GET').toUpperCase()
       const headers = init.headers || {}
       let parsedBody = {}
-      if (typeof init.body === 'string' && init.body.length > 0) {
+      if (Buffer.isBuffer(init.body) || init.body instanceof Uint8Array) {
+        let rawBuf = Buffer.from(init.body)
+        if (rawBuf.length >= 2 && rawBuf[0] === 0x1f && rawBuf[1] === 0x8b) {
+          rawBuf = gunzipSync(rawBuf)
+        }
+        parsedBody = JSON.parse(rawBuf.toString('utf8'))
+      } else if (typeof init.body === 'string' && init.body.length > 0) {
         parsedBody = JSON.parse(init.body)
       } else if (init.body && typeof init.body === 'object') {
         parsedBody = init.body
@@ -1273,7 +1332,12 @@ function readJsonBody(req) {
     req.on('end', () => {
       if (chunks.length === 0) return resolve({})
       try {
-        const text = Buffer.concat(chunks).toString('utf8')
+        let rawBuf = Buffer.concat(chunks)
+        const encoding = String(req.headers?.['content-encoding'] ?? req.headers?.['Content-Encoding'] ?? '').toLowerCase()
+        if (encoding === 'gzip' || (rawBuf.length >= 2 && rawBuf[0] === 0x1f && rawBuf[1] === 0x8b)) {
+          rawBuf = gunzipSync(rawBuf)
+        }
+        const text = rawBuf.toString('utf8')
         resolve(JSON.parse(text))
       } catch {
         reject(new Error('Invalid JSON body'))

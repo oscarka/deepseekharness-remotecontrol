@@ -1,10 +1,11 @@
 import { execFile, spawn } from 'node:child_process'
 import { createCipheriv, randomBytes } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { gzipSync } from 'node:zlib'
 import { checkAccessibilityPermission, getTurboNativeBinaryPath, TurboController } from '../../dsh-turbo/index.js'
 import {
   discoverAntigravityModelCatalog,
@@ -115,6 +116,10 @@ export class HubAgent {
     this.pendingUserPrompts = new Map()
     this.sessionModelOverrides = new Map()
     this.lastStatsAt = 0
+    this.lastAckedBridgeStateSig = ''
+    this.lastFullHeartbeatAt = 0
+    this.cachedAdaptersHealth = []
+    this.lastAdaptersHealthAt = 0
     this.executedIds = new Set()
     this.identity = null
     this.turbo = null
@@ -358,6 +363,23 @@ export class HubAgent {
     return this.identity
   }
 
+  computeBridgeStateSig(bridgeState = {}) {
+    const tasksSig = Array.isArray(bridgeState.tasks)
+      ? bridgeState.tasks
+          .map(t => {
+            const tr = Array.isArray(t.transcript) ? t.transcript : []
+            const last = tr.at(-1)
+            return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${(t.lastOutput || '').slice(0, 120)}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}:${t.model || ''}:${t.pendingApproval?.code || ''}`
+          })
+          .join('|')
+      : ''
+    const appSig = Array.isArray(bridgeState.approvals)
+      ? bridgeState.approvals.map(a => `${a.code}:${a.promptTitle || ''}:${a.reason || ''}`).join('|')
+      : ''
+    const wsCount = Array.isArray(bridgeState.workspaces) ? bridgeState.workspaces.length : 0
+    return `${bridgeState.agentVersion || ''}:${Boolean(bridgeState.remoteActive)}:${Boolean(bridgeState.feishuConnected)}:${wsCount}:${tasksSig}#${appSig}`
+  }
+
   async tick() {
     if (this.disposed || !this.config.hubUrl) return
     if (this.polling) {
@@ -517,7 +539,15 @@ export class HubAgent {
       bridgeState.runningCount = (bridgeState.tasks || []).filter(t => t.status === 'running').length
       bridgeState.workspaces = [...wsSet]
       bridgeState.agentVersion = AGENT_VERSION
-      bridgeState.harnesses = this.harnessRouter ? await this.harnessRouter.getAdaptersHealth() : []
+      if (this.harnessRouter) {
+        if (!this.lastAdaptersHealthAt || capturedAt - this.lastAdaptersHealthAt >= 15_000) {
+          this.cachedAdaptersHealth = await this.harnessRouter.getAdaptersHealth()
+          this.lastAdaptersHealthAt = capturedAt
+        }
+        bridgeState.harnesses = this.cachedAdaptersHealth
+      } else {
+        bridgeState.harnesses = []
+      }
       try {
         const dshCatalog = discoverDshModels(this.config?.dshHome)
         const agyCatalog = await discoverAntigravityModelCatalog({
@@ -573,23 +603,52 @@ export class HubAgent {
           execImpl: this.execImpl,
         })
       } catch { }
+      const bridgeStateSig = this.computeBridgeStateSig(bridgeState)
+      const isLiteHeartbeat = Boolean(
+        this.lastAckedBridgeStateSig
+        && this.lastAckedBridgeStateSig === bridgeStateSig
+        && capturedAt - this.lastFullHeartbeatAt < 60_000,
+      )
       const resultsToSend = this.pendingResults.splice(0)
+      const hbPayload = isLiteHeartbeat
+        ? {
+            hostId: this.config.hostId,
+            hostName: this.config.hostName,
+            platform: process.platform,
+            arch: process.arch,
+            identity,
+            syncMeta,
+            liteHeartbeat: true,
+            bridgeStateSig,
+            expectedTaskCount: bridgeState.taskCount,
+            liveApprovalCodes: (bridgeState.approvals || [])
+              .map(a => String(a?.code || '').trim().toUpperCase())
+              .filter(Boolean),
+            systemTelemetry: bridgeState.systemTelemetry,
+            commandResults: resultsToSend,
+          }
+        : {
+            hostId: this.config.hostId,
+            hostName: this.config.hostName,
+            platform: process.platform,
+            arch: process.arch,
+            identity,
+            syncMeta,
+            dshStats,
+            bridgeState,
+            bridgeStateSig,
+            commandResults: resultsToSend,
+            pushSubscriptionsBackup: this.cachedPushSubscriptions,
+          }
+      const rawBody = JSON.stringify(hbPayload)
+      const shouldGzip = this.fetch === globalThis.fetch && rawBody.length > 2048
+      const reqBody = shouldGzip ? gzipSync(Buffer.from(rawBody, 'utf8')) : rawBody
+      const reqHeaders = shouldGzip ? this.headers({ 'content-encoding': 'gzip' }) : this.headers()
       const hbReqStart = Date.now()
       const response = await this.fetch(`${this.config.hubUrl}/api/heartbeat`, {
         method: 'POST',
-        headers: this.headers(),
-        body: JSON.stringify({
-          hostId: this.config.hostId,
-          hostName: this.config.hostName,
-          platform: process.platform,
-          arch: process.arch,
-          identity,
-          syncMeta,
-          dshStats,
-          bridgeState,
-          commandResults: resultsToSend,
-          pushSubscriptionsBackup: this.cachedPushSubscriptions,
-        }),
+        headers: reqHeaders,
+        body: reqBody,
       })
       if (!response.ok) {
         if (resultsToSend.length > 0) this.pendingResults.unshift(...resultsToSend)
@@ -597,6 +656,15 @@ export class HubAgent {
       }
       this.lastHeartbeatRttMs = Math.max(1, Date.now() - hbReqStart)
       const data = await response.json()
+      if (data.needFullSync) {
+        this.lastAckedBridgeStateSig = ''
+        this.pendingRetick = true
+      } else {
+        this.lastAckedBridgeStateSig = bridgeStateSig
+        if (!isLiteHeartbeat) {
+          this.lastFullHeartbeatAt = capturedAt
+        }
+      }
       if (Array.isArray(data.hostsSummary)) {
         this.fleetSummary = data.hostsSummary
       }
@@ -1474,6 +1542,19 @@ export class HubAgent {
           if (this.timer && !this.execImpl) {
             setTimeout(() => {
               try {
+                const plistPath = join(homedir(), 'Library', 'LaunchAgents', 'com.dsh.remotecontrol.plist')
+                if (process.platform === 'darwin' && existsSync(plistPath)) {
+                  try {
+                    const plistRaw = readFileSync(plistPath, 'utf8')
+                    if (plistRaw.includes('daemon.mjs</string>') && !plistRaw.includes('<string>--replace</string>')) {
+                      const patched = plistRaw.replace(
+                        'daemon.mjs</string>',
+                        'daemon.mjs</string>\n    <string>--replace</string>',
+                      )
+                      writeFileSync(plistPath, patched, 'utf8')
+                    }
+                  } catch { }
+                }
                 const child = spawn(
                   process.execPath,
                   [join(REPO_ROOT, 'dsh-feishu', 'daemon.mjs'), '--replace'],

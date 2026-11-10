@@ -1804,9 +1804,50 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.5.2')
+  assert.equal(healthRes.build.version, '0.5.3')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
+
+  // 1b. Verify liteHeartbeat requests needFullSync on cold Hub, then succeeds once full bridgeState is synced
+  const coldLite = await (await fetchAdapter(`${hubUrl}/api/heartbeat`, {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({
+      hostId: 'lite-mac',
+      hostName: 'Lite Mac',
+      liteHeartbeat: true,
+      bridgeStateSig: 'sig-v1',
+      expectedTaskCount: 2,
+    }),
+  })).json()
+  assert.equal(coldLite.ok, true)
+  assert.equal(coldLite.needFullSync, true)
+
+  await fetchAdapter(`${hubUrl}/api/heartbeat`, {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({
+      hostId: 'lite-mac',
+      hostName: 'Lite Mac',
+      bridgeStateSig: 'sig-v1',
+      bridgeState: { tasks: [{ id: 't1', title: 'Task 1' }, { id: 't2', title: 'Task 2' }], approvals: [], workspaces: [] },
+    }),
+  })
+
+  const warmLite = await (await fetchAdapter(`${hubUrl}/api/heartbeat`, {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({
+      hostId: 'lite-mac',
+      hostName: 'Lite Mac',
+      liteHeartbeat: true,
+      bridgeStateSig: 'sig-v1',
+      expectedTaskCount: 2,
+      systemTelemetry: { battery: { percent: 95, charging: true } },
+    }),
+  })).json()
+  assert.equal(warmLite.ok, true)
+  assert.equal(Boolean(warmLite.needFullSync), false)
 
   // 2. Verify 5MB image preview does not bloat /api/state and streams cleanly via /api/hosts/:hostId/file-preview (#3)
   const fake5MbBuf = Buffer.alloc(5 * 1024 * 1024, 0x89)

@@ -1206,7 +1206,8 @@ let cachedLiveSummariesAt = 0
 
 async function loadLiveTrajectorySummaries({ minFreshAt = 0 } = {}) {
   const now = Date.now()
-  if (now - cachedLiveSummariesAt < 200 && cachedLiveSummariesAt >= minFreshAt) {
+  const ttlMs = cachedLiveSummariesAt >= minFreshAt ? 2500 : 150
+  if (now - cachedLiveSummariesAt < ttlMs) {
     return cachedLiveSummaries
   }
   cachedLiveSummariesAt = now
