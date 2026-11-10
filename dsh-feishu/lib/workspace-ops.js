@@ -1194,12 +1194,23 @@ export async function loadDiskSessionsFromDshHome(
         let lastOutput = ''
         let lastConclusionText = ''
         let runningSummary = ''
+        let sessionModel = ''
         let lastActivity = Math.round(fileStat.mtimeMs)
         let lastUserInputAt = 0
         let lastConclusionAt = 0
 
         for (const e of lines) {
           if (e.time && e.time > lastActivity) lastActivity = e.time
+          if (e.type === 'request/header' && e.data?.header?.config?.model) {
+            const prov = String(e.data.header.config.provider || '').trim()
+            const mod = String(e.data.header.config.model || '').trim()
+            const eff = String(e.data.header.config.reasoningEffort || '').trim()
+            if (mod) sessionModel = prov ? `${prov}::${mod}${eff ? `::${eff}` : ''}` : mod
+          } else if (e.type === 'request/context' && e.data?.model && !sessionModel) {
+            const prov = String(e.data.provider || '').trim()
+            const mod = String(e.data.model || '').trim()
+            if (mod) sessionModel = prov ? `${prov}::${mod}` : mod
+          }
           if (e.type === 'user/message') {
             const srcKind = e.data?.source?.kind
             if (srcKind && srcKind !== 'user' && srcKind !== 'user-question-reply') continue
@@ -1321,6 +1332,7 @@ export async function loadDiskSessionsFromDshHome(
           shortId,
           harness: 'dsh',
           harnessLabel: 'DeepSeek Harness',
+          ...(sessionModel ? { model: sessionModel } : {}),
           title: effTitle,
           status: pendingApproval ? 'approval' : isActivelyRunning ? 'running' : 'idle',
           isMidTurn: Boolean(pendingApproval) || !hasConcluded,

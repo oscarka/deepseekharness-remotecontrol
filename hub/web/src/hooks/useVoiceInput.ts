@@ -83,10 +83,22 @@ export function toggleVoiceInput(
   const input = document.getElementById(targetInputId) as HTMLTextAreaElement | HTMLInputElement | null;
   if (!input) return;
 
+  const ua = String(navigator?.userAgent || '');
+  const isMobileTouch =
+    /iPhone|iPad|iPod|Android/i.test(ua) ||
+    (/Macintosh/i.test(ua) && Number((navigator as any)?.maxTouchPoints) > 1);
+
   const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognitionCtor) {
+  // 手机端优先直接唤起系统键盘自带麦克风 / 豆包输入法语音（比 Safari 内置 webkitSpeechRecognition 准确率高一个数量级且不断流）
+  if (isMobileTouch || !SpeechRecognitionCtor) {
     input.focus();
-    showToast('🎙️ 已唤起输入法，请点手机键盘右下角「🎤 麦克风」直接语音输入');
+    try {
+      const len = String(input.value || '').length;
+      if (typeof input.setSelectionRange === 'function') {
+        input.setSelectionRange(len, len);
+      }
+    } catch {}
+    showToast('🎙️ 已唤起手机键盘，请点键盘右下角「🎤」或豆包语音，中英代码词识别更准');
     return;
   }
 

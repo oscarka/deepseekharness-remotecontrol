@@ -913,8 +913,24 @@ export function createHubServer({
         res.writeHead(result.status, result.headers || {})
         res.end(result.buffer)
       } else {
+        const rawBody = String(result.body ?? '')
+        const acceptEncoding = String(req.headers?.['accept-encoding'] ?? req.headers?.['Accept-Encoding'] ?? '')
+        if (rawBody.length > 1024 && /\bgzip\b/i.test(acceptEncoding)) {
+          try {
+            const gz = await gzipAsync(Buffer.from(rawBody, 'utf8'))
+            res.writeHead(result.status, {
+              ...(result.headers || {}),
+              'content-encoding': 'gzip',
+              'content-length': String(gz.length),
+            })
+            res.end(gz)
+            return
+          } catch {
+            // fall back to uncompressed body
+          }
+        }
         res.writeHead(result.status, result.headers || {})
-        res.end(result.body ?? '')
+        res.end(rawBody)
       }
     } catch (error) {
       logger?.warn?.(`dsh-hub error: ${error?.message ?? error}`)

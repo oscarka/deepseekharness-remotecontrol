@@ -2753,6 +2753,13 @@ test('antigravity-ide walkthrough & artifacts: surfaces tool-call and disk walkt
     // `host.lastFilePreview` must remain `walkthrough.md`, while `/tmp/shot.png` is still cached in `filePreviewHistory`!
     assert.equal(hub.getFullState().hosts[0].lastFilePreview.name, 'walkthrough.md')
     assert.equal(hub.getFilePreviewBlob('mac-wt', null, '/tmp/shot.png')?.name, 'shot.png')
+
+    // Verify per-conversation liveModel resolves placeholder enum to human-readable label
+    const parsedWithModel = parseAntigravityTranscript(steps.join('\n'), {
+      conversationId: convId,
+      liveModel: 'MODEL_PLACEHOLDER_M402',
+    })
+    assert.equal(parsedWithModel.model, 'Claude Opus 5.5 (High)')
   } finally {
     await rm(tmpBrain, { recursive: true, force: true })
   }

@@ -397,6 +397,7 @@ export function parseAntigravityTranscript(jsonlText, {
   liveStepCount = null,
   liveLastUserInputStepIndex = null,
   liveStatus = '',
+  liveModel = '',
   hasLiveSummary = false,
   liveWaitingSteps = null,
   fullContentByStepIndex = null,
@@ -1031,6 +1032,7 @@ export function parseAntigravityTranscript(jsonlText, {
     confidence: stateConfidence,
   }
   const sessionRev = `${transcript.length}:${lastStepIndex}:${status}:${turnState}:${pendingApproval?.code || ''}`
+  const resolvedModel = resolveAntigravityModelLabel(liveModel)
 
   return {
     id: sessionId,
@@ -1038,6 +1040,7 @@ export function parseAntigravityTranscript(jsonlText, {
     shortId: String(conversationId).slice(0, 8),
     harness: 'antigravity-ide',
     harnessLabel: 'Antigravity IDE',
+    ...(resolvedModel ? { model: resolvedModel } : {}),
     controlMode: hasLiveSummary ? 'managed' : 'idle-resumable',
     capabilities: {
       canCreateSession: true,
@@ -1375,11 +1378,12 @@ export async function loadAntigravityIdeSessions({
         ? Number(liveSummary.lastUserInputStepIndex)
         : null
       const liveStatus = String(liveSummary?.status || '')
+      const liveModel = String(liveSummary?.planModel || '')
       const liveTitle = String(liveSummary?.summary || '').trim()
       const effectiveNativeTitle = nativeMeta?.title || liveTitle || ''
       const sessionId = `${AGY_IDE_PREFIX}${item.convId}`
       const customTitle = customTitles[sessionId] || customTitles[item.convId] || ''
-      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${maxMessages}:${customTitle}:${effectiveNativeTitle}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}:${hasLiveSummary ? 1 : 0}:${waitingKey}`
+      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${maxMessages}:${customTitle}:${effectiveNativeTitle}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}:${liveModel}:${hasLiveSummary ? 1 : 0}:${waitingKey}`
       const cached = sessionParseCache.get(item.convId)
       if (cached && cached.cacheKey === cacheKey && cached.session) {
         // Recompute dynamic running/idle status against current `now` while skipping disk read & JSONL parse
@@ -1434,6 +1438,7 @@ export async function loadAntigravityIdeSessions({
         liveStepCount,
         liveLastUserInputStepIndex,
         liveStatus,
+        liveModel,
         hasLiveSummary,
         liveWaitingSteps,
         fullContentByStepIndex,
@@ -1526,6 +1531,7 @@ async function getCachedRunningCommandsSnapshot() {
 
 let cachedLiveSummaries = new Map()
 let cachedLiveSummariesAt = 0
+const liveTrajectoryModelCache = new Map()
 
 async function loadLiveTrajectorySummaries({ minFreshAt = 0 } = {}) {
   const now = Date.now()
@@ -1562,6 +1568,48 @@ async function loadLiveTrajectorySummaries({ minFreshAt = 0 } = {}) {
           if (!summaries || typeof summaries !== 'object') return
           for (const [cid, sum] of Object.entries(summaries)) {
             if (cid && sum && typeof sum === 'object') {
+              const stepKey = String(sum.lastUserInputStepIndex ?? 0)
+              const cachedModelEntry = liveTrajectoryModelCache.get(cid)
+              if (cachedModelEntry && cachedModelEntry.stepKey === stepKey && cachedModelEntry.planModel) {
+                sum.planModel = cachedModelEntry.planModel
+              } else if (sum.lastUserInputStepIndex !== undefined) {
+                try {
+                  const stepResp = await globalThis.fetch(
+                    `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetCascadeTrajectorySteps`,
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'x-codeium-csrf-token': hub.csrfToken,
+                      },
+                      body: JSON.stringify({
+                        cascadeId: cid,
+                        stepOffset: Math.max(0, Number(sum.lastUserInputStepIndex) || 0),
+                      }),
+                      signal: controller.signal,
+                    },
+                  )
+                  if (stepResp?.ok) {
+                    const stepData = await stepResp.json().catch(() => null)
+                    const steps = Array.isArray(stepData?.steps) ? stepData.steps : []
+                    let foundModel = ''
+                    for (let i = steps.length - 1; i >= 0; i -= 1) {
+                      const pm = steps[i]?.userInput?.userConfig?.plannerConfig?.planModel
+                        || steps[i]?.metadata?.generatorModel
+                      if (pm) {
+                        foundModel = String(pm).trim()
+                        break
+                      }
+                    }
+                    if (foundModel) {
+                      sum.planModel = foundModel
+                      liveTrajectoryModelCache.set(cid, { stepKey, planModel: foundModel })
+                    }
+                  }
+                } catch {
+                  // ignore step model lookup failure
+                }
+              }
               map.set(cid, sum)
             }
           }
@@ -1756,12 +1804,25 @@ const DEFAULT_AGY_MODELS = [
   { value: 'MODEL_PLACEHOLDER_M320', label: 'Gemini 3.8 Flash (Low)' },
   { value: 'MODEL_PLACEHOLDER_M402', label: 'Claude Opus 5.5 (High)' },
   { value: 'MODEL_PLACEHOLDER_M401', label: 'Claude Opus 5.5 (Medium)' },
+  { value: 'MODEL_PLACEHOLDER_M400', label: 'Claude Opus 5.5 (Low)' },
   { value: 'MODEL_PLACEHOLDER_M405', label: 'Claude Sonnet 5.5 (High)' },
   { value: 'MODEL_PLACEHOLDER_M404', label: 'Claude Sonnet 5.5 (Medium)' },
+  { value: 'MODEL_PLACEHOLDER_M403', label: 'Claude Sonnet 5.5 (Low)' },
+  { value: 'MODEL_OPENAI_GPT_OSS_120B_MEDIUM', label: 'GPT-OSS 120B (Medium)' },
 ]
 
 let cachedAgyModelCatalog = null
 let cachedAgyModelCatalogAt = 0
+
+export function resolveAntigravityModelLabel(rawModel = '') {
+  const clean = String(rawModel || '').trim()
+  if (!clean) return ''
+  const pool = cachedAgyModelCatalog?.models || DEFAULT_AGY_MODELS
+  const hit = pool.find(m => m.value === clean || m.label === clean)
+    || DEFAULT_AGY_MODELS.find(m => m.value === clean || m.label === clean)
+  if (hit) return hit.label
+  return clean.startsWith('MODEL_PLACEHOLDER_') ? '' : clean
+}
 
 export async function discoverAntigravityModelCatalog({
   execImpl = execFileAsync,
@@ -1801,9 +1862,17 @@ export async function discoverAntigravityModelCatalog({
               models.push({ value: val, label: lbl })
             }
             if (models.length > 0) {
+              const overrideDefaultVal = String(
+                data?.defaultOverrideModelConfig?.modelOrAlias?.model
+                || data?.defaultOverrideModelConfig?.modelOrAlias?.alias
+                || '',
+              ).trim()
+              const defaultEntry =
+                (overrideDefaultVal && models.find(m => m.value === overrideDefaultVal))
+                || models[0]
               cachedAgyModelCatalog = {
-                defaultModel: models[0].value,
-                defaultLabel: models[0].label,
+                defaultModel: defaultEntry.value,
+                defaultLabel: defaultEntry.label,
                 models,
               }
               cachedAgyModelCatalogAt = now

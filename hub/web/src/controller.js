@@ -168,8 +168,23 @@ export function initHubController() {
   let cachedPushDeviceListText = '';
   let lastAutoPushSyncAt = 0;
   const upgradingHostMap = {};
-  const selectedSessionModels = {};
+  const selectedSessionModels = (() => {
+    try {
+      const raw = localStorage.getItem('dsh_selected_session_models_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch { }
+    return {};
+  })();
   let newTaskModel = '';
+
+  function persistSelectedSessionModels() {
+    try {
+      localStorage.setItem('dsh_selected_session_models_v1', JSON.stringify(selectedSessionModels));
+    } catch { }
+  }
 
   const FALLBACK_MODEL_CATALOG = {
     'antigravity-ide': {
@@ -180,10 +195,14 @@ export function initHubController() {
         { value: 'MODEL_PLACEHOLDER_M419', label: 'Gemini 4 Argon (Low)' },
         { value: 'MODEL_PLACEHOLDER_M318', label: 'Gemini 3.8 Flash (High)' },
         { value: 'MODEL_PLACEHOLDER_M319', label: 'Gemini 3.8 Flash (Medium)' },
+        { value: 'MODEL_PLACEHOLDER_M320', label: 'Gemini 3.8 Flash (Low)' },
         { value: 'MODEL_PLACEHOLDER_M402', label: 'Claude Opus 5.5 (High)' },
         { value: 'MODEL_PLACEHOLDER_M401', label: 'Claude Opus 5.5 (Medium)' },
+        { value: 'MODEL_PLACEHOLDER_M400', label: 'Claude Opus 5.5 (Low)' },
         { value: 'MODEL_PLACEHOLDER_M405', label: 'Claude Sonnet 5.5 (High)' },
         { value: 'MODEL_PLACEHOLDER_M404', label: 'Claude Sonnet 5.5 (Medium)' },
+        { value: 'MODEL_PLACEHOLDER_M403', label: 'Claude Sonnet 5.5 (Low)' },
+        { value: 'MODEL_OPENAI_GPT_OSS_120B_MEDIUM', label: 'GPT-OSS 120B (Medium)' },
       ],
     },
     dsh: {
@@ -232,9 +251,13 @@ export function initHubController() {
   function resolveModelShortLabel(catalog, modelVal, sessionModel = '') {
     const raw = String(modelVal || sessionModel || '').trim();
     if (raw) {
-      const hit = (catalog?.models || []).find(
-        m => m.value === raw || m.label === raw || m.value.endsWith(`::${raw}`)
-      );
+      const hit =
+        (catalog?.models || []).find(
+          m => m.value === raw || m.label === raw || m.value.endsWith(`::${raw}`)
+        ) ||
+        (FALLBACK_MODEL_CATALOG['antigravity-ide']?.models || []).find(
+          m => m.value === raw || m.label === raw
+        );
       if (hit) return hit.label;
       const cleanParts = raw.split('::');
       if (cleanParts.length >= 2) {
@@ -336,6 +359,7 @@ export function initHubController() {
     } else if (activeSessionId) {
       if (val) selectedSessionModels[activeSessionId] = val;
       else delete selectedSessionModels[activeSessionId];
+      persistSelectedSessionModels();
       const found = findSessionGlobal(activeSessionId);
       if (found) updateChatModelPill(found.session, found.host);
     }
@@ -5216,6 +5240,85 @@ export function initHubController() {
   }
 
   let initialUiBuild = '';
+  let lastSavedStateCacheAt = 0;
+
+  function saveCachedHubStateSnapshot(state) {
+    const now = Date.now();
+    if (now - lastSavedStateCacheAt < 5000) return;
+    lastSavedStateCacheAt = now;
+    try {
+      const compactHosts = (state?.hosts || []).map(h => ({
+        hostId: h.hostId,
+        hostName: h.hostName,
+        online: h.online,
+        lastSeenAt: h.lastSeenAt,
+        bridgeState: h.bridgeState
+          ? {
+              workspaces: h.bridgeState.workspaces || [],
+              modelCatalog: h.bridgeState.modelCatalog || {},
+              turbo: h.bridgeState.turbo || null,
+              systemTelemetry: h.bridgeState.systemTelemetry || null,
+              tasks: (h.bridgeState.tasks || []).map(t => ({
+                id: t.id,
+                rawId: t.rawId,
+                shortId: t.shortId,
+                harness: t.harness,
+                harnessLabel: t.harnessLabel,
+                model: t.model,
+                title: t.title,
+                status: t.status,
+                turnState: t.turnState,
+                statusLabel: t.statusLabel,
+                project: t.project,
+                cwd: t.cwd,
+                lastActivity: t.lastActivity,
+                updatedAt: t.updatedAt,
+                lastConclusionAt: t.lastConclusionAt,
+                lastOutput: String(t.lastOutput || '').slice(0, 260),
+                runningSummary: String(t.runningSummary || '').slice(0, 200),
+                pendingApproval: t.pendingApproval || null,
+                artifacts: t.artifacts || [],
+                messageCount: t.messageCount || 0,
+                transcript: (t.transcript || []).slice(-2).map(m => ({
+                  index: m.index,
+                  role: m.role,
+                  text: String(m.text || '').slice(0, 600),
+                  time: m.time,
+                  artifacts: m.artifacts || [],
+                })),
+              })),
+            }
+          : { tasks: [] },
+      }));
+      localStorage.setItem(
+        'dsh_hub_state_cache_v1',
+        JSON.stringify({
+          cachedAt: now,
+          activeHostId: state?.activeHostId || '',
+          hosts: compactHosts,
+        })
+      );
+    } catch { }
+  }
+
+  function loadCachedHubStateSnapshot() {
+    try {
+      const raw = localStorage.getItem('dsh_hub_state_cache_v1');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.hosts) && parsed.hosts.length > 0) {
+        return {
+          hosts: parsed.hosts,
+          activeHostId: parsed.activeHostId || '',
+          migrations: [],
+          shares: [],
+          pushSubscriptions: [],
+        };
+      }
+    } catch { }
+    return null;
+  }
+
   function applyHubState(nextState) {
     const incomingBuild = String(nextState?.build?.uiBuild || '').trim();
     if (incomingBuild && incomingBuild !== 'dev') {
@@ -5233,12 +5336,15 @@ export function initHubController() {
     }
     preservePreviewUiState(nextState);
     hubState = nextState;
+    saveCachedHubStateSnapshot(nextState);
   }
   let hasLoadedInitialState = false;
+  let stateFetchInFlight = false;
   let lastStateFetchAt = 0;
   let stateFetchSeq = 0;
   async function fetchState() {
     const mySeq = ++stateFetchSeq;
+    stateFetchInFlight = true;
     try {
       const res = await apiFetch('/api/state');
       const data = await res.json();
@@ -5262,6 +5368,10 @@ export function initHubController() {
         setConnectionBanner(true);
       }
       return { ok: false, unauthorized: message === 'Unauthorized', error: message };
+    } finally {
+      if (mySeq === stateFetchSeq) {
+        stateFetchInFlight = false;
+      }
     }
   }
 
@@ -5282,8 +5392,8 @@ export function initHubController() {
         sseConnected = true;
         lastSseEventAt = Date.now();
         setConnectionBanner(false);
-        // initial=0 下 SSE 建连/断线重连只发 ping，如果尚未成功拉取状态或距上次拉取已超过 2.5s，立即补拉一次最新全量状态
-        if (!hasLoadedInitialState || Date.now() - lastStateFetchAt > 2500) {
+        // 仅当当前没有正在进行的 fetchState()，且尚未拉取或距上次拉取已超过 2.5s 时才补拉，避免首屏并发重复拉取两次 /api/state
+        if (!stateFetchInFlight && (!hasLoadedInitialState || Date.now() - lastStateFetchAt > 2500)) {
           void fetchState();
         }
       };
@@ -5527,6 +5637,17 @@ export function initHubController() {
       clearHomeScreenAppBadge();
     });
   }
+  // 首屏 0ms 瞬时渲染：先从 localStorage 恢复上次快照并立即渲染，彻底消灭等待 /api/state 期间的白屏
+  if (getToken()) {
+    const cachedSnapshot = loadCachedHubStateSnapshot();
+    if (cachedSnapshot) {
+      hubState = cachedSnapshot;
+    }
+  }
+  try {
+    renderAll();
+  } catch { }
+
   if (queryPairCode) {
     (async () => {
       try {
@@ -5550,9 +5671,9 @@ export function initHubController() {
     fetchState();
     connectSSE();
   }
-  // 服务端每 10s 发送 event: ping，仅当 SSE 断开或超过 15s 未收到任何事件时才降级轮询兜底
+  // 服务端每 15s 发送 event: ping，仅当 SSE 断开或超过 20s 未收到任何事件且无在途请求时才降级轮询兜底
   setInterval(() => {
-    if (!sseConnected || (Date.now() - lastSseEventAt > 15000)) {
+    if (!stateFetchInFlight && (!sseConnected || (Date.now() - lastSseEventAt > 20000))) {
       fetchState();
     }
   }, 5000);

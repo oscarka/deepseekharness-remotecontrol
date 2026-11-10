@@ -1079,10 +1079,16 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 	if (activeVoiceRecognition) stopVoiceInput();
 	const input = document.getElementById(targetInputId);
 	if (!input) return;
+	const ua = String(navigator?.userAgent || "");
+	const isMobileTouch = /iPhone|iPad|iPod|Android/i.test(ua) || /Macintosh/i.test(ua) && Number(navigator?.maxTouchPoints) > 1;
 	const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-	if (!SpeechRecognitionCtor) {
+	if (isMobileTouch || !SpeechRecognitionCtor) {
 		input.focus();
-		showToast("🎙️ 已唤起输入法，请点手机键盘右下角「🎤 麦克风」直接语音输入");
+		try {
+			const len = String(input.value || "").length;
+			if (typeof input.setSelectionRange === "function") input.setSelectionRange(len, len);
+		} catch {}
+		showToast("🎙️ 已唤起手机键盘，请点键盘右下角「🎤」或豆包语音，中英代码词识别更准");
 		return;
 	}
 	try {
@@ -1974,8 +1980,22 @@ function initHubController() {
 	let cachedPushDeviceListText = "";
 	let lastAutoPushSyncAt = 0;
 	const upgradingHostMap = {};
-	const selectedSessionModels = {};
+	const selectedSessionModels = (() => {
+		try {
+			const raw = localStorage.getItem("dsh_selected_session_models_v1");
+			if (raw) {
+				const parsed = JSON.parse(raw);
+				if (parsed && typeof parsed === "object") return parsed;
+			}
+		} catch {}
+		return {};
+	})();
 	let newTaskModel = "";
+	function persistSelectedSessionModels() {
+		try {
+			localStorage.setItem("dsh_selected_session_models_v1", JSON.stringify(selectedSessionModels));
+		} catch {}
+	}
 	const FALLBACK_MODEL_CATALOG = {
 		"antigravity-ide": {
 			defaultLabel: "Gemini 4 Argon (High)",
@@ -2001,6 +2021,10 @@ function initHubController() {
 					label: "Gemini 3.8 Flash (Medium)"
 				},
 				{
+					value: "MODEL_PLACEHOLDER_M320",
+					label: "Gemini 3.8 Flash (Low)"
+				},
+				{
 					value: "MODEL_PLACEHOLDER_M402",
 					label: "Claude Opus 5.5 (High)"
 				},
@@ -2009,12 +2033,24 @@ function initHubController() {
 					label: "Claude Opus 5.5 (Medium)"
 				},
 				{
+					value: "MODEL_PLACEHOLDER_M400",
+					label: "Claude Opus 5.5 (Low)"
+				},
+				{
 					value: "MODEL_PLACEHOLDER_M405",
 					label: "Claude Sonnet 5.5 (High)"
 				},
 				{
 					value: "MODEL_PLACEHOLDER_M404",
 					label: "Claude Sonnet 5.5 (Medium)"
+				},
+				{
+					value: "MODEL_PLACEHOLDER_M403",
+					label: "Claude Sonnet 5.5 (Low)"
+				},
+				{
+					value: "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
+					label: "GPT-OSS 120B (Medium)"
 				}
 			]
 		},
@@ -2096,7 +2132,7 @@ function initHubController() {
 	function resolveModelShortLabel(catalog, modelVal, sessionModel = "") {
 		const raw = String(modelVal || sessionModel || "").trim();
 		if (raw) {
-			const hit = (catalog?.models || []).find((m) => m.value === raw || m.label === raw || m.value.endsWith(`::${raw}`));
+			const hit = (catalog?.models || []).find((m) => m.value === raw || m.label === raw || m.value.endsWith(`::${raw}`)) || (FALLBACK_MODEL_CATALOG["antigravity-ide"]?.models || []).find((m) => m.value === raw || m.label === raw);
 			if (hit) return hit.label;
 			const cleanParts = raw.split("::");
 			if (cleanParts.length >= 2) return cleanParts[1] + (cleanParts[2] ? ` (${cleanParts[2]})` : "");
@@ -2174,6 +2210,7 @@ function initHubController() {
 		} else if (activeSessionId) {
 			if (val) selectedSessionModels[activeSessionId] = val;
 			else delete selectedSessionModels[activeSessionId];
+			persistSelectedSessionModels();
 			const found = findSessionGlobal(activeSessionId);
 			if (found) updateChatModelPill(found.session, found.host);
 		}
@@ -6288,6 +6325,75 @@ function initHubController() {
 		} else banner.style.display = "none";
 	}
 	let initialUiBuild = "";
+	let lastSavedStateCacheAt = 0;
+	function saveCachedHubStateSnapshot(state) {
+		const now = Date.now();
+		if (now - lastSavedStateCacheAt < 5e3) return;
+		lastSavedStateCacheAt = now;
+		try {
+			const compactHosts = (state?.hosts || []).map((h) => ({
+				hostId: h.hostId,
+				hostName: h.hostName,
+				online: h.online,
+				lastSeenAt: h.lastSeenAt,
+				bridgeState: h.bridgeState ? {
+					workspaces: h.bridgeState.workspaces || [],
+					modelCatalog: h.bridgeState.modelCatalog || {},
+					turbo: h.bridgeState.turbo || null,
+					systemTelemetry: h.bridgeState.systemTelemetry || null,
+					tasks: (h.bridgeState.tasks || []).map((t) => ({
+						id: t.id,
+						rawId: t.rawId,
+						shortId: t.shortId,
+						harness: t.harness,
+						harnessLabel: t.harnessLabel,
+						model: t.model,
+						title: t.title,
+						status: t.status,
+						turnState: t.turnState,
+						statusLabel: t.statusLabel,
+						project: t.project,
+						cwd: t.cwd,
+						lastActivity: t.lastActivity,
+						updatedAt: t.updatedAt,
+						lastConclusionAt: t.lastConclusionAt,
+						lastOutput: String(t.lastOutput || "").slice(0, 260),
+						runningSummary: String(t.runningSummary || "").slice(0, 200),
+						pendingApproval: t.pendingApproval || null,
+						artifacts: t.artifacts || [],
+						messageCount: t.messageCount || 0,
+						transcript: (t.transcript || []).slice(-2).map((m) => ({
+							index: m.index,
+							role: m.role,
+							text: String(m.text || "").slice(0, 600),
+							time: m.time,
+							artifacts: m.artifacts || []
+						}))
+					}))
+				} : { tasks: [] }
+			}));
+			localStorage.setItem("dsh_hub_state_cache_v1", JSON.stringify({
+				cachedAt: now,
+				activeHostId: state?.activeHostId || "",
+				hosts: compactHosts
+			}));
+		} catch {}
+	}
+	function loadCachedHubStateSnapshot() {
+		try {
+			const raw = localStorage.getItem("dsh_hub_state_cache_v1");
+			if (!raw) return null;
+			const parsed = JSON.parse(raw);
+			if (parsed && Array.isArray(parsed.hosts) && parsed.hosts.length > 0) return {
+				hosts: parsed.hosts,
+				activeHostId: parsed.activeHostId || "",
+				migrations: [],
+				shares: [],
+				pushSubscriptions: []
+			};
+		} catch {}
+		return null;
+	}
 	function applyHubState(nextState) {
 		const incomingBuild = String(nextState?.build?.uiBuild || "").trim();
 		if (incomingBuild && incomingBuild !== "dev") {
@@ -6299,12 +6405,15 @@ function initHubController() {
 		}
 		preservePreviewUiState(nextState);
 		hubState = nextState;
+		saveCachedHubStateSnapshot(nextState);
 	}
 	let hasLoadedInitialState = false;
+	let stateFetchInFlight = false;
 	let lastStateFetchAt = 0;
 	let stateFetchSeq = 0;
 	async function fetchState() {
 		const mySeq = ++stateFetchSeq;
+		stateFetchInFlight = true;
 		try {
 			const data = await (await apiFetch("/api/state")).json();
 			if (mySeq < stateFetchSeq) return {
@@ -6333,6 +6442,8 @@ function initHubController() {
 				unauthorized: message === "Unauthorized",
 				error: message
 			};
+		} finally {
+			if (mySeq === stateFetchSeq) stateFetchInFlight = false;
 		}
 	}
 	let sseSource = null;
@@ -6352,7 +6463,7 @@ function initHubController() {
 				sseConnected = true;
 				lastSseEventAt = Date.now();
 				setConnectionBanner(false);
-				if (!hasLoadedInitialState || Date.now() - lastStateFetchAt > 2500) fetchState();
+				if (!stateFetchInFlight && (!hasLoadedInitialState || Date.now() - lastStateFetchAt > 2500)) fetchState();
 			};
 			sseSource.onerror = () => {
 				sseConnected = false;
@@ -6583,6 +6694,13 @@ function initHubController() {
 	if (typeof window !== "undefined") window.addEventListener("focus", () => {
 		clearHomeScreenAppBadge();
 	});
+	if (getToken()) {
+		const cachedSnapshot = loadCachedHubStateSnapshot();
+		if (cachedSnapshot) hubState = cachedSnapshot;
+	}
+	try {
+		renderAll();
+	} catch {}
 	if (queryPairCode) (async () => {
 		try {
 			const exRes = await fetch("/api/pairing/exchange", {
@@ -6604,7 +6722,7 @@ function initHubController() {
 		connectSSE();
 	}
 	setInterval(() => {
-		if (!sseConnected || Date.now() - lastSseEventAt > 15e3) fetchState();
+		if (!stateFetchInFlight && (!sseConnected || Date.now() - lastSseEventAt > 2e4)) fetchState();
 	}, 5e3);
 }
 // hub/web/src/main.tsx
