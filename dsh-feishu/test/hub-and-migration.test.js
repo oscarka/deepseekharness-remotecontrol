@@ -8,8 +8,16 @@ import { resolveConfig } from '../lib/config.js'
 import { HubAgent } from '../lib/hub-agent.js'
 import { acquireDaemonLock } from '../lib/daemon-lock.js'
 import { HarnessRouter } from '../lib/harness-router.js'
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
 import { ClaudeAdapter } from '../lib/harnesses/claude-adapter.js'
-import { CodexAdapter } from '../lib/harnesses/codex-adapter.js'
+import { CodexAdapter, CodexAppServerClient, discoverCodexModels } from '../lib/harnesses/codex-adapter.js'
+import {
+  discoverWorkBuddyModels,
+  parseWorkBuddyReplayEvents,
+  WorkBuddyAcpClient,
+  WorkBuddyAdapter,
+} from '../lib/harnesses/workbuddy-adapter.js'
 import { applyStateHysteresis, executeAntigravityIdeAction, loadAntigravityIdeSessions, parseAntigravityTranscript } from '../lib/antigravity-ide.js'
 import { checkAccessibilityPermission, fastScanBrainDirs, getTurboNativeBinaryPath } from '../../dsh-turbo/index.js'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from '../lib/migration.js'
@@ -2764,6 +2772,451 @@ test('antigravity-ide walkthrough & artifacts: surfaces tool-call and disk walkt
     await rm(tmpBrain, { recursive: true, force: true })
   }
 })
+
+test('Phase 3 Deep Integration: Codex app-server JSON-RPC & WorkBuddy ACP HTTP+SSE full managed lifecycle (streaming, steer, approvals, questions, model discovery)', async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-codex-wb-deep-'))
+  try {
+    const codexHome = join(tmpDir, 'codex-home')
+    const wbHome = join(tmpDir, 'workbuddy-home')
+    await mkdir(codexHome, { recursive: true })
+    await mkdir(wbHome, { recursive: true })
+
+    // 1. Test Codex model discovery from config.toml & models_cache.json
+    await writeFile(
+      join(codexHome, 'config.toml'),
+      'model = "gpt-5.5"\nmodel_reasoning_effort = "xhigh"\n',
+      'utf8',
+    )
+    await writeFile(
+      join(codexHome, 'models_cache.json'),
+      JSON.stringify({
+        models: [
+          { slug: 'gpt-5.5', display_name: 'GPT-5.5 Flagship', visibility: 'list' },
+          { slug: 'gpt-5.4-mini', display_name: 'GPT-5.4 Mini', visibility: 'list' },
+        ],
+      }),
+      'utf8',
+    )
+    const codexCatalog = discoverCodexModels(codexHome)
+    assert.equal(codexCatalog.defaultModel, 'gpt-5.5')
+    assert.match(codexCatalog.defaultLabel, /GPT-5.5 Flagship \(xhigh\)/)
+    assert.ok(codexCatalog.models.some(m => m.value === 'gpt-5.5'))
+
+    // 2. Test CodexAppServerClient & CodexAdapter over bidirectional stdio JSON-RPC 2.0
+    const fakeCodexBin = join(codexHome, 'codex')
+    await writeFile(fakeCodexBin, '#!/bin/sh\n', 'utf8')
+
+    let serverStdin = null
+    let serverStdout = null
+    const receivedRpcRequests = []
+    const receivedRpcResponses = []
+
+    const mockCodexSpawn = () => {
+      serverStdin = new PassThrough()
+      serverStdout = new PassThrough()
+      const stderr = new PassThrough()
+      const proc = new EventEmitter()
+      proc.stdin = serverStdin
+      proc.stdout = serverStdout
+      proc.stderr = stderr
+      proc.killed = false
+      proc.kill = () => {
+        proc.killed = true
+        proc.emit('exit', 0)
+      }
+
+      let buf = ''
+      serverStdin.on('data', chunk => {
+        buf += chunk.toString('utf8')
+        const lines = buf.split('\n')
+        buf = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          const msg = JSON.parse(line)
+          if (msg.method && msg.id !== undefined) {
+            receivedRpcRequests.push(msg)
+            if (msg.method === 'initialize') {
+              serverStdout.write(`${JSON.stringify({ id: msg.id, result: { userAgent: 'codex-test/1.0' } })}\n`)
+            } else if (msg.method === 'thread/start') {
+              serverStdout.write(
+                `${JSON.stringify({
+                  id: msg.id,
+                  result: {
+                    thread: { id: 'thread-cdx-001', cwd: msg.params.cwd },
+                    cwd: msg.params.cwd,
+                    model: msg.params.model || 'gpt-5.5',
+                  },
+                })}\n`,
+              )
+            } else if (msg.method === 'turn/start') {
+              serverStdout.write(
+                `${JSON.stringify({
+                  id: msg.id,
+                  result: { turn: { id: 'turn-cdx-101', status: 'inProgress', items: [] } },
+                })}\n`,
+              )
+            } else if (msg.method === 'turn/steer') {
+              serverStdout.write(
+                `${JSON.stringify({
+                  id: msg.id,
+                  result: { turnId: msg.params.expectedTurnId },
+                })}\n`,
+              )
+            } else if (msg.method === 'turn/interrupt' || msg.method === 'thread/name/set') {
+              serverStdout.write(`${JSON.stringify({ id: msg.id, result: {} })}\n`)
+            }
+          } else if (msg.id !== undefined && msg.result !== undefined) {
+            receivedRpcResponses.push(msg)
+          }
+        }
+      })
+      return proc
+    }
+
+    const codexAdapter = new CodexAdapter({
+      codexHome,
+      binaryPath: fakeCodexBin,
+      spawnImpl: mockCodexSpawn,
+      useAppServer: true,
+    })
+
+    // Start new session via `codex app-server`
+    const createdCdx = await codexAdapter.createSession({
+      title: '重构支付网关',
+      prompt: '请帮我重构支付网关并添加重试测试',
+      cwd: '/Users/dev/pay',
+      model: 'gpt-5.5',
+    })
+    assert.equal(createdCdx.ok, true)
+    assert.equal(createdCdx.agentId, 'codex:thread-cdx-001')
+
+    // Simulate streaming reasoning & agent message delta from `codex app-server`
+    serverStdout.write(
+      `${JSON.stringify({
+        method: 'item/reasoning/summaryTextDelta',
+        params: { threadId: 'thread-cdx-001', itemId: 'item-msg-1', delta: '正在分析支付模块依赖...' },
+      })}\n`,
+    )
+    serverStdout.write(
+      `${JSON.stringify({
+        method: 'item/agentMessage/delta',
+        params: { threadId: 'thread-cdx-001', itemId: 'item-msg-1', delta: '已完成接口梳理，准备执行测试。' },
+      })}\n`,
+    )
+
+    let cdxSessions = await codexAdapter.listSessions()
+    assert.equal(cdxSessions.length, 1)
+    assert.equal(cdxSessions[0].status, 'running')
+    assert.equal(cdxSessions[0].controlMode, 'managed')
+    assert.match(cdxSessions[0].transcript.at(-1).thinking, /正在分析支付模块依赖/)
+    assert.match(cdxSessions[0].transcript.at(-1).text, /已完成接口梳理/)
+
+    // Mid-turn steer while turn-cdx-101 is active
+    const steerCdx = await codexAdapter.sendPrompt({
+      sessionId: 'codex:thread-cdx-001',
+      text: '顺便加上幂等键校验',
+      mode: 'steer',
+    })
+    assert.equal(steerCdx.ok, true)
+    assert.equal(steerCdx.steered, true)
+    assert.ok(receivedRpcRequests.some(r => r.method === 'turn/steer' && r.params.expectedTurnId === 'turn-cdx-101'))
+
+    // Simulate command execution approval request from `codex app-server`
+    serverStdout.write(
+      `${JSON.stringify({
+        id: 501,
+        method: 'item/commandExecution/requestApproval',
+        params: {
+          threadId: 'thread-cdx-001',
+          turnId: 'turn-cdx-101',
+          itemId: 'cmd-99',
+          command: 'npm run test:integration',
+          cwd: '/Users/dev/pay',
+          reason: '需要运行集成测试验证幂等键',
+        },
+      })}\n`,
+    )
+
+    cdxSessions = await codexAdapter.listSessions()
+    assert.equal(cdxSessions[0].status, 'approval')
+    assert.ok(cdxSessions[0].pendingApproval?.code.startsWith('CDX-'))
+    const cdxApprovalCode = cdxSessions[0].pendingApproval.code
+
+    // Approve from mobile with optionIndex=2 (acceptForSession)
+    const approveCdxRes = await codexAdapter.resolveApproval({
+      sessionId: 'codex:thread-cdx-001',
+      code: cdxApprovalCode,
+      allow: true,
+      optionIndex: 2,
+    })
+    assert.equal(approveCdxRes.ok, true)
+    assert.equal(approveCdxRes.decision, 'allowed-session')
+    assert.deepEqual(receivedRpcResponses.at(-1), {
+      jsonrpc: '2.0',
+      id: 501,
+      result: { decision: 'acceptForSession' },
+    })
+
+    // Simulate multi-choice question (`item/tool/requestUserInput`) from `codex app-server`
+    serverStdout.write(
+      `${JSON.stringify({
+        id: 502,
+        method: 'item/tool/requestUserInput',
+        params: {
+          threadId: 'thread-cdx-001',
+          turnId: 'turn-cdx-101',
+          itemId: 'ask-1',
+          questions: [
+            {
+              id: 'storage_engine',
+              header: '幂等存储引擎',
+              question: '请选择幂等键存储方案：',
+              options: [
+                { label: 'Redis Cluster', description: '低延迟分布式缓存' },
+                { label: 'PostgreSQL Unique Index', description: '事务强一致' },
+              ],
+            },
+          ],
+        },
+      })}\n`,
+    )
+
+    cdxSessions = await codexAdapter.listSessions()
+    assert.equal(cdxSessions[0].status, 'approval')
+    assert.equal(cdxSessions[0].pendingApproval?.kind, 'question')
+    const cdxQCode = cdxSessions[0].pendingApproval.code
+    assert.ok(cdxQCode.startsWith('CDXQ-'))
+
+    const answerCdxRes = await codexAdapter.resolveApproval({
+      sessionId: 'codex:thread-cdx-001',
+      code: cdxQCode,
+      allow: true,
+      answers: [['Redis Cluster']],
+    })
+    assert.equal(answerCdxRes.ok, true)
+    assert.deepEqual(receivedRpcResponses.at(-1), {
+      jsonrpc: '2.0',
+      id: 502,
+      result: {
+        answers: {
+          storage_engine: { answers: ['Redis Cluster'] },
+        },
+      },
+    })
+
+    // Interrupt turn
+    const stopCdxRes = await codexAdapter.stopSession({ sessionId: 'codex:thread-cdx-001' })
+    assert.equal(stopCdxRes.ok, true)
+    assert.ok(receivedRpcRequests.some(r => r.method === 'turn/interrupt'))
+
+    // 3. Test WorkBuddyAdapter & WorkBuddyAcpClient (HTTP + SSE ACP protocol)
+    await writeFile(
+      join(wbHome, 'sessions.json'),
+      JSON.stringify([
+        {
+          id: 'wb-sess-01',
+          title: '小程序登录鉴权改造',
+          cwd: '/Users/dev/miniapp',
+          model: 'deepseek-v3.1',
+          status: 'idle',
+          updated_at: Date.now() - 5000,
+        },
+      ]),
+      'utf8',
+    )
+
+    let ssePush = null
+    const wbRpcCalls = []
+    const wbRpcResponses = []
+
+    const wbAdapter = new WorkBuddyAdapter({
+      workbuddyHome: wbHome,
+      acpEndpoint: 'http://127.0.0.1:43999/api/v1/acp',
+      openSseImpl: ({ onPayload }) => {
+        ssePush = onPayload
+        return { destroy() {} }
+      },
+      fetchImpl: async (url, init = {}) => {
+        const u = String(url)
+        if (u.includes('/api/v1/sessions/wb-sess-01/replay')) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                events: [
+                  {
+                    timestamp: Date.now() - 10_000,
+                    update: { sessionUpdate: 'user_message', content: '请检查微信登录 token 刷新逻辑' },
+                  },
+                  {
+                    timestamp: Date.now() - 8000,
+                    update: { sessionUpdate: 'agent_message', content: '已定位到 refreshToken 过期未续期问题。' },
+                  },
+                ],
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        if (u.endsWith('/connect')) {
+          return new Response(
+            JSON.stringify({ connectionId: 'wb-conn-test', sessionToken: 'wb-tok-test' }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        const body = init.body ? JSON.parse(init.body) : {}
+        if (body.method) {
+          wbRpcCalls.push(body)
+          if (body.method === 'initialize') {
+            return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { protocolVersion: 1 } }), { status: 200 })
+          }
+          if (body.method === 'session/new') {
+            return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { sessionId: 'wb-sess-02' } }), { status: 200 })
+          }
+          if (body.method === 'session/prompt') {
+            return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { content: '已完成改造。' } }), { status: 200 })
+          }
+          return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: {} }), { status: 200 })
+        }
+        if (body.id !== undefined && body.result !== undefined) {
+          wbRpcResponses.push(body)
+          return new Response(JSON.stringify({ ok: true }), { status: 200 })
+        }
+        return new Response('{}', { status: 200 })
+      },
+    })
+
+    // List persisted + replayed sessions
+    let wbSessions = await wbAdapter.listSessions()
+    assert.equal(wbSessions.length, 1)
+    assert.equal(wbSessions[0].id, 'workbuddy:wb-sess-01')
+    assert.equal(wbSessions[0].harness, 'workbuddy')
+    assert.equal(wbSessions[0].transcript.length, 2)
+    assert.match(wbSessions[0].transcript[1].text, /refreshToken/)
+
+    // Start new session in WorkBuddy
+    const startWb = await wbAdapter.createSession({
+      title: '接入微信支付回调',
+      prompt: '实现微信支付 V3 签名验证中间件',
+      cwd: '/Users/dev/miniapp',
+      model: 'deepseek-v3.1',
+    })
+    assert.equal(startWb.ok, true)
+    assert.equal(startWb.agentId, 'workbuddy:wb-sess-02')
+
+    // Stream thought & message chunks over SSE
+    ssePush({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'wb-sess-02',
+        update: { sessionUpdate: 'agent_thought_chunk', content: '先校验 Wechatpay-Signature 头...' },
+      },
+    })
+    ssePush({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'wb-sess-02',
+        update: { sessionUpdate: 'agent_message_chunk', content: '正在编写验签中间件...' },
+      },
+    })
+
+    // Steer running WorkBuddy session
+    const steerWb = await wbAdapter.steer({
+      sessionId: 'workbuddy:wb-sess-02',
+      prompt: '请同时支持平台证书公钥与微信支付公钥两种模式',
+    })
+    assert.equal(steerWb.ok, true)
+    assert.equal(steerWb.steered, true)
+    assert.ok(wbRpcCalls.some(c => c.method === 'session/request_yield'))
+    assert.ok(wbRpcCalls.some(c => c.method === 'session/enqueue_message'))
+
+    // Simulate `session/request_permission` over SSE
+    ssePush({
+      jsonrpc: '2.0',
+      id: 701,
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'wb-sess-02',
+        toolCall: {
+          toolCallId: 'tc-wb-1',
+          title: 'Execute Bash: npm test',
+          kind: 'execute',
+          rawInput: { command: 'npm test' },
+        },
+        options: [
+          { optionId: 'allow_once', name: 'Allow Once', kind: 'allow_once' },
+          { optionId: 'reject_once', name: 'Reject', kind: 'reject_once' },
+        ],
+      },
+    })
+
+    wbSessions = await wbAdapter.listSessions()
+    const sess02 = wbSessions.find(s => s.id === 'workbuddy:wb-sess-02')
+    assert.equal(sess02.status, 'approval')
+    assert.ok(sess02.pendingApproval?.code.startsWith('WB-'))
+    const wbPermCode = sess02.pendingApproval.code
+
+    const resolveWbPerm = await wbAdapter.resolveApproval({
+      sessionId: 'workbuddy:wb-sess-02',
+      code: wbPermCode,
+      allow: true,
+      optionIndex: 1,
+    })
+    assert.equal(resolveWbPerm.ok, true)
+    assert.deepEqual(wbRpcResponses.at(-1), {
+      jsonrpc: '2.0',
+      id: 701,
+      result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
+    })
+
+    // Simulate `_codebuddy.ai/question` over SSE
+    ssePush({
+      jsonrpc: '2.0',
+      id: 702,
+      method: '_codebuddy.ai/question',
+      params: {
+        sessionId: 'wb-sess-02',
+        toolCallId: 'tc-wb-q1',
+        questions: [
+          {
+            header: '回调框架',
+            question: '你希望使用哪个 Web 框架挂载回调路由？',
+            options: [{ label: 'Fastify' }, { label: 'Express' }],
+          },
+        ],
+      },
+    })
+
+    wbSessions = await wbAdapter.listSessions()
+    const sess02AfterQ = wbSessions.find(s => s.id === 'workbuddy:wb-sess-02')
+    assert.equal(sess02AfterQ.status, 'approval')
+    assert.equal(sess02AfterQ.pendingApproval?.kind, 'question')
+    const wbQCode = sess02AfterQ.pendingApproval.code
+    assert.ok(wbQCode.startsWith('WBQ-'))
+
+    const resolveWbQ = await wbAdapter.resolveApproval({
+      sessionId: 'workbuddy:wb-sess-02',
+      code: wbQCode,
+      allow: true,
+      answers: [['Fastify']],
+    })
+    assert.equal(resolveWbQ.ok, true)
+    assert.ok(
+      wbRpcCalls.some(
+        c =>
+          c.method === '_codebuddy.ai/resolveInterruption' &&
+          c.params.decision === 'approve' &&
+          c.params.answers['回调框架']?.[0] === 'Fastify',
+      ),
+    )
+
+    wbAdapter.shutdown()
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
 
 
 

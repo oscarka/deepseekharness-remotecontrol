@@ -224,12 +224,24 @@ export function initHubController() {
       ],
     },
     codex: {
-      defaultLabel: 'GPT-5.4 (默认)',
+      defaultLabel: 'GPT-5.5 (默认)',
       models: [
+        { value: 'gpt-5.5', label: 'GPT-5.5' },
         { value: 'gpt-5.4', label: 'GPT-5.4' },
+        { value: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' },
         { value: 'gpt-5.3-codex', label: 'GPT-5.3-Codex' },
         { value: 'o3', label: 'o3 (深度推理)' },
         { value: 'o4-mini', label: 'o4-mini (快速)' },
+      ],
+    },
+    workbuddy: {
+      defaultLabel: 'DeepSeek V3.1 (WorkBuddy 默认)',
+      models: [
+        { value: 'deepseek-v3.1', label: 'DeepSeek V3.1 (WorkBuddy)' },
+        { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+        { value: 'gpt-5.4', label: 'GPT-5.4' },
+        { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+        { value: 'hunyuan-turbos', label: 'Hunyuan TurboS' },
       ],
     },
   };
@@ -315,7 +327,9 @@ export function initHubController() {
           ? '✴️ Claude Code'
           : harness === 'codex'
             ? '🧠 OpenAI Codex'
-            : '🟣 DeepSeek Harness';
+            : harness === 'workbuddy'
+              ? '🐼 WorkBuddy'
+              : '🟣 DeepSeek Harness';
       titleEl.textContent = `🤖 选择模型 · ${hName}`;
     }
     const bodyEl = document.getElementById('modelPickerBody');
@@ -641,12 +655,14 @@ export function initHubController() {
         const harness = t.harness || (
           rawIdStr.startsWith('agy-ide:') ? 'antigravity-ide' :
             rawIdStr.startsWith('codex:') ? 'codex' :
-              rawIdStr.startsWith('claude:') ? 'claude' : 'dsh'
+              rawIdStr.startsWith('workbuddy:') ? 'workbuddy' :
+                rawIdStr.startsWith('claude:') ? 'claude' : 'dsh'
         );
         const harnessLabel = t.harnessLabel || (
           harness === 'antigravity-ide' ? 'Antigravity IDE' :
             harness === 'codex' ? 'Codex' :
-              harness === 'claude' ? 'Claude Code' : 'DeepSeek Harness'
+              harness === 'workbuddy' ? 'WorkBuddy' :
+                harness === 'claude' ? 'Claude Code' : 'DeepSeek Harness'
         );
 
         let lastConclusionAt = Number(t.lastConclusionAt) || 0;
@@ -978,6 +994,7 @@ export function initHubController() {
     const unreadCount = sessions.filter(s => s.hasUnreadConclusion || s.isUnreadInterrupted).length;
     const agyCount = sessions.filter(s => s.harness === 'antigravity-ide').length;
     const codexCount = sessions.filter(s => s.harness === 'codex').length;
+    const workbuddyCount = sessions.filter(s => s.harness === 'workbuddy').length;
     const claudeCount = sessions.filter(s => s.harness === 'claude').length;
     const dshCount = sessions.filter(s => s.harness === 'dsh').length;
 
@@ -987,7 +1004,7 @@ export function initHubController() {
     }
     const projects = Object.keys(counts);
     const strip = document.getElementById('projectStrip');
-    const stripKey = `${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${claudeCount}:${dshCount}:${projects.map(p => `${p}:${counts[p]}`).join(',')}`;
+    const stripKey = `${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${claudeCount}:${dshCount}:${projects.map(p => `${p}:${counts[p]}`).join(',')}`;
     if (stripKey === lastRenderedStripKey && strip.children.length > 0) return;
     lastRenderedStripKey = stripKey;
     const prevScrollLeft = strip.scrollLeft;
@@ -1002,10 +1019,13 @@ export function initHubController() {
     if (codexCount > 0) {
       smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_CODEX' ? 'active' : ''}" onclick="selectProject('HARNESS_CODEX')">🧠 Codex <span class="count">${codexCount}</span></button>`);
     }
+    if (workbuddyCount > 0) {
+      smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_WORKBUDDY' ? 'active' : ''}" onclick="selectProject('HARNESS_WORKBUDDY')">🐼 WorkBuddy <span class="count">${workbuddyCount}</span></button>`);
+    }
     if (claudeCount > 0) {
       smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_CLAUDE' ? 'active' : ''}" onclick="selectProject('HARNESS_CLAUDE')">✴️ Claude <span class="count">${claudeCount}</span></button>`);
     }
-    if (dshCount > 0 && (agyCount > 0 || codexCount > 0 || claudeCount > 0)) {
+    if (dshCount > 0 && (agyCount > 0 || codexCount > 0 || workbuddyCount > 0 || claudeCount > 0)) {
       smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_DSH' ? 'active' : ''}" onclick="selectProject('HARNESS_DSH')">🟣 DSH <span class="count">${dshCount}</span></button>`);
     }
 
@@ -1045,8 +1065,9 @@ export function initHubController() {
       if (currentProject === 'HARNESS_DSH' && s.harness !== 'dsh') return false;
       if (currentProject === 'HARNESS_AGY_IDE' && s.harness !== 'antigravity-ide') return false;
       if (currentProject === 'HARNESS_CODEX' && s.harness !== 'codex') return false;
+      if (currentProject === 'HARNESS_WORKBUDDY' && s.harness !== 'workbuddy') return false;
       if (currentProject === 'HARNESS_CLAUDE' && s.harness !== 'claude') return false;
-      if (!['ALL', 'SMART_ACTIVE', 'SMART_UNREAD', 'HARNESS_DSH', 'HARNESS_AGY_IDE', 'HARNESS_CODEX', 'HARNESS_CLAUDE'].includes(currentProject) && s.project !== currentProject) return false;
+      if (!['ALL', 'SMART_ACTIVE', 'SMART_UNREAD', 'HARNESS_DSH', 'HARNESS_AGY_IDE', 'HARNESS_CODEX', 'HARNESS_WORKBUDDY', 'HARNESS_CLAUDE'].includes(currentProject) && s.project !== currentProject) return false;
       if (!q) return true;
       return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || s.lastPreview.toLowerCase().includes(q);
     });
@@ -1137,9 +1158,11 @@ export function initHubController() {
         ? `<span class="harness-mini-tag agy">⚡ IDE</span>`
         : s.harness === 'codex'
           ? `<span class="harness-mini-tag agy">🧠 Codex</span>`
-          : s.harness === 'claude'
-            ? `<span class="harness-mini-tag agy">✴️ Claude</span>`
-            : '';
+          : s.harness === 'workbuddy'
+            ? `<span class="harness-mini-tag agy">🐼 WorkBuddy</span>`
+            : s.harness === 'claude'
+              ? `<span class="harness-mini-tag agy">✴️ Claude</span>`
+              : '';
       const rolePrefix = s.status === 'running' ? '' : (s.lastRole === 'user' ? '🧑 我: ' : '🤖 ');
       const displayTitle = s.harness !== 'dsh' && s.project && !s.title.startsWith(s.project)
         ? `${s.project} / ${s.title}`
@@ -1337,9 +1360,11 @@ export function initHubController() {
       ? '⚡ Antigravity IDE · '
       : s.harness === 'codex'
         ? '🧠 Codex · '
-        : s.harness === 'claude'
-          ? '✴️ Claude Code · '
-          : '';
+        : s.harness === 'workbuddy'
+          ? '🐼 WorkBuddy · '
+          : s.harness === 'claude'
+            ? '✴️ Claude Code · '
+            : '';
     const isObserveOnly = s.controlMode === 'observe-only' && s.harness !== 'dsh';
     const modeTag = isObserveOnly
       ? ' · 👀 仅观测'
@@ -1388,7 +1413,7 @@ export function initHubController() {
         sendBtn.textContent = '👀 仅观察';
       } else if (s.status === 'running') {
         runningBar.classList.add('show');
-        const canSteer = s.capabilities?.canSteer !== false && s.harness !== 'codex' && s.harness !== 'claude';
+        const canSteer = s.capabilities?.canSteer !== false && s.harness !== 'claude';
         if (!canSteer) {
           chatInput.disabled = true;
           sendBtn.disabled = true;
@@ -2223,7 +2248,7 @@ export function initHubController() {
     const found = findSessionGlobal(activeSessionId);
     if (!found) return;
     const { session: s, host } = found;
-    const canSteer = s.capabilities?.canSteer !== false && s.harness !== 'codex' && s.harness !== 'claude';
+    const canSteer = s.capabilities?.canSteer !== false && s.harness !== 'claude';
     if (s.status === 'running' && !canSteer) {
       showToast('⏳ 当前会话正在运行且不支持中途插话，请等待完成或先点击停止');
       return;
@@ -3209,6 +3234,7 @@ export function initHubController() {
       const harnessOpts = [
         { id: 'antigravity-ide', label: '⚡ Antigravity IDE' },
         { id: 'codex', label: '🧠 OpenAI Codex' },
+        { id: 'workbuddy', label: '🐼 WorkBuddy' },
         { id: 'claude', label: '✴️ Claude Code' },
         { id: 'dsh', label: '🟣 DeepSeek Harness' },
       ];
@@ -3278,9 +3304,11 @@ export function initHubController() {
       ? 'Antigravity IDE'
       : newTaskHarness === 'codex'
         ? 'OpenAI Codex'
-        : newTaskHarness === 'claude'
-          ? 'Claude Code'
-          : 'DeepSeek Harness';
+        : newTaskHarness === 'workbuddy'
+          ? 'WorkBuddy'
+          : newTaskHarness === 'claude'
+            ? 'Claude Code'
+            : 'DeepSeek Harness';
     showToast(`🚀 正在远程电脑 (${engineName}) 创建新任务...`);
     let dispatchRes = null;
     try {

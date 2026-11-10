@@ -27,8 +27,9 @@ import { buildNormalizedQuestionAnswers } from './bridge.js'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from './migration.js'
 import { decorateTaskMetadata, HarnessRouter } from './harness-router.js'
 import { ClaudeAdapter } from './harnesses/claude-adapter.js'
-import { CodexAdapter } from './harnesses/codex-adapter.js'
+import { CodexAdapter, discoverCodexModels } from './harnesses/codex-adapter.js'
 import { discoverDshModels, DshHeadlessRunner } from './harnesses/dsh-headless-adapter.js'
+import { discoverWorkBuddyModels, WorkBuddyAdapter } from './harnesses/workbuddy-adapter.js'
 import { safeError } from './redact.js'
 import {
   collectHostSystemTelemetry,
@@ -88,6 +89,15 @@ export class HubAgent {
           }),
         )
       }
+      if (!enabledSet || enabledSet.has('workbuddy') || enabledSet.has('codebuddy')) {
+        this.harnessRouter.registerAdapter(
+          new WorkBuddyAdapter({
+            workbuddyHome: this.config?.workbuddyHome || undefined,
+            acpEndpoint: this.config?.workbuddyAcpEndpoint || undefined,
+            fetchImpl: this.fetch,
+          }),
+        )
+      }
       if (!enabledSet || enabledSet.has('claude') || enabledSet.has('claude-code')) {
         this.harnessRouter.registerAdapter(
           new ClaudeAdapter({
@@ -112,6 +122,7 @@ export class HubAgent {
     this.recentAgyApprovals = new Map()
     this.settledDshApprovals = new Set()
     this.recentDshApprovals = new Map()
+    this.recentExtApprovals = new Map()
     this.deletedAgyIds = new Set()
     this.pendingUserPrompts = new Map()
     this.sessionModelOverrides = new Map()
@@ -210,7 +221,7 @@ export class HubAgent {
   shouldLoadExternalHarnesses() {
     if (this.config?.enableExternalHarnesses === false) return false
     if (this.config?.enableExternalHarnesses === true) return true
-    if (this.config?.codexHome || this.config?.claudeHome) return true
+    if (this.config?.codexHome || this.config?.claudeHome || this.config?.workbuddyHome) return true
     const defaultDshHome = join(homedir(), '.dsh')
     return Boolean(this.config?.dshHome && resolve(this.config.dshHome) === resolve(defaultDshHome))
   }
@@ -526,6 +537,8 @@ export class HubAgent {
         }
       }
       if (Array.isArray(this.cachedExternalSessions) && this.cachedExternalSessions.length > 0) {
+        if (!Array.isArray(bridgeState.approvals)) bridgeState.approvals = []
+        const existingExtCodes = new Set(bridgeState.approvals.map(a => String(a?.code || '').toUpperCase()))
         for (const extSess of this.cachedExternalSessions) {
           decorateTaskMetadata(extSess, { isLiveDsh: false, now: capturedAt })
           if (!existingIds.has(extSess.id)) {
@@ -533,6 +546,21 @@ export class HubAgent {
             existingIds.add(extSess.id)
           }
           if (extSess.cwd) wsSet.add(extSess.cwd)
+          if (extSess.pendingApproval?.code) {
+            const upperExtCode = String(extSess.pendingApproval.code).toUpperCase()
+            this.recentExtApprovals.set(upperExtCode, {
+              session: extSess,
+              approval: extSess.pendingApproval,
+            })
+            if (this.recentExtApprovals.size > 200) {
+              const oldestKey = this.recentExtApprovals.keys().next().value
+              this.recentExtApprovals.delete(oldestKey)
+            }
+            if (!existingExtCodes.has(upperExtCode)) {
+              bridgeState.approvals.push(extSess.pendingApproval)
+              existingExtCodes.add(upperExtCode)
+            }
+          }
         }
       }
       bridgeState.taskCount = (bridgeState.tasks || []).length
@@ -554,6 +582,8 @@ export class HubAgent {
           execImpl: this.execImpl,
           fetchImpl: this.fetch,
         })
+        const codexCatalog = discoverCodexModels(this.config?.codexHome)
+        const workbuddyCatalog = discoverWorkBuddyModels(this.config?.workbuddyHome)
         bridgeState.modelCatalog = {
           dsh: dshCatalog,
           'antigravity-ide': agyCatalog,
@@ -566,16 +596,8 @@ export class HubAgent {
               { value: 'haiku', label: 'Claude Haiku (极速轻量)' },
             ],
           },
-          codex: {
-            defaultModel: 'gpt-5.4',
-            defaultLabel: 'GPT-5.4 (默认)',
-            models: [
-              { value: 'gpt-5.4', label: 'GPT-5.4' },
-              { value: 'gpt-5.3-codex', label: 'GPT-5.3-Codex' },
-              { value: 'o3', label: 'o3 (深度推理)' },
-              { value: 'o4-mini', label: 'o4-mini (快速)' },
-            ],
-          },
+          codex: codexCatalog,
+          workbuddy: workbuddyCatalog,
         }
         for (const t of bridgeState.tasks || []) {
           const override = this.sessionModelOverrides.get(t.id)
@@ -978,6 +1000,19 @@ export class HubAgent {
           if (liveAgent) {
             return await this.bridge.executeHubCommand(cmd)
           }
+          const extAdapter = this.harnessRouter?.getAdapter(targetId)
+          if (extAdapter && typeof extAdapter.renameSession === 'function') {
+            const extRenamed = await extAdapter.renameSession({ sessionId: targetId, title: cmd.title })
+            const extSess = (this.cachedExternalSessions || []).find(s => s.id === targetId)
+            if (extRenamed?.ok && extSess) {
+              extSess.title = extRenamed.title
+            }
+            return {
+              ...extRenamed,
+              agentId: targetId,
+              message: extRenamed?.ok ? `已重命名会话为「${extRenamed.title}」` : extRenamed?.error,
+            }
+          }
           const diskSession = (this.cachedDiskSessions || []).find(s => s.id === targetId)
             || (this.cachedAgySessions || []).find(s => s.id === targetId)
             || (this.cachedExternalSessions || []).find(s => s.id === targetId)
@@ -1077,13 +1112,30 @@ export class HubAgent {
               decision: effectiveType === 'approve' ? 'allowed-once' : 'rejected',
             }
           }
-          const extAdapter = this.harnessRouter?.getAdapter(cmd.agentId)
+          const rememberedExt = code ? this.recentExtApprovals.get(code) : null
+          const extTargetId =
+            cmd.agentId
+            || rememberedExt?.session?.id
+            || rememberedExt?.approval?.agentId
+            || (code.startsWith('CDX-') || code.startsWith('CDXQ-')
+              ? 'codex'
+              : code.startsWith('WB-') || code.startsWith('WBQ-')
+                ? 'workbuddy'
+                : '')
+          const extAdapter = this.harnessRouter?.getAdapter(extTargetId)
           if (extAdapter && typeof extAdapter.resolveApproval === 'function') {
+            if (rememberedExt?.session && rememberedExt.session.pendingApproval?.code?.toUpperCase() === code) {
+              rememberedExt.session.pendingApproval = null
+              rememberedExt.session.status = effectiveType === 'approve' ? 'running' : 'idle'
+              rememberedExt.session.statusLabel = effectiveType === 'approve' ? '🟢 运行中' : '已完成'
+            }
             return await extAdapter.resolveApproval({
-              sessionId: cmd.agentId,
+              sessionId: cmd.agentId || rememberedExt?.session?.id || rememberedExt?.approval?.agentId || '',
               code,
               allow: effectiveType === 'approve',
               optionIndex: cmd.optionIndex,
+              answers: cmd.answers,
+              questions: cmd.questions,
             })
           }
           const rememberedDsh = code ? this.recentDshApprovals.get(code) : null

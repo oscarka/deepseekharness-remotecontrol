@@ -23,10 +23,19 @@ export const DEFAULT_HARNESS_CAPABILITIES = {
     canView: true,
     canCreateSession: true,
     canPrompt: true,
-    canSteer: false,
+    canSteer: true,
     canStop: true,
-    canApprove: false,
-    approvalStatus: 'planned',
+    canApprove: true,
+    approvalStatus: 'supported',
+  },
+  workbuddy: {
+    canView: true,
+    canCreateSession: true,
+    canPrompt: true,
+    canSteer: true,
+    canStop: true,
+    canApprove: true,
+    approvalStatus: 'supported',
   },
   claude: {
     canView: true,
@@ -46,24 +55,26 @@ export function summarizeInstalledHarnesses({
   hasDsh = false,
   hasAntigravity = false,
   hasCodex = false,
+  hasWorkBuddy = false,
   hasClaude = false,
 } = {}) {
   const detected = []
   if (hasDsh) detected.push('dsh')
   if (hasAntigravity) detected.push('antigravity-ide')
   if (hasCodex) detected.push('codex')
+  if (hasWorkBuddy) detected.push('workbuddy')
   if (hasClaude) detected.push('claude')
 
-  const hasApprovalBackend = Boolean(hasDsh || hasAntigravity)
+  const hasApprovalBackend = Boolean(hasDsh || hasAntigravity || hasCodex || hasWorkBuddy)
   if (hasApprovalBackend) {
     return {
       mode: 'full',
       detected,
-      enabledHarnesses: detected.join(',') || 'dsh,antigravity-ide,codex,claude',
+      enabledHarnesses: detected.join(',') || 'dsh,antigravity-ide,codex,workbuddy,claude',
       summary: `已检测到 ${detected.join(', ')}：已启用完整远控模式（看会话、发指令、停止、手机审批、实时插话）。`,
     }
   }
-  if (hasCodex || hasClaude) {
+  if (hasClaude) {
     return {
       mode: 'observe',
       detected,
@@ -74,7 +85,7 @@ export function summarizeInstalledHarnesses({
   return {
     mode: 'none',
     detected: [],
-    enabledHarnesses: 'dsh,antigravity-ide,codex,claude',
+    enabledHarnesses: 'dsh,antigravity-ide,codex,workbuddy,claude',
     summary: '尚未检测到已安装的 AI 编程工具（当前为观察模式，审批功能需要 DSH）。',
   }
 }
@@ -93,9 +104,11 @@ export function decorateTaskMetadata(task, { isLiveDsh = false, now = Date.now()
       ? 'Antigravity IDE'
       : harness === 'codex'
         ? 'Codex'
-        : harness === 'claude'
-          ? 'Claude Code'
-          : 'DeepSeek Harness')
+        : harness === 'workbuddy'
+          ? 'WorkBuddy'
+          : harness === 'claude'
+            ? 'Claude Code'
+            : 'DeepSeek Harness')
 
   let controlMode = task.controlMode
   if (!controlMode || (harness === 'dsh' && controlMode === 'observe-only')) {
