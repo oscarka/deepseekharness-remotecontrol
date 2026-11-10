@@ -40,7 +40,14 @@ export function getWorkBuddyHome(overrideDir = '') {
   if (overrideDir) return path.resolve(overrideDir)
   if (process.env.WORKBUDDY_CONFIG_DIR) return path.resolve(process.env.WORKBUDDY_CONFIG_DIR)
   if (process.env.CODEBUDDY_CONFIG_DIR) return path.resolve(process.env.CODEBUDDY_CONFIG_DIR)
-  return path.join(os.homedir(), '.workbuddy')
+  const wbDir = path.join(os.homedir(), '.workbuddy')
+  const cbDir = path.join(os.homedir(), '.codebuddy')
+  try {
+    if (!fs.existsSync(wbDir) && fs.existsSync(cbDir)) return cbDir
+  } catch {
+    // ignore
+  }
+  return wbDir
 }
 
 export function getWorkBuddySidecarSocketPath(workbuddyHome = getWorkBuddyHome()) {
@@ -55,17 +62,40 @@ export function getWorkBuddySidecarSocketPath(workbuddyHome = getWorkBuddyHome()
   const uid = typeof process.getuid === 'function' ? String(process.getuid()) : (process.env.USER || 'default')
   const userHash = crypto.createHash('sha1').update(uid).digest('hex').slice(0, 6)
   const dirHash = crypto.createHash('sha1').update(path.resolve(workbuddyHome)).digest('hex').slice(0, 12)
-  return path.join(os.tmpdir(), `wb-${userHash}`, dirHash, 'sidecar.sock')
+  const exactPath = path.join(os.tmpdir(), `wb-${userHash}`, dirHash, 'sidecar.sock')
+  try {
+    if (fs.existsSync(exactPath)) return exactPath
+    for (const rootTmp of new Set([os.tmpdir(), '/tmp'])) {
+      if (!fs.existsSync(rootTmp)) continue
+      const wbDirs = fs.readdirSync(rootTmp).filter(name => name.startsWith(`wb-${userHash}`) || name.startsWith('wb-'))
+      for (const wbDir of wbDirs) {
+        const wbFull = path.join(rootTmp, wbDir)
+        const subDirs = fs.readdirSync(wbFull)
+        for (const sub of subDirs) {
+          const candidate = path.join(wbFull, sub, 'sidecar.sock')
+          if (fs.existsSync(candidate)) return candidate
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return exactPath
 }
 
 export function findWorkBuddyBinary() {
+  const home = os.homedir()
   const candidates = [
     process.env.WORKBUDDY_BIN,
     process.env.CODEBUDDY_BIN,
     '/Applications/WorkBuddy.app/Contents/Resources/app/node_modules/@tencent/codebuddy-cli/bin/codebuddy',
+    '/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/node_modules/@tencent/codebuddy-cli/bin/codebuddy',
+    path.join(home, 'Applications/WorkBuddy.app/Contents/Resources/app/node_modules/@tencent/codebuddy-cli/bin/codebuddy'),
+    path.join(home, 'Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/node_modules/@tencent/codebuddy-cli/bin/codebuddy'),
     '/Applications/WorkBuddy.app/Contents/MacOS/WorkBuddy',
-    path.join(os.homedir(), '.workbuddy', 'bin', 'codebuddy'),
-    path.join(os.homedir(), '.codebuddy', 'bin', 'codebuddy'),
+    path.join(home, 'Applications/WorkBuddy.app/Contents/MacOS/WorkBuddy'),
+    path.join(home, '.workbuddy', 'bin', 'codebuddy'),
+    path.join(home, '.codebuddy', 'bin', 'codebuddy'),
     '/opt/homebrew/bin/codebuddy',
     '/usr/local/bin/codebuddy',
     '/usr/bin/codebuddy',
@@ -440,10 +470,15 @@ export class WorkBuddyAcpClient extends EventEmitter {
             this.connected = false
             this.emit('close')
           })
+          res.on('error', err => {
+            this.connected = false
+            if (this.listenerCount('error') > 0) this.emit('error', err)
+          })
         },
       )
       req.on('error', err => {
-        this.emit('error', err)
+        this.connected = false
+        if (this.listenerCount('error') > 0) this.emit('error', err)
       })
       req.end()
       this.sseReq = req
@@ -638,6 +673,7 @@ export class WorkBuddyAdapter {
         runningSummary: defaults.runningSummary || '',
         createdAt: defaults.createdAt || now,
         updatedAt: defaults.updatedAt || now,
+        lastReplayUpdatedAt: 0,
         lastProgress: defaults.lastProgress || 'Ready in WorkBuddy',
         transcript: Array.isArray(defaults.transcript) ? [...defaults.transcript] : [],
         recentActivity: Array.isArray(defaults.recentActivity) ? [...defaults.recentActivity] : [],
@@ -648,10 +684,15 @@ export class WorkBuddyAdapter {
       }
       this.runtimeSessions.set(rawId, entry)
     } else {
-      if (defaults.title && (!entry.title || entry.title.startsWith('WorkBuddy ('))) entry.title = defaults.title
+      if (defaults.title && (!entry.title || entry.title.startsWith('WorkBuddy (') || !defaults.title.startsWith('WorkBuddy ('))) {
+        entry.title = defaults.title
+      }
       if (defaults.cwd && !entry.cwd) entry.cwd = defaults.cwd
       if (defaults.model && !entry.model) entry.model = defaults.model
       if (defaults.acpEndpoint && !entry.acpEndpoint) entry.acpEndpoint = defaults.acpEndpoint
+      if (defaults.updatedAt && defaults.updatedAt > (entry.updatedAt || 0)) {
+        entry.updatedAt = defaults.updatedAt
+      }
     }
     return entry
   }
@@ -742,9 +783,15 @@ export class WorkBuddyAdapter {
       openSseImpl: this.openSseImpl,
     })
     this._bindClientEvents(client)
-    await client.connect()
-    this.clientsByEndpoint.set(targetEndpoint, client)
-    return client
+    try {
+      await client.connect()
+      this.clientsByEndpoint.set(targetEndpoint, client)
+      return client
+    } catch (err) {
+      client.close()
+      this.clientsByEndpoint.delete(targetEndpoint)
+      throw err
+    }
   }
 
   async _resolveDefaultAcpEndpoint() {
@@ -752,6 +799,10 @@ export class WorkBuddyAdapter {
 
     try {
       const sidecarList = await this.querySidecarImpl(this.sidecarSocketPath, 'session.list', {})
+      if (sidecarList?.acpEndpoint && typeof sidecarList.acpEndpoint === 'string') {
+        this.defaultEndpoint = sidecarList.acpEndpoint
+        return sidecarList.acpEndpoint
+      }
       const sessions = Array.isArray(sidecarList) ? sidecarList : (sidecarList?.sessions || [])
       for (const s of sessions) {
         if (s?.acpEndpoint) {
@@ -773,8 +824,27 @@ export class WorkBuddyAdapter {
           stdio: 'ignore',
           detached: true,
         })
+        proc?.on?.('error', () => {})
         if (proc && typeof proc.unref === 'function') proc.unref()
         this.spawnedServeProc = proc
+        if (this.spawnImpl === cpSpawn && this.fetchImpl === globalThis.fetch) {
+          await new Promise(resolve => {
+            let attempts = 0
+            const tryConnect = () => {
+              attempts++
+              const sock = net.createConnection({ host: '127.0.0.1', port }, () => {
+                sock.destroy()
+                resolve()
+              })
+              sock.on('error', () => {
+                sock.destroy()
+                if (attempts >= 12) resolve()
+                else setTimeout(tryConnect, 100)
+              })
+            }
+            tryConnect()
+          })
+        }
         this.defaultEndpoint = endpoint
         return endpoint
       } catch {
@@ -786,6 +856,12 @@ export class WorkBuddyAdapter {
   }
 
   _bindClientEvents(client) {
+    client.on('error', () => {
+      client.connected = false
+    })
+    client.on('close', () => {
+      client.connected = false
+    })
     client.on('notification', msg => {
       const { method, params = {} } = msg
       if (method !== 'session/update') return
@@ -983,8 +1059,13 @@ export class WorkBuddyAdapter {
       // ignore
     }
 
-    const dbPath = path.join(this.workbuddyHome, 'workbuddy.db')
-    if (fs.existsSync(dbPath)) {
+    const dbCandidates = [
+      path.join(this.workbuddyHome, 'workbuddy.db'),
+      path.join(this.workbuddyHome, 'data', 'workbuddy.db'),
+      path.join(this.workbuddyHome, 'storage', 'workbuddy.db'),
+    ]
+    for (const dbPath of dbCandidates) {
+      if (!fs.existsSync(dbPath)) continue
       try {
         const rows = await new Promise(resolve => {
           execFile(
@@ -992,7 +1073,7 @@ export class WorkBuddyAdapter {
             [
               '-json',
               dbPath,
-              'SELECT id, cwd, title, custom_title, status, created_at, updated_at, model FROM sessions WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 50;',
+              'SELECT * FROM sessions ORDER BY updated_at DESC LIMIT 50;',
             ],
             { timeout: 1500 },
             (err, stdout) => {
@@ -1005,14 +1086,50 @@ export class WorkBuddyAdapter {
           )
         })
         for (const row of rows) {
-          if (row && row.id && !results.some(existing => existing.id === row.id)) {
-            results.push(row)
+          const rowId = row?.id || row?.session_id
+          if (!rowId || row.deleted_at) continue
+          const normalizedRow = {
+            ...row,
+            id: String(rowId),
+            cwd: row.cwd || row.workspace_path || row.project_path || '',
+            title: row.custom_title || row.title || row.name || '',
+          }
+          if (!results.some(existing => existing.id === normalizedRow.id)) {
+            results.push(normalizedRow)
           }
         }
       } catch {
         // ignore sqlite3 errors
       }
     }
+
+    const sessionsDir = path.join(this.workbuddyHome, 'sessions')
+    try {
+      if (fs.existsSync(sessionsDir)) {
+        const files = fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json'))
+        for (const f of files) {
+          const rawId = path.basename(f, '.json')
+          if (!rawId || results.some(existing => existing.id === rawId)) continue
+          const fullPath = path.join(sessionsDir, f)
+          const st = fs.statSync(fullPath)
+          const parsed = safeJsonParse(fs.readFileSync(fullPath, 'utf8'))
+          const events = Array.isArray(parsed) ? parsed : (parsed?.events || parsed?.data?.events || [])
+          results.push({
+            id: rawId,
+            title: parsed?.title || parsed?.custom_title || '',
+            cwd: parsed?.cwd || '',
+            model: parsed?.model || '',
+            status: parsed?.status || 'idle',
+            created_at: parsed?.created_at || st.birthtimeMs || st.mtimeMs,
+            updated_at: parsed?.updated_at || st.mtimeMs,
+            ...(Array.isArray(events) && events.length > 0 ? { events } : {}),
+          })
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     return results
   }
 
@@ -1148,18 +1265,23 @@ export class WorkBuddyAdapter {
         updatedAt,
       })
 
-      if (entry.transcript.length === 0) {
+      const needsReplayRefresh =
+        entry.transcript.length === 0 ||
+        (entry.status !== 'running' && entry.status !== 'approval' && updatedAt > (entry.lastReplayUpdatedAt || 0))
+      if (needsReplayRefresh) {
         if (Array.isArray(row.events) && row.events.length > 0) {
           const parsed = parseWorkBuddyReplayEvents(row.events)
           entry.transcript = parsed.transcript
           entry.recentActivity = parsed.recentActivity
           if (parsed.lastProgress) entry.lastProgress = parsed.lastProgress
+          entry.lastReplayUpdatedAt = updatedAt
         } else {
           const replayed = await this._fetchReplayForSession(rawId, entry.acpEndpoint)
           if (replayed && (replayed.transcript.length > 0 || replayed.recentActivity.length > 0)) {
             entry.transcript = replayed.transcript
             entry.recentActivity = replayed.recentActivity
             if (replayed.lastProgress) entry.lastProgress = replayed.lastProgress
+            entry.lastReplayUpdatedAt = updatedAt
           }
         }
       }

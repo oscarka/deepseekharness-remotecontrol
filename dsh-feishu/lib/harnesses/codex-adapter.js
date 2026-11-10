@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process'
+import { execFile, execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -36,6 +36,14 @@ export function findCodexBinary(customPath = '') {
       if (existsSync(p)) return p
     } catch { }
   }
+  try {
+    const resolved = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['codex'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 1500,
+    }).trim().split(/\r?\n/)[0]
+    if (resolved && existsSync(resolved)) return resolved
+  } catch { }
   return ''
 }
 

@@ -80,6 +80,12 @@ export class HubAgent {
       const enabledSet = Array.isArray(this.config?.enabledHarnesses)
         ? new Set(this.config.enabledHarnesses.map(s => String(s).toLowerCase()))
         : null
+      const isLegacyDefaultSet =
+        enabledSet &&
+        enabledSet.has('dsh') &&
+        enabledSet.has('antigravity-ide') &&
+        enabledSet.has('codex') &&
+        enabledSet.has('claude')
       if (!enabledSet || enabledSet.has('codex')) {
         this.harnessRouter.registerAdapter(
           new CodexAdapter({
@@ -89,7 +95,13 @@ export class HubAgent {
           }),
         )
       }
-      if (!enabledSet || enabledSet.has('workbuddy') || enabledSet.has('codebuddy')) {
+      if (
+        !enabledSet ||
+        isLegacyDefaultSet ||
+        enabledSet.has('workbuddy') ||
+        enabledSet.has('codebuddy') ||
+        Boolean(this.config?.workbuddyHome || this.config?.workbuddyAcpEndpoint)
+      ) {
         this.harnessRouter.registerAdapter(
           new WorkBuddyAdapter({
             workbuddyHome: this.config?.workbuddyHome || undefined,
@@ -1484,6 +1496,9 @@ export class HubAgent {
               imagePaths,
               execImpl: this.execImpl,
             })
+            if (extNewRes?.agentId && requestedNewModel) {
+              this.sessionModelOverrides.set(extNewRes.agentId, requestedNewModel)
+            }
             return {
               ...extNewRes,
               ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),

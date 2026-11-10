@@ -151,6 +151,22 @@ export async function loadSettings(config, env = process.env) {
     : (Array.isArray(config.enabledHarnesses) ? config.enabledHarnesses : null)
   const codexHome = expandHome(env.FEISHU_CODEX_HOME || fileValues.FEISHU_CODEX_HOME || config.codexHome || '')
   const claudeHome = expandHome(env.FEISHU_CLAUDE_HOME || fileValues.FEISHU_CLAUDE_HOME || config.claudeHome || '')
+  const workbuddyHome = expandHome(
+    env.FEISHU_WORKBUDDY_HOME ||
+      env.WORKBUDDY_CONFIG_DIR ||
+      fileValues.FEISHU_WORKBUDDY_HOME ||
+      fileValues.WORKBUDDY_CONFIG_DIR ||
+      config.workbuddyHome ||
+      '',
+  )
+  const workbuddyAcpEndpoint = String(
+    env.FEISHU_WORKBUDDY_ACP_ENDPOINT ||
+      env.WORKBUDDY_ACP_ENDPOINT ||
+      fileValues.FEISHU_WORKBUDDY_ACP_ENDPOINT ||
+      fileValues.WORKBUDDY_ACP_ENDPOINT ||
+      config.workbuddyAcpEndpoint ||
+      '',
+  ).trim()
 
   if (!appId && !hubUrl) throw new Error('Feishu App ID is missing: set it in the profile config, FEISHU_APP_ID, or the secret file')
   if (appId && !appSecret) throw new Error('Feishu App Secret is missing: set FEISHU_APP_SECRET or add it to the secret file')
@@ -169,6 +185,8 @@ export async function loadSettings(config, env = process.env) {
     ...(enabledHarnesses ? { enabledHarnesses } : {}),
     ...(codexHome ? { codexHome } : {}),
     ...(claudeHome ? { claudeHome } : {}),
+    ...(workbuddyHome ? { workbuddyHome } : {}),
+    ...(workbuddyAcpEndpoint ? { workbuddyAcpEndpoint } : {}),
   }
 }
 

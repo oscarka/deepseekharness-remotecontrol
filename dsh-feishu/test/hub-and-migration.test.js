@@ -3217,6 +3217,297 @@ test('Phase 3 Deep Integration: Codex app-server JSON-RPC & WorkBuddy ACP HTTP+S
   }
 })
 
+test('WorkBuddy real local SQLite + Unix sidecar socket + HTTP/SSE stream + HubAgent command routing', async () => {
+  const { execFileSync } = await import('node:child_process')
+  const net = await import('node:net')
+  const http = await import('node:http')
+
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-wb-e2e-'))
+  const wbHome = join(tmpDir, 'workbuddy')
+  const dshHome = join(tmpDir, 'dsh')
+  await mkdir(join(wbHome, 'sessions'), { recursive: true })
+  await mkdir(dshHome, { recursive: true })
+
+  let sidecarServer = null
+  let acpHttpServer = null
+  const activeSseResponses = new Set()
+
+  try {
+    // 1. Create a real SQLite workbuddy.db (deliberately omitting optional `model` column to verify schema resilience)
+    const dbPath = join(wbHome, 'workbuddy.db')
+    const t0 = Date.now() - 20_000
+    execFileSync('sqlite3', [
+      dbPath,
+      `
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        cwd TEXT,
+        title TEXT,
+        custom_title TEXT,
+        status TEXT,
+        created_at INTEGER,
+        updated_at INTEGER,
+        deleted_at INTEGER
+      );
+      INSERT INTO sessions (id, cwd, title, custom_title, status, created_at, updated_at, deleted_at)
+      VALUES ('wb-sqlite-01', '/Users/dev/wechat-pay', '初始标题', '微信支付V3重构', 'idle', ${t0}, ${t0 + 1000}, NULL);
+      `,
+    ])
+
+    let replayEvents = [
+      {
+        timestamp: t0,
+        update: { sessionUpdate: 'user_message', content: '帮我梳理微信支付回调逻辑' },
+      },
+      {
+        timestamp: t0 + 1000,
+        update: { sessionUpdate: 'agent_message', content: '第一轮：已梳理证书加载与验签流程。' },
+      },
+    ]
+
+    // 2. Start a real local HTTP + SSE ACP server
+    const rpcReceived = []
+    const rpcResponded = []
+    acpHttpServer = http.createServer((req, res) => {
+      const url = new URL(req.url, 'http://127.0.0.1')
+      if (req.method === 'GET' && url.pathname.includes('/replay')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ data: { events: replayEvents } }))
+        return
+      }
+      if (req.method === 'POST' && url.pathname.endsWith('/connect')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ data: { connectionId: 'conn-real-1', sessionToken: 'tok-real-1' } }))
+        return
+      }
+      if (req.method === 'GET' && url.pathname === '/api/v1/acp') {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+        })
+        res.write(': connected\n\n')
+        activeSseResponses.add(res)
+        req.on('close', () => activeSseResponses.delete(res))
+        return
+      }
+      if (req.method === 'POST' && url.pathname === '/api/v1/acp') {
+        let body = ''
+        req.on('data', chunk => { body += chunk })
+        req.on('end', () => {
+          const parsed = JSON.parse(body || '{}')
+          if (parsed.method) {
+            rpcReceived.push(parsed)
+            if (parsed.method === 'initialize') {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { protocolVersion: 1 } }))
+              return
+            }
+            if (parsed.method === 'session/new') {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { sessionId: 'wb-live-02' } }))
+              return
+            }
+            if (parsed.method === 'session/prompt') {
+              // Hold prompt slightly so SSE chunks & permission can be tested, or return when resolved
+              setTimeout(() => {
+                for (const sse of activeSseResponses) {
+                  sse.write(
+                    `data: ${JSON.stringify({
+                      jsonrpc: '2.0',
+                      method: 'session/update',
+                      params: {
+                        sessionId: parsed.params.sessionId,
+                        update: { sessionUpdate: 'agent_message_chunk', content: '正在通过真实 SSE 推送回复...' },
+                      },
+                    })}\n\n`,
+                  )
+                  sse.write(
+                    `data: ${JSON.stringify({
+                      jsonrpc: '2.0',
+                      id: 901,
+                      method: 'session/request_permission',
+                      params: {
+                        sessionId: parsed.params.sessionId,
+                        toolCall: {
+                          toolCallId: 'tc-real-1',
+                          title: 'Bash: git status',
+                          kind: 'execute',
+                          rawInput: { command: 'git status' },
+                        },
+                        options: [
+                          { optionId: 'allow_once', name: '批准一次', kind: 'allow_once' },
+                          { optionId: 'reject_once', name: '拒绝', kind: 'reject_once' },
+                        ],
+                      },
+                    })}\n\n`,
+                  )
+                }
+              }, 20)
+              setTimeout(() => {
+                if (!res.writableEnded) {
+                  res.writeHead(200, { 'Content-Type': 'application/json' })
+                  res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { content: '最终执行完毕' } }))
+                }
+              }, 250)
+              return
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: {} }))
+            return
+          }
+          if (parsed.id !== undefined && parsed.result !== undefined) {
+            rpcResponded.push(parsed)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true }))
+            return
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end('{}')
+        })
+      }
+    })
+
+    await new Promise(resolve => acpHttpServer.listen(0, '127.0.0.1', resolve))
+    const acpPort = acpHttpServer.address().port
+    const acpEndpoint = `http://127.0.0.1:${acpPort}/api/v1/acp`
+
+    // 3. Start a real Unix domain socket sidecar server
+    const sockPath = join(tmpDir, 'sidecar.sock')
+    sidecarServer = net.createServer(socket => {
+      let buf = ''
+      socket.on('data', chunk => {
+        buf += chunk.toString('utf8')
+        const lines = buf.split('\n')
+        buf = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          const req = JSON.parse(line)
+          if (req.method === 'session.list') {
+            socket.write(
+              `${JSON.stringify({
+                jsonrpc: '2.0',
+                id: req.id,
+                result: {
+                  acpEndpoint,
+                  sessions: [{ sessionId: 'wb-sqlite-01', cwd: '/Users/dev/wechat-pay', acpEndpoint }],
+                },
+              })}\n`,
+            )
+          }
+        }
+      })
+    })
+    await new Promise(resolve => sidecarServer.listen(sockPath, resolve))
+
+    // 4. Verify HubAgent with legacy default `enabledHarnesses: ['dsh', 'antigravity-ide', 'codex', 'claude']`
+    //    still registers WorkBuddyAdapter and routes commands end-to-end!
+    const bridge = new FeishuBridge({
+      config: resolveConfig({ dshHome }),
+      agents: { list: () => [], get: () => undefined },
+      sendText: async () => ({ messageId: 'm1' }),
+      sendCard: async () => ({ messageId: 'c1' }),
+    })
+
+    const hubAgent = new HubAgent({
+      config: {
+        ...resolveConfig({ dshHome }),
+        hostId: 'mac-wb-test',
+        hostName: 'MacBook-WB',
+        hubUrl: 'http://hub.local',
+        hubToken: 'tok',
+        enableAntigravityIde: false,
+        enabledHarnesses: ['dsh', 'antigravity-ide', 'codex', 'claude'],
+        workbuddyHome: wbHome,
+      },
+      bridge,
+      execImpl: async () => ({ stdout: '', stderr: '' }),
+      fetchImpl: (url, init) => {
+        const u = String(url)
+        if (u.startsWith('http://127.0.0.1:')) return globalThis.fetch(url, init)
+        return Promise.resolve(new Response(JSON.stringify({ ok: true, commands: [] }), { status: 200 }))
+      },
+    })
+
+    const wbAdapter = hubAgent.harnessRouter.getAdapter('workbuddy')
+    assert.ok(wbAdapter, 'WorkBuddyAdapter should be registered even on legacy 4-harness config')
+    wbAdapter.sidecarSocketPath = sockPath
+
+    await hubAgent.refreshDshStats(true)
+    let wbSess = hubAgent.cachedExternalSessions.find(s => s.id === 'workbuddy:wb-sqlite-01')
+    assert.ok(wbSess, 'Should discover session from real SQLite workbuddy.db')
+    assert.equal(wbSess.title, '微信支付V3重构')
+    assert.equal(wbSess.transcript.length, 2)
+    assert.match(wbSess.transcript[1].text, /第一轮：已梳理证书加载/)
+
+    // 5. Simulate user chatting in WorkBuddy Desktop (SQLite updated_at advances + new replay event)
+    const t1 = Date.now()
+    replayEvents.push({
+      timestamp: t1,
+      update: { sessionUpdate: 'agent_message', content: '第二轮：桌面端新增了退款接口实现。' },
+    })
+    execFileSync('sqlite3', [
+      dbPath,
+      `UPDATE sessions SET updated_at = ${t1} WHERE id = 'wb-sqlite-01';`,
+    ])
+
+    await hubAgent.refreshDshStats(true)
+    wbSess = hubAgent.cachedExternalSessions.find(s => s.id === 'workbuddy:wb-sqlite-01')
+    assert.match(wbSess.transcript.at(-1).text, /第二轮：桌面端新增了退款接口实现/)
+
+    // 6. Test creating a new WorkBuddy session via HubAgent command and receiving real SSE chunks + permission approval
+    const createRes = await hubAgent.handleHubCommand({
+      type: 'new_session',
+      harness: 'workbuddy',
+      title: '测试真实SSE与审批',
+      prompt: '请检查 git 状态',
+      cwd: '/Users/dev/wechat-pay',
+      model: 'claude-sonnet-4-6',
+    })
+    assert.equal(createRes.ok, true)
+    assert.equal(createRes.agentId, 'workbuddy:wb-live-02')
+    assert.equal(hubAgent.sessionModelOverrides.get('workbuddy:wb-live-02'), 'claude-sonnet-4-6')
+
+    // Wait for real SSE chunk and permission request to arrive over TCP
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 25))
+      await hubAgent.refreshDshStats(true)
+      const live = hubAgent.cachedExternalSessions.find(s => s.id === 'workbuddy:wb-live-02')
+      if (live?.pendingApproval?.code) break
+    }
+
+    await hubAgent.tick()
+    const liveSess = hubAgent.cachedExternalSessions.find(s => s.id === 'workbuddy:wb-live-02')
+    assert.ok(liveSess)
+    assert.equal(liveSess.status, 'approval')
+    assert.ok(liveSess.pendingApproval?.code.startsWith('WB-'))
+    assert.match(liveSess.transcript.at(-1)?.text || '', /正在通过真实 SSE 推送回复/)
+
+    const approveRes = await hubAgent.handleHubCommand({
+      type: 'approve',
+      code: liveSess.pendingApproval.code,
+      agentId: 'workbuddy:wb-live-02',
+      optionIndex: 1,
+    })
+    assert.equal(approveRes.ok, true)
+    assert.equal(rpcResponded.at(-1)?.id, 901)
+    assert.equal(rpcResponded.at(-1)?.result?.outcome?.optionId, 'allow_once')
+
+    wbAdapter.shutdown()
+  } finally {
+    for (const sse of activeSseResponses) {
+      try { sse.end() } catch {}
+    }
+    if (sidecarServer) await new Promise(resolve => sidecarServer.close(resolve))
+    if (acpHttpServer) {
+      acpHttpServer.closeAllConnections?.()
+      await new Promise(resolve => acpHttpServer.close(resolve))
+    }
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
+
 
 
 
