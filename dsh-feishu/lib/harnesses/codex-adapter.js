@@ -45,10 +45,10 @@ function walkJsonlFiles(dir, maxDepth = 4, depth = 0, out = []) {
         try {
           const st = statSync(full)
           out.push({ path: full, mtimeMs: st.mtimeMs, size: st.size })
-        } catch {}
+        } catch { }
       }
     }
-  } catch {}
+  } catch { }
   return out
 }
 
@@ -241,10 +241,10 @@ export class CodexAdapter {
           if (j.id && j.thread_name) {
             titles.set(j.id, cleanTitle(j.thread_name))
           }
-        } catch {}
+        } catch { }
       }
       this.indexCache = { mtimeMs: st.mtimeMs, titles }
-    } catch {}
+    } catch { }
     return this.indexCache.titles
   }
 
@@ -454,7 +454,7 @@ export class CodexAdapter {
     if (child && typeof child.kill === 'function') {
       try {
         child.kill('SIGTERM')
-      } catch {}
+      } catch { }
       this.activeRuns.delete(rawId)
       return { ok: true, agentId: sessionId, message: '已中止 Codex 后台任务' }
     }

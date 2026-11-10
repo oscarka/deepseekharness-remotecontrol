@@ -104,9 +104,9 @@ export function isDshSessionActivelyWriting(
           const hasFinalText = parts.some(p => p?.type === 'text' && String(p.text || '').trim().length > 0)
           return hasToolCall && !hasFinalText
         }
-      } catch {}
+      } catch { }
     }
-  } catch {}
+  } catch { }
   return false
 }
 
@@ -123,7 +123,7 @@ export function findDshBinary() {
   for (const c of candidates) {
     try {
       if (existsSync(c)) return c
-    } catch {}
+    } catch { }
   }
   return ''
 }
@@ -183,7 +183,7 @@ export function discoverDshModels(dshHome) {
           }
         }
       }
-    } catch {}
+    } catch { }
   }
 
   addModel('deepseek-account::deepseek-flash::high', 'DeepSeek Flash (High 深度思考)')
@@ -230,7 +230,7 @@ export function buildDshHeadlessPatchFile(dshHome) {
         extraBlocks.push(block.trim())
       }
       if (extraBlocks.length > 0) break
-    } catch {}
+    } catch { }
   }
 
   const runnerJs = `(globalThis.__dshRemoteStarted ? true : (globalThis.__dshRemoteStarted = true, ctx.inject(["agents", "agentDefaultModel", "sessions"], async (c) => {
@@ -408,7 +408,7 @@ export class DshHeadlessRunner {
     if (!entry) return { ok: false, error: '该 DSH 会话当前没有正在运行的后台进程' }
     try {
       entry.proc.kill('SIGTERM')
-    } catch {}
+    } catch { }
     this.activeProcs.delete(id)
     return {
       ok: true,
@@ -480,11 +480,11 @@ export class DshHeadlessRunner {
             if (existsSync(lockCandidate)) {
               try {
                 unlinkSync(lockCandidate)
-              } catch {}
+              } catch { }
             }
           }
         }
-      } catch {}
+      } catch { }
     }
 
     return await new Promise(resolvePromise => {
@@ -518,7 +518,7 @@ export class DshHeadlessRunner {
         if (!settledQuickly && stdoutBuf.includes('[dsh-headless-remote]READY:')) {
           settledQuickly = true
           void syncDshWorkspaceStorage(this.dshHome, [{ id, cwd: targetCwd, lastActivity: Date.now() }]).catch(
-            () => {},
+            () => { },
           )
           resolvePromise({
             ok: true,
@@ -551,12 +551,12 @@ export class DshHeadlessRunner {
         this.activeProcs.delete(id)
         if (code === 0) {
           void syncDshWorkspaceStorage(this.dshHome, [{ id, cwd: targetCwd, lastActivity: Date.now() }]).catch(
-            () => {},
+            () => { },
           )
         }
         try {
           this.onTurnSettled?.(id, code, stderrBuf)
-        } catch {}
+        } catch { }
         if (!settledQuickly) {
           settledQuickly = true
           if (code === 0) {

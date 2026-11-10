@@ -2521,7 +2521,7 @@ test('Phase 2: CodexAdapter & ClaudeAdapter parse real JSONL schemas, detect con
       codexHome,
       binaryPath: fakeCodexBin,
       spawnImpl: () => ({
-        on() {},
+        on() { },
         kill(sig) {
           killedSignal = sig
         },

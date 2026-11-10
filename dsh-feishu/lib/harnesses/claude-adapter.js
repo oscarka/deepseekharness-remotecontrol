@@ -45,10 +45,10 @@ function walkClaudeProjectFiles(dir, maxDepth = 3, depth = 0, out = []) {
         try {
           const st = statSync(full)
           out.push({ path: full, mtimeMs: st.mtimeMs, size: st.size })
-        } catch {}
+        } catch { }
       }
     }
-  } catch {}
+  } catch { }
   return out
 }
 
@@ -413,7 +413,7 @@ export class ClaudeAdapter {
     if (child && typeof child.kill === 'function') {
       try {
         child.kill('SIGTERM')
-      } catch {}
+      } catch { }
       this.activeRuns.delete(rawId)
       return { ok: true, agentId: sessionId, message: '已中止 Claude Code 后台任务' }
     }

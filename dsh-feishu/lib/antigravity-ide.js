@@ -171,6 +171,8 @@ export function parseAntigravityToolCalls(rawToolCalls) {
     const toolSummary = unquote(args.toolSummary || args.toolAction || '')
     const bypassRaw = args.BypassSandbox
     const bypassSandbox = bypassRaw === true || bypassRaw === 'true' || bypassRaw === '"true"'
+    const isDaemonRaw = args.IsDaemon
+    const isDaemon = isDaemonRaw === true || isDaemonRaw === 'true' || isDaemonRaw === '"true"'
 
     tools.push({
       name,
@@ -178,6 +180,7 @@ export function parseAntigravityToolCalls(rawToolCalls) {
       summary: toolSummary || (cmdLine ? `执行: ${cmdLine.slice(0, 80)}` : name),
       commandLine: cmdLine ? cmdLine.slice(0, 2000) : '',
       bypassSandbox,
+      isDaemon,
     })
 
     if (name === 'run_command' && bypassSandbox) {
@@ -253,7 +256,7 @@ async function loadTruncatedStepContents(compactPath, rawCompactText) {
     return map.size > 0 ? map : null
   } catch {
     if (fh) {
-      try { await fh.close() } catch {}
+      try { await fh.close() } catch { }
     }
     return null
   }
@@ -538,14 +541,14 @@ export function parseAntigravityTranscript(jsonlText, {
 
       const toolDisplayLine = tools.length > 0
         ? tools
-            .map(t => {
-              const s = t.summary || t.name
-              if (t.name === 'run_command' && !isWaitingApproval) {
-                return `Ran ${s.charAt(0).toLowerCase() + s.slice(1)}`
-              }
-              return s
-            })
-            .join(' · ')
+          .map(t => {
+            const s = t.summary || t.name
+            if (t.name === 'run_command' && !isWaitingApproval) {
+              return `Ran ${s.charAt(0).toLowerCase() + s.slice(1)}`
+            }
+            return s
+          })
+          .join(' · ')
         : ''
 
       transcript.push({
@@ -597,7 +600,16 @@ export function parseAntigravityTranscript(jsonlText, {
       if (typeof step.content === 'string') {
         const bgMatch = step.content.match(/Tool is running as a background task with task id:\s*([^\s\r\n"]+)/i)
         if (bgMatch && bgMatch[1]) {
-          pendingBackgroundTaskIds.add(bgMatch[1].trim().replace(/[.,;]+$/, ''))
+          const prevAsst = transcript.at(-1)
+          const isDaemonTask = Boolean(
+            prevAsst
+            && prevAsst.role === 'assistant'
+            && Array.isArray(prevAsst.tools)
+            && prevAsst.tools.some(t => t.isDaemon),
+          )
+          if (!isDaemonTask) {
+            pendingBackgroundTaskIds.add(bgMatch[1].trim().replace(/[.,;]+$/, ''))
+          }
         }
       }
       if (
@@ -786,12 +798,12 @@ export function parseAntigravityTranscript(jsonlText, {
     transcript: transcript.slice(-maxMessages),
     pendingApproval: pendingApproval
       ? {
-          ...pendingApproval,
-          agentId: sessionId,
-          title,
-          project,
-          changedFiles,
-        }
+        ...pendingApproval,
+        agentId: sessionId,
+        title,
+        project,
+        changedFiles,
+      }
       : null,
   }
 }
@@ -1473,9 +1485,9 @@ export async function discoverAntigravityModelCatalog({
               return cachedAgyModelCatalog
             }
           }
-        } catch {}
+        } catch { }
       }
-    } catch {}
+    } catch { }
   }
   return {
     defaultModel: DEFAULT_AGY_MODELS[0].value,
@@ -1725,10 +1737,10 @@ export async function executeAntigravityIdeAction(action, {
               action?.stepIndex
             const trajectoryId = String(
               waitingEntry?.step?.metadata?.sourceTrajectoryStepInfo?.trajectoryId ||
-                liveSummary?.trajectoryId ||
-                action?.pendingApproval?.trajectoryId ||
-                targetConvId ||
-                '',
+              liveSummary?.trajectoryId ||
+              action?.pendingApproval?.trajectoryId ||
+              targetConvId ||
+              '',
             )
 
             if (Number.isInteger(stepIndex) && stepIndex >= 0 && targetConvId) {
@@ -1748,9 +1760,9 @@ export async function executeAntigravityIdeAction(action, {
               if (runCmdReq && !permReq) {
                 const cmdLine = String(
                   action?.pendingApproval?.commandLine ||
-                    action?.pendingApproval?.command ||
-                    runCmdReq.proposedCommandLine ||
-                    '',
+                  action?.pendingApproval?.command ||
+                  runCmdReq.proposedCommandLine ||
+                  '',
                 )
                 interaction.runCommand = {
                   confirm: allow,
@@ -1782,15 +1794,15 @@ export async function executeAntigravityIdeAction(action, {
                 if (allow && (optionIndex === 2 || optionIndex === 3)) {
                   const permAction = String(
                     permReq?.resource?.action ||
-                      action?.pendingApproval?.permissionAction ||
-                      'unsandboxed',
+                    action?.pendingApproval?.permissionAction ||
+                    'unsandboxed',
                   ).trim() || 'unsandboxed'
                   const rawTarget = String(
                     permReq?.resource?.target ||
-                      action?.pendingApproval?.permissionTarget ||
-                      action?.pendingApproval?.commandLine ||
-                      action?.pendingApproval?.command ||
-                      '',
+                    action?.pendingApproval?.permissionTarget ||
+                    action?.pendingApproval?.commandLine ||
+                    action?.pendingApproval?.command ||
+                    '',
                   ).trim()
                   const suggested = String(
                     permReq?.suggestedPersistPattern || action?.pendingApproval?.suggestedPersistPattern || '',
@@ -1807,11 +1819,11 @@ export async function executeAntigravityIdeAction(action, {
                   scope,
                   ...(allowPatterns.length > 0
                     ? {
-                        persistGrants: {
-                          allow: allowPatterns,
-                          deny: [],
-                        },
-                      }
+                      persistGrants: {
+                        allow: allowPatterns,
+                        deny: [],
+                      },
+                    }
                     : {}),
                 }
               }
@@ -2005,7 +2017,7 @@ export async function executeAntigravityIdeAction(action, {
                 headers,
                 body: JSON.stringify({ cascadeId: rawConvId }),
               },
-            ).catch(() => {})
+            ).catch(() => { })
           }
           const { cascadeConfig, customAgentSpec } = await resolveCascadeConfigForHub(
             hub,
@@ -2228,7 +2240,7 @@ export async function executeAntigravityIdeAction(action, {
     if (promptText) {
       try {
         await execImpl('sh', ['-c', `printf %s ${JSON.stringify(promptText)} | pbcopy`], { timeout: 3000 })
-      } catch {}
+      } catch { }
     }
     const script = `
       tell application "System Events"

@@ -21,7 +21,7 @@ let AGENT_VERSION = '0.5.1'
 try {
   const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'))
   if (pkg?.version) AGENT_VERSION = String(pkg.version)
-} catch {}
+} catch { }
 import { buildNormalizedQuestionAnswers } from './bridge.js'
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from './migration.js'
 import { decorateTaskMetadata, HarnessRouter } from './harness-router.js'
@@ -557,22 +557,22 @@ export class HubAgent {
             t.model = agyCatalog.defaultLabel
           }
         }
-      } catch {}
+      } catch { }
       bridgeState.turbo = this.turbo
         ? this.turbo.getTelemetry()
         : {
-            enabled: true,
-            version: '2.0.0',
-            engine: getTurboNativeBinaryPath() ? 'rust-native' : 'node-fsevents',
-            engineLabel: getTurboNativeBinaryPath() ? '🦀 Rust 原生极速引擎 + 实时流' : '⚡ FSEvents 实时事件流',
-            accessibilityGranted: true,
-          }
+          enabled: true,
+          version: '2.0.0',
+          engine: getTurboNativeBinaryPath() ? 'rust-native' : 'node-fsevents',
+          engineLabel: getTurboNativeBinaryPath() ? '🦀 Rust 原生极速引擎 + 实时流' : '⚡ FSEvents 实时事件流',
+          accessibilityGranted: true,
+        }
       try {
         bridgeState.systemTelemetry = await collectHostSystemTelemetry({
           lastRttMs: this.lastHeartbeatRttMs,
           execImpl: this.execImpl,
         })
-      } catch {}
+      } catch { }
       const resultsToSend = this.pendingResults.splice(0)
       const hbReqStart = Date.now()
       const response = await this.fetch(`${this.config.hubUrl}/api/heartbeat`, {
@@ -1463,11 +1463,11 @@ export class HubAgent {
           } catch {
             try {
               await runExec('git', ['-C', REPO_ROOT, 'reset', '--hard', 'origin/main'], { timeout: 25_000 })
-            } catch {}
+            } catch { }
           }
           try {
             await runExec(join(REPO_ROOT, 'dsh-turbo', 'enable-turbo.sh'), [], { timeout: 10_000 })
-          } catch {}
+          } catch { }
           if (this.turbo) {
             await this.turbo.refreshAccessibilityState(true)
           }
@@ -1480,7 +1480,7 @@ export class HubAgent {
                   { detached: true, stdio: 'ignore' },
                 )
                 child.unref()
-              } catch {}
+              } catch { }
             }, 1800).unref?.()
           }
           return {
