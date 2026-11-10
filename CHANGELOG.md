@@ -2,21 +2,20 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.5.4] - 2026-11-10
 
 ### Added
 
-- `LICENSE`（MIT）
-- 英文 README（`README.en.md`）
-- `SECURITY.md`：威胁模型、已知限制、部署检查清单、密钥轮换
-- `CONTRIBUTING.md`
-- GitHub issue / PR 模板
-- 首屏 banner 与 Social Preview 源文件（`docs/assets/`）
+- Antigravity IDE `walkthrough.md` 及产物文件在移动端对话气泡内的可点击胶囊与 Markdown 原生渲染预览
+- 会话级模型双向同步（Antigravity IDE LanguageServer / DSH 会话模型识别与持久化）
+- 首屏 `0ms` 本地快照瞬时渲染，彻底消除移动端浏览器打开时的白屏等待
+- 中英双语 README（`README.md` / `README.zh-CN.md` / `README.en.md`）、`FAQ.md`、`SECURITY.md`、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md` 与 `LICENSE`（MIT）
 
 ### Changed
 
-- 重写 README：首屏改为「问题 → 架构 → 快速开始」，补充 30 秒本地启动路径
-- 内部设计文档移入 `docs/design/`
+- 极速心跳与增量同步（`v0.5.3`）：稳态网络流量降低 99.9%，静态资源与 API 全面启用 Gzip 压缩
+- 移动端语音输入直接唤起系统键盘原生麦克风 / 豆包语音输入
+- 重写 README：提供 3 步快速启动路径与中英双语实机演示 GIF（`docs/assets/`）
 - 关于第三方托管服务的表述改为「兼容 / 可替代」，并补充独立性免责声明
 
 ## [0.2.0] - 2026-11-07

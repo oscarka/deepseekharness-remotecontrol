@@ -11,5 +11,7 @@ node_modules/
 hub-state.json
 .dsh-uploads/
 **/.dsh-uploads/
+.local-notes/
+docs/launch/
 
 
