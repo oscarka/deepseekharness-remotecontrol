@@ -440,9 +440,20 @@ function ChatStage() {
 		multiple: true,
 		style: "display:none;",
 		onChange: (e) => window.onChatImageSelected?.(e, "chat")
-	}), /* @__PURE__ */ k("button", {
+	}), /* @__PURE__ */ k("div", { class: "composer-unified-card" }, /* @__PURE__ */ k("textarea", {
+		class: "chat-input",
+		id: "globalPromptInput",
+		rows: 1,
+		placeholder: "发指令继续对话...",
+		autocorrect: "on",
+		autocapitalize: "sentences",
+		spellcheck: true,
+		onInput: () => window.onComposerInput?.(),
+		onKeyDown: (e) => window.onComposerKeydown?.(e),
+		onPaste: (e) => window.onComposerPaste?.(e, "chat")
+	}), /* @__PURE__ */ k("div", { class: "composer-toolbar-row" }, /* @__PURE__ */ k("div", { class: "composer-tools-left" }, /* @__PURE__ */ k("button", {
 		type: "button",
-		class: "voice-btn image-upload-btn",
+		class: "voice-btn composer-mini-btn image-upload-btn",
 		id: "chatImageBtn",
 		title: "从手机相册上传截图或照片",
 		"aria-label": "上传截图或照片",
@@ -453,7 +464,7 @@ function ChatStage() {
 		}
 	}, "🖼️"), /* @__PURE__ */ k("button", {
 		type: "button",
-		class: "voice-btn",
+		class: "voice-btn composer-mini-btn",
 		id: "chatVoiceBtn",
 		title: "语音输入（点击说话，再点停止）",
 		"aria-label": "语音输入",
@@ -462,23 +473,22 @@ function ChatStage() {
 			e.stopPropagation();
 			window.toggleVoiceInput?.("globalPromptInput", "chatVoiceBtn");
 		}
-	}, "🎤"), /* @__PURE__ */ k("textarea", {
-		class: "chat-input",
-		id: "globalPromptInput",
-		rows: 1,
-		placeholder: "发指令或点左侧🖼️传截图...",
-		autocorrect: "on",
-		autocapitalize: "sentences",
-		spellcheck: true,
-		onInput: () => window.onComposerInput?.(),
-		onKeyDown: (e) => window.onComposerKeydown?.(e),
-		onPaste: (e) => window.onComposerPaste?.(e, "chat")
-	}), /* @__PURE__ */ k("button", {
+	}, "🎤"), /* @__PURE__ */ k("button", {
 		type: "button",
-		class: "send-btn",
+		class: "composer-model-pill",
+		id: "chatModelBtn",
+		title: "切换当前对话使用的 AI 模型",
+		onClick: (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			window.openModelPickerSheet?.("chat");
+		}
+	}, /* @__PURE__ */ k("span", { id: "chatModelBtnLabel" }, "🤖 默认模型"), /* @__PURE__ */ k("span", { style: "opacity:0.65;font-size:10px;margin-left:2px;" }, "▾"))), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "send-btn composer-send-btn",
 		id: "chatSendBtn",
 		onClick: () => window.sendPromptToActiveSession?.()
-	}, "发送")));
+	}, "发送")))));
 }
 // hub/web/src/components/Sheets.tsx
 function Sheets() {
@@ -520,6 +530,15 @@ function Sheets() {
 		style: "display:none;",
 		onChange: (e) => window.onChatImageSelected?.(e, "newTask")
 	}), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "voice-pill-btn",
+		id: "newTaskModelBtn",
+		onClick: (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			window.openModelPickerSheet?.("newTask");
+		}
+	}, /* @__PURE__ */ k("span", { id: "newTaskModelBtnLabel" }, "🤖 默认模型"), /* @__PURE__ */ k("span", { style: "opacity:0.7;font-size:10px;" }, "▾")), /* @__PURE__ */ k("button", {
 		type: "button",
 		class: "voice-pill-btn",
 		id: "newTaskImageBtn",
@@ -651,7 +670,15 @@ function Sheets() {
 		class: "choice-chip",
 		style: "padding:0 16px;",
 		onClick: () => window.closeSheet?.("copyFallbackSheet")
-	}, "关闭")))));
+	}, "关闭")))), /* @__PURE__ */ k("div", {
+		class: "sheet-backdrop",
+		id: "modelPickerSheet",
+		onClick: closeIfBackdrop("modelPickerSheet")
+	}, /* @__PURE__ */ k("div", { class: "sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", { class: "sheet-title" }, /* @__PURE__ */ k("span", { id: "modelPickerTitle" }, "🤖 选择 AI 模型"), /* @__PURE__ */ k("button", {
+		type: "button",
+		style: "border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;",
+		onClick: () => window.closeSheet?.("modelPickerSheet")
+	}, "✕")), /* @__PURE__ */ k("div", { id: "modelPickerBody" }))));
 }
 // hub/web/src/App.tsx
 function App() {
@@ -1621,9 +1648,20 @@ var EXACT_ZH_TO_EN = {
 	"📌 置顶此对话（固定在列表最顶部）": "📌 Pin Conversation to Top",
 	"🔗 生成 AES-256 端到端加密回放链接": "🔗 Create AES-256 Encrypted Share Link",
 	"🗑️ 删除此条会话记录": "🗑️ Delete Conversation",
-	"⚠️ 再次点击确认彻底删除": "⚠️ Tap Again to Confirm Delete"
+	"⚠️ 再次点击确认彻底删除": "⚠️ Tap Again to Confirm Delete",
+	"🤖 选择 AI 模型": "🤖 Select AI Model",
+	"切换当前对话使用的 AI 模型": "Switch the AI model for this conversation",
+	"不强制覆盖，沿用该会话在电脑端已选的模型配置": "Use the default model configured on your computer",
+	"当前已选 ✓": "Selected ✓",
+	"选择 ›": "Select ›",
+	"🤖 默认模型 ▾": "🤖 Default ▾",
+	"切换 AI 模型": "Switch AI Model",
+	"选择新建对话使用的 AI 模型": "Select AI Model for New Conversation"
 };
 var REGEX_ZH_TO_EN = [
+	[/^🤖 选择模型 · (.+)$/, "🤖 Select Model · $1"],
+	[/^✨ 跟随电脑端当前默认 \((.+)\)$/, "✨ Computer Default ($1)"],
+	[/^🤖 默认 \((.+)\)$/, "🤖 Default ($1)"],
 	[/^全部电脑 \((\d+)\)$/, "All Computers ($1)"],
 	[/^已接入电脑 \((\d+) 台 · 点击卡片展开详情\)$/, "Connected Computers ($1 · tap card for details)"],
 	[/^端到端加密分享记录 \((\d+)\)$/, "Encrypted Share History ($1)"],
@@ -1933,6 +1971,212 @@ function initHubController() {
 	let cachedPushDeviceListText = "";
 	let lastAutoPushSyncAt = 0;
 	const upgradingHostMap = {};
+	const selectedSessionModels = {};
+	let newTaskModel = "";
+	const FALLBACK_MODEL_CATALOG = {
+		"antigravity-ide": {
+			defaultLabel: "Gemini 4 Argon (High)",
+			models: [
+				{
+					value: "MODEL_PLACEHOLDER_M417",
+					label: "Gemini 4 Argon (High)"
+				},
+				{
+					value: "MODEL_PLACEHOLDER_M418",
+					label: "Gemini 4 Argon (Medium)"
+				},
+				{
+					value: "MODEL_PLACEHOLDER_M419",
+					label: "Gemini 4 Argon (Low)"
+				},
+				{
+					value: "MODEL_PLACEHOLDER_M318",
+					label: "Gemini 3.8 Flash (High)"
+				},
+				{
+					value: "MODEL_PLACEHOLDER_M319",
+					label: "Gemini 3.8 Flash (Medium)"
+				},
+				{
+					value: "MODEL_PLACEHOLDER_M402",
+					label: "Claude Opus 5.5 (High)"
+				},
+				{
+					value: "MODEL_PLACEHOLDER_M401",
+					label: "Claude Opus 5.5 (Medium)"
+				},
+				{
+					value: "MODEL_PLACEHOLDER_M405",
+					label: "Claude Sonnet 5.5 (High)"
+				},
+				{
+					value: "MODEL_PLACEHOLDER_M404",
+					label: "Claude Sonnet 5.5 (Medium)"
+				}
+			]
+		},
+		dsh: {
+			defaultLabel: "DeepSeek 默认模型",
+			models: [
+				{
+					value: "deepseek-account::deepseek-flash::high",
+					label: "DeepSeek Flash (High 深度思考)"
+				},
+				{
+					value: "deepseek-account::deepseek-flash::medium",
+					label: "DeepSeek Flash (Medium 均衡)"
+				},
+				{
+					value: "deepseek-account::deepseek-flash::low",
+					label: "DeepSeek Flash (Low 极速)"
+				},
+				{
+					value: "deepseek-account::deepseek-reasoner",
+					label: "DeepSeek R1 (Reasoner)"
+				},
+				{
+					value: "deepseek-account::deepseek-chat",
+					label: "DeepSeek V3 (Chat)"
+				}
+			]
+		},
+		claude: {
+			defaultLabel: "Claude Sonnet (默认)",
+			models: [
+				{
+					value: "sonnet",
+					label: "Claude Sonnet (均衡推荐)"
+				},
+				{
+					value: "opus",
+					label: "Claude Opus (深度推理)"
+				},
+				{
+					value: "haiku",
+					label: "Claude Haiku (极速轻量)"
+				}
+			]
+		},
+		codex: {
+			defaultLabel: "GPT-5.4 (默认)",
+			models: [
+				{
+					value: "gpt-5.4",
+					label: "GPT-5.4"
+				},
+				{
+					value: "gpt-5.3-codex",
+					label: "GPT-5.3-Codex"
+				},
+				{
+					value: "o3",
+					label: "o3 (深度推理)"
+				},
+				{
+					value: "o4-mini",
+					label: "o4-mini (快速)"
+				}
+			]
+		}
+	};
+	function getHarnessModelCatalog(host, harness = "dsh") {
+		const hKey = harness || "dsh";
+		const remoteCat = host?.bridgeState?.modelCatalog?.[hKey];
+		const fallback = FALLBACK_MODEL_CATALOG[hKey] || FALLBACK_MODEL_CATALOG.dsh;
+		if (remoteCat && Array.isArray(remoteCat.models) && remoteCat.models.length > 0) return {
+			defaultModel: remoteCat.defaultModel || "",
+			defaultLabel: remoteCat.defaultLabel || fallback.defaultLabel,
+			models: remoteCat.models
+		};
+		return fallback;
+	}
+	function resolveModelShortLabel(catalog, modelVal, sessionModel = "") {
+		const raw = String(modelVal || sessionModel || "").trim();
+		if (raw) {
+			const hit = (catalog?.models || []).find((m) => m.value === raw || m.label === raw || m.value.endsWith(`::${raw}`));
+			if (hit) return hit.label;
+			const cleanParts = raw.split("::");
+			if (cleanParts.length >= 2) return cleanParts[1] + (cleanParts[2] ? ` (${cleanParts[2]})` : "");
+			if (!raw.startsWith("MODEL_PLACEHOLDER_")) return raw;
+		}
+		return catalog?.defaultLabel || "默认模型";
+	}
+	function updateChatModelPill(session, host) {
+		const btn = document.getElementById("chatModelBtn");
+		const labelEl = document.getElementById("chatModelBtnLabel");
+		if (!btn || !labelEl || !session) return;
+		const catalog = getHarnessModelCatalog(host, session.harness);
+		const overrideVal = selectedSessionModels[session.id] || "";
+		labelEl.textContent = `🤖 ${resolveModelShortLabel(catalog, overrideVal, session.model)}`;
+		btn.classList.toggle("active-override", Boolean(overrideVal));
+	}
+	function updateNewTaskModelPill() {
+		const labelEl = document.getElementById("newTaskModelBtnLabel");
+		if (!labelEl) return;
+		const displayLabel = resolveModelShortLabel(getHarnessModelCatalog((hubState.hosts || []).find((h) => h.hostId === newTaskHostId), newTaskHarness), newTaskModel, "");
+		labelEl.textContent = newTaskModel ? `🤖 ${displayLabel}` : `🤖 默认 (${displayLabel})`;
+	}
+	function openModelPickerSheet(target = "chat") {
+		let host = null;
+		let harness = "dsh";
+		let currentSelected = "";
+		let sessionDefault = "";
+		if (target === "newTask") {
+			host = (hubState.hosts || []).find((h) => h.hostId === newTaskHostId) || (hubState.hosts || [])[0];
+			harness = newTaskHarness || "antigravity-ide";
+			currentSelected = newTaskModel || "";
+		} else {
+			const found = findSessionGlobal(activeSessionId);
+			if (!found) return;
+			host = found.host;
+			harness = found.session.harness || "dsh";
+			currentSelected = selectedSessionModels[found.session.id] || "";
+			sessionDefault = found.session.model || "";
+		}
+		const catalog = getHarnessModelCatalog(host, harness);
+		const inheritedLabel = resolveModelShortLabel(catalog, "", sessionDefault);
+		const titleEl = document.getElementById("modelPickerTitle");
+		if (titleEl) titleEl.textContent = `🤖 选择模型 · ${harness === "antigravity-ide" ? "⚡ Antigravity IDE" : harness === "claude" ? "✴️ Claude Code" : harness === "codex" ? "🧠 OpenAI Codex" : "🟣 DeepSeek Harness"}`;
+		const bodyEl = document.getElementById("modelPickerBody");
+		if (!bodyEl) return;
+		bodyEl.innerHTML = [{
+			value: "",
+			label: `✨ 跟随电脑端当前默认 (${inheritedLabel})`,
+			sub: "不强制覆盖，沿用该会话在电脑端已选的模型配置"
+		}, ...(catalog.models || []).map((m) => ({
+			value: m.value,
+			label: m.label,
+			sub: m.value.includes("::") ? m.value.replace(/::/g, " · ") : m.value
+		}))].map((opt) => {
+			const isSel = opt.value === currentSelected;
+			return `
+            <div class="host-option ${isSel ? "selected" : ""}" onclick="selectModelFromPicker('${esc(target)}', '${esc(opt.value)}')">
+              <div style="min-width:0;flex:1;">
+                <div style="font-size:14px;font-weight:700;color:var(--text);">${esc(opt.label)}</div>
+                <div style="font-size:11.5px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(opt.sub)}</div>
+              </div>
+              <span style="font-size:13px;font-weight:700;color:${isSel ? "var(--primary)" : "var(--muted)"};margin-left:8px;flex-shrink:0;">
+                ${isSel ? "当前已选 ✓" : "选择 ›"}
+              </span>
+            </div>
+          `;
+		}).join("");
+		openSheet("modelPickerSheet");
+	}
+	function selectModelFromPicker(target, modelValue) {
+		const val = String(modelValue || "").trim();
+		if (target === "newTask") {
+			newTaskModel = val;
+			updateNewTaskModelPill();
+		} else if (activeSessionId) {
+			if (val) selectedSessionModels[activeSessionId] = val;
+			else delete selectedSessionModels[activeSessionId];
+			const found = findSessionGlobal(activeSessionId);
+			if (found) updateChatModelPill(found.session, found.host);
+		}
+		closeSheet("modelPickerSheet");
+		showToast(val ? "🤖 已切换模型，下条指令将立即生效" : "✨ 已恢复跟随电脑端默认模型");
+	}
 	function clearHomeScreenAppBadge() {
 		try {
 			if (navigator && typeof navigator.clearAppBadge === "function") navigator.clearAppBadge().catch(() => {});
@@ -2693,6 +2937,7 @@ function initHubController() {
         `;
 		} else alertBar.style.display = "none";
 		switchComposerSession(s.id);
+		updateChatModelPill(s, found.host);
 		const composerKey = `${s.id}:${s.status}:${s.controlMode || ""}`;
 		if (composerKey !== lastRenderedComposerKey) {
 			lastRenderedComposerKey = composerKey;
@@ -3377,6 +3622,7 @@ function initHubController() {
 		const cmdType = s.status === "running" ? "steer" : "prompt";
 		if (Boolean(host && host.online !== false && host.activelyConnected !== false)) showToast(pendingAttachments.length > 0 ? `🖼️ 已发送截图与指令 (${pendingAttachments.length} 张)` : cmdType === "steer" ? "⚡ 已发送实时插话" : "📨 已发送指令");
 		let dispatchRes = null;
+		const chosenChatModel = selectedSessionModels[s.id] || "";
 		try {
 			dispatchRes = await dispatchHostCommand(s.hostId, {
 				type: cmdType,
@@ -3384,6 +3630,7 @@ function initHubController() {
 				cwd: s.cwd || "",
 				text,
 				prompt: text,
+				...chosenChatModel ? { model: chosenChatModel } : {},
 				...pendingAttachments.length > 0 ? { attachments: pendingAttachments.map((a) => ({
 					name: a.name,
 					mimeType: a.mimeType,
@@ -4156,6 +4403,7 @@ function initHubController() {
           📁 ${esc(p.name)}
         </button>
       `).join("");
+		updateNewTaskModelPill();
 	}
 	function selectNewTaskHost(id) {
 		newTaskHostId = id;
@@ -4164,6 +4412,7 @@ function initHubController() {
 	}
 	function selectNewTaskHarness(h) {
 		newTaskHarness = h;
+		newTaskModel = "";
 		renderNewTaskForm();
 	}
 	function selectNewTaskProject(cwd) {
@@ -4202,6 +4451,7 @@ function initHubController() {
 				cwd: newTaskCwd,
 				title: text.slice(0, 28),
 				prompt: text,
+				...newTaskModel ? { model: newTaskModel } : {},
 				...pendingAttachments.length > 0 ? { attachments: pendingAttachments.map((a) => ({
 					name: a.name,
 					mimeType: a.mimeType,
@@ -4719,7 +4969,7 @@ function initHubController() {
 				runningCount: h.runningCount || 0,
 				totalBytesBucket: expandedHostCardIds[h.hostId] ? Math.round((h.totalBytes || 0) / 10240) : 0,
 				agentVersion: h.bridgeState?.agentVersion || "",
-				upgrading: Boolean(upgradingHostMap[h.hostId] && Date.now() - upgradingHostMap[h.hostId] < 25e3),
+				upgrading: Boolean(upgradingHostMap[h.hostId] && Date.now() - upgradingHostMap[h.hostId] < 45e3),
 				turbo: h.bridgeState?.turbo?.engineLabel || "",
 				power: h.bridgeState?.systemTelemetry?.power?.shortLabel || "",
 				net: h.bridgeState?.systemTelemetry?.network?.kindLabel || "",
@@ -4768,7 +5018,7 @@ function initHubController() {
 			const shortFp = (h.fingerprint || "已锁定").slice(0, 14);
 			const hubVer = String(buildInfo.version || "0.5.1");
 			const hostVer = String(h.bridgeState?.agentVersion || "");
-			const isUpgradingHost = Boolean(upgradingHostMap[h.hostId] && Date.now() - upgradingHostMap[h.hostId] < 25e3);
+			const isUpgradingHost = Boolean(upgradingHostMap[h.hostId] && Date.now() - upgradingHostMap[h.hostId] < 45e3);
 			const isHostOutdated = Boolean(h.online && !isRevoked && (!hostVer || hostVer !== hubVer));
 			const versionBadgeHtml = isUpgradingHost ? `<span style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--amber-soft);color:#d97706;">⏳ 正在升级重启...</span>` : isHostOutdated ? `<span style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--amber-soft);color:#d97706;">⬆️ 可升 v${esc(hubVer)} (${hostVer ? "当前 v" + esc(hostVer) : "旧版"})</span>` : hostVer ? `<span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:999px;background:var(--green-soft);color:var(--green);">v${esc(hostVer)} 最新</span>` : "";
 			return `
@@ -5580,7 +5830,7 @@ function initHubController() {
 	async function upgradeHostTurbo(hostId, hostName = "") {
 		const label = hostName || hostId;
 		upgradingHostMap[hostId] = Date.now();
-		lastRenderedSettingsSig = "";
+		lastRenderedSettingsKey = "";
 		if (currentTab === "settings") renderSettingsTab();
 		showToast(`🚀 正在为「${label}」拉取最新代码并自动热重启守护进程...`);
 		try {
@@ -5589,26 +5839,26 @@ function initHubController() {
 		const startWait = Date.now();
 		const pollUpgrade = async () => {
 			await fetchState();
-			const targetVer = String(hubState.version || "0.5.1").trim();
+			const targetVer = String(hubState.build?.version || hubState.version || "0.5.1").trim();
 			const updatedHost = (hubState.hosts || []).find((h) => h.hostId === hostId);
 			const curVer = String(updatedHost?.bridgeState?.agentVersion || "").trim();
 			if (curVer && curVer === targetVer) {
 				delete upgradingHostMap[hostId];
-				lastRenderedSettingsSig = "";
+				lastRenderedSettingsKey = "";
 				if (currentTab === "settings") renderSettingsTab();
 				if (document.getElementById("turboGuideSheet")?.classList.contains("open")) openTurboGuideSheet();
 				showToast(`✅ 电脑「${label}」已升级至最新版本 v${targetVer}！`);
 				return;
 			}
-			if (Date.now() - startWait < 15e3) setTimeout(pollUpgrade, 1500);
+			if (Date.now() - startWait < 45e3) setTimeout(pollUpgrade, 1500);
 			else {
 				delete upgradingHostMap[hostId];
-				lastRenderedSettingsSig = "";
+				lastRenderedSettingsKey = "";
 				if (currentTab === "settings") renderSettingsTab();
 				if (document.getElementById("turboGuideSheet")?.classList.contains("open")) openTurboGuideSheet();
 			}
 		};
-		setTimeout(pollUpgrade, 1800);
+		setTimeout(pollUpgrade, 2e3);
 	}
 	function rawCloseSheet(id) {
 		if (id === "newTaskSheet") stopVoiceInput();
@@ -6203,6 +6453,8 @@ function initHubController() {
 		openTurboGuideSheet,
 		requestHostAxPermission,
 		upgradeHostTurbo,
+		openModelPickerSheet,
+		selectModelFromPicker,
 		rawCloseSheet,
 		trackOverlay,
 		openSheet,

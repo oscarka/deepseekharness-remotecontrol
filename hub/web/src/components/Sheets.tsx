@@ -65,6 +65,19 @@ export function Sheets() {
               <button
                 type="button"
                 class="voice-pill-btn"
+                id="newTaskModelBtn"
+                onClick={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  (window as any).openModelPickerSheet?.('newTask');
+                }}
+              >
+                <span id="newTaskModelBtnLabel">🤖 默认模型</span>
+                <span style="opacity:0.7;font-size:10px;">▾</span>
+              </button>
+              <button
+                type="button"
+                class="voice-pill-btn"
                 id="newTaskImageBtn"
                 onClick={e => {
                   e.preventDefault();
@@ -317,6 +330,28 @@ export function Sheets() {
               关闭
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* 抽屉 10：AI 模型选择器弹窗 */}
+      <div
+        class="sheet-backdrop"
+        id="modelPickerSheet"
+        onClick={closeIfBackdrop('modelPickerSheet')}
+      >
+        <div class="sheet-panel">
+          <div class="sheet-handle"></div>
+          <div class="sheet-title">
+            <span id="modelPickerTitle">🤖 选择 AI 模型</span>
+            <button
+              type="button"
+              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;"
+              onClick={() => (window as any).closeSheet?.('modelPickerSheet')}
+            >
+              ✕
+            </button>
+          </div>
+          <div id="modelPickerBody"></div>
         </div>
       </div>
     </Fragment>

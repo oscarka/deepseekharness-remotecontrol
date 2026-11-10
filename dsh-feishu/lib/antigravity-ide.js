@@ -1410,7 +1410,82 @@ function buildCleanAgentApiEnv(hub) {
   return env
 }
 
-async function resolveCascadeConfigForHub(hub, rawConvId, fetchImpl, peerTrajectoryIds = []) {
+const DEFAULT_AGY_MODELS = [
+  { value: 'MODEL_PLACEHOLDER_M417', label: 'Gemini 4 Argon (High)' },
+  { value: 'MODEL_PLACEHOLDER_M418', label: 'Gemini 4 Argon (Medium)' },
+  { value: 'MODEL_PLACEHOLDER_M419', label: 'Gemini 4 Argon (Low)' },
+  { value: 'MODEL_PLACEHOLDER_M318', label: 'Gemini 3.8 Flash (High)' },
+  { value: 'MODEL_PLACEHOLDER_M319', label: 'Gemini 3.8 Flash (Medium)' },
+  { value: 'MODEL_PLACEHOLDER_M320', label: 'Gemini 3.8 Flash (Low)' },
+  { value: 'MODEL_PLACEHOLDER_M402', label: 'Claude Opus 5.5 (High)' },
+  { value: 'MODEL_PLACEHOLDER_M401', label: 'Claude Opus 5.5 (Medium)' },
+  { value: 'MODEL_PLACEHOLDER_M405', label: 'Claude Sonnet 5.5 (High)' },
+  { value: 'MODEL_PLACEHOLDER_M404', label: 'Claude Sonnet 5.5 (Medium)' },
+]
+
+let cachedAgyModelCatalog = null
+let cachedAgyModelCatalogAt = 0
+
+export async function discoverAntigravityModelCatalog({
+  execImpl = execFileAsync,
+  fetchImpl = globalThis.fetch,
+} = {}) {
+  const now = Date.now()
+  if (cachedAgyModelCatalog && now - cachedAgyModelCatalogAt < 60_000) {
+    return cachedAgyModelCatalog
+  }
+  if (typeof fetchImpl === 'function') {
+    try {
+      const hubs = await discoverAntigravityHubInstances({ execImpl })
+      for (const hub of hubs) {
+        try {
+          const resp = await fetchImpl(
+            `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetCascadeModelConfigData`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-codeium-csrf-token': hub.csrfToken,
+              },
+              body: JSON.stringify({}),
+            },
+          )
+          if (!resp?.ok) continue
+          const data = await resp.json().catch(() => null)
+          const rawConfigs = Array.isArray(data?.clientModelConfigs) ? data.clientModelConfigs : []
+          if (rawConfigs.length > 0) {
+            const models = []
+            const seen = new Set()
+            for (const c of rawConfigs) {
+              const val = String(c?.modelOrAlias?.model || c?.modelOrAlias?.alias || '').trim()
+              const lbl = String(c?.label || val).trim()
+              if (!val || seen.has(val)) continue
+              seen.add(val)
+              models.push({ value: val, label: lbl })
+            }
+            if (models.length > 0) {
+              cachedAgyModelCatalog = {
+                defaultModel: models[0].value,
+                defaultLabel: models[0].label,
+                models,
+              }
+              cachedAgyModelCatalogAt = now
+              return cachedAgyModelCatalog
+            }
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+  return {
+    defaultModel: DEFAULT_AGY_MODELS[0].value,
+    defaultLabel: DEFAULT_AGY_MODELS[0].label,
+    models: DEFAULT_AGY_MODELS,
+  }
+}
+
+async function resolveCascadeConfigForHub(hub, rawConvId, fetchImpl, peerTrajectoryIds = [], requestedModel = '') {
+  const cleanRequestedModel = String(requestedModel || '').trim()
   const headers = {
     'Content-Type': 'application/json',
     'x-codeium-csrf-token': hub.csrfToken,
@@ -1432,8 +1507,13 @@ async function resolveCascadeConfigForHub(hub, rawConvId, fetchImpl, peerTraject
       for (let i = steps.length - 1; i >= 0; i -= 1) {
         const ui = steps[i]?.userInput
         if (ui?.userConfig?.plannerConfig?.planModel) {
+          const clonedConfig = JSON.parse(JSON.stringify(ui.userConfig))
+          if (cleanRequestedModel) {
+            if (!clonedConfig.plannerConfig) clonedConfig.plannerConfig = {}
+            clonedConfig.plannerConfig.planModel = cleanRequestedModel
+          }
           return {
-            cascadeConfig: ui.userConfig,
+            cascadeConfig: clonedConfig,
             customAgentSpec: ui.userAgentSpec || undefined,
           }
         }
@@ -1443,23 +1523,25 @@ async function resolveCascadeConfigForHub(hub, rawConvId, fetchImpl, peerTraject
     }
   }
 
-  let planModel = 'MODEL_PLACEHOLDER_M417'
-  try {
-    const resp = await fetchImpl(
-      `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetCascadeModelConfigData`,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({}),
-      },
-    )
-    if (resp.ok) {
-      const data = await resp.json().catch(() => ({}))
-      const firstModel = data?.clientModelConfigs?.[0]?.modelOrAlias?.model
-      if (firstModel) planModel = firstModel
+  let planModel = cleanRequestedModel || 'MODEL_PLACEHOLDER_M417'
+  if (!cleanRequestedModel) {
+    try {
+      const resp = await fetchImpl(
+        `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetCascadeModelConfigData`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({}),
+        },
+      )
+      if (resp.ok) {
+        const data = await resp.json().catch(() => ({}))
+        const firstModel = data?.clientModelConfigs?.[0]?.modelOrAlias?.model
+        if (firstModel) planModel = firstModel
+      }
+    } catch {
+      // use default placeholder model
     }
-  } catch {
-    // use default placeholder model
   }
 
   return {
@@ -1930,6 +2012,7 @@ export async function executeAntigravityIdeAction(action, {
             rawConvId,
             fetchImpl,
             hub.trajectoryIds || [],
+            action?.model,
           )
           const resp = await fetchImpl(
             `http://${hub.address}/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage`,
@@ -2072,6 +2155,7 @@ export async function executeAntigravityIdeAction(action, {
                   newCascadeId,
                   fetchImpl,
                   hub.trajectoryIds || [],
+                  action?.model,
                 )
                 await fetchImpl(
                   `http://${hub.address}/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage`,

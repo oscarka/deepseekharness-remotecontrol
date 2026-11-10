@@ -319,7 +319,7 @@ export class ClaudeAdapter {
     return results
   }
 
-  async createSession({ prompt, cwd, execImpl } = {}) {
+  async createSession({ prompt, cwd, model = '', execImpl } = {}) {
     const text = String(prompt || '').trim()
     if (!text) return { ok: false, error: '请输入新建任务的指令内容' }
     const bin = this.binaryPath || findClaudeBinary()
@@ -327,7 +327,9 @@ export class ClaudeAdapter {
     if (!bin && !runExec) {
       return { ok: false, error: '当前电脑未检测到 claude CLI 可执行文件' }
     }
-    const args = ['-p', text]
+    const cleanModel = String(model || '').trim()
+    const modelFlags = cleanModel ? ['--model', cleanModel] : []
+    const args = [...modelFlags, '-p', text]
     if (runExec) {
       await runExec(bin || 'claude', args, { cwd: cwd || undefined, timeout: 60_000 })
       return {
@@ -352,7 +354,7 @@ export class ClaudeAdapter {
     }
   }
 
-  async sendPrompt({ sessionId, text, cwd, mode = 'prompt', execImpl } = {}) {
+  async sendPrompt({ sessionId, text, cwd, model = '', mode = 'prompt', execImpl } = {}) {
     const rawId = toRawClaudeId(sessionId)
     const prompt = String(text || '').trim()
     if (!prompt) return { ok: false, error: '请输入指令内容' }
@@ -375,7 +377,9 @@ export class ClaudeAdapter {
     if (!bin && !runExec) {
       return { ok: false, error: '当前电脑未检测到 claude CLI 可执行文件' }
     }
-    const args = ['--resume', rawId, '-p', prompt]
+    const cleanModel = String(model || '').trim()
+    const modelFlags = cleanModel ? ['--model', cleanModel] : []
+    const args = ['--resume', rawId, ...modelFlags, '-p', prompt]
     if (runExec) {
       await runExec(bin || 'claude', args, { cwd: cwd || undefined, timeout: 60_000 })
       return {

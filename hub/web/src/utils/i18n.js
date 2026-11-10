@@ -328,9 +328,20 @@ const EXACT_ZH_TO_EN = {
   '🔗 生成 AES-256 端到端加密回放链接': '🔗 Create AES-256 Encrypted Share Link',
   '🗑️ 删除此条会话记录': '🗑️ Delete Conversation',
   '⚠️ 再次点击确认彻底删除': '⚠️ Tap Again to Confirm Delete',
+  '🤖 选择 AI 模型': '🤖 Select AI Model',
+  '切换当前对话使用的 AI 模型': 'Switch the AI model for this conversation',
+  '不强制覆盖，沿用该会话在电脑端已选的模型配置': 'Use the default model configured on your computer',
+  '当前已选 ✓': 'Selected ✓',
+  '选择 ›': 'Select ›',
+  '🤖 默认模型 ▾': '🤖 Default ▾',
+  '切换 AI 模型': 'Switch AI Model',
+  '选择新建对话使用的 AI 模型': 'Select AI Model for New Conversation',
 };
 
 const REGEX_ZH_TO_EN = [
+  [/^🤖 选择模型 · (.+)$/, '🤖 Select Model · $1'],
+  [/^✨ 跟随电脑端当前默认 \((.+)\)$/, '✨ Computer Default ($1)'],
+  [/^🤖 默认 \((.+)\)$/, '🤖 Default ($1)'],
   [/^全部电脑 \((\d+)\)$/, 'All Computers ($1)'],
   [/^已接入电脑 \((\d+) 台 · 点击卡片展开详情\)$/, 'Connected Computers ($1 · tap card for details)'],
   [/^端到端加密分享记录 \((\d+)\)$/, 'Encrypted Share History ($1)'],

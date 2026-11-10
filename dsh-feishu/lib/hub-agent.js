@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { checkAccessibilityPermission, getTurboNativeBinaryPath, TurboController } from '../../dsh-turbo/index.js'
 import {
+  discoverAntigravityModelCatalog,
   executeAntigravityIdeAction,
   getDefaultAntigravityBrainDirs,
   isAntigravityIdeSessionId,
@@ -26,7 +27,7 @@ import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHom
 import { decorateTaskMetadata, HarnessRouter } from './harness-router.js'
 import { ClaudeAdapter } from './harnesses/claude-adapter.js'
 import { CodexAdapter } from './harnesses/codex-adapter.js'
-import { DshHeadlessRunner } from './harnesses/dsh-headless-adapter.js'
+import { discoverDshModels, DshHeadlessRunner } from './harnesses/dsh-headless-adapter.js'
 import { safeError } from './redact.js'
 import {
   collectHostSystemTelemetry,
@@ -112,6 +113,7 @@ export class HubAgent {
     this.recentDshApprovals = new Map()
     this.deletedAgyIds = new Set()
     this.pendingUserPrompts = new Map()
+    this.sessionModelOverrides = new Map()
     this.lastStatsAt = 0
     this.executedIds = new Set()
     this.identity = null
@@ -516,6 +518,46 @@ export class HubAgent {
       bridgeState.workspaces = [...wsSet]
       bridgeState.agentVersion = AGENT_VERSION
       bridgeState.harnesses = this.harnessRouter ? await this.harnessRouter.getAdaptersHealth() : []
+      try {
+        const dshCatalog = discoverDshModels(this.config?.dshHome)
+        const agyCatalog = await discoverAntigravityModelCatalog({
+          execImpl: this.execImpl,
+          fetchImpl: this.fetch,
+        })
+        bridgeState.modelCatalog = {
+          dsh: dshCatalog,
+          'antigravity-ide': agyCatalog,
+          claude: {
+            defaultModel: 'sonnet',
+            defaultLabel: 'Claude Sonnet (默认)',
+            models: [
+              { value: 'sonnet', label: 'Claude Sonnet (均衡推荐)' },
+              { value: 'opus', label: 'Claude Opus (深度推理)' },
+              { value: 'haiku', label: 'Claude Haiku (极速轻量)' },
+            ],
+          },
+          codex: {
+            defaultModel: 'gpt-5.4',
+            defaultLabel: 'GPT-5.4 (默认)',
+            models: [
+              { value: 'gpt-5.4', label: 'GPT-5.4' },
+              { value: 'gpt-5.3-codex', label: 'GPT-5.3-Codex' },
+              { value: 'o3', label: 'o3 (深度推理)' },
+              { value: 'o4-mini', label: 'o4-mini (快速)' },
+            ],
+          },
+        }
+        for (const t of bridgeState.tasks || []) {
+          const override = this.sessionModelOverrides.get(t.id)
+          if (override) {
+            t.model = override
+          } else if (!t.model && t.harness === 'dsh' && dshCatalog?.defaultLabel) {
+            t.model = dshCatalog.defaultLabel
+          } else if (!t.model && t.harness === 'antigravity-ide' && agyCatalog?.defaultLabel) {
+            t.model = agyCatalog.defaultLabel
+          }
+        }
+      } catch {}
       bridgeState.turbo = this.turbo
         ? this.turbo.getTelemetry()
         : {
@@ -1159,10 +1201,15 @@ export class HubAgent {
             effectiveText = persisted.enrichPrompt(effectiveText)
           }
 
+          const requestedModel = String(cmd.model || '').trim()
+          if (requestedModel && targetId) {
+            this.sessionModelOverrides.set(targetId, requestedModel)
+          }
+
           if (isAntigravityIdeSessionId(targetId)) {
             const sess = (this.cachedAgySessions || []).find(s => s.id === targetId)
             const res = await executeAntigravityIdeAction(
-              { type, agentId: targetId, text: effectiveText, cwd: sess?.cwd || cmd.cwd, imagePaths },
+              { type, agentId: targetId, text: effectiveText, cwd: sess?.cwd || cmd.cwd, model: requestedModel, imagePaths },
               { execImpl: this.execImpl },
             )
             if (res.ok && (type === 'prompt' || type === 'steer')) {
@@ -1211,6 +1258,7 @@ export class HubAgent {
                 sessionId: targetId,
                 text: effectiveText,
                 cwd: extSess?.cwd || cmd.cwd,
+                model: requestedModel,
                 imagePaths,
                 mode: type,
                 execImpl: this.execImpl,
@@ -1237,6 +1285,7 @@ export class HubAgent {
                 sessionId: targetId,
                 text: trimmedText,
                 cwd: diskSess.cwd || cmd.cwd,
+                model: requestedModel,
               })
               if (headlessRes.ok && trimmedText) {
                 const nowTs = Date.now()
@@ -1281,6 +1330,7 @@ export class HubAgent {
             imagePaths = persisted.imagePaths
             effectivePrompt = persisted.enrichPrompt(effectivePrompt)
           }
+          const requestedNewModel = String(cmd.model || '').trim()
           if (cmd.harness === 'antigravity-ide') {
             const agyRes = await executeAntigravityIdeAction(
               {
@@ -1288,10 +1338,14 @@ export class HubAgent {
                 title: cmd.title,
                 prompt: effectivePrompt,
                 cwd: cmd.cwd,
+                model: requestedNewModel,
                 imagePaths,
               },
               { execImpl: this.execImpl },
             )
+            if (agyRes?.agentId && requestedNewModel) {
+              this.sessionModelOverrides.set(agyRes.agentId, requestedNewModel)
+            }
             return {
               ...agyRes,
               ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),
@@ -1303,6 +1357,7 @@ export class HubAgent {
               title: cmd.title,
               prompt: effectivePrompt,
               cwd: cmd.cwd,
+              model: requestedNewModel,
               imagePaths,
               execImpl: this.execImpl,
             })
@@ -1322,7 +1377,11 @@ export class HubAgent {
               title: cmd.title,
               text: effectivePrompt,
               cwd: newCwd,
+              model: requestedNewModel,
             })
+            if (hlNewRes?.agentId && requestedNewModel) {
+              this.sessionModelOverrides.set(hlNewRes.agentId, requestedNewModel)
+            }
             return {
               ...hlNewRes,
               ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),
@@ -1398,12 +1457,12 @@ export class HubAgent {
         case 'upgrade_turbo': {
           const runExec = this.execImpl || execFileAsync
           try {
-            await runExec('git', ['-C', REPO_ROOT, 'fetch', 'origin', 'main'], { timeout: 15_000 })
-            await runExec('git', ['-C', REPO_ROOT, 'checkout', 'main'], { timeout: 10_000 })
-            await runExec('git', ['-C', REPO_ROOT, 'pull', '--ff-only', 'origin', 'main'], { timeout: 15_000 })
+            await runExec('git', ['-C', REPO_ROOT, 'fetch', 'origin', 'main'], { timeout: 30_000 })
+            await runExec('git', ['-C', REPO_ROOT, 'checkout', 'main'], { timeout: 15_000 })
+            await runExec('git', ['-C', REPO_ROOT, 'pull', '--ff-only', 'origin', 'main'], { timeout: 30_000 })
           } catch {
             try {
-              await runExec('git', ['-C', REPO_ROOT, 'reset', '--hard', 'origin/main'], { timeout: 15_000 })
+              await runExec('git', ['-C', REPO_ROOT, 'reset', '--hard', 'origin/main'], { timeout: 25_000 })
             } catch {}
           }
           try {

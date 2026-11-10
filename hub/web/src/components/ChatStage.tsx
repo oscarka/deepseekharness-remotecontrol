@@ -94,54 +94,74 @@ export function ChatStage() {
           style="display:none;"
           onChange={e => (window as any).onChatImageSelected?.(e, 'chat')}
         />
-        <button
-          type="button"
-          class="voice-btn image-upload-btn"
-          id="chatImageBtn"
-          title="从手机相册上传截图或照片"
-          aria-label="上传截图或照片"
-          onClick={e => {
-            e.preventDefault();
-            e.stopPropagation();
-            (window as any).triggerImagePicker?.('chat');
-          }}
-        >
-          🖼️
-        </button>
-        <button
-          type="button"
-          class="voice-btn"
-          id="chatVoiceBtn"
-          title="语音输入（点击说话，再点停止）"
-          aria-label="语音输入"
-          onClick={e => {
-            e.preventDefault();
-            e.stopPropagation();
-            (window as any).toggleVoiceInput?.('globalPromptInput', 'chatVoiceBtn');
-          }}
-        >
-          🎤
-        </button>
-        <textarea
-          class="chat-input"
-          id="globalPromptInput"
-          rows={1}
-          placeholder="发指令或点左侧🖼️传截图..."
-          autocorrect="on"
-          autocapitalize="sentences"
-          spellcheck={true}
-          onInput={() => (window as any).onComposerInput?.()}
-          onKeyDown={e => (window as any).onComposerKeydown?.(e)}
-          onPaste={e => (window as any).onComposerPaste?.(e, 'chat')}
-        ></textarea>
-        <button
-          type="button"
-          class="send-btn"
-          id="chatSendBtn"
-          onClick={() => (window as any).sendPromptToActiveSession?.()}
-        >
-          发送
-        </button>
+        <div class="composer-unified-card">
+          <textarea
+            class="chat-input"
+            id="globalPromptInput"
+            rows={1}
+            placeholder="发指令继续对话..."
+            autocorrect="on"
+            autocapitalize="sentences"
+            spellcheck={true}
+            onInput={() => (window as any).onComposerInput?.()}
+            onKeyDown={e => (window as any).onComposerKeydown?.(e)}
+            onPaste={e => (window as any).onComposerPaste?.(e, 'chat')}
+          ></textarea>
+          <div class="composer-toolbar-row">
+            <div class="composer-tools-left">
+              <button
+                type="button"
+                class="voice-btn composer-mini-btn image-upload-btn"
+                id="chatImageBtn"
+                title="从手机相册上传截图或照片"
+                aria-label="上传截图或照片"
+                onClick={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  (window as any).triggerImagePicker?.('chat');
+                }}
+              >
+                🖼️
+              </button>
+              <button
+                type="button"
+                class="voice-btn composer-mini-btn"
+                id="chatVoiceBtn"
+                title="语音输入（点击说话，再点停止）"
+                aria-label="语音输入"
+                onClick={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  (window as any).toggleVoiceInput?.('globalPromptInput', 'chatVoiceBtn');
+                }}
+              >
+                🎤
+              </button>
+              <button
+                type="button"
+                class="composer-model-pill"
+                id="chatModelBtn"
+                title="切换当前对话使用的 AI 模型"
+                onClick={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  (window as any).openModelPickerSheet?.('chat');
+                }}
+              >
+                <span id="chatModelBtnLabel">🤖 默认模型</span>
+                <span style="opacity:0.65;font-size:10px;margin-left:2px;">▾</span>
+              </button>
+            </div>
+            <button
+              type="button"
+              class="send-btn composer-send-btn"
+              id="chatSendBtn"
+              onClick={() => (window as any).sendPromptToActiveSession?.()}
+            >
+              发送
+            </button>
+          </div>
+        </div>
       </div>
     </section>
   );

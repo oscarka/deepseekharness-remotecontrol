@@ -128,6 +128,88 @@ export function findDshBinary() {
   return ''
 }
 
+export function discoverDshModels(dshHome) {
+  const resolvedHome = resolve(dshHome || join(homedir(), '.dsh'))
+  const models = []
+  const seen = new Set()
+  let defaultProvider = ''
+  let defaultModel = ''
+  let defaultEffort = ''
+
+  const addModel = (value, label) => {
+    const v = String(value || '').trim()
+    if (!v || seen.has(v)) return
+    seen.add(v)
+    models.push({ value: v, label: String(label || v).trim() })
+  }
+
+  for (const profileName of ['desktop', 'web']) {
+    const pFile = join(resolvedHome, 'profiles', profileName, 'cordis.patch.yml')
+    try {
+      if (!existsSync(pFile)) continue
+      const raw = readFileSync(pFile, 'utf8')
+      const blocks = raw.split(/\n(?=- id:\s*)/)
+      for (const block of blocks) {
+        const idMatch = block.match(/^- id:\s*(\S+)/m)
+        const blockId = idMatch ? idMatch[1].replace(/['"]/g, '') : ''
+        if (blockId === 'agent-default-model' && !defaultModel) {
+          const provM = block.match(/^\s*provider:\s*(\S+)/m)
+          const modM = block.match(/^\s*model:\s*(\S+)/m)
+          const effM = block.match(/^\s*reasoningEffort:\s*(\S+)/m)
+          if (provM) defaultProvider = provM[1].replace(/['"]/g, '')
+          if (modM) defaultModel = modM[1].replace(/['"]/g, '')
+          if (effM) defaultEffort = effM[1].replace(/['"]/g, '')
+        }
+        if (blockId === 'llm-pi-ai') {
+          let currentProvider = 'openai'
+          for (const line of block.split('\n')) {
+            const provHeader = line.match(/^\s{6}([a-zA-Z0-9_-]+):\s*$/)
+            if (provHeader && provHeader[1] !== 'providers' && provHeader[1] !== 'models') {
+              currentProvider = provHeader[1]
+            }
+            const idLine = line.match(/^\s*-\s*id:\s*(\S+)/)
+            if (idLine) {
+              const mid = idLine[1].replace(/['"]/g, '')
+              addModel(`${currentProvider}::${mid}`, `${mid}`)
+            }
+            const nameLine = line.match(/^\s*name:\s*(\S+)/)
+            if (nameLine && models.length > 0) {
+              const mname = nameLine[1].replace(/['"]/g, '')
+              const last = models[models.length - 1]
+              if (last && last.value.startsWith(`${currentProvider}::`) && mname && mname !== last.label) {
+                last.label = `${mname} (${last.label})`
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  addModel('deepseek-account::deepseek-flash::high', 'DeepSeek Flash (High 深度思考)')
+  addModel('deepseek-account::deepseek-flash::medium', 'DeepSeek Flash (Medium 均衡)')
+  addModel('deepseek-account::deepseek-flash::low', 'DeepSeek Flash (Low 极速)')
+  addModel('deepseek-account::deepseek-reasoner', 'DeepSeek R1 (Reasoner)')
+  addModel('deepseek-account::deepseek-chat', 'DeepSeek V3 (Chat)')
+
+  let defaultValue = ''
+  let defaultLabel = 'DeepSeek 默认模型'
+  if (defaultModel) {
+    defaultValue = defaultProvider
+      ? `${defaultProvider}::${defaultModel}${defaultEffort ? `::${defaultEffort}` : ''}`
+      : defaultModel
+    const matched = models.find(
+      m => m.value === defaultValue || m.value === `${defaultProvider}::${defaultModel}` || m.value.endsWith(`::${defaultModel}`),
+    )
+    defaultLabel = matched ? matched.label : `${defaultModel}${defaultEffort ? ` (${defaultEffort})` : ''}`
+  }
+  return {
+    defaultModel: defaultValue,
+    defaultLabel,
+    models,
+  }
+}
+
 export function buildDshHeadlessPatchFile(dshHome) {
   const resolvedHome = resolve(dshHome || join(homedir(), '.dsh'))
   mkdirSync(resolvedHome, { recursive: true })
@@ -155,7 +237,20 @@ export function buildDshHeadlessPatchFile(dshHome) {
   const exitFn = c.get("appExit") || ((code) => process.exit(code));
   try {
     await c.get("loader")?.await?.();
-    const sel = c.agentDefaultModel.currentSelection();
+    const baseSel = c.agentDefaultModel.currentSelection() || {};
+    const rawModelOverride = String(process.env.DSH_REMOTE_MODEL || "").trim();
+    let sel = { ...baseSel };
+    if (rawModelOverride) {
+      const parts = rawModelOverride.split("::");
+      if (parts.length >= 2) {
+        sel.provider = parts[0] || baseSel.provider;
+        sel.model = parts[1] || baseSel.model;
+        if (parts[2]) sel.reasoningEffort = parts[2];
+        else delete sel.reasoningEffort;
+      } else {
+        sel.model = rawModelOverride;
+      }
+    }
     const agentOptions = { provider: sel.provider, model: sel.model };
     const setup = (agentCtx) => {
       agentCtx.on("system-prompt/assemble", async (_a, _ctx, next) => {
@@ -328,6 +423,7 @@ export class DshHeadlessRunner {
     cwd = '',
     isNew = false,
     title = '',
+    model = '',
     desktopBusy = false,
     questionReply = null,
   } = {}) {
@@ -408,6 +504,7 @@ export class DshHeadlessRunner {
             DSH_REMOTE_TASK: cleanText,
             DSH_REMOTE_QUESTION_REPLY_JSON: questionReplyJson,
             DSH_REMOTE_TITLE: String(title || '').trim(),
+            DSH_REMOTE_MODEL: String(model || '').trim(),
             DSH_REMOTE_CWD: targetCwd,
           },
           stdio: ['ignore', 'pipe', 'pipe'],
