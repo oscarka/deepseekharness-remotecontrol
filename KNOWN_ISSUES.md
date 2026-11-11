@@ -22,6 +22,13 @@
 - **临时办法**：先停止，再带新指令重开
 - **状态**：不在近期计划内
 
+### WorkBuddy 桌面端对已打开会话有内存缓存
+
+- **现象**：手机上给 WorkBuddy 会话发消息并收到回复后（数据已完整写入 `~/.workbuddy/projects/<slug>/<id>.jsonl` 与 `workbuddy.db`），电脑上正在运行且已点开过该会话的 WorkBuddy 桌面端不会实时刷新显示新消息
+- **原因**：WorkBuddy 桌面端后台 `daemon-app-server`（`ConversationBridge._pool`）与渲染层（`rehydrateConversation`）将已加载会话缓存在内存中，不监听外部进程对 `.jsonl` 的追加写入；其内部网关受进程内存随机密钥保护，外部进程不应绕过
+- **临时办法**：手机端可随时连续收发；回到电脑前如需在 WorkBuddy 桌面端查看手机期间的记录，按 `Cmd + Q` 重开一次 WorkBuddy 桌面端即可完整加载
+- **状态**：上游桌面端架构限制
+
 ---
 
 ## 部署限制

@@ -1566,7 +1566,13 @@ export class WorkBuddyAdapter {
 
   _resolveDefaultNewSessionCwd(explicitCwd = '') {
     const trimmed = String(explicitCwd || '').trim()
-    if (trimmed) return path.resolve(trimmed)
+    const isInternalOrOldPlayground =
+      !trimmed ||
+      trimmed.includes(`${path.sep}.dsh${path.sep}`) ||
+      /[\\/]WorkBuddy[\\/]\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}$/.test(trimmed)
+    if (!isInternalOrOldPlayground) {
+      return path.resolve(trimmed)
+    }
     if (this.spawnImpl === cpSpawn) {
       try {
         const wbPlaygroundRoot = path.join(os.homedir(), 'WorkBuddy')
@@ -1582,7 +1588,7 @@ export class WorkBuddyAdapter {
         // ignore playground mkdir errors
       }
     }
-    return process.cwd()
+    return trimmed ? path.resolve(trimmed) : process.cwd()
   }
 
   async _syncSessionToWorkBuddyDb({
