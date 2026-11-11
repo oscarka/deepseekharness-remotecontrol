@@ -8,6 +8,7 @@
 
 - 修复 `/api/events` SSE 长连接满 300 秒被 Google Cloud Run 强制截断（`Truncated response body`）导致复用同一 HTTP/2 连接的 iOS 移动端 `POST /command` 偶发抛出 `Load failed` 审批异常报错的问题（新增 240 秒服务端优雅轮转 `event: rotate` + 浏览器与 Host 端平滑换流）
 - 为 `dispatchHostCommand` 与 `HubCore.queueCommand` 增加客户端幂等 `id` 去重及网络闪断自动静默重试，消除手机唤醒/切网瞬间的偶发红字报错
+- 完善腾讯 WorkBuddy（v5.9.3）真机生产闭环：通过 `ACC_PRODUCT_CONFIG_PATH` 隔离独立 `workbuddy-cli` OAuth 凭证（与桌面端加密凭证互不覆盖，支持自动弹浏览器授权与 `daemon.mjs --workbuddy-login` 预授权）、支持 Streamable HTTP POST SSE 流式帧解析与 `takeWriter: true` 会话接管、按会话 `cwd` 隔离 `codebuddy --serve` 进程池（含进程退出自动重拉）、手机新建会话自动创建 `~/WorkBuddy/<时间戳>` Playground 目录，以及 `workbuddy.db` 与 `.jsonl` 双向落盘同步
 
 ## [0.5.5] - 2026-11-11
 

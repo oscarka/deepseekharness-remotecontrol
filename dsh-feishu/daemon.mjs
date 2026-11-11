@@ -19,10 +19,35 @@ import { FeishuBridge } from './lib/bridge.js'
 import { HubAgent } from './lib/hub-agent.js'
 import { listWorkspaceFiles, readWorkspaceFile } from './lib/workspace-ops.js'
 
+import { WorkBuddyAdapter } from './lib/harnesses/workbuddy-adapter.js'
+
 const once = process.argv.includes('--once')
 const replace = process.argv.includes('--replace')
 const workbuddyLogin = process.argv.includes('--workbuddy-login')
 const config = await loadSettings(resolveConfig())
+
+const runStandaloneWorkBuddyLogin = async () => {
+  const wbAdapter = new WorkBuddyAdapter({ logger: console })
+  if (!wbAdapter.isAvailable()) {
+    console.error('❌ 未检测到本机安装的 WorkBuddy / codebuddy CLI')
+    return false
+  }
+  console.log('🔐 正在拉起 WorkBuddy CLI 浏览器授权登录，请在电脑弹出的浏览器页面点击确认授权...')
+  const authRes = await wbAdapter.authenticate()
+  wbAdapter.shutdown()
+  if (authRes?.ok) {
+    const who = authRes.userInfo?.userName || authRes.userInfo?.userId || '已授权账号'
+    console.log(`✅ WorkBuddy CLI 浏览器授权成功 (${who})！正在运行的后台守护进程将自动生效。`)
+    return true
+  }
+  console.warn(`⚠️ WorkBuddy CLI 浏览器授权未完成: ${authRes?.error || 'unknown error'}`)
+  return false
+}
+
+if (workbuddyLogin && once && !config.hubUrl) {
+  const ok = await runStandaloneWorkBuddyLogin()
+  process.exit(ok ? 0 : 1)
+}
 
 if (!config.hubUrl) {
   console.error('❌ 缺少 FEISHU_HUB_URL 配置，请先在 ~/.dsh/feishu.env 中设置 FEISHU_HUB_URL 和 FEISHU_HUB_TOKEN')
@@ -38,6 +63,10 @@ if (!once) {
     replace,
   })
   if (!daemonLock.acquired) {
+    if (workbuddyLogin) {
+      const ok = await runStandaloneWorkBuddyLogin()
+      process.exit(ok ? 0 : 1)
+    }
     console.log(
       `ℹ️ 守护进程已在运行中 (PID: ${daemonLock.existing?.pid || 'unknown'}, bootId: ${daemonLock.existing?.bootId || ''})，本次启动自动退出（如需替换请加 --replace）`,
     )
