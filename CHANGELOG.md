@@ -2,6 +2,16 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.5.9] - 2026-11-11
+
+### Fixed
+
+- 修复多主机大工作区下移动端前台频繁弹出「网络连接中断，正在自动重连…」的问题：
+  - `HubCore.compactBridgeStateForWire` 区分活跃会话与冷门历史会话预算（活跃会话保留 14 条详情，冷门空闲会话压缩为 3 条短摘要并支持点开对话时毫秒级静默按需回填全文），将 3 台电脑 65+ 会话的 `/api/state` 与 SSE 单帧压缩体积从 ~1MB 降至 ~100–200KB
+  - `hub/server.js` 为浏览器 `/api/events` SSE 增加首帧立即推送 + 450ms 多主机心跳突发合并节流、`TCP_NODELAY`、`X-Accel-Buffering: no` 与 12 秒保活 `ping`
+  - 前端 `fetchState()` 升级为单飞去重 + 12 秒 `AbortController` 超时 + 350ms 自动静默重试 + SSE 存活感知防抖（SSE 正常收包时绝不因后台兜底拉取偶发重置而误报断网横幅），并消除点击审批/发消息后的重复 `/api/state` 并发洪峰与 240 秒 SSE 轮转时的冗余拉取
+- 优化移动端「设备与设置」主机一键升级版本号语义比对（`compareSemver`），支持直接从手机一键触发旧版 Mac mini 拉取最新 `main` 并热重启守护进程
+
 ## [0.5.8] - 2026-11-11
 
 ### Added

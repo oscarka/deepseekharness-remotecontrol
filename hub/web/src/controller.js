@@ -550,6 +550,8 @@ export function initHubController() {
 
   // ==================== 3. 数据聚合与扁平化 ====================
   const expandedTranscriptBySession = new Map();
+  const hydratedWireTranscriptBySession = new Map();
+  const hydratingWireSessionIds = new Set();
   const OPT_MSGS_STORAGE_KEY = 'dsh_optimistic_msgs_v1';
 
   function ensureOptimisticMsgsMap() {
@@ -618,7 +620,17 @@ export function initHubController() {
       for (const t of tasks) {
         const ts = t.updatedAt || t.lastActivity || 0;
         const pendingApp = approvals.find(a => a.agentId === t.id);
-        const wireTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
+        const rawWireTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
+        const hydratedWire = hydratedWireTranscriptBySession.get(t.id);
+        const wireTranscript =
+          hydratedWire &&
+          Array.isArray(hydratedWire.transcript) &&
+          hydratedWire.transcript.length >= rawWireTranscript.length &&
+          t.status !== 'running' &&
+          t.status !== 'approval' &&
+          (!t.sessionRev || !hydratedWire.sessionRev || hydratedWire.sessionRev === t.sessionRev)
+            ? [...hydratedWire.transcript]
+            : rawWireTranscript;
         const serverWireTotalCount = Math.max(
           Number(t.totalTranscriptCount) || 0,
           Number(t.messageCount) || 0,
@@ -844,6 +856,7 @@ export function initHubController() {
           transcript,
           _wireTranscript: wireTranscript,
           _wireTotalCount: serverWireTotalCount,
+          _wireTruncated: Boolean(t.wireTruncated && wireTranscript === rawWireTranscript),
         });
       }
     }
@@ -1371,6 +1384,9 @@ export function initHubController() {
     document.body.classList.add('mobile-chat-open');
     lastRenderedChatKey = ''; // 切换会话时强制渲染
     renderActiveChatStage(found);
+    if (found.session._wireTruncated && !expandedTranscriptBySession.has(found.session.id)) {
+      void hydrateColdSessionTranscript(found.session.hostId, found.session.id, found.session.sessionRev || '');
+    }
     // 重新进入上次读到一半的会话时，如果不在底部，直接浮出「最新消息」
     const box = document.getElementById('chatMessages');
     if (box && box.scrollHeight - box.scrollTop - box.clientHeight >= 120) {
@@ -1937,6 +1953,34 @@ export function initHubController() {
     lastRenderedChatSessionId = s.id;
   }
 
+  async function hydrateColdSessionTranscript(hostId, sessionId, sessionRev = '') {
+    if (!hostId || !sessionId || hydratingWireSessionIds.has(sessionId)) return;
+    const existing = hydratedWireTranscriptBySession.get(sessionId);
+    if (existing && (!sessionRev || existing.sessionRev === sessionRev)) return;
+    hydratingWireSessionIds.add(sessionId);
+    try {
+      const res = await apiFetch(
+        `/api/hosts/${encodeURIComponent(hostId)}/sessions/${encodeURIComponent(sessionId)}/transcript`
+      );
+      const data = await res.json();
+      if (data?.ok && Array.isArray(data.transcript) && data.transcript.length > 0) {
+        hydratedWireTranscriptBySession.set(sessionId, {
+          transcript: data.transcript,
+          sessionRev: data.sessionRev || sessionRev || '',
+          fetchedAt: Date.now(),
+        });
+        if (activeSessionId === sessionId) {
+          lastRenderedChatKey = '';
+          renderAll();
+        }
+      }
+    } catch {
+      // 静默按需回填云端完整会话缓存，失败时保留预览不打扰用户
+    } finally {
+      hydratingWireSessionIds.delete(sessionId);
+    }
+  }
+
   async function loadEarlierTranscript(hostId, sessionId, btnEl) {
     if (!hostId || !sessionId) return;
     if (btnEl) {
@@ -2477,8 +2521,7 @@ export function initHubController() {
       persistOptimisticMsgsMap();
     }
 
-    setTimeout(fetchState, 250);
-    setTimeout(fetchState, 800);
+    scheduleFallbackStateSync();
 
     if (cmdId) {
       (async () => {
@@ -2503,7 +2546,7 @@ export function initHubController() {
                   renderAttachmentStrip('chat');
                 }
               }
-              fetchState();
+              scheduleFallbackStateSync();
               return;
             }
           } catch { }
@@ -2525,8 +2568,7 @@ export function initHubController() {
       type: 'stop',
       agentId: found.session.id,
     });
-    setTimeout(fetchState, 250);
-    setTimeout(fetchState, 800);
+    scheduleFallbackStateSync();
   }
 
   async function sendApprovalDecision(hostId, code, allow, optionIndex = 1, explicitAgentId = '') {
@@ -2582,8 +2624,7 @@ export function initHubController() {
       showToast('❌ 审批发送异常：' + (err?.message || err));
       return;
     }
-    setTimeout(fetchState, 200);
-    setTimeout(fetchState, 750);
+    scheduleFallbackStateSync();
   }
 
   function getDshQuestionDraft(code, questions = []) {
@@ -2711,8 +2752,7 @@ export function initHubController() {
       showToast('❌ 提交选择异常：' + (err?.message || err));
       return;
     }
-    setTimeout(fetchState, 200);
-    setTimeout(fetchState, 750);
+    scheduleFallbackStateSync();
   }
 
   // ==================== 7. 聊天内「📂 文件速览浮层抽屉」 ====================
@@ -4250,7 +4290,7 @@ export function initHubController() {
       const hubVer = String(buildInfo.version || '0.5.1');
       const hostVer = String(h.bridgeState?.agentVersion || '');
       const isUpgradingHost = Boolean(upgradingHostMap[h.hostId] && Date.now() - upgradingHostMap[h.hostId] < 45000);
-      const isHostOutdated = Boolean(h.online && !isRevoked && (!hostVer || hostVer !== hubVer));
+      const isHostOutdated = Boolean(h.online && !isRevoked && (!hostVer || compareSemver(hostVer, hubVer) < 0));
       const versionBadgeHtml = isUpgradingHost
         ? `<span style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--amber-soft);color:#d97706;">⏳ 正在升级重启...</span>`
         : isHostOutdated
@@ -5146,6 +5186,15 @@ export function initHubController() {
     }, 900);
   }
 
+  function compareSemver(a, b) {
+    const pa = String(a || '').trim().replace(/^v/i, '').split(/[.-]/).map(x => Number(x) || 0);
+    const pb = String(b || '').trim().replace(/^v/i, '').split(/[.-]/).map(x => Number(x) || 0);
+    for (let i = 0; i < 3; i += 1) {
+      if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) < (pb[i] || 0) ? -1 : 1;
+    }
+    return 0;
+  }
+
   async function upgradeHostTurbo(hostId, hostName = '') {
     const label = hostName || hostId;
     upgradingHostMap[hostId] = Date.now();
@@ -5157,11 +5206,11 @@ export function initHubController() {
     } catch { }
     const startWait = Date.now();
     const pollUpgrade = async () => {
-      await fetchState();
+      await fetchState({ silent: true, forceFresh: true });
       const targetVer = String(hubState.build?.version || hubState.version || '0.5.1').trim();
       const updatedHost = (hubState.hosts || []).find(h => h.hostId === hostId);
       const curVer = String(updatedHost?.bridgeState?.agentVersion || '').trim();
-      if (curVer && curVer === targetVer) {
+      if (curVer && compareSemver(curVer, targetVer) >= 0) {
         delete upgradingHostMap[hostId];
         lastRenderedSettingsKey = '';
         if (currentTab === 'settings') renderSettingsTab();
@@ -5690,20 +5739,60 @@ export function initHubController() {
   }
   let hasLoadedInitialState = false;
   let stateFetchInFlight = false;
+  let inFlightStatePromise = null;
+  let inFlightNeedsFollowup = false;
   let lastStateFetchAt = 0;
   let stateFetchSeq = 0;
-  async function fetchState() {
+  let consecutiveStateFetchFailures = 0;
+  let sseSource = null;
+  let sseConnected = false;
+  let lastSseEventAt = 0;
+  let lastSseStateAt = 0;
+  let sseRotatingUntil = 0;
+
+  async function fetchStateOnceWithTimeout(timeoutMs = 12000) {
+    const canAbort = typeof AbortController === 'function';
+    const ctrl = canAbort ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch { } }, timeoutMs) : null;
+    try {
+      const res = await apiFetch('/api/state', ctrl ? { signal: ctrl.signal } : {});
+      return await res.json();
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  async function runSingleStateFetch({ silent = false } = {}) {
     const mySeq = ++stateFetchSeq;
     stateFetchInFlight = true;
     try {
-      const res = await apiFetch('/api/state');
-      const data = await res.json();
+      let data = null;
+      let lastErr = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          data = await fetchStateOnceWithTimeout(12000);
+          lastErr = null;
+          break;
+        } catch (err) {
+          lastErr = err;
+          const msg = err && err.message ? err.message : String(err);
+          if (msg === 'Unauthorized') throw err;
+          if (mySeq < stateFetchSeq) {
+            return { ok: true, superseded: true };
+          }
+          if (attempt === 0) {
+            await new Promise(r => setTimeout(r, 350));
+          }
+        }
+      }
+      if (lastErr) throw lastErr;
       if (mySeq < stateFetchSeq) {
         return { ok: true, superseded: true };
       }
-      if (data.ok) {
+      if (data && data.ok) {
         hasLoadedInitialState = true;
         lastStateFetchAt = Date.now();
+        consecutiveStateFetchFailures = 0;
         setConnectionBanner(false);
         applyHubState(data);
         renderAll();
@@ -5711,25 +5800,68 @@ export function initHubController() {
         void ensureLocalPushSubscriptionSynced();
         return { ok: true };
       }
-      return { ok: false, error: data.error || '服务端返回异常' };
+      return { ok: false, error: (data && data.error) || '服务端返回异常' };
     } catch (err) {
+      if (mySeq < stateFetchSeq) {
+        return { ok: true, superseded: true };
+      }
       const message = err && err.message ? err.message : String(err);
       if (message !== 'Unauthorized') {
-        setConnectionBanner(true);
+        consecutiveStateFetchFailures += 1;
+        const sseHealthy = sseConnected && (Date.now() - lastSseEventAt < 30000);
+        const browserOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        if (browserOffline || (!sseHealthy && (!silent || consecutiveStateFetchFailures >= 2))) {
+          setConnectionBanner(true);
+        }
       }
       return { ok: false, unauthorized: message === 'Unauthorized', error: message };
     } finally {
-      if (mySeq === stateFetchSeq) {
-        stateFetchInFlight = false;
-      }
+      stateFetchInFlight = false;
     }
   }
 
-  let sseSource = null;
-  let sseConnected = false;
-  let lastSseEventAt = 0;
+  async function fetchState(opts = {}) {
+    const silent = Boolean(opts && typeof opts === 'object' && opts.silent);
+    const forceFresh = Boolean(opts && typeof opts === 'object' && opts.forceFresh);
+    if (inFlightStatePromise) {
+      if (forceFresh) {
+        inFlightNeedsFollowup = true;
+      }
+      return inFlightStatePromise;
+    }
+    inFlightStatePromise = (async () => {
+      let res = await runSingleStateFetch({ silent });
+      if (inFlightNeedsFollowup && res?.ok) {
+        inFlightNeedsFollowup = false;
+        res = await runSingleStateFetch({ silent: true });
+      }
+      inFlightNeedsFollowup = false;
+      return res;
+    })();
+    try {
+      return await inFlightStatePromise;
+    } finally {
+      inFlightStatePromise = null;
+    }
+  }
+
+  function scheduleFallbackStateSync() {
+    const triggeredAt = Date.now();
+    if (!sseConnected) {
+      setTimeout(() => { void fetchState({ silent: true, forceFresh: true }); }, 250);
+      setTimeout(() => { void fetchState({ silent: true, forceFresh: true }); }, 900);
+      return;
+    }
+    setTimeout(() => {
+      if (lastSseStateAt < triggeredAt) {
+        void fetchState({ silent: true, forceFresh: true });
+      }
+    }, 900);
+  }
+
   function connectSSE() {
     if (urlParams.get('nosse') === '1') return;
+    const prevSseEventAt = lastSseEventAt;
     if (sseSource) {
       try { sseSource.close(); } catch { }
     }
@@ -5740,11 +5872,13 @@ export function initHubController() {
       sseSource = new EventSource(url);
       sseSource.onopen = () => {
         sseConnected = true;
+        sseRotatingUntil = 0;
         lastSseEventAt = Date.now();
+        consecutiveStateFetchFailures = 0;
         setConnectionBanner(false);
-        // 仅当当前没有正在进行的 fetchState()，且尚未拉取或距上次拉取已超过 2.5s 时才补拉，避免首屏并发重复拉取两次 /api/state
-        if (!stateFetchInFlight && (!hasLoadedInitialState || Date.now() - lastStateFetchAt > 2500)) {
-          void fetchState();
+        // 仅当尚未加载初始状态，或重连前曾断流超过 15s 时才补拉 /api/state；240s 优雅轮转 (rotate) 零额外大包请求
+        if (!stateFetchInFlight && (!hasLoadedInitialState || !prevSseEventAt || Date.now() - prevSseEventAt > 15000)) {
+          void fetchState({ silent: hasLoadedInitialState });
         }
       };
       sseSource.onerror = () => {
@@ -5752,22 +5886,29 @@ export function initHubController() {
       };
       sseSource.addEventListener('ping', () => {
         sseConnected = true;
+        sseRotatingUntil = 0;
         lastSseEventAt = Date.now();
+        consecutiveStateFetchFailures = 0;
         setConnectionBanner(false);
       });
       sseSource.addEventListener('rotate', () => {
         // 服务端在 Cloud Run 300s 超时前（240s）主动优雅轮转 SSE，前端立即平滑换新流，零报错零断档
+        sseRotatingUntil = Date.now() + 5000;
         connectSSE();
       });
       sseSource.addEventListener('state', evt => {
         try {
           sseConnected = true;
-          lastSseEventAt = Date.now();
+          sseRotatingUntil = 0;
+          const nowEvt = Date.now();
+          lastSseEventAt = nowEvt;
+          lastSseStateAt = nowEvt;
+          consecutiveStateFetchFailures = 0;
           setConnectionBanner(false);
           const data = JSON.parse(evt.data);
           if (data.ok) {
             hasLoadedInitialState = true;
-            lastStateFetchAt = Date.now();
+            lastStateFetchAt = nowEvt;
             applyHubState(data);
             renderAll();
             flushPendingDeepLink();
@@ -5945,7 +6086,10 @@ export function initHubController() {
     copyCodeText,
     openTurboGuideSheet,
     requestHostAxPermission,
+    compareSemver,
     upgradeHostTurbo,
+    hydrateColdSessionTranscript,
+    scheduleFallbackStateSync,
     openModelPickerSheet,
     selectModelFromPicker,
     rawCloseSheet,
@@ -6028,10 +6172,11 @@ export function initHubController() {
     fetchState();
     connectSSE();
   }
-  // 服务端每 15s 发送 event: ping，仅当 SSE 断开或超过 20s 未收到任何事件且无在途请求时才降级轮询兜底
+  // 服务端每 12s 发送 event: ping；跳过 240s 优雅轮转窗口，仅当 SSE 断开或超过 35s 无事件时静默兜底轮询
   setInterval(() => {
-    if (!stateFetchInFlight && (!sseConnected || (Date.now() - lastSseEventAt > 20000))) {
-      fetchState();
+    if (Date.now() < sseRotatingUntil) return;
+    if (!stateFetchInFlight && (!sseConnected || (Date.now() - lastSseEventAt > 35000))) {
+      void fetchState({ silent: true });
     }
   }, 5000);
 }

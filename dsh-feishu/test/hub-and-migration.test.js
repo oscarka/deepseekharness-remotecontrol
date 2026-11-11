@@ -1961,7 +1961,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.5.8')
+  assert.equal(healthRes.build.version, '0.5.9')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 
@@ -4882,4 +4882,135 @@ test('daemon.mjs --workbuddy-login runs as a standalone one-shot CLI command wit
     await new Promise(r => mockAcpServer.close(r)).catch(() => {})
     await rm(tmpDir, { recursive: true, force: true })
   }
+})
+
+test('v0.5.9 Mobile Foreground Connection Stability: hot/cold wire compaction budget, on-demand full transcript hydration, SSE burst coalescing, and semver upgrade checks', async () => {
+  const { gzipSync } = await import('node:zlib')
+  const hub = new HubCore()
+
+  // 1. Simulate 3 Macs × 22 sessions = 66 sessions with heavy assistant replies & thinking (~20MB raw uncompacted)
+  for (let hIdx = 1; hIdx <= 3; hIdx += 1) {
+    const tasks = Array.from({ length: 22 }, (_, tIdx) => {
+      const msgTotal = tIdx === 0 ? 18 : 10
+      const transcript = Array.from({ length: msgTotal }, (__, mIdx) =>
+        mIdx % 2 === 0
+          ? { role: 'user', text: `User prompt ${mIdx} on host-${hIdx} task-${tIdx}` }
+          : {
+              role: 'assistant',
+              text: `Reply ${hIdx}-${tIdx}-${mIdx}: ` + 'A'.repeat(28_000),
+              thinking: `Thought ${hIdx}-${tIdx}-${mIdx}: ` + 'T'.repeat(7_000),
+              tools: Array.from({ length: 12 }, (___, k) => ({
+                name: 'run_command',
+                id: `tc-${k}`,
+                summary: `Step ${k}`,
+                commandLine: `echo ${k} ` + 'X'.repeat(500),
+              })),
+            },
+      )
+      return {
+        id: `sess-${hIdx}-${tIdx}`,
+        title: `Session ${tIdx}`,
+        status: tIdx === 1 ? 'running' : 'idle',
+        updatedAt: Date.now() - tIdx * 60_000,
+        sessionRev: `rev-${hIdx}-${tIdx}`,
+        messageCount: msgTotal,
+        transcript,
+      }
+    })
+    hub.handleHeartbeat({
+      hostId: `mac-${hIdx}`,
+      hostName: `Mac-${hIdx}`,
+      bridgeState: { tasks, approvals: [], workspaces: [] },
+    })
+  }
+
+  const wireState = hub.getFullState()
+  const hotTask = wireState.hosts[0].bridgeState.tasks[0]
+  const coldTask = wireState.hosts[0].bridgeState.tasks[5]
+
+  // Hot top session retains 14 messages; recent reply budget is 24,000 chars
+  assert.equal(hotTask.transcript.length, 14)
+  assert.equal(hotTask.omittedTranscriptCount, 4)
+  assert.equal(hotTask.transcript.at(-1).text.length, 24_000)
+
+  // Cold idle session (index >= 3, idle) compacts to 3 messages & <=1,800 chars, marking wireTruncated: true
+  assert.equal(coldTask.transcript.length, 3)
+  assert.equal(coldTask.wireTruncated, true)
+  assert.equal(coldTask.transcript.at(-1).text.length, 1800)
+
+  // On-demand hydration via getSessionFullTranscript still returns all 10 uncompacted messages (full >28k chars)!
+  const hydrated = hub.getSessionFullTranscript('mac-1', 'sess-1-5')
+  assert.equal(hydrated.ok, true)
+  assert.equal(hydrated.transcript.length, 10)
+  assert.ok(hydrated.transcript.at(-1).text.length > 28_000)
+
+  // Total compressed /api/state across all 3 Macs (66 heavy sessions) must stay tiny (<80KB gzipped vs ~1MB previously!)
+  const wireJson = JSON.stringify({ ok: true, ...wireState })
+  const gzBytes = gzipSync(Buffer.from(wireJson, 'utf8')).length
+  assert.ok(gzBytes < 120_000, `Expected gzipped 66-session /api/state < 120KB, got ${gzBytes} bytes`)
+
+  // 2. Verify browser SSE burst coalescing in createHubServer while keeping HubCore.onStateChange synchronous
+  let syncHookCalls = 0
+  const unsubSync = hub.onStateChange(() => {
+    syncHookCalls += 1
+  })
+  const { server } = createHubServer({
+    hub,
+    token: 'test-v059-sse-coalesce-secret-123456',
+    requireToken: true,
+    sseMinIntervalMs: 90,
+    sseMaxLifetimeMs: 320,
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const { port } = server.address()
+    const sseResp = await fetch(
+      `http://127.0.0.1:${port}/api/events?initial=0&token=test-v059-sse-coalesce-secret-123456`,
+      {
+        headers: {
+          'accept-encoding': 'gzip',
+          'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15',
+        },
+      },
+    )
+    assert.equal(sseResp.status, 200)
+    const sseTextPromise = sseResp.text()
+
+    // Fire 6 rapid multi-host state mutations immediately once SSE stream is open
+    for (let i = 0; i < 6; i += 1) {
+      hub.handleHeartbeat({
+        hostId: `mac-${(i % 3) + 1}`,
+        hostName: `Mac-${(i % 3) + 1}`,
+        bridgeState: {
+          tasks: [{ id: `rapid-${i}`, title: `Rapid ${i}`, status: 'running', transcript: [] }],
+          approvals: [],
+          workspaces: [],
+        },
+      })
+    }
+    assert.equal(syncHookCalls, 6)
+
+    const rawSse = await sseTextPromise
+    const stateFrames = rawSse.match(/^event: state$/gm) || []
+    // Leading frame + 1 coalesced trailing frame (2 frames total, never all 6!)
+    assert.ok(
+      stateFrames.length >= 2 && stateFrames.length <= 3,
+      `Expected 6 rapid heartbeats to coalesce into 2-3 SSE frames, got ${stateFrames.length}`,
+    )
+    assert.match(rawSse, /rapid-5/)
+  } finally {
+    unsubSync()
+    await new Promise(resolve => server.close(resolve))
+  }
+
+  // 3. Verify built frontend bundle contains v0.5.9 foreground connection resilience & semver host upgrade helpers
+  const assetFiles = await readdir(join(process.cwd(), 'hub/public/assets'))
+  const jsContents = await Promise.all(
+    assetFiles.filter(f => f.endsWith('.js')).map(f => readFile(join(process.cwd(), 'hub/public/assets', f), 'utf8')),
+  )
+  const bundleSrc = jsContents.join('\n')
+  assert.match(bundleSrc, /function compareSemver\(/)
+  assert.match(bundleSrc, /function scheduleFallbackStateSync\(/)
+  assert.match(bundleSrc, /function hydrateColdSessionTranscript\(/)
+  assert.match(bundleSrc, /sseRotatingUntil/)
 })

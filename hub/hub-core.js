@@ -605,31 +605,46 @@ export class HubCore {
     }
     const tasks = Array.isArray(bridgeState.tasks)
       ? bridgeState.tasks.map((nextTask, taskIdx) => {
-          // Server-side transcript & preview budget guard so /api/state and SSE never exceed ~1MB across all hosts
-          const isTopSession = taskIdx < 8 || nextTask?.status === 'running' || nextTask?.status === 'approval'
-          const maxMsgs = isTopSession ? 14 : 6
+          // Server-side transcript & preview budget guard:
+          // Hot sessions (top 3 per host + running/approval) keep 14 messages with generous recent budgets;
+          // Cold idle sessions keep 3 short preview messages and set `wireTruncated: true` for on-demand hydration.
+          const isHotSession =
+            taskIdx < 3 || nextTask?.status === 'running' || nextTask?.status === 'approval'
+          const maxMsgs = isHotSession ? 14 : 3
           const rawTr = Array.isArray(nextTask?.transcript) ? nextTask.transcript : []
           const totalTranscriptCount = Math.max(Number(nextTask?.messageCount) || 0, rawTr.length)
           const slicedTr = rawTr.length > maxMsgs ? rawTr.slice(-maxMsgs) : rawTr
           const omittedTranscriptCount = Math.max(0, totalTranscriptCount - slicedTr.length)
           const recentCutoff = Math.max(0, slicedTr.length - 4)
+          let wireTruncated = slicedTr.length < rawTr.length
           const compactedTr = slicedTr.map((m, mIdx) => {
             if (!m || typeof m !== 'object') return m
             const { toolCalls: _omitTc, ...mRest } = m
-            if (m.role !== 'assistant') return mRest
-            const isRecent = mIdx >= recentCutoff
-            const maxText = isRecent ? 48000 : 10000
-            const maxThink = isRecent ? 10000 : 600
-            const maxTools = isRecent ? 24 : 6
-            const maxCmd = isRecent ? 1200 : 200
+            if (m.role !== 'assistant') {
+              if (!isHotSession && typeof m.text === 'string' && m.text.length > 2400) {
+                wireTruncated = true
+                return { ...mRest, text: m.text.slice(0, 2400) }
+              }
+              return mRest
+            }
+            const isHotRecent = isHotSession && mIdx >= recentCutoff
+            const maxText = isHotRecent ? 24000 : isHotSession ? 6000 : 1800
+            const maxThink = isHotRecent ? 3600 : isHotSession ? 400 : 240
+            const maxTools = isHotRecent ? 16 : isHotSession ? 6 : 4
+            const maxCmd = isHotRecent ? 600 : isHotSession ? 180 : 140
             const rawTools = Array.isArray(m.tools) ? m.tools : Array.isArray(m.toolCalls) ? m.toolCalls : []
+            const textTrunc = typeof m.text === 'string' && m.text.length > maxText
+            const thinkTrunc = typeof m.thinking === 'string' && m.thinking.length > maxThink
+            const toolsTrunc = rawTools.length > maxTools
+            if (textTrunc || thinkTrunc || toolsTrunc) {
+              wireTruncated = true
+            }
             return {
               ...mRest,
-              text: typeof m.text === 'string' && m.text.length > maxText ? m.text.slice(0, maxText) : m.text,
-              thinking:
-                typeof m.thinking === 'string' && m.thinking.length > maxThink
-                  ? `${m.thinking.slice(0, maxThink)}\n...(历史思考已折叠)...`
-                  : m.thinking,
+              text: textTrunc ? m.text.slice(0, maxText) : m.text,
+              thinking: thinkTrunc
+                ? `${m.thinking.slice(0, maxThink)}\n...(历史思考已折叠)...`
+                : m.thinking,
               tools: rawTools.slice(0, maxTools).map(tl =>
                 typeof tl === 'string'
                   ? { name: tl, id: '', summary: '', commandLine: '执行完毕' }
@@ -670,6 +685,7 @@ export class HubCore {
             totalTranscriptCount,
             omittedTranscriptCount,
             hasMoreTranscript: omittedTranscriptCount > 0,
+            wireTruncated,
             transcript: compactedTr,
           }
         })

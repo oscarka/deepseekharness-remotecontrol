@@ -180,6 +180,9 @@ export function createHubServer({
   trustProxy,
   logger = console,
   sseMaxLifetimeMs = Number(process.env.HUB_SSE_MAX_LIFETIME_MS) || 240_000,
+  sseMinIntervalMs = Number.isFinite(Number(process.env.HUB_SSE_MIN_INTERVAL_MS))
+    ? Number(process.env.HUB_SSE_MIN_INTERVAL_MS)
+    : 450,
 } = {}) {
   let expectedToken = String(token ?? '').trim()
   if (requireToken) {
@@ -1058,6 +1061,7 @@ export function createHubServer({
           return
         }
 
+        req.socket?.setNoDelay?.(true)
         const useGzip = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''))
         let outStream = res
         if (useGzip) {
@@ -1065,9 +1069,11 @@ export function createHubServer({
             'content-type': 'text/event-stream; charset=utf-8',
             'content-encoding': 'gzip',
             'cache-control': 'no-cache, no-transform',
+            'x-accel-buffering': 'no',
             connection: 'keep-alive',
             'access-control-allow-origin': '*',
           })
+          res.flushHeaders?.()
           const gzStream = createGzip({ flush: zlibConstants.Z_SYNC_FLUSH })
           gzStream.pipe(res)
           outStream = gzStream
@@ -1075,11 +1081,15 @@ export function createHubServer({
           res.writeHead(200, {
             'content-type': 'text/event-stream; charset=utf-8',
             'cache-control': 'no-cache, no-transform',
+            'x-accel-buffering': 'no',
             connection: 'keep-alive',
             'access-control-allow-origin': '*',
           })
+          res.flushHeaders?.()
         }
         let closed = false
+        let lastSsePushAt = 0
+        let pendingSseTimer = null
         const safeWrite = chunk => {
           if (closed || res.writableEnded || res.destroyed) return
           try {
@@ -1088,6 +1098,7 @@ export function createHubServer({
         }
         safeWrite('retry: 1000\n\n')
         const sendEvent = stateData => {
+          lastSsePushAt = Date.now()
           safeWrite(`event: state\ndata: ${JSON.stringify({ ok: true, ...stateData })}\n\n`)
         }
         if (urlObj.searchParams.get('initial') === '0') {
@@ -1095,17 +1106,45 @@ export function createHubServer({
         } else {
           sendEvent(hub.getFullState())
         }
-        const unsubscribe = hub.onStateChange((_evt, stateData) => {
-          sendEvent(stateData)
+        const flushLatestState = () => {
+          pendingSseTimer = null
+          if (closed || res.writableEnded || res.destroyed) return
+          sendEvent(hub.getFullState())
+        }
+        const unsubscribe = hub.onStateChange((evt, stateData) => {
+          if (closed || res.writableEnded || res.destroyed) return
+          const evtName = typeof evt === 'string' ? evt : String(evt?.type || '')
+          const minGap =
+            evtName === 'command_queued' || evtName === 'command_cancelled'
+              ? Math.min(80, sseMinIntervalMs)
+              : sseMinIntervalMs
+          const elapsed = Date.now() - lastSsePushAt
+          if (minGap <= 0 || (elapsed >= minGap && !pendingSseTimer)) {
+            if (pendingSseTimer) {
+              clearTimeout(pendingSseTimer)
+              pendingSseTimer = null
+            }
+            sendEvent(stateData || hub.getFullState())
+            return
+          }
+          if (!pendingSseTimer) {
+            const waitMs = Math.max(16, minGap - elapsed)
+            pendingSseTimer = setTimeout(flushLatestState, waitMs)
+            pendingSseTimer.unref?.()
+          }
         })
         const keepAlive = setInterval(() => {
           safeWrite(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
-        }, 15_000)
+        }, 12_000)
         keepAlive.unref?.()
         const cleanupClientSse = () => {
           if (closed) return
           closed = true
           clearInterval(keepAlive)
+          if (pendingSseTimer) {
+            clearTimeout(pendingSseTimer)
+            pendingSseTimer = null
+          }
           if (rotateTimer) clearTimeout(rotateTimer)
           unsubscribe()
           if (outStream !== res) {
@@ -1115,6 +1154,10 @@ export function createHubServer({
         const rotateTimer =
           sseMaxLifetimeMs > 0
             ? setTimeout(() => {
+                if (pendingSseTimer) {
+                  clearTimeout(pendingSseTimer)
+                  pendingSseTimer = null
+                }
                 safeWrite(`event: rotate\ndata: {"reason":"max_lifetime","ts":${Date.now()}}\n\n`)
                 clearInterval(keepAlive)
                 unsubscribe()
