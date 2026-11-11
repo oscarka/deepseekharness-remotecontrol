@@ -37,6 +37,16 @@ import {
   isVoiceRecording,
   stopVoiceInput,
   toggleVoiceInput,
+  initWechatVoiceMode,
+  isWechatVoiceMode,
+  setWechatVoiceMode,
+  toggleWechatVoiceMode,
+  syncWechatHoldBtnState,
+  startHoldVoice,
+  moveHoldVoice,
+  endHoldVoice,
+  cancelHoldVoice,
+  consumeReturnToVoiceAfterSend,
 } from './hooks/useVoiceInput';
 import { renderQrCodeSvg } from './utils/qrcode';
 import {
@@ -1592,6 +1602,7 @@ export function initHubController() {
       if (voiceBtn) {
         voiceBtn.style.opacity = chatInput.disabled ? '0.52' : '';
       }
+      syncWechatHoldBtnState();
     }
 
     // DOM Diffing：如果会话内容和状态没变，不重绘 #chatMessages，保留用户展开的思考过程与滚动位置！
@@ -2242,6 +2253,9 @@ export function initHubController() {
     input.style.height = '';
     autoGrowComposer();
     renderAttachmentStrip('chat');
+    if (String(input.value || '').trim().length > 0 && isWechatVoiceMode()) {
+      setWechatVoiceMode(false, false, false);
+    }
   }
 
   // ---- 截图 / 照片上传（客户端 Canvas 自动缩放压缩，避免大载荷卡顿） ----
@@ -2269,6 +2283,12 @@ export function initHubController() {
     const strip = document.getElementById(stripId);
     if (!strip) return;
     const list = getAttachmentList(target);
+    if (target === 'chat') {
+      const card = document.getElementById('composerUnifiedCard');
+      if (card && card.classList) {
+        card.classList.toggle('has-attachments', list.length > 0);
+      }
+    }
     if (!list.length || (target === 'chat' && desktopStageMode === 'code')) {
       strip.style.display = 'none';
       strip.innerHTML = '';
@@ -2423,6 +2443,9 @@ export function initHubController() {
     renderAttachmentStrip('chat');
     try { localStorage.removeItem(composerDraftKey(composerSessionId || activeSessionId)); } catch { }
     autoGrowComposer();
+    if (consumeReturnToVoiceAfterSend()) {
+      setWechatVoiceMode(true, false, false);
+    }
 
     const optMap = ensureOptimisticMsgsMap();
     const wireTr = Array.isArray(s._wireTranscript) ? s._wireTranscript : [];
@@ -6037,6 +6060,15 @@ export function initHubController() {
     isVoiceRecording,
     stopVoiceInput,
     toggleVoiceInput,
+    initWechatVoiceMode,
+    isWechatVoiceMode,
+    setWechatVoiceMode,
+    toggleWechatVoiceMode,
+    syncWechatHoldBtnState,
+    startHoldVoice,
+    moveHoldVoice,
+    endHoldVoice,
+    cancelHoldVoice,
     sendPromptToActiveSession,
     cancelQueuedCommand,
     sendQuickFollowup,
@@ -6187,6 +6219,7 @@ export function initHubController() {
     }
   }
   try {
+    initWechatVoiceMode();
     renderAll();
   } catch { }
 

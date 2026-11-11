@@ -94,7 +94,7 @@ export function ChatStage() {
           style="display:none;"
           onChange={e => (window as any).onChatImageSelected?.(e, 'chat')}
         />
-        <div class="composer-unified-card">
+        <div class="composer-unified-card" id="composerUnifiedCard">
           <div
             class="voice-hint-bar"
             id="chatVoiceHintBar"
@@ -118,8 +118,47 @@ export function ChatStage() {
             onKeyDown={e => (window as any).onComposerKeydown?.(e)}
             onPaste={e => (window as any).onComposerPaste?.(e, 'chat')}
           ></textarea>
+          <button
+            type="button"
+            class="wechat-hold-talk-btn"
+            id="wechatHoldTalkBtn"
+            onContextMenu={e => e.preventDefault()}
+            onTouchStart={e => {
+              (window as any).__dshLastHoldTouchAt = Date.now();
+              e.preventDefault();
+              e.stopPropagation();
+              const t = (e as any).touches?.[0];
+              (window as any).startHoldVoice?.(t ? t.clientX : 0, t ? t.clientY : 0);
+            }}
+            onMouseDown={e => {
+              if ((e as any).button !== 0) return;
+              if (Date.now() - ((window as any).__dshLastHoldTouchAt || 0) < 800) return;
+              e.preventDefault();
+              e.stopPropagation();
+              (window as any).startHoldVoice?.((e as any).clientX, (e as any).clientY);
+            }}
+          >
+            <span id="wechatHoldTalkLabel">🎙️ 按住 说话</span>
+          </button>
           <div class="composer-toolbar-row">
             <div class="composer-tools-left">
+              <button
+                type="button"
+                class="voice-btn composer-mini-btn mode-toggle-btn"
+                id="chatVoiceBtn"
+                title="切换为微信式按住说话"
+                aria-label="切换为微信式按住说话"
+                onMouseDown={e => {
+                  e.preventDefault();
+                }}
+                onClick={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  (window as any).toggleWechatVoiceMode?.();
+                }}
+              >
+                🎙️ 语音
+              </button>
               <button
                 type="button"
                 class="voice-btn composer-mini-btn image-upload-btn"
@@ -133,23 +172,6 @@ export function ChatStage() {
                 }}
               >
                 🖼️
-              </button>
-              <button
-                type="button"
-                class="voice-btn composer-mini-btn"
-                id="chatVoiceBtn"
-                title="语音输入（点击直接说话，再点停止）"
-                aria-label="语音输入"
-                onMouseDown={e => {
-                  e.preventDefault();
-                }}
-                onClick={e => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  (window as any).toggleVoiceInput?.('globalPromptInput', 'chatVoiceBtn');
-                }}
-              >
-                🎤
               </button>
               <button
                 type="button"
@@ -175,6 +197,48 @@ export function ChatStage() {
               发送
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* 微信同款全屏按住说话浮层：实时识别文字气泡 + 左滑取消 / 右滑改字 */}
+      <div
+        class="wechat-voice-overlay zone-send"
+        id="wechatVoiceOverlay"
+        style="display:none;"
+        aria-live="polite"
+      >
+        <div class="wechat-voice-bubble-wrap">
+          <div class="wechat-voice-bubble" id="wechatVoiceBubble">
+            <div class="wechat-voice-transcript is-placeholder" id="wechatOverlayTranscript">
+              正在听你说话…
+            </div>
+            <div class="wechat-voice-wave" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+          <div class="wechat-voice-bubble-tail"></div>
+        </div>
+
+        <div class="wechat-voice-actions">
+          <div class="wechat-voice-action-item cancel-zone" id="wechatZoneCancel">
+            <div class="wechat-voice-action-circle">✕</div>
+            <span class="wechat-voice-action-tip">左滑取消</span>
+          </div>
+          <div class="wechat-voice-action-item edit-zone" id="wechatZoneEdit">
+            <div class="wechat-voice-action-circle">文</div>
+            <span class="wechat-voice-action-tip">右滑改字</span>
+          </div>
+        </div>
+
+        <div class="wechat-voice-bottom-dock">
+          <div class="wechat-voice-status-text" id="wechatOverlayStatus">
+            松开 立即发送
+          </div>
+          <div class="wechat-voice-bottom-arc">🎙️</div>
         </div>
       </div>
     </section>

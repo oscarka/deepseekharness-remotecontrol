@@ -1715,6 +1715,155 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
   voice.hideVoiceHintBar()
 })
 
+test('v0.6.4: WeChat-style Hold-to-Talk voice interaction (release to send, slide left to cancel, slide right to edit)', async () => {
+  const hookSource = await readFile(new URL('../../hub/web/src/hooks/useVoiceInput.ts', import.meta.url), 'utf8')
+  const cleanJs = hookSource
+    .replace(/export interface[\s\S]*?\n\}\n/, '')
+    .replace(/export function /g, 'function ')
+    .replace(/: any/g, '')
+    .replace(/: string/g, '')
+    .replace(/: boolean/g, '')
+    .replace(/: void/g, '')
+    .replace(/\?\s*:\s*VoiceControllerDeps/g, '')
+    .replace(/ as [A-Za-z0-9_| <>]+/g, '')
+    .replace(/\(window\)/g, 'window')
+
+  const makeEl = (initialClasses = []) => {
+    const classes = new Set(initialClasses)
+    return {
+      textContent: '',
+      value: '',
+      disabled: false,
+      focused: false,
+      attrs: {},
+      style: { display: 'none' },
+      classes,
+      classList: {
+        add(...items) { for (const c of items) classes.add(c) },
+        remove(...items) { for (const c of items) classes.delete(c) },
+        toggle(c, force) {
+          const next = force === undefined ? !classes.has(c) : Boolean(force)
+          if (next) classes.add(c)
+          else classes.delete(c)
+        },
+        contains(c) { return classes.has(c) },
+      },
+      setAttribute(k, v) { this.attrs[k] = v },
+      focus() { this.focused = true },
+      setSelectionRange() {},
+    }
+  }
+
+  const els = {
+    globalPromptInput: makeEl(['chat-input']),
+    composerUnifiedCard: makeEl(['composer-unified-card']),
+    chatVoiceBtn: makeEl(['voice-btn', 'mode-toggle-btn']),
+    wechatHoldTalkBtn: makeEl(['wechat-hold-talk-btn']),
+    wechatHoldTalkLabel: makeEl(),
+    wechatVoiceOverlay: makeEl(['wechat-voice-overlay']),
+    wechatOverlayTranscript: makeEl(['wechat-voice-transcript']),
+    wechatOverlayStatus: makeEl(['wechat-voice-status-text']),
+    wechatZoneCancel: makeEl(['wechat-voice-action-item']),
+    wechatZoneEdit: makeEl(['wechat-voice-action-item']),
+    chatVoiceHintBar: makeEl(['voice-hint-bar']),
+    newTaskVoiceHintBar: makeEl(['voice-hint-bar']),
+  }
+
+  let lastRec = null
+  let startCount = 0
+  let stopCount = 0
+  let abortCount = 0
+  let sentPrompts = []
+  const toasts = []
+
+  const fakeWin = {
+    innerWidth: 390,
+    innerHeight: 844,
+    webkitSpeechRecognition: class {
+      constructor() { lastRec = this }
+      start() { startCount += 1 }
+      stop() { stopCount += 1 }
+      abort() { abortCount += 1 }
+    },
+    addEventListener() {},
+    removeEventListener() {},
+  }
+  const fakeDoc = {
+    visibilityState: 'visible',
+    activeElement: null,
+    getElementById(id) { return els[id] || null },
+  }
+  const fakeNav = { language: 'zh-CN', maxTouchPoints: 5 }
+
+  const factory = new Function(
+    'window',
+    'document',
+    'navigator',
+    `${cleanJs}\nreturn { computeHoldZone, initWechatVoiceMode, isWechatVoiceMode, toggleWechatVoiceMode, startHoldVoice, moveHoldVoice, endHoldVoice, consumeReturnToVoiceAfterSend };`,
+  )
+  const wv = factory(fakeWin, fakeDoc, fakeNav)
+  const deps = {
+    showToast(msg) { toasts.push(msg) },
+    onComposerInput() {},
+    sendPrompt() { sentPrompts.push(els.globalPromptInput.value) },
+  }
+
+  // 1) Gesture zone geometry: bottom bar -> send; upper-left -> cancel; upper-right -> edit
+  assert.equal(wv.computeHoldZone(195, 800, 390, 844, 800), 'send')
+  assert.equal(wv.computeHoldZone(60, 790, 390, 844, 800), 'send', 'Horizontal drift near bottom stays send')
+  assert.equal(wv.computeHoldZone(90, 680, 390, 844, 800), 'cancel')
+  assert.equal(wv.computeHoldZone(300, 680, 390, 844, 800), 'edit')
+
+  // 2) Mobile defaults to WeChat Hold-to-Talk mode out of the box
+  wv.initWechatVoiceMode()
+  assert.equal(wv.isWechatVoiceMode(), true)
+  assert.equal(els.composerUnifiedCard.classList.contains('wechat-voice-mode'), true)
+  assert.equal(els.chatVoiceBtn.textContent, '⌨️ 打字')
+
+  // 3) Hold -> speak -> release directly -> flushes final tail audio via stop()+onend and immediately sends!
+  assert.equal(wv.startHoldVoice(195, 800, deps), true)
+  assert.equal(startCount, 1)
+  assert.equal(els.wechatVoiceOverlay.style.display, 'flex')
+  assert.equal(els.wechatVoiceOverlay.classList.contains('zone-send'), true)
+  lastRec.onresult({ results: [{ 0: { transcript: '帮我跑一下单元测试' } }] })
+  assert.equal(els.wechatOverlayTranscript.textContent, '帮我跑一下单元测试')
+
+  wv.endHoldVoice(deps)
+  assert.equal(stopCount, 1)
+  // Simulate final tail syllable arriving right after finger lift before onend
+  lastRec.onresult({ results: [{ 0: { transcript: '帮我跑一下单元测试并汇报结果' } }] })
+  lastRec.onend()
+  assert.equal(abortCount >= 1, true)
+  assert.equal(els.wechatVoiceOverlay.style.display, 'none')
+  assert.deepStrictEqual(sentPrompts, ['帮我跑一下单元测试并汇报结果'])
+
+  // 4) Hold -> speak -> slide left-up ('cancel') -> release -> discards speech, sends nothing
+  els.globalPromptInput.value = ''
+  wv.startHoldVoice(195, 800, deps)
+  lastRec.onresult({ results: [{ 0: { transcript: '这句说错了不要发' } }] })
+  assert.equal(wv.moveHoldVoice(80, 660), 'cancel')
+  assert.equal(els.wechatVoiceOverlay.classList.contains('zone-cancel'), true)
+  assert.equal(els.wechatZoneCancel.classList.contains('active'), true)
+  wv.endHoldVoice(deps)
+  assert.equal(sentPrompts.length, 1, 'Cancelled speech must NOT be sent')
+  assert.equal(els.globalPromptInput.value, '')
+  assert.ok(toasts.some(t => t.includes('已取消语音')))
+
+  // 5) Hold -> speak -> slide right-up ('edit') -> release -> switches to text input for editing, then returns to voice mode after send
+  wv.startHoldVoice(195, 800, deps)
+  lastRec.onresult({ results: [{ 0: { transcript: '先放入输入框让我改两个字' } }] })
+  assert.equal(wv.moveHoldVoice(310, 660), 'edit')
+  assert.equal(els.wechatVoiceOverlay.classList.contains('zone-edit'), true)
+  assert.equal(els.wechatZoneEdit.classList.contains('active'), true)
+  wv.endHoldVoice(deps)
+  lastRec.onend()
+  assert.equal(sentPrompts.length, 1, 'Edit mode must NOT auto-send')
+  assert.equal(wv.isWechatVoiceMode(), false, 'Should reveal text input for editing')
+  assert.equal(els.globalPromptInput.value, '先放入输入框让我改两个字')
+  assert.equal(els.globalPromptInput.focused, true)
+  assert.equal(wv.consumeReturnToVoiceAfterSend(), true)
+})
+
 test('antigravity-ide approval sync & RPC: suppresses false-positive pendingApproval when computer auto-approved, annotates sandbox retry, and approves via HandleCascadeUserInteraction RPC', async () => {
   const convId = '5ce97dab-7b27-4285-9b3f-f8d35fc6f541'
   const nowIso = new Date().toISOString()
@@ -1996,7 +2145,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.6.3')
+  assert.equal(healthRes.build.version, '0.6.4')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 
