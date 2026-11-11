@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
-import { chmod, lstat, mkdir, open, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, networkInterfaces } from 'node:os'
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
@@ -21,7 +21,10 @@ function isSystemInjectedUserText(text) {
 }
 
 const MAX_PREVIEW_BYTES = 256 * 1024 // 256 KiB max text/code file preview
-const MAX_IMAGE_PREVIEW_BYTES = 5 * 1024 * 1024 // 5 MiB max image preview
+const MAX_IMAGE_PREVIEW_BYTES = 5 * 1024 * 1024 // 5 MiB max inline legacy image preview
+const DEFAULT_STREAM_CHUNK_BYTES = 2 * 1024 * 1024 // 2 MiB per HTTP 206 Range slice
+const THUMB_MIN_BYTES = 300 * 1024 // Keep small images (<300 KiB) untouched
+const MAX_MEDIA_CACHE_FILES = 100
 const IGNORED_DIRS = new Set(['.git', 'node_modules', '.pnpm-store', '.cache', '.DS_Store', 'dist', 'build'])
 
 const IMAGE_MIME = {
@@ -31,6 +34,19 @@ const IMAGE_MIME = {
   '.gif': 'image/gif',
   '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.avif': 'image/avif',
+  '.heic': 'image/heic',
+  '.heif': 'image/heif',
+}
+
+const VIDEO_MIME = {
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.ogv': 'video/ogg',
 }
 
 /**
@@ -1862,88 +1878,120 @@ export async function listWorkspaceFiles(workspaceRoot, subDir = '') {
   }
 }
 
-/**
- * Read-only workspace file preview (strictly confined inside workspace root or AI artifact roots, with secret redaction).
- */
-export async function readWorkspaceFile(workspaceRoot, relPath = '') {
+async function resolveWorkspaceOrArtifactFile(workspaceRoot, relPath = '', { extraRoots = [] } = {}) {
+  const originalRel = String(relPath || '').trim()
+  let cleanedInput = originalRel.replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim()
   try {
-    const originalRel = String(relPath || '').trim()
-    let cleanedInput = originalRel.replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim()
-    try {
-      if (cleanedInput.includes('%')) cleanedInput = decodeURIComponent(cleanedInput)
-    } catch {}
-    if (cleanedInput.startsWith('~/')) {
-      cleanedInput = join(homedir(), cleanedInput.slice(2))
-    }
+    if (cleanedInput.includes('%')) cleanedInput = decodeURIComponent(cleanedInput)
+  } catch {}
+  if (cleanedInput.startsWith('~/')) {
+    cleanedInput = join(homedir(), cleanedInput.slice(2))
+  }
 
-    const rawRel = cleanedInput.replace(/^([/\\])+/, '').trim()
-    if (!rawRel || rawRel.startsWith('..') || rawRel.includes(`..${sep}`) || rawRel.includes('../') || cleanedInput.includes('../')) {
-      return { ok: false, error: '拒绝越界访问工作区外部文件' }
-    }
+  const rawRel = cleanedInput.replace(/^([/\\])+/, '').trim()
+  if (!rawRel || rawRel.startsWith('..') || rawRel.includes(`..${sep}`) || rawRel.includes('../') || cleanedInput.includes('../')) {
+    return { ok: false, error: '拒绝越界访问工作区外部文件' }
+  }
 
-    const root = workspaceRoot ? await resolveRealRoot(workspaceRoot) : ''
-    let realFile = ''
-    if (cleanedInput.startsWith('/')) {
-      const candidateAbs = resolve(cleanedInput)
-      const allowedArtifactRoots = [
-        root,
-        await resolveRealRoot(join(homedir(), '.gemini', 'antigravity', 'brain')),
-        await resolveRealRoot(join(homedir(), '.gemini', 'antigravity-ide', 'brain')),
-        await resolveRealRoot(join(homedir(), '.dsh')),
-      ].filter(Boolean)
-      let matchedRoot = null
-      for (const ar of allowedArtifactRoots) {
-        if (ar && (candidateAbs === ar || candidateAbs.startsWith(ar + sep))) {
-          matchedRoot = ar
-          break
-        }
+  const root = workspaceRoot ? await resolveRealRoot(workspaceRoot) : ''
+  let realFile = ''
+  if (cleanedInput.startsWith('/')) {
+    const candidateAbs = resolve(cleanedInput)
+    const candidateReal = await realpath(candidateAbs).catch(() => candidateAbs)
+    const extraResolved = []
+    for (const r of extraRoots || []) {
+      if (r) extraResolved.push(await resolveRealRoot(r))
+    }
+    const allowedArtifactRoots = [
+      root,
+      ...extraResolved,
+      await resolveRealRoot(join(homedir(), '.gemini', 'antigravity', 'brain')),
+      await resolveRealRoot(join(homedir(), '.gemini', 'antigravity-ide', 'brain')),
+      await resolveRealRoot(join(homedir(), '.dsh')),
+    ].filter(Boolean)
+    let matchedRoot = null
+    for (const ar of allowedArtifactRoots) {
+      if (ar && (candidateReal === ar || candidateReal.startsWith(ar + sep))) {
+        matchedRoot = ar
+        break
       }
-      if (matchedRoot) {
-        realFile = await resolveSafeTarget(matchedRoot, candidateAbs)
-      } else if (root) {
-        const targetFile = resolve(root, rawRel)
-        realFile = await resolveSafeTarget(root, targetFile)
-      } else {
-        return { ok: false, error: '该任务未关联工作区目录' }
-      }
+    }
+    if (matchedRoot) {
+      realFile = await resolveSafeTarget(matchedRoot, candidateReal)
     } else if (root) {
       const targetFile = resolve(root, rawRel)
       realFile = await resolveSafeTarget(root, targetFile)
     } else {
       return { ok: false, error: '该任务未关联工作区目录' }
     }
+  } else if (root) {
+    const targetFile = resolve(root, rawRel)
+    realFile = await resolveSafeTarget(root, targetFile)
+  } else {
+    return { ok: false, error: '该任务未关联工作区目录' }
+  }
 
-    const returnRelPath = originalRel.startsWith('/') || originalRel.startsWith('file://')
-      ? originalRel
-      : rawRel
+  const returnRelPath = originalRel.startsWith('/') || originalRel.startsWith('file://')
+    ? originalRel
+    : rawRel
 
-    let info = null
-    try {
-      info = await stat(realFile)
-    } catch (statErr) {
-      if (root && /\/\.gemini\/antigravity(?:-ide)?\/brain\//.test(cleanedInput)) {
-        const baseName = basename(cleanedInput)
-        for (const fallbackCandidate of [resolve(root, 'out', baseName), resolve(root, baseName)]) {
-          try {
-            const safeFallback = await resolveSafeTarget(root, fallbackCandidate)
-            const fbInfo = await stat(safeFallback)
-            if (fbInfo.isFile()) {
-              realFile = safeFallback
-              info = fbInfo
-              break
-            }
-          } catch {
-            // continue
+  let info = null
+  try {
+    info = await stat(realFile)
+  } catch (statErr) {
+    if (root && /\/\.gemini\/antigravity(?:-ide)?\/brain\//.test(cleanedInput)) {
+      const baseName = basename(cleanedInput)
+      for (const fallbackCandidate of [resolve(root, 'out', baseName), resolve(root, baseName)]) {
+        try {
+          const safeFallback = await resolveSafeTarget(root, fallbackCandidate)
+          const fbInfo = await stat(safeFallback)
+          if (fbInfo.isFile()) {
+            realFile = safeFallback
+            info = fbInfo
+            break
           }
+        } catch {
+          // continue
         }
       }
-      if (!info) throw statErr
     }
-    if (!info.isFile()) {
-      return { ok: false, error: '目标路径不是普通文件' }
+    if (!info) throw statErr
+  }
+  if (!info.isFile()) {
+    return { ok: false, error: '目标路径不是普通文件' }
+  }
+  return {
+    ok: true,
+    realFile,
+    info,
+    returnRelPath,
+    ext: extname(realFile).toLowerCase(),
+    name: basename(realFile),
+  }
+}
+
+/**
+ * Read-only workspace file preview (strictly confined inside workspace root or AI artifact roots, with secret redaction).
+ */
+export async function readWorkspaceFile(workspaceRoot, relPath = '') {
+  try {
+    const resolved = await resolveWorkspaceOrArtifactFile(workspaceRoot, relPath)
+    if (!resolved.ok) return resolved
+    const { realFile, info, returnRelPath, ext, name } = resolved
+
+    if (VIDEO_MIME[ext]) {
+      return {
+        ok: true,
+        relPath: returnRelPath,
+        name,
+        ext,
+        kind: 'video',
+        mime: VIDEO_MIME[ext],
+        size: info.size,
+        mtimeMs: Math.round(info.mtimeMs),
+      }
     }
 
-    const ext = extname(realFile).toLowerCase()
     if (IMAGE_MIME[ext]) {
       if (info.size > MAX_IMAGE_PREVIEW_BYTES) {
         return { ok: false, error: '图片文件超过 5MB 预览上限' }
@@ -1952,7 +2000,7 @@ export async function readWorkspaceFile(workspaceRoot, relPath = '') {
       return {
         ok: true,
         relPath: returnRelPath,
-        name: basename(realFile),
+        name,
         ext,
         kind: 'image',
         mime: IMAGE_MIME[ext],
@@ -1980,7 +2028,7 @@ export async function readWorkspaceFile(workspaceRoot, relPath = '') {
       return {
         ok: true,
         relPath: returnRelPath,
-        name: basename(realFile),
+        name,
         ext,
         kind: 'binary',
         size: info.size,
@@ -1992,7 +2040,7 @@ export async function readWorkspaceFile(workspaceRoot, relPath = '') {
     return {
       ok: true,
       relPath: returnRelPath,
-      name: basename(realFile),
+      name,
       ext,
       kind: 'text',
       size: info.size,
@@ -2001,6 +2049,519 @@ export async function readWorkspaceFile(workspaceRoot, relPath = '') {
     }
   } catch (error) {
     return { ok: false, error: error?.message || '读取文件失败' }
+  }
+}
+
+export function parseImageDimensions(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 24) return null
+  // PNG
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
+  }
+  // GIF
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) {
+    return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) }
+  }
+  // WebP
+  if (buf.length >= 30 && buf.subarray(0, 4).toString('ascii') === 'RIFF' && buf.subarray(8, 12).toString('ascii') === 'WEBP') {
+    const chunk = buf.subarray(12, 16).toString('ascii')
+    if (chunk === 'VP8 ') {
+      return { width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff }
+    }
+    if (chunk === 'VP8L') {
+      const bits = buf.readUInt32LE(21)
+      return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 }
+    }
+    if (chunk === 'VP8X') {
+      return { width: 1 + buf.readUIntLE(24, 3), height: 1 + buf.readUIntLE(27, 3) }
+    }
+  }
+  // JPEG
+  if (buf[0] === 0xff && buf[1] === 0xd8) {
+    let offset = 2
+    while (offset + 9 < buf.length) {
+      if (buf[offset] !== 0xff) {
+        offset += 1
+        continue
+      }
+      const marker = buf[offset + 1]
+      if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+        return { height: buf.readUInt16BE(offset + 5), width: buf.readUInt16BE(offset + 7) }
+      }
+      if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) {
+        offset += 2
+        continue
+      }
+      const segLen = buf.readUInt16BE(offset + 2)
+      if (segLen < 2) break
+      offset += 2 + segLen
+    }
+  }
+  return null
+}
+
+async function pruneMediaCacheDir(cacheDir, maxFiles = MAX_MEDIA_CACHE_FILES) {
+  try {
+    const names = await readdir(cacheDir)
+    if (names.length <= maxFiles) return
+    const items = []
+    for (const n of names) {
+      if (n.includes('.tmp-')) continue
+      const p = join(cacheDir, n)
+      try {
+        const st = await stat(p)
+        if (st.isFile()) items.push({ p, mtimeMs: st.mtimeMs })
+      } catch {}
+    }
+    items.sort((a, b) => b.mtimeMs - a.mtimeMs)
+    for (const old of items.slice(maxFiles)) {
+      await rm(old.p, { force: true }).catch(() => {})
+    }
+  } catch {}
+}
+
+async function getOrCreateSmartThumbnail(
+  realFile,
+  info,
+  ext,
+  { dshHome = '', maxWidth = 1280, execImpl = execFileAsync } = {},
+) {
+  // Never downscale SVG vectors or animated GIFs; keep small images untouched (except HEIC/HEIF)
+  if (ext === '.svg' || ext === '.gif') return null
+  const isHeic = ext === '.heic' || ext === '.heif'
+  if (!isHeic && info.size <= THUMB_MIN_BYTES) return null
+  if (process.platform !== 'darwin') return null
+
+  const cacheDir = join(resolve(dshHome || '/tmp'), 'cache', 'thumbs')
+  const key = createHash('sha1')
+    .update(`${realFile}:${info.size}:${Math.round(info.mtimeMs)}:w${maxWidth}`)
+    .digest('hex')
+    .slice(0, 24)
+  const outPath = join(cacheDir, `${key}.jpg`)
+  try {
+    const cachedInfo = await stat(outPath)
+    if (cachedInfo.isFile() && cachedInfo.size > 0) {
+      return { filePath: outPath, size: cachedInfo.size, mime: 'image/jpeg' }
+    }
+  } catch {}
+
+  let dims = null
+  try {
+    const fh = await open(realFile, 'r')
+    try {
+      const headLen = Math.min(info.size, 65536)
+      const headBuf = Buffer.allocUnsafe(headLen)
+      const { bytesRead } = await fh.read(headBuf, 0, headLen, 0)
+      dims = parseImageDimensions(headBuf.subarray(0, bytesRead))
+    } finally {
+      await fh.close()
+    }
+  } catch {}
+
+  await mkdir(cacheDir, { recursive: true })
+  const tmpOut = join(cacheDir, `${key}.tmp-${randomBytes(3).toString('hex')}.jpg`)
+  let sipsArgs
+  if (dims?.width && dims?.height) {
+    if (dims.width <= maxWidth) {
+      // Preserve 100% pixel width for tall screenshots so small code/text stays sharp
+      sipsArgs = ['-s', 'format', 'jpeg', '-s', 'formatOptions', '80', realFile, '--out', tmpOut]
+    } else {
+      const targetMaxSide =
+        dims.height > dims.width
+          ? Math.min(12000, Math.round((maxWidth * dims.height) / dims.width))
+          : maxWidth
+      sipsArgs = ['-Z', String(targetMaxSide), '-s', 'format', 'jpeg', '-s', 'formatOptions', '80', realFile, '--out', tmpOut]
+    }
+  } else {
+    sipsArgs = ['-Z', '1920', '-s', 'format', 'jpeg', '-s', 'formatOptions', '80', realFile, '--out', tmpOut]
+  }
+
+  try {
+    await execImpl('/usr/bin/sips', sipsArgs, { timeout: 8000 })
+    const outInfo = await stat(tmpOut)
+    if (!outInfo.isFile() || outInfo.size === 0 || (!isHeic && outInfo.size >= info.size)) {
+      await rm(tmpOut, { force: true }).catch(() => {})
+      return null
+    }
+    await rename(tmpOut, outPath)
+    void pruneMediaCacheDir(cacheDir)
+    return { filePath: outPath, size: outInfo.size, mime: 'image/jpeg' }
+  } catch {
+    await rm(tmpOut, { force: true }).catch(() => {})
+    return null
+  }
+}
+
+async function getOrCreateCompatibleMp4(
+  realFile,
+  info,
+  { dshHome = '', execImpl = execFileAsync } = {},
+) {
+  const cacheDir = join(resolve(dshHome || '/tmp'), 'cache', 'thumbs')
+  const key = createHash('sha1')
+    .update(`${realFile}:${info.size}:${Math.round(info.mtimeMs)}:h264`)
+    .digest('hex')
+    .slice(0, 24)
+  const outPath = join(cacheDir, `${key}-h264.mp4`)
+  try {
+    const cachedInfo = await stat(outPath)
+    if (cachedInfo.isFile() && cachedInfo.size > 0) {
+      return { filePath: outPath, size: cachedInfo.size, mime: 'video/mp4' }
+    }
+  } catch {}
+
+  await mkdir(cacheDir, { recursive: true })
+  const tmpOut = join(cacheDir, `${key}.tmp-${randomBytes(3).toString('hex')}.mp4`)
+  let converted = false
+  try {
+    await execImpl(
+      'ffmpeg',
+      ['-y', '-i', realFile, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', '-crf', '25', '-movflags', '+faststart', '-c:a', 'aac', '-b:a', '128k', tmpOut],
+      { timeout: 45000 },
+    )
+    converted = true
+  } catch {
+    if (process.platform === 'darwin') {
+      try {
+        await execImpl(
+          '/usr/bin/avconvert',
+          ['--source', realFile, '--output', tmpOut, '--preset', 'PresetMediumQuality', '--replace'],
+          { timeout: 45000 },
+        )
+        converted = true
+      } catch {}
+    }
+  }
+  if (!converted) {
+    await rm(tmpOut, { force: true }).catch(() => {})
+    return null
+  }
+  try {
+    const outInfo = await stat(tmpOut)
+    if (!outInfo.isFile() || outInfo.size === 0) {
+      await rm(tmpOut, { force: true }).catch(() => {})
+      return null
+    }
+    await rename(tmpOut, outPath)
+    void pruneMediaCacheDir(cacheDir)
+    return { filePath: outPath, size: outInfo.size, mime: 'video/mp4' }
+  } catch {
+    await rm(tmpOut, { force: true }).catch(() => {})
+    return null
+  }
+}
+
+export function parseHttpByteRange(rangeHeader, totalSize, maxChunkBytes = DEFAULT_STREAM_CHUNK_BYTES) {
+  const raw = String(rangeHeader || '').trim()
+  if (!raw || !raw.toLowerCase().startsWith('bytes=')) return null
+  if (totalSize <= 0) return { ok: false, unsatisfied: true }
+  const spec = raw.slice(6).split(',')[0].trim()
+  const dashIdx = spec.indexOf('-')
+  if (dashIdx === -1) return null
+  const startStr = spec.slice(0, dashIdx).trim()
+  const endStr = spec.slice(dashIdx + 1).trim()
+
+  if (!startStr && endStr) {
+    const suffixLen = Number.parseInt(endStr, 10)
+    if (!Number.isFinite(suffixLen) || suffixLen <= 0) return { ok: false, unsatisfied: true }
+    const start = Math.max(0, totalSize - suffixLen)
+    const end = Math.min(totalSize - 1, start + maxChunkBytes * 2 - 1)
+    return { ok: true, start, end }
+  }
+
+  const start = Number.parseInt(startStr, 10)
+  if (!Number.isFinite(start) || start < 0 || start >= totalSize) {
+    return { ok: false, unsatisfied: true }
+  }
+  if (!endStr) {
+    const end = Math.min(totalSize - 1, start + maxChunkBytes - 1)
+    return { ok: true, start, end }
+  }
+  const requestedEnd = Number.parseInt(endStr, 10)
+  if (!Number.isFinite(requestedEnd) || requestedEnd < start) {
+    return { ok: false, unsatisfied: true }
+  }
+  const cappedEnd = Math.min(totalSize - 1, requestedEnd, start + maxChunkBytes * 2 - 1)
+  return { ok: true, start, end: cappedEnd }
+}
+
+export async function readWorkspaceFileFastMeta(workspaceRoot, relPath = '', { extraRoots = [] } = {}) {
+  try {
+    const resolved = await resolveWorkspaceOrArtifactFile(workspaceRoot, relPath, { extraRoots })
+    if (!resolved.ok) return resolved
+    const { realFile, info, returnRelPath, ext, name } = resolved
+    const mtimeMs = Math.round(info.mtimeMs)
+    const etag = `W/"${info.size.toString(16)}-${mtimeMs.toString(16)}"`
+
+    if (VIDEO_MIME[ext]) {
+      return {
+        ok: true,
+        relPath: returnRelPath,
+        name,
+        ext,
+        kind: 'video',
+        mime: VIDEO_MIME[ext],
+        size: info.size,
+        mtimeMs,
+        etag,
+      }
+    }
+
+    if (IMAGE_MIME[ext]) {
+      return {
+        ok: true,
+        relPath: returnRelPath,
+        name,
+        ext,
+        kind: 'image',
+        mime: IMAGE_MIME[ext],
+        size: info.size,
+        mtimeMs,
+        etag,
+      }
+    }
+
+    const truncated = info.size > MAX_PREVIEW_BYTES
+    let slice
+    if (truncated) {
+      const fh = await open(realFile, 'r')
+      try {
+        const buf = Buffer.allocUnsafe(MAX_PREVIEW_BYTES)
+        const { bytesRead } = await fh.read(buf, 0, MAX_PREVIEW_BYTES, 0)
+        slice = buf.subarray(0, bytesRead)
+      } finally {
+        await fh.close()
+      }
+    } else {
+      slice = await readFile(realFile)
+    }
+
+    if (slice.includes(0)) {
+      return {
+        ok: true,
+        relPath: returnRelPath,
+        name,
+        ext,
+        kind: 'binary',
+        size: info.size,
+        mtimeMs,
+        etag,
+        content: `[二进制文件，大小 ${info.size} 字节，不支持直接文本预览]`,
+      }
+    }
+
+    return {
+      ok: true,
+      relPath: returnRelPath,
+      name,
+      ext,
+      kind: 'text',
+      size: info.size,
+      mtimeMs,
+      etag,
+      truncated,
+      content: redactText(slice.toString('utf8')),
+    }
+  } catch (error) {
+    return { ok: false, error: error?.message || '读取文件失败' }
+  }
+}
+
+export async function readWorkspaceFileStreamChunk(
+  workspaceRoot,
+  relPath = '',
+  {
+    rangeHeader = '',
+    ifNoneMatch = '',
+    thumb = false,
+    transcode = false,
+    dshHome = '',
+    extraRoots = [],
+    maxChunkBytes = DEFAULT_STREAM_CHUNK_BYTES,
+    execImpl = execFileAsync,
+  } = {},
+) {
+  try {
+    const resolved = await resolveWorkspaceOrArtifactFile(workspaceRoot, relPath, { extraRoots })
+    if (!resolved.ok) return { ok: false, status: 404, error: resolved.error }
+    const { realFile, info, ext, name } = resolved
+
+    let streamFile = realFile
+    let streamSize = info.size
+    let streamMime = VIDEO_MIME[ext] || IMAGE_MIME[ext] || 'application/octet-stream'
+    let variant = 'orig'
+
+    if (thumb && IMAGE_MIME[ext]) {
+      const th = await getOrCreateSmartThumbnail(realFile, info, ext, { dshHome, execImpl })
+      if (th) {
+        streamFile = th.filePath
+        streamSize = th.size
+        streamMime = th.mime
+        variant = 'th'
+      }
+    } else if (transcode && VIDEO_MIME[ext]) {
+      const tc = await getOrCreateCompatibleMp4(realFile, info, { dshHome, execImpl })
+      if (tc) {
+        streamFile = tc.filePath
+        streamSize = tc.size
+        streamMime = tc.mime
+        variant = 'tc'
+      }
+    }
+
+    const isThumb = variant === 'th'
+    const transcoded = variant === 'tc'
+    const mtimeMs = Math.round(info.mtimeMs)
+    const etag = `W/"${info.size.toString(16)}-${mtimeMs.toString(16)}-${variant}"`
+
+    if (!rangeHeader && ifNoneMatch && String(ifNoneMatch).trim() === etag) {
+      return {
+        ok: true,
+        status: 304,
+        name,
+        mime: streamMime,
+        etag,
+        isThumb,
+        transcoded,
+        headers: {
+          etag,
+          'cache-control': 'private, max-age=86400',
+        },
+        buffer: Buffer.alloc(0),
+      }
+    }
+
+    const baseHeaders = {
+      'content-type': streamMime,
+      'accept-ranges': 'bytes',
+      etag,
+      'cache-control': 'private, max-age=86400',
+    }
+
+    if (streamSize === 0) {
+      return {
+        ok: true,
+        status: 200,
+        name,
+        mime: streamMime,
+        etag,
+        isThumb,
+        transcoded,
+        headers: { ...baseHeaders, 'content-length': '0' },
+        buffer: Buffer.alloc(0),
+      }
+    }
+
+    const parsedRange = parseHttpByteRange(rangeHeader, streamSize, maxChunkBytes)
+    if (parsedRange) {
+      if (!parsedRange.ok) {
+        const contentRange = `bytes */${streamSize}`
+        return {
+          ok: false,
+          status: 416,
+          contentRange,
+          headers: { 'content-range': contentRange },
+          error: 'Requested Range Not Satisfiable',
+        }
+      }
+      const { start, end } = parsedRange
+      const chunkLen = end - start + 1
+      const fh = await open(streamFile, 'r')
+      let buf
+      try {
+        const rawBuf = Buffer.allocUnsafe(chunkLen)
+        const { bytesRead } = await fh.read(rawBuf, 0, chunkLen, start)
+        buf = rawBuf.subarray(0, bytesRead)
+      } finally {
+        await fh.close()
+      }
+      const contentRange = `bytes ${start}-${start + buf.length - 1}/${streamSize}`
+      return {
+        ok: true,
+        status: 206,
+        name,
+        mime: streamMime,
+        etag,
+        isThumb,
+        transcoded,
+        contentRange,
+        headers: {
+          ...baseHeaders,
+          'content-range': contentRange,
+          'content-length': String(buf.length),
+        },
+        buffer: buf,
+      }
+    }
+
+    // Non-Range GET: cap single non-range read at 16 MiB to protect memory
+    const maxNonRange = 16 * 1024 * 1024
+    let fullBuf
+    if (streamSize > maxNonRange) {
+      const fh = await open(streamFile, 'r')
+      try {
+        const rawBuf = Buffer.allocUnsafe(maxNonRange)
+        const { bytesRead } = await fh.read(rawBuf, 0, maxNonRange, 0)
+        fullBuf = rawBuf.subarray(0, bytesRead)
+      } finally {
+        await fh.close()
+      }
+      const contentRange = `bytes 0-${fullBuf.length - 1}/${streamSize}`
+      return {
+        ok: true,
+        status: 206,
+        name,
+        mime: streamMime,
+        etag,
+        isThumb,
+        transcoded,
+        contentRange,
+        headers: {
+          ...baseHeaders,
+          'content-range': contentRange,
+          'content-length': String(fullBuf.length),
+        },
+        buffer: fullBuf,
+      }
+    }
+
+    fullBuf = await readFile(streamFile)
+    if (!IMAGE_MIME[ext] && !VIDEO_MIME[ext] && !fullBuf.includes(0)) {
+      const redacted = Buffer.from(redactText(fullBuf.toString('utf8')), 'utf8')
+      return {
+        ok: true,
+        status: 200,
+        name,
+        mime: 'text/plain; charset=utf-8',
+        etag,
+        isThumb,
+        transcoded,
+        headers: {
+          ...baseHeaders,
+          'content-type': 'text/plain; charset=utf-8',
+          'content-length': String(redacted.length),
+        },
+        buffer: redacted,
+      }
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      name,
+      mime: streamMime,
+      etag,
+      isThumb,
+      transcoded,
+      headers: {
+        ...baseHeaders,
+        'content-length': String(fullBuf.length),
+        'content-disposition': `inline; filename="${encodeURIComponent(name)}"`,
+      },
+      buffer: fullBuf,
+    }
+  } catch (error) {
+    return { ok: false, status: 404, error: error?.message || '读取文件流失败' }
   }
 }
 

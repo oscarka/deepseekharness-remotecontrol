@@ -9,20 +9,47 @@ export function renderInlineMarkdown(rawLine: string): string {
     return `\u0000PH${htmlBits.length - 1}\u0000`;
   };
 
-  // 1. Markdown 图片：![alt](url 或 /Users/... 或 file:///...)
+  // 1. Markdown 图片 / 视频：![alt](url 或 /Users/... 或 file:///...)
   safe = safe.replace(/!\[((?:[^\[\]]|\[[^\]]*\])*)\]\(([^)\n]+)\)/g, (_m, alt, rawSrc) => {
     const cleanAlt = String(alt || '').trim();
     const trimmedSrc = String(rawSrc || '').trim();
-    if (/^(https?:\/\/|data:image\/)/i.test(trimmedSrc)) {
+    const cleanPath = trimmedSrc.replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim();
+    const pathNoQuery = cleanPath.split('?')[0] || cleanPath;
+    const isVideoMedia = /\.(mp4|m4v|mov|webm|ogv)$/i.test(pathNoQuery) || /^data:video\//i.test(trimmedSrc);
+    if (/^(https?:\/\/|data:(?:image|video)\/)/i.test(trimmedSrc)) {
+      if (isVideoMedia) {
+        return stash(
+          `<span class="md-inline-video-card"><video class="md-inline-video" src="${trimmedSrc}" controls playsinline webkit-playsinline preload="metadata"></video>${
+            cleanAlt ? `<span class="md-inline-img-cap">🎬 ${cleanAlt}</span>` : ''
+          }</span>`
+        );
+      }
       return stash(
         `<span class="md-inline-img-card"><img class="md-inline-img" src="${trimmedSrc}" alt="${cleanAlt}" loading="lazy" />${
           cleanAlt ? `<span class="md-inline-img-cap">${cleanAlt}</span>` : ''
         }</span>`
       );
     }
-    const cleanPath = trimmedSrc.replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim();
-    const baseName = cleanPath.split('/').filter(Boolean).pop() || cleanPath || 'image';
+    const baseName = cleanPath.split('/').filter(Boolean).pop() || cleanPath || (isVideoMedia ? 'video' : 'image');
     const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, '%27');
+    if (isVideoMedia) {
+      const cachedVideoSrc =
+        typeof window !== 'undefined' && (window as any).__dshInlineVideoCache
+          ? (window as any).__dshInlineVideoCache[cleanPath]
+          : '';
+      if (cachedVideoSrc) {
+        return stash(
+          `<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="metadata"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${
+            cleanAlt || esc(baseName)
+          } · 点此打开大屏预览</span></span>`
+        );
+      }
+      return stash(
+        `<span class="md-inline-video-card md-local-video-pending" data-local-video-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🎬 ${
+          cleanAlt || esc(baseName)
+        } · 正在连接视频流…（点此打开播放器）</span></span>`
+      );
+    }
     const cachedSrc =
       typeof window !== 'undefined' && (window as any).__dshInlineImgCache
         ? (window as any).__dshInlineImgCache[cleanPath]
@@ -52,8 +79,19 @@ export function renderInlineMarkdown(rawLine: string): string {
       const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, '%27');
       const isWalkthrough = /walkthrough\.md$/i.test(cleanPath) || /^walkthrough$/i.test(cleanLabel);
       const isPlan = /implementation_plan\.md$/i.test(cleanPath);
-      const isImg = /\.(png|jpe?g|webp|gif|svg)$/i.test(cleanPath);
-      const icon = isWalkthrough ? '📋' : isPlan ? '🗺️' : isImg ? '🖼️' : /\.blend$/i.test(cleanPath) ? '🧊' : '📄';
+      const isVideo = /\.(mp4|m4v|mov|webm|ogv)$/i.test(cleanPath);
+      const isImg = /\.(png|jpe?g|webp|gif|svg|bmp|ico|avif|heic|heif)$/i.test(cleanPath);
+      const icon = isWalkthrough
+        ? '📋'
+        : isPlan
+          ? '🗺️'
+          : isVideo
+            ? '🎬'
+            : isImg
+              ? '🖼️'
+              : /\.blend$/i.test(cleanPath)
+                ? '🧊'
+                : '📄';
       const extraClass = isWalkthrough || isPlan ? ' md-artifact-chip' : '';
       return stash(
         `<button type="button" class="md-file-chip${extraClass}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">${icon} ${cleanLabel}${lineSuffix}</button>`

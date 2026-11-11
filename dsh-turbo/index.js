@@ -137,6 +137,7 @@ export class TurboController {
     hubUrl = '',
     hubToken = '',
     onTriggerSync = () => {},
+    onFsRequest = null,
     fetchImpl = globalThis.fetch,
     execImpl = execFileAsync,
     debounceMs = 120,
@@ -147,6 +148,7 @@ export class TurboController {
     this.hubUrl = String(hubUrl || '').replace(/\/+$/, '')
     this.hubToken = hubToken
     this.onTriggerSync = onTriggerSync
+    this.onFsRequest = onFsRequest
     this.fetch = fetchImpl
     this.execImpl = execImpl
     this.debounceMs = debounceMs
@@ -328,12 +330,19 @@ export class TurboController {
           buf = parts.pop() || ''
           for (const chunk of parts) {
             if (!chunk.includes('data:')) continue
-            const dataLine = chunk
-              .split('\n')
-              .find(l => l.startsWith('data:'))
+            const lines = chunk.split('\n')
+            const eventLine = lines.find(l => l.startsWith('event:'))
+            const eventName = eventLine ? eventLine.slice(6).trim() : 'message'
+            const dataLine = lines.find(l => l.startsWith('data:'))
             if (!dataLine) continue
             try {
               const payload = JSON.parse(dataLine.slice(5).trim())
+              if (eventName === 'fs_req') {
+                if (!payload.hostId || payload.hostId === this.hostId) {
+                  void this.onFsRequest?.(payload)
+                }
+                continue
+              }
               const myHost = (payload.hosts || []).find(h => h.hostId === this.hostId)
               if (myHost && Number(myHost.pendingCommandsCount) > 0) {
                 this.triggerSync('hub-sse-cmd')

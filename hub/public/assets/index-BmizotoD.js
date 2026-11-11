@@ -801,10 +801,20 @@ function renderInlineMarkdown(rawLine) {
 	safe = safe.replace(/!\[((?:[^\[\]]|\[[^\]]*\])*)\]\(([^)\n]+)\)/g, (_m, alt, rawSrc) => {
 		const cleanAlt = String(alt || "").trim();
 		const trimmedSrc = String(rawSrc || "").trim();
-		if (/^(https?:\/\/|data:image\/)/i.test(trimmedSrc)) return stash(`<span class="md-inline-img-card"><img class="md-inline-img" src="${trimmedSrc}" alt="${cleanAlt}" loading="lazy" />${cleanAlt ? `<span class="md-inline-img-cap">${cleanAlt}</span>` : ""}</span>`);
 		const cleanPath = trimmedSrc.replace(/^file:\/\//i, "").replace(/#L\d+(?:-L?\d+)?$/i, "").trim();
-		const baseName = cleanPath.split("/").filter(Boolean).pop() || cleanPath || "image";
+		const pathNoQuery = cleanPath.split("?")[0] || cleanPath;
+		const isVideoMedia = /\.(mp4|m4v|mov|webm|ogv)$/i.test(pathNoQuery) || /^data:video\//i.test(trimmedSrc);
+		if (/^(https?:\/\/|data:(?:image|video)\/)/i.test(trimmedSrc)) {
+			if (isVideoMedia) return stash(`<span class="md-inline-video-card"><video class="md-inline-video" src="${trimmedSrc}" controls playsinline webkit-playsinline preload="metadata"></video>${cleanAlt ? `<span class="md-inline-img-cap">🎬 ${cleanAlt}</span>` : ""}</span>`);
+			return stash(`<span class="md-inline-img-card"><img class="md-inline-img" src="${trimmedSrc}" alt="${cleanAlt}" loading="lazy" />${cleanAlt ? `<span class="md-inline-img-cap">${cleanAlt}</span>` : ""}</span>`);
+		}
+		const baseName = cleanPath.split("/").filter(Boolean).pop() || cleanPath || (isVideoMedia ? "video" : "image");
 		const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, "%27");
+		if (isVideoMedia) {
+			const cachedVideoSrc = typeof window !== "undefined" && window.__dshInlineVideoCache ? window.__dshInlineVideoCache[cleanPath] : "";
+			if (cachedVideoSrc) return stash(`<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="metadata"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${cleanAlt || esc(baseName)} · 点此打开大屏预览</span></span>`);
+			return stash(`<span class="md-inline-video-card md-local-video-pending" data-local-video-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🎬 ${cleanAlt || esc(baseName)} · 正在连接视频流…（点此打开播放器）</span></span>`);
+		}
 		const cachedSrc = typeof window !== "undefined" && window.__dshInlineImgCache ? window.__dshInlineImgCache[cleanPath] : "";
 		if (cachedSrc) return stash(`<span class="md-inline-img-card" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><img class="md-inline-img" src="${cachedSrc}" alt="${cleanAlt || esc(baseName)}" />${cleanAlt ? `<span class="md-inline-img-cap">🖼️ ${cleanAlt}</span>` : ""}</span>`);
 		return stash(`<span class="md-inline-img-card md-local-img-pending" data-local-img-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🖼️ ${cleanAlt || esc(baseName)} · 正在从电脑加载图片…（点此直接查看）</span></span>`);
@@ -817,8 +827,9 @@ function renderInlineMarkdown(rawLine) {
 		const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, "%27");
 		const isWalkthrough = /walkthrough\.md$/i.test(cleanPath) || /^walkthrough$/i.test(cleanLabel);
 		const isPlan = /implementation_plan\.md$/i.test(cleanPath);
-		const isImg = /\.(png|jpe?g|webp|gif|svg)$/i.test(cleanPath);
-		const icon = isWalkthrough ? "📋" : isPlan ? "🗺️" : isImg ? "🖼️" : /\.blend$/i.test(cleanPath) ? "🧊" : "📄";
+		const isVideo = /\.(mp4|m4v|mov|webm|ogv)$/i.test(cleanPath);
+		const isImg = /\.(png|jpe?g|webp|gif|svg|bmp|ico|avif|heic|heif)$/i.test(cleanPath);
+		const icon = isWalkthrough ? "📋" : isPlan ? "🗺️" : isVideo ? "🎬" : isImg ? "🖼️" : /\.blend$/i.test(cleanPath) ? "🧊" : "📄";
 		return stash(`<button type="button" class="md-file-chip${isWalkthrough || isPlan ? " md-artifact-chip" : ""}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">${icon} ${cleanLabel}${lineSuffix}</button>`);
 	});
 	safe = safe.replace(/`([^`\n]+)`/g, (_m, code) => stash(`<code>${code}</code>`));
@@ -966,23 +977,50 @@ function formatAssistantText(rawText) {
 	return renderMarkdown(rawText);
 }
 // hub/web/src/utils/filePreview.ts
+function appendMediaAuth(rawUrl, mediaTicket = "") {
+	if (!rawUrl) return "";
+	const mt = mediaTicket || typeof window !== "undefined" && window.getHubState?.()?.mediaTicket || "";
+	if (mt) return `${rawUrl}${rawUrl.includes("?") ? "&" : "?"}mt=${encodeURIComponent(mt)}`;
+	let tk = "";
+	try {
+		tk = localStorage.getItem("dsh_hub_token") || "";
+	} catch {}
+	if (!tk) return rawUrl;
+	return `${rawUrl}${rawUrl.includes("?") ? "&" : "?"}token=${encodeURIComponent(tk)}`;
+}
+function buildFastStreamUrl(hostId, relPath, opts = {}) {
+	const qp = new URLSearchParams({ path: String(relPath || "") });
+	if (opts.cwd) qp.set("cwd", opts.cwd);
+	if (opts.agentId) qp.set("agentId", opts.agentId);
+	if (opts.thumb) qp.set("thumb", "1");
+	if (opts.transcode) qp.set("transcode", "1");
+	if (opts.download) qp.set("download", "1");
+	return appendMediaAuth(`/api/hosts/${encodeURIComponent(hostId)}/fs/stream?${qp.toString()}`, opts.mediaTicket || "");
+}
 function previewKind(preview) {
 	if (!preview) return "none";
-	if (preview.kind === "image" && (preview.dataBase64 || preview.previewUrl || preview.hasBlob)) return "image";
+	if (preview.kind === "video" || /\.(mp4|m4v|mov|webm|ogv)$/i.test(preview.name || preview.relPath || "")) return "video";
+	if (preview.kind === "image" && (preview.dataBase64 || preview.streamUrl || preview.previewUrl || preview.hasBlob)) return "image";
 	if (preview.kind === "binary") return "binary";
 	return "text";
 }
-function imagePreviewSrc(preview) {
+function imagePreviewSrc(preview, mediaTicket = "") {
 	if (preview.dataBase64) return `data:${preview.mime || "image/png"};base64,${preview.dataBase64}`;
-	if (preview.previewUrl) {
-		let tk = "";
-		try {
-			tk = localStorage.getItem("dsh_hub_token") || "";
-		} catch {}
-		const sep = preview.previewUrl.includes("?") ? "&" : "?";
-		return tk ? `${preview.previewUrl}${sep}token=${encodeURIComponent(tk)}` : preview.previewUrl;
+	if (preview.streamUrl) {
+		const extLower = String(preview.ext || preview.name || preview.relPath || "").toLowerCase();
+		const isHeic = /\.(heic|heif)$/i.test(extLower);
+		const canThumb = !preview._origImage && !/\.(svg|gif)$/i.test(extLower) && (isHeic || !preview.size || preview.size > 307200);
+		const sep = preview.streamUrl.includes("?") ? "&" : "?";
+		return appendMediaAuth(canThumb ? `${preview.streamUrl}${sep}thumb=1` : preview.streamUrl, mediaTicket);
 	}
+	if (preview.previewUrl) return appendMediaAuth(preview.previewUrl, mediaTicket);
 	return "";
+}
+function videoPreviewSrc(preview, mediaTicket = "") {
+	const raw = preview.streamUrl || preview.previewUrl || "";
+	if (!raw) return "";
+	const sep = raw.includes("?") ? "&" : "?";
+	return appendMediaAuth(preview._transcodeVideo ? `${raw}${sep}transcode=1` : raw, mediaTicket);
 }
 function buildBreadcrumbSegments(subDir) {
 	const clean = String(subDir || "").replace(/^\/+|\/+$/g, "");
@@ -2376,8 +2414,51 @@ function initHubController() {
 		window.__toastTimer = setTimeout(() => el.classList.remove("show"), 2400);
 	}
 	const expandedTranscriptBySession = /* @__PURE__ */ new Map();
+	const OPT_MSGS_STORAGE_KEY = "dsh_optimistic_msgs_v1";
+	function ensureOptimisticMsgsMap() {
+		if (!window.__dshOptimisticMsgs) try {
+			const raw = sessionStorage.getItem(OPT_MSGS_STORAGE_KEY);
+			window.__dshOptimisticMsgs = raw ? JSON.parse(raw) || {} : {};
+		} catch {
+			window.__dshOptimisticMsgs = {};
+		}
+		return window.__dshOptimisticMsgs;
+	}
+	function persistOptimisticMsgsMap() {
+		try {
+			sessionStorage.setItem(OPT_MSGS_STORAGE_KEY, JSON.stringify(window.__dshOptimisticMsgs || {}));
+		} catch {}
+	}
+	function matchesOptimisticUserText(msgText, opt) {
+		const m = String(msgText || "").trim();
+		if (!m) return false;
+		const full = String((typeof opt === "object" ? opt?.text : opt) || "").trim();
+		const raw = String((typeof opt === "object" ? opt?.rawText || opt?.text : opt) || "").trim();
+		return Boolean(full && m === full || raw && (m === raw || m.startsWith(`${raw}\n`)));
+	}
+	function hasOptimisticSyncedToWire(wireTranscript, serverTotalCount, opt) {
+		if (!Array.isArray(wireTranscript) || wireTranscript.length === 0) return false;
+		let sameCount = 0;
+		let lastMatchIdx = -1;
+		for (let i = 0; i < wireTranscript.length; i += 1) {
+			const m = wireTranscript[i];
+			if (m && m.role === "user" && matchesOptimisticUserText(m.text, opt)) {
+				sameCount += 1;
+				lastMatchIdx = i;
+			}
+		}
+		if (lastMatchIdx < 0) return false;
+		const baseSame = typeof opt?.baselineSameUserCount === "number" ? opt.baselineSameUserCount : 0;
+		const baseTotal = typeof opt?.baselineTotalCount === "number" ? opt.baselineTotalCount : 0;
+		if (baseSame === 0) return true;
+		if (sameCount > baseSame) return true;
+		if (serverTotalCount > baseTotal && lastMatchIdx >= Math.max(0, wireTranscript.length - 3)) return true;
+		return false;
+	}
 	function getNormalizedSessions() {
 		const list = [];
+		const optMap = ensureOptimisticMsgsMap();
+		let optMapDirty = false;
 		const isChatOpenNow = document.getElementById("chatFullscreen")?.classList.contains("open") || document.body.classList.contains("DesktopSplitMode");
 		for (const h of hubState.hosts || []) {
 			if (currentHostId && currentHostId !== "ALL_HOSTS" && h.hostId !== currentHostId) continue;
@@ -2395,8 +2476,9 @@ function initHubController() {
 				const ts = t.updatedAt || t.lastActivity || 0;
 				const pendingApp = approvals.find((a) => a.agentId === t.id);
 				const wireTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
+				const serverWireTotalCount = Math.max(Number(t.totalTranscriptCount) || 0, Number(t.messageCount) || 0, wireTranscript.length);
 				const expandedEntry = expandedTranscriptBySession.get(t.id);
-				let baseTranscript = wireTranscript;
+				let baseTranscript = [...wireTranscript];
 				if (expandedEntry && Array.isArray(expandedEntry.transcript) && expandedEntry.transcript.length > wireTranscript.length) {
 					if (wireTranscript.length === 0) baseTranscript = [...expandedEntry.transcript];
 					else {
@@ -2415,28 +2497,55 @@ function initHubController() {
 					}
 				}
 				const pendingPromptCmds = (h.pendingCommands || []).filter((c) => c && c.agentId === t.id && (c.type === "prompt" || c.type === "steer"));
+				const inflightPromptCmds = (h.inflightCommands || []).filter((c) => c && c.agentId === t.id && (c.type === "prompt" || c.type === "steer"));
 				const isHostOnlineNow = h.online !== false && h.activelyConnected !== false;
 				const queuedCmds = pendingPromptCmds.filter((c) => c.queued || !isHostOnlineNow);
 				const dispatchingCmds = pendingPromptCmds.filter((c) => !c.queued && isHostOnlineNow);
 				const expiredCmds = (h.recentResults || []).filter((r) => r && r.expired && (r.type === "prompt" || r.type === "steer") && r.agentId === t.id && r.text);
-				const optimisticList = window.__dshOptimisticMsgs && window.__dshOptimisticMsgs[t.id] || [];
+				const cancelledOrFailedIds = new Set((h.recentResults || []).filter((r) => r && r.id && (r.cancelled || r.ok === false)).map((r) => r.id));
+				const optimisticList = optMap[t.id] || [];
 				const nowMs = Date.now();
 				const remainingOpt = [];
+				const renderedOptItems = [];
 				for (const opt of optimisticList) {
-					if (nowMs - opt.time >= 15e3) continue;
-					if (baseTranscript.some((m) => m.role === "user" && m.text === opt.text) || pendingPromptCmds.some((c) => c.text === opt.text) || expiredCmds.some((ec) => ec.text === opt.text)) continue;
+					if (!opt || nowMs - opt.time >= 6e4) {
+						optMapDirty = true;
+						continue;
+					}
+					if (opt.cmdId && cancelledOrFailedIds.has(opt.cmdId) || hasOptimisticSyncedToWire(wireTranscript, serverWireTotalCount, opt) || expiredCmds.some((ec) => opt.cmdId && ec.id === opt.cmdId || matchesOptimisticUserText(ec.text, opt))) {
+						optMapDirty = true;
+						continue;
+					}
 					remainingOpt.push(opt);
+					if (queuedCmds.some((qc) => opt.cmdId && qc.id === opt.cmdId || matchesOptimisticUserText(qc.text, opt))) continue;
+					renderedOptItems.push(opt);
 					baseTranscript.push({
 						role: "user",
 						text: opt.text,
 						time: opt.time
 					});
 				}
-				for (const dc of dispatchingCmds) if (!baseTranscript.some((m) => m.role === "user" && m.text === dc.text)) baseTranscript.push({
-					role: "user",
-					text: dc.text,
-					time: dc.createdAt || nowMs
-				});
+				for (const dc of [...dispatchingCmds, ...inflightPromptCmds]) {
+					const alreadyRendered = renderedOptItems.some((opt) => opt.cmdId && dc.id && opt.cmdId === dc.id || matchesOptimisticUserText(dc.text, opt));
+					const alreadySynced = hasOptimisticSyncedToWire(wireTranscript, serverWireTotalCount, {
+						text: dc.text,
+						rawText: dc.text,
+						baselineSameUserCount: typeof dc.baselineSameCount === "number" ? dc.baselineSameCount : 0,
+						baselineTotalCount: typeof dc.baselineTotalCount === "number" ? dc.baselineTotalCount : 0
+					});
+					if (!alreadyRendered && !alreadySynced) {
+						renderedOptItems.push({
+							cmdId: dc.id || "",
+							text: dc.text,
+							rawText: dc.text
+						});
+						baseTranscript.push({
+							role: "user",
+							text: dc.text,
+							time: dc.createdAt || nowMs
+						});
+					}
+				}
 				for (const ec of expiredCmds) if (nowMs - (ec.at || 0) <= 18e5) baseTranscript.push({
 					role: "user",
 					text: ec.text,
@@ -2451,11 +2560,18 @@ function initHubController() {
 					queuedCmdId: qc.id,
 					expiresAt: qc.expiresAt || 0
 				});
-				if (window.__dshOptimisticMsgs && window.__dshOptimisticMsgs[t.id]) window.__dshOptimisticMsgs[t.id] = remainingOpt;
+				if (optMap[t.id]) {
+					if (remainingOpt.length > 0) optMap[t.id] = remainingOpt;
+					else {
+						delete optMap[t.id];
+						optMapDirty = true;
+					}
+				}
 				const transcript = baseTranscript;
 				const lastMsg = transcript.length > 0 ? transcript[transcript.length - 1] : null;
 				const project = t.project || (t.cwd ? t.cwd.split("/").filter(Boolean).pop() : "默认工作区") || "默认工作区";
-				const status = pendingApp ? "approval" : t.status === "running" || dispatchingCmds.length > 0 ? "running" : t.status || "idle";
+				const hasActiveInflight = isHostOnlineNow && (dispatchingCmds.length > 0 || inflightPromptCmds.length > 0 || renderedOptItems.length > 0);
+				const status = pendingApp ? "approval" : t.status === "running" || hasActiveInflight ? "running" : t.status || "idle";
 				const queuedCount = queuedCmds.length;
 				const rawIdStr = String(t.id || "");
 				const harness = t.harness || (rawIdStr.startsWith("agy-ide:") ? "antigravity-ide" : rawIdStr.startsWith("codex:") ? "codex" : rawIdStr.startsWith("workbuddy:") ? "workbuddy" : rawIdStr.startsWith("claude:") ? "claude" : "dsh");
@@ -2508,10 +2624,13 @@ function initHubController() {
 					lastRole: lastMsg?.role || "assistant",
 					lastPreview: cleanPrev,
 					rawLastPreview: rawPreview,
-					transcript
+					transcript,
+					_wireTranscript: wireTranscript,
+					_wireTotalCount: serverWireTotalCount
 				});
 			}
 		}
+		if (optMapDirty) persistOptimisticMsgsMap();
 		const sortedByTime = [...list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 		let seenDirty = false;
 		const serverReadMap = hubState.sessionReadState || {};
@@ -3707,8 +3826,15 @@ function initHubController() {
 		if (!cmdId) return;
 		try {
 			const data = await (await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`, { method: "DELETE" })).json().catch(() => ({}));
-			if (data?.ok) showToast("🗑️ 已取消排队中的指令");
-			else showToast("⚠️ " + (data?.error || "该指令已执行或不存在"));
+			if (data?.ok) {
+				const optMap = ensureOptimisticMsgsMap();
+				for (const sid of Object.keys(optMap)) {
+					optMap[sid] = (optMap[sid] || []).filter((item) => item.cmdId !== cmdId);
+					if (optMap[sid].length === 0) delete optMap[sid];
+				}
+				persistOptimisticMsgsMap();
+				showToast("🗑️ 已取消排队中的指令");
+			} else showToast("⚠️ " + (data?.error || "该指令已执行或不存在"));
 		} catch (err) {
 			showToast("❌ 取消失败：" + (err?.message || err));
 		}
@@ -3737,13 +3863,27 @@ function initHubController() {
 			localStorage.removeItem(composerDraftKey(composerSessionId || activeSessionId));
 		} catch {}
 		autoGrowComposer();
-		window.__dshOptimisticMsgs = window.__dshOptimisticMsgs || {};
-		const optList = window.__dshOptimisticMsgs[s.id] || [];
-		optList.push({
+		const optMap = ensureOptimisticMsgsMap();
+		const wireTr = Array.isArray(s._wireTranscript) ? s._wireTranscript : [];
+		const probeOpt = {
 			text: optimisticText,
-			time: Date.now()
-		});
-		window.__dshOptimisticMsgs[s.id] = optList.slice(-5);
+			rawText: text
+		};
+		const baselineSameUserCount = wireTr.filter((m) => m && m.role === "user" && matchesOptimisticUserText(m.text, probeOpt)).length;
+		const baselineTotalCount = Number(s._wireTotalCount) || wireTr.length;
+		const optEntry = {
+			id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+			cmdId: "",
+			text: optimisticText,
+			rawText: text,
+			time: Date.now(),
+			baselineSameUserCount,
+			baselineTotalCount
+		};
+		const optList = optMap[s.id] || [];
+		optList.push(optEntry);
+		optMap[s.id] = optList.slice(-8);
+		persistOptimisticMsgsMap();
 		lastRenderedChatKey = "";
 		renderActiveChatStage();
 		const cmdType = s.status === "running" ? "steer" : "prompt";
@@ -3771,7 +3911,8 @@ function initHubController() {
 			};
 		}
 		if (!dispatchRes || dispatchRes.ok === false) {
-			window.__dshOptimisticMsgs[s.id] = (window.__dshOptimisticMsgs[s.id] || []).filter((item) => item.text !== optimisticText);
+			optMap[s.id] = (optMap[s.id] || []).filter((item) => item.id !== optEntry.id);
+			persistOptimisticMsgsMap();
 			lastRenderedChatKey = "";
 			renderActiveChatStage();
 			showToast("❌ " + (dispatchRes?.error || "发送指令失败"));
@@ -3786,9 +3927,13 @@ function initHubController() {
 			return;
 		}
 		if (dispatchRes.queued) showToast("⏳ 电脑当前休眠/离线，指令已排队（10分钟内上线自动执行，可随时取消）");
+		const cmdId = dispatchRes?.command?.id;
+		if (cmdId) {
+			optEntry.cmdId = cmdId;
+			persistOptimisticMsgsMap();
+		}
 		setTimeout(fetchState, 250);
 		setTimeout(fetchState, 800);
-		const cmdId = dispatchRes?.command?.id;
 		if (cmdId) (async () => {
 			for (let i = 0; i < 16; i++) {
 				await new Promise((r) => setTimeout(r, 350));
@@ -3796,7 +3941,8 @@ function initHubController() {
 					const data = await (await apiFetch(`/api/commands/${encodeURIComponent(cmdId)}`)).json();
 					if (data?.ready || data?.command?.status === "completed") {
 						if (data.result && data.result.ok === false) {
-							window.__dshOptimisticMsgs[s.id] = (window.__dshOptimisticMsgs[s.id] || []).filter((item) => item.text !== optimisticText);
+							optMap[s.id] = (optMap[s.id] || []).filter((item) => item.id !== optEntry.id);
+							persistOptimisticMsgsMap();
 							lastRenderedChatKey = "";
 							renderActiveChatStage();
 							showToast("❌ " + (data.result.error || data.result.message || "发送失败"));
@@ -4016,7 +4162,7 @@ function initHubController() {
 		document.body.classList.add("mobile-file-open");
 		const titleEl = document.getElementById("inChatFileTitle");
 		if (titleEl) titleEl.textContent = `📂 ${found.session.project} (${found.session.hostName})`;
-		if (/\.(blend|blend1|fbx|obj|glb|gltf|dae|abc|usd|usdz|zip|tar|gz|dmg|pkg|mp4|mov)$/i.test(baseName)) {
+		if (/\.(blend|blend1|fbx|obj|glb|gltf|dae|abc|usd|usdz|zip|tar|gz|dmg|pkg)$/i.test(baseName)) {
 			const ext = "." + (baseName.split(".").pop() || "").toLowerCase();
 			found.host.lastFilePreview = {
 				at: Date.now(),
@@ -4039,57 +4185,54 @@ function initHubController() {
 	}
 	async function hydrateInlineChatImages(session, containerEl) {
 		if (!session || !containerEl) return;
+		const mt = hubState.mediaTicket || "";
+		const sessionArts = Array.isArray(session.artifacts) ? session.artifacts : [];
+		const resolveLocalRelPath = (rawLocalPath) => {
+			let target = String(rawLocalPath || "").trim();
+			if (!target.startsWith("/") && sessionArts.length > 0) {
+				const matched = sessionArts.find((a) => a?.path && (a.name?.toLowerCase() === target.toLowerCase() || a.path.endsWith("/" + target)));
+				if (matched?.path) target = matched.path;
+			}
+			return toWorkspaceRelPath(session.cwd || "", target);
+		};
+		const pendingVideos = Array.from(containerEl.querySelectorAll(".md-local-video-pending[data-local-video-path]"));
+		if (pendingVideos.length > 0) {
+			window.__dshInlineVideoCache = window.__dshInlineVideoCache || {};
+			for (const vNode of pendingVideos) {
+				const vPath = vNode.getAttribute("data-local-video-path") || "";
+				if (!vPath) continue;
+				const relPath = resolveLocalRelPath(vPath);
+				const baseName = relPath.split("/").filter(Boolean).pop() || "video.mp4";
+				const encodedPath = encodeURIComponent(vPath).replace(/'/g, "%27");
+				const vSrc = buildFastStreamUrl(session.hostId, relPath, {
+					cwd: session.cwd || "",
+					agentId: session.id || "",
+					mediaTicket: mt
+				});
+				window.__dshInlineVideoCache[vPath] = vSrc;
+				vNode.classList.remove("md-local-video-pending");
+				vNode.removeAttribute("onclick");
+				vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="metadata"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc(baseName)} · 点此打开大屏预览</span>`;
+			}
+		}
 		const pendingNodes = Array.from(containerEl.querySelectorAll(".md-local-img-pending[data-local-img-path]"));
 		if (pendingNodes.length === 0) return;
 		window.__dshInlineImgCache = window.__dshInlineImgCache || {};
-		window.__dshInlineImgInflight = window.__dshInlineImgInflight || {};
 		for (const node of pendingNodes) {
 			const imgPath = node.getAttribute("data-local-img-path") || "";
 			if (!imgPath) continue;
-			if (window.__dshInlineImgCache[imgPath]) {
-				const src = window.__dshInlineImgCache[imgPath];
-				node.classList.remove("md-local-img-pending");
-				node.innerHTML = `<img class="md-inline-img" src="${src}" alt="image" />`;
-				continue;
-			}
-			if (window.__dshInlineImgInflight[imgPath]) continue;
-			window.__dshInlineImgInflight[imgPath] = true;
-			(async () => {
-				try {
-					const tryResolveCached = async () => {
-						const checkRes = await apiFetch(`/api/hosts/${encodeURIComponent(session.hostId)}/file-preview?path=${encodeURIComponent(imgPath)}&format=json`).catch(() => null);
-						if (checkRes && checkRes.ok) {
-							const data = await checkRes.json().catch(() => ({}));
-							if (data?.preview?.kind === "image") {
-								const tk = getToken();
-								const srcUrl = `/api/hosts/${encodeURIComponent(session.hostId)}/file-preview?path=${encodeURIComponent(imgPath)}` + (tk ? `&token=${encodeURIComponent(tk)}` : "");
-								window.__dshInlineImgCache[imgPath] = srcUrl;
-								document.querySelectorAll(`.md-local-img-pending[data-local-img-path="${CSS.escape(imgPath)}"]`).forEach((el) => {
-									el.classList.remove("md-local-img-pending");
-									el.innerHTML = `<img class="md-inline-img" src="${srcUrl}" alt="${esc(data.preview.name || "image")}" />`;
-								});
-								return true;
-							}
-						}
-						return false;
-					};
-					if (await tryResolveCached()) return;
-					const relPath = toWorkspaceRelPath(session.cwd || "", imgPath);
-					await dispatchHostCommand(session.hostId, {
-						type: "read_file",
-						agentId: session.id,
-						cwd: session.cwd || "",
-						relPath,
-						silentPreview: true
-					});
-					for (let i = 0; i < 18; i++) {
-						await sleepMs(180);
-						if (await tryResolveCached()) return;
-					}
-				} catch {} finally {
-					delete window.__dshInlineImgInflight[imgPath];
-				}
-			})();
+			const relPath = resolveLocalRelPath(imgPath);
+			const baseName = relPath.split("/").filter(Boolean).pop() || "image";
+			const isLosslessAnim = /\.(svg|gif)$/i.test(baseName);
+			const srcUrl = buildFastStreamUrl(session.hostId, relPath, {
+				cwd: session.cwd || "",
+				agentId: session.id || "",
+				thumb: !isLosslessAnim,
+				mediaTicket: mt
+			});
+			window.__dshInlineImgCache[imgPath] = srcUrl;
+			node.classList.remove("md-local-img-pending");
+			node.innerHTML = `<img class="md-inline-img" src="${srcUrl}" alt="${esc(baseName)}" loading="lazy" />`;
 		}
 	}
 	const previewTextCache = /* @__PURE__ */ new Map();
@@ -4138,24 +4281,38 @@ function initHubController() {
 			body.dataset.dshDrawerListKey = "";
 			ensureTextPreviewLoaded(host.hostId, preview);
 			const kind = previewKind(preview);
+			const mt = hubState.mediaTicket || "";
 			const isMarkdown = kind === "text" && /\.(md|markdown|mdx)$/i.test(preview.name || preview.relPath || "");
 			const rawMdMode = Boolean(window.__dshRawMdPreview);
-			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${(preview.content || "").length}`;
+			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${preview._origImage ? 1 : 0}:${preview._transcodeVideo ? 1 : 0}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${(preview.content || "").length}`;
 			if (body.dataset.dshPreviewKey === previewKey && body.querySelector(".file-preview-body")) return;
 			body.dataset.dshPreviewKey = previewKey;
 			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
-			const previewBodyHtml = kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-               <img src="${imagePreviewSrc(preview)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:46vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回目录重新点击文件加载';" />
-               <div style="font-size:12px;color:#94a3b8;">${esc(formatBytes(preview.size))} · 长按图片可保存到相册</div>
-             </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:32px 16px;background:#0f172a;color:#94a3b8;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
-                 <div style="font-size:32px;">📦</div>
-                 <div style="font-size:14px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
-                 <div style="font-size:12.5px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
-               </div>` : isMarkdown && !rawMdMode ? `<div class="file-preview-body walkthrough-md-preview md-body" style="padding:16px 14px;background:var(--card-bg, #ffffff);color:var(--text, #0f172a);min-height:340px;overflow-x:auto;">
-                 ${formatAssistantText(preview.content || "")}
-               </div>` : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
-                 ${numberedHtml}
-               </div>`;
+			const canToggleOrigImg = kind === "image" && Boolean(preview.streamUrl) && !/\.(svg|gif)$/i.test(preview.name || "") && (!preview.size || preview.size > 307200);
+			const dlUrl = preview.streamUrl ? appendMediaAuth(`${preview.streamUrl}${preview.streamUrl.includes("?") ? "&" : "?"}download=1`, mt) : "";
+			const previewBodyHtml = kind === "video" ? `<div class="file-preview-body" style="padding:16px 12px;background:#0f172a;min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" controls playsinline webkit-playsinline preload="metadata"></video>
+               <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
+                 <span style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · 支持拖动进度条分片秒播</span>
+                 <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', true)">${preview._transcodeVideo ? "✨ 切回原画直出" : "🔄 播不出？转码兼容播放"}</button>
+                 ${dlUrl ? `<a class="media-toolbar-pill" href="${dlUrl}" download="${esc(preview.name || "video.mp4")}">⬇️ 下载视频</a>` : ""}
+               </div>
+             </div>` : kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+                 <img src="${imagePreviewSrc(preview, mt)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:52vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回目录重新点击文件加载';" />
+                 <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
+                   <span>${esc(formatBytes(preview.size))} · 长按图片可保存到相册</span>
+                   ${canToggleOrigImg ? `<button type="button" class="media-toolbar-pill" onclick="toggleOriginalPreviewImage('${esc(host.hostId)}', true)">${preview._origImage ? "⚡ 切回智能省流图" : "🔍 查看无损原图"}</button>` : ""}
+                 </div>
+               </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:32px 16px;background:#0f172a;color:#94a3b8;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
+                   <div style="font-size:32px;">📦</div>
+                   <div style="font-size:14px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
+                   <div style="font-size:12.5px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
+                   ${dlUrl ? `<a class="media-toolbar-pill" href="${dlUrl}" download="${esc(preview.name || "file")}">⬇️ 下载原文件</a>` : ""}
+                 </div>` : isMarkdown && !rawMdMode ? `<div class="file-preview-body walkthrough-md-preview md-body" style="padding:16px 14px;background:var(--card-bg, #ffffff);color:var(--text, #0f172a);min-height:340px;overflow-x:auto;">
+                   ${formatAssistantText(preview.content || "")}
+                 </div>` : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
+                   ${numberedHtml}
+                 </div>`;
 			body.innerHTML = `
           <div class="breadcrumbs-bar" style="justify-content:space-between;gap:6px;">
             <button class="back-btn" style="padding:0;font-size:13px;" onclick="backFromDrawerPreview()">‹ 返回目录</button>
@@ -4194,7 +4351,7 @@ function initHubController() {
           ${loadingDir ? fileLoadingSpinnerHtml(activeSubDir ? `正在读取 ${activeSubDir} …` : "正在读取目录…") : entries.map((e) => `
             <div class="file-row" onclick="clickRealFileEntry('${hostId}', '${sessionId}', '${esc(rootCwd)}', '${esc(e.relPath)}', ${Boolean(e.isDirectory)}, true)">
               <div class="file-row-left">
-                <span style="font-size:18px;">${e.isDirectory ? "📁" : "📄"}</span>
+                <span style="font-size:18px;">${fileEntryIcon(e)}</span>
                 <span style="font-weight:500;">${esc(e.name)}</span>
               </div>
               <span style="font-size:12px;color:#94a3b8;">${e.isDirectory ? "目录" : formatBytes(e.size)} ›</span>
@@ -4242,6 +4399,34 @@ function initHubController() {
 			} else if (Date.now() - filePreviewLoading.at > 15e3) filePreviewLoading = null;
 		}
 	}
+	function fileEntryIcon(entry) {
+		if (entry?.isDirectory) return "📁";
+		const name = String(entry?.name || entry?.relPath || "").toLowerCase();
+		if (/\.(mp4|m4v|mov|webm|ogv)$/.test(name)) return "🎬";
+		if (/\.(png|jpe?g|webp|gif|svg|bmp|ico|avif|heic|heif)$/.test(name)) return "🖼️";
+		if (/\.(md|markdown|mdx)$/.test(name)) return "📋";
+		return "📄";
+	}
+	function toggleOriginalPreviewImage(hostId, inDrawer = false) {
+		const target = inDrawer ? pinnedDrawerPreviewByHost[hostId] : pinnedMainPreviewByHost[hostId];
+		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
+		const preview = target || host?.lastFilePreview;
+		if (!preview) return;
+		preview._origImage = !preview._origImage;
+		showToast(preview._origImage ? "🔍 已切换为无损原图模式" : "⚡ 已切换为智能省流高清模式");
+		renderAll();
+		renderFilePanes();
+	}
+	function switchVideoTranscodeMode(hostId, inDrawer = false) {
+		const target = inDrawer ? pinnedDrawerPreviewByHost[hostId] : pinnedMainPreviewByHost[hostId];
+		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
+		const preview = target || host?.lastFilePreview;
+		if (!preview) return;
+		preview._transcodeVideo = !preview._transcodeVideo;
+		showToast(preview._transcodeVideo ? "🔄 正在用电脑端 H.264 兼容转码流加载（首次可能需数秒）…" : "✨ 已切回原视频 HTTP 206 分片直出流");
+		renderAll();
+		renderFilePanes();
+	}
 	async function requestDirList(hostId, agentId, cwd, subDir, inDrawer = false) {
 		fileProjectCwd = cwd;
 		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
@@ -4260,6 +4445,34 @@ function initHubController() {
 			drawer: inDrawer
 		};
 		renderAll();
+		try {
+			const qp = new URLSearchParams({
+				cwd: String(cwd || ""),
+				path: String(subDir || ""),
+				agentId: String(agentId || "")
+			});
+			const fastRes = await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/fs/list?${qp.toString()}`);
+			const fastData = await fastRes.json().catch(() => null);
+			if (fastRes.ok && fastData?.ok) {
+				if (host) host.lastFsListing = {
+					at: Date.now(),
+					agentId: agentId || "",
+					rootCwd: fastData.rootCwd || cwd || "",
+					subDir: fastData.subDir ?? (subDir || ""),
+					entries: fastData.entries || []
+				};
+				fileLoading = null;
+				renderAll();
+				renderFilePanes();
+				return;
+			}
+			if (fastRes.status !== 404 && fastData?.error) {
+				fileLoading = null;
+				showToast("❌ 读取目录失败：" + fastData.error);
+				renderAll();
+				return;
+			}
+		} catch {}
 		let failure = "";
 		try {
 			const out = await dispatchHostCommand(hostId, {
@@ -4295,14 +4508,53 @@ function initHubController() {
 			await requestDirList(hostId, agentId, cwd, relPath, inDrawer);
 			return;
 		}
+		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
 		filePreviewLoading = {
 			hostId,
 			relPath,
-			prevAt: (hubState.hosts || []).find((h) => h.hostId === hostId)?.lastFilePreview?.at || 0,
+			prevAt: host?.lastFilePreview?.at || 0,
 			at: Date.now(),
 			drawer: inDrawer
 		};
 		renderAll();
+		try {
+			const qp = new URLSearchParams({
+				cwd: String(cwd || ""),
+				path: String(relPath || ""),
+				agentId: String(agentId || "")
+			});
+			const fastRes = await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/fs/read?${qp.toString()}`);
+			const fastData = await fastRes.json().catch(() => null);
+			if (fastRes.ok && fastData?.ok) {
+				const streamQuery = new URLSearchParams({
+					path: String(fastData.relPath || relPath || ""),
+					...cwd ? { cwd: String(cwd) } : {},
+					...agentId ? { agentId: String(agentId) } : {}
+				}).toString();
+				const box = {
+					...fastData,
+					at: Date.now(),
+					agentId: agentId || "",
+					relPath: fastData.relPath || relPath,
+					streamUrl: fastData.streamUrl || `/api/hosts/${encodeURIComponent(hostId)}/fs/stream?${streamQuery}`,
+					_showInDrawer: Boolean(inDrawer),
+					_showInMain: !inDrawer
+				};
+				if (host) host.lastFilePreview = box;
+				if (inDrawer) pinnedDrawerPreviewByHost[hostId] = box;
+				else pinnedMainPreviewByHost[hostId] = box;
+				filePreviewLoading = null;
+				renderAll();
+				renderFilePanes();
+				return;
+			}
+			if (fastRes.status !== 404 && fastData?.error) {
+				filePreviewLoading = null;
+				showToast("❌ 读取文件失败：" + fastData.error);
+				renderAll();
+				return;
+			}
+		} catch {}
 		let failure = "";
 		try {
 			const out = await dispatchHostCommand(hostId, {
@@ -4385,24 +4637,38 @@ function initHubController() {
 			container.dataset.dshFilesListKey = "";
 			ensureTextPreviewLoaded(host.hostId, preview);
 			const kind = previewKind(preview);
+			const mt = hubState.mediaTicket || "";
 			const isMarkdown = kind === "text" && /\.(md|markdown|mdx)$/i.test(preview.name || preview.relPath || "");
 			const rawMdMode = Boolean(window.__dshRawMdPreview);
-			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${(preview.content || "").length}`;
+			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${preview._origImage ? 1 : 0}:${preview._transcodeVideo ? 1 : 0}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${(preview.content || "").length}`;
 			if (container.dataset.dshPreviewKey === previewKey && container.querySelector(".file-preview-body")) return;
 			container.dataset.dshPreviewKey = previewKey;
 			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
-			const previewBodyHtml = kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-               <img src="${imagePreviewSrc(preview)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回文件列表重新点击加载';" />
-               <div style="font-size:12px;color:#94a3b8;">${esc(formatBytes(preview.size))} · 长按图片可保存到相册</div>
-             </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:36px 16px;background:#0f172a;color:#94a3b8;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
-                 <div style="font-size:36px;">📦</div>
-                 <div style="font-size:14.5px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
-                 <div style="font-size:13px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
-               </div>` : isMarkdown && !rawMdMode ? `<div class="file-preview-body walkthrough-md-preview md-body" style="padding:16px 14px;background:var(--card-bg, #ffffff);color:var(--text, #0f172a);min-height:calc(100% - 44px);overflow-x:auto;">
-                 ${formatAssistantText(preview.content || "")}
-               </div>` : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:calc(100% - 44px);overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;">
-                 ${numberedHtml}
-               </div>`;
+			const canToggleOrigImg = kind === "image" && Boolean(preview.streamUrl) && !/\.(svg|gif)$/i.test(preview.name || "") && (!preview.size || preview.size > 307200);
+			const dlUrl = preview.streamUrl ? appendMediaAuth(`${preview.streamUrl}${preview.streamUrl.includes("?") ? "&" : "?"}download=1`, mt) : "";
+			const previewBodyHtml = kind === "video" ? `<div class="file-preview-body" style="padding:18px 14px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" controls playsinline webkit-playsinline preload="metadata"></video>
+               <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
+                 <span style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · 支持拖动进度条分片秒播</span>
+                 <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', false)">${preview._transcodeVideo ? "✨ 切回原画直出" : "🔄 播不出？转码兼容播放"}</button>
+                 ${dlUrl ? `<a class="media-toolbar-pill" href="${dlUrl}" download="${esc(preview.name || "video.mp4")}">⬇️ 下载视频</a>` : ""}
+               </div>
+             </div>` : kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+                 <img src="${imagePreviewSrc(preview, mt)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回文件列表重新点击加载';" />
+                 <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
+                   <span>${esc(formatBytes(preview.size))} · 长按图片可保存到相册</span>
+                   ${canToggleOrigImg ? `<button type="button" class="media-toolbar-pill" onclick="toggleOriginalPreviewImage('${esc(host.hostId)}', false)">${preview._origImage ? "⚡ 切回智能省流图" : "🔍 查看无损原图"}</button>` : ""}
+                 </div>
+               </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:36px 16px;background:#0f172a;color:#94a3b8;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
+                   <div style="font-size:36px;">📦</div>
+                   <div style="font-size:14.5px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
+                   <div style="font-size:13px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
+                   ${dlUrl ? `<a class="media-toolbar-pill" href="${dlUrl}" download="${esc(preview.name || "file")}">⬇️ 下载原文件</a>` : ""}
+                 </div>` : isMarkdown && !rawMdMode ? `<div class="file-preview-body walkthrough-md-preview md-body" style="padding:16px 14px;background:var(--card-bg, #ffffff);color:var(--text, #0f172a);min-height:calc(100% - 44px);overflow-x:auto;">
+                   ${formatAssistantText(preview.content || "")}
+                 </div>` : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:calc(100% - 44px);overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;">
+                   ${numberedHtml}
+                 </div>`;
 			container.innerHTML = `
           <div class="breadcrumbs-bar" style="justify-content:space-between;">
             <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="closeMainFilePreview('${esc(host.hostId)}')">‹ 返回文件列表</button>
@@ -4454,7 +4720,7 @@ function initHubController() {
 		const listHtml = loadingDir ? fileLoadingSpinnerHtml(activeSubDir ? `正在读取 ${activeSubDir} …` : "正在读取目录…") : entries.map((e) => `
         <div class="file-row" onclick="clickRealFileEntry('${esc(host.hostId)}', '${esc(agentId)}', '${esc(listing?.rootCwd || fileProjectCwd)}', '${esc(e.relPath)}', ${Boolean(e.isDirectory)}, false)">
           <div class="file-row-left">
-            <span style="font-size:18px;">${e.isDirectory ? "📁" : "📄"}</span>
+            <span style="font-size:18px;">${fileEntryIcon(e)}</span>
             <span style="font-weight:500;">${esc(e.name)}</span>
           </div>
           <span style="font-size:12px;color:#94a3b8;">${e.isDirectory ? "目录" : formatBytes(e.size)} ›</span>
@@ -6288,22 +6554,35 @@ function initHubController() {
 	function preservePreviewUiState(nextState) {
 		const prevHosts = hubState.hosts || [];
 		for (const host of nextState.hosts || []) {
-			const prev = prevHosts.find((h) => h.hostId === host.hostId)?.lastFilePreview;
+			const prevHostObj = prevHosts.find((h) => h.hostId === host.hostId);
+			const prevListing = prevHostObj?.lastFsListing;
+			if (prevListing && (!host.lastFsListing || (prevListing.at || 0) >= (host.lastFsListing.at || 0))) host.lastFsListing = prevListing;
+			const prev = prevHostObj?.lastFilePreview;
 			const next = host.lastFilePreview;
-			if (prev && next && prev.at === next.at && prev.relPath === next.relPath) {
+			if (prev && (!next || (prev.at || 0) > (next.at || 0))) host.lastFilePreview = prev;
+			else if (prev && next && prev.at === next.at && prev.relPath === next.relPath) {
 				next._showInMain = Boolean(prev._showInMain);
 				next._showInDrawer = Boolean(prev._showInDrawer);
+				next._origImage = Boolean(prev._origImage);
+				next._transcodeVideo = Boolean(prev._transcodeVideo);
+				if (!next.streamUrl && prev.streamUrl) next.streamUrl = prev.streamUrl;
 				if (next.content === void 0 && prev.content !== void 0) next.content = prev.content;
 			}
 			const pinnedDrawer = pinnedDrawerPreviewByHost[host.hostId];
 			if (pinnedDrawer && next && next.relPath === pinnedDrawer.relPath && next.at >= (pinnedDrawer.at || 0)) {
 				if (next.content === void 0 && pinnedDrawer.content !== void 0) next.content = pinnedDrawer.content;
+				if (!next.streamUrl && pinnedDrawer.streamUrl) next.streamUrl = pinnedDrawer.streamUrl;
+				next._origImage = Boolean(pinnedDrawer._origImage);
+				next._transcodeVideo = Boolean(pinnedDrawer._transcodeVideo);
 				next._showInDrawer = true;
 				pinnedDrawerPreviewByHost[host.hostId] = next;
 			}
 			const pinnedMain = pinnedMainPreviewByHost[host.hostId];
 			if (pinnedMain && next && next.relPath === pinnedMain.relPath && next.at >= (pinnedMain.at || 0)) {
 				if (next.content === void 0 && pinnedMain.content !== void 0) next.content = pinnedMain.content;
+				if (!next.streamUrl && pinnedMain.streamUrl) next.streamUrl = pinnedMain.streamUrl;
+				next._origImage = Boolean(pinnedMain._origImage);
+				next._transcodeVideo = Boolean(pinnedMain._transcodeVideo);
 				next._showInMain = true;
 				pinnedMainPreviewByHost[host.hostId] = next;
 			}
@@ -6703,6 +6982,8 @@ function initHubController() {
 		openSheet,
 		openChatFileLink,
 		toggleMdPreviewMode,
+		toggleOriginalPreviewImage,
+		switchVideoTranscodeMode,
 		dismissOverlay,
 		shouldDismissHorizontalSwipe,
 		shouldDismissVerticalSwipe,

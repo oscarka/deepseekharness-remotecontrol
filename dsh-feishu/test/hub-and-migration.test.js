@@ -23,6 +23,12 @@ import { checkAccessibilityPermission, fastScanBrainDirs, getTurboNativeBinaryPa
 import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHome } from '../lib/migration.js'
 import { createHubServer } from '../../hub/server.js'
 import { HubCore } from '../../hub/hub-core.js'
+import {
+  parseHttpByteRange,
+  parseImageDimensions,
+  readWorkspaceFileFastMeta,
+  readWorkspaceFileStreamChunk,
+} from '../lib/workspace-ops.js'
 
 const APP_ID = 'cli_0123456789abcdef'
 const USER = 'ou_user_1'
@@ -1812,7 +1818,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.5.4')
+  assert.equal(healthRes.build.version, '0.5.5')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 
@@ -3215,6 +3221,276 @@ test('Phase 3 Deep Integration: Codex app-server JSON-RPC & WorkBuddy ACP HTTP+S
   } finally {
     await rm(tmpDir, { recursive: true, force: true })
   }
+})
+
+test('Fast FS Tunnel & Mobile Media Streaming (Plan 1 + Plan 2): HTTP 206 Range video, ETag 304, read-only mediaTicket, smart sips thumb & walkthrough prewarm', async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-fast-fs-media-'))
+  try {
+    const wsDir = join(tmpDir, 'workspace')
+    const dshHome = join(tmpDir, 'dsh-home')
+    const brainDir = join(tmpDir, 'brain', 'conv-media-01')
+    await mkdir(join(wsDir, 'assets'), { recursive: true })
+    await mkdir(dshHome, { recursive: true })
+    await mkdir(brainDir, { recursive: true })
+
+    // 1. Create sample MP4 bytes (fake ftyp mp42 box + deterministic payload), code file, and walkthrough.md
+    const mp4Buf = Buffer.alloc(4096)
+    Buffer.from('00000018667479706d703432', 'hex').copy(mp4Buf, 0)
+    for (let i = 12; i < mp4Buf.length; i += 1) mp4Buf[i] = i % 251
+    await writeFile(join(wsDir, 'assets', 'demo.mp4'), mp4Buf)
+    await writeFile(join(wsDir, 'assets', 'clip.mov'), mp4Buf.subarray(0, 512))
+    await writeFile(join(wsDir, 'src-note.md'), '# Fast Read\nToken sk-1234567890abcdefghijklmnop should be redacted\n', 'utf8')
+    const wtPath = join(brainDir, 'walkthrough.md')
+    await writeFile(wtPath, '# Walkthrough Prewarmed\nInstant 0ms mobile open!\n', 'utf8')
+
+    // 2. Unit-check parseHttpByteRange & PNG dimension parser
+    assert.deepEqual(parseHttpByteRange('bytes=0-1', 4096), { ok: true, start: 0, end: 1 })
+    assert.deepEqual(parseHttpByteRange('bytes=100-', 4096, 1024), { ok: true, start: 100, end: 1123 })
+    assert.deepEqual(parseHttpByteRange('bytes=-16', 4096), { ok: true, start: 4080, end: 4095 })
+    assert.equal(parseHttpByteRange('bytes=5000-5010', 4096).unsatisfied, true)
+
+    // Construct a minimal PNG header with width=750, height=3200 (tall screenshot)
+    const tallPngHeader = Buffer.alloc(32)
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]).copy(tallPngHeader, 0)
+    tallPngHeader.writeUInt32BE(750, 16)
+    tallPngHeader.writeUInt32BE(3200, 20)
+    assert.deepEqual(parseImageDimensions(tallPngHeader), { width: 750, height: 3200 })
+
+    // 3. Spin up Hub + HubAgent (with walkthrough artifact on live session)
+    const hub = new HubCore()
+    const { fetchAdapter } = createHubServer({ hub, token: 'master-secret-999', requireToken: true })
+    const liveTask = makeAgent('sess-media-1', '移动端视频与秒开测试')
+    liveTask.session.header.cwd = wsDir
+    const cfg = resolveConfig({
+      appId: APP_ID,
+      appSecret: 'sec_xxx',
+      hubUrl: 'http://hub.local',
+      hubToken: 'master-secret-999',
+      hostId: 'mac-studio',
+      hostName: 'Mac Studio',
+      dshHome,
+      antigravityBrainDirs: [join(tmpDir, 'brain')],
+      enableAntigravityIde: false,
+      enableExternalHarnesses: false,
+    })
+    const bridge = new FeishuBridge({
+      config: cfg,
+      agents: {
+        list: () => [liveTask],
+        get: id => (id === liveTask.id ? liveTask : undefined),
+      },
+      sender: { sendText: async () => ({}), sendCard: async () => ({}), updateCard: async () => ({}) },
+      audit: { write: async () => {} },
+      logger: { info() {}, warn() {}, error() {} },
+    })
+    const hostAgent = new HubAgent({
+      config: cfg,
+      bridge,
+      fetchImpl: fetchAdapter,
+    })
+    // Inject walkthrough artifact on cachedAgySessions / bridge task via prewarm check
+    const origCollect = bridge.getSnapshotState.bind(bridge)
+    bridge.getSnapshotState = () => {
+      const s = origCollect()
+      if (s.tasks?.[0]) {
+        s.tasks[0].artifacts = [{ name: 'walkthrough.md', path: wtPath, mtimeMs: 1700000001000 }]
+      }
+      return s
+    }
+
+    await hostAgent.tick()
+
+    // 4. Verify mediaTicket is issued in /api/state and enforces strict read-only boundary
+    const stateRes = await fetchAdapter('http://hub.local/api/state', {
+      headers: { authorization: 'Bearer master-secret-999' },
+    })
+    assert.equal(stateRes.status, 200)
+    const stateJson = await stateRes.json()
+    assert.match(stateJson.mediaTicket || '', /^mt1\.\d+\.[A-Za-z0-9_-]+$/)
+    const mt = stateJson.mediaTicket
+
+    // Rejects mediaTicket on admin/write endpoints!
+    const forbiddenCmd = await fetchAdapter(`http://hub.local/api/hosts/mac-studio/command?mt=${encodeURIComponent(mt)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'prompt', agentId: liveTask.id, text: 'hack' }),
+    })
+    assert.equal(forbiddenCmd.status, 401)
+    const forbiddenState = await fetchAdapter(`http://hub.local/api/state?mt=${encodeURIComponent(mt)}`)
+    assert.equal(forbiddenState.status, 401)
+
+    // 5. Walkthrough prewarm hits Hub hotCache in 0ms WITHOUT needing another hostAgent.tick()!
+    const wtReadRes = await fetchAdapter(
+      `http://hub.local/api/hosts/mac-studio/fs/read?path=${encodeURIComponent(wtPath)}&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+    )
+    assert.equal(wtReadRes.status, 200)
+    const wtReadJson = await wtReadRes.json()
+    assert.equal(wtReadJson.ok, true)
+    assert.equal(wtReadJson.hotCache, true)
+    assert.match(wtReadJson.content, /Walkthrough Prewarmed/)
+
+    // 6. Fast FS list & video read & HTTP 206 Partial Content Range streaming
+    const listPromise = fetchAdapter(
+      `http://hub.local/api/hosts/mac-studio/fs/list?path=assets&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+    )
+    await new Promise(r => setTimeout(r, 15))
+    await hostAgent.tick()
+    const listRes = await listPromise
+    assert.equal(listRes.status, 200)
+    const listJson = await listRes.json()
+    assert.equal(listJson.ok, true)
+    assert.ok(listJson.entries.some(e => e.name === 'demo.mp4'))
+
+    const videoMetaPromise = fetchAdapter(
+      `http://hub.local/api/hosts/mac-studio/fs/read?path=${encodeURIComponent('assets/demo.mp4')}&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+    )
+    await new Promise(r => setTimeout(r, 15))
+    await hostAgent.tick()
+    const videoMetaRes = await videoMetaPromise
+    assert.equal(videoMetaRes.status, 200)
+    const videoMeta = await videoMetaRes.json()
+    assert.equal(videoMeta.kind, 'video')
+    assert.equal(videoMeta.mime, 'video/mp4')
+    assert.equal(videoMeta.size, 4096)
+
+    // iOS Safari initial probe: Range: bytes=0-1 -> 206 Partial Content (exact 2 bytes!)
+    const probePromise = fetchAdapter(
+      `http://hub.local/api/hosts/mac-studio/fs/stream?path=${encodeURIComponent('assets/demo.mp4')}&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+      { headers: { range: 'bytes=0-1' } },
+    )
+    await new Promise(r => setTimeout(r, 15))
+    await hostAgent.tick()
+    const probeRes = await probePromise
+    assert.equal(probeRes.status, 206)
+    assert.equal(probeRes.headers.get('accept-ranges'), 'bytes')
+    assert.equal(probeRes.headers.get('content-range'), 'bytes 0-1/4096')
+    const probeBuf = Buffer.from(await probeRes.arrayBuffer())
+    assert.equal(probeBuf.length, 2)
+    assert.deepEqual(probeBuf, mp4Buf.subarray(0, 2))
+
+    // ETag If-None-Match -> 304 Not Modified
+    const etag = probeRes.headers.get('etag')
+    assert.ok(etag, 'Expected ETag header on video stream')
+    const cached304Promise = fetchAdapter(
+      `http://hub.local/api/hosts/mac-studio/fs/stream?path=${encodeURIComponent('assets/demo.mp4')}&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+      { headers: { 'if-none-match': etag } },
+    )
+    await new Promise(r => setTimeout(r, 15))
+    await hostAgent.tick()
+    const cached304Res = await cached304Promise
+    assert.equal(cached304Res.status, 304)
+
+    // 7. Real sips smart thumbnail test on repo's docs/assets/step1-login-zh.png (>300KB PNG if present, or generated large PNG)
+    const realPngPath = join(process.cwd(), 'docs/assets/step1-login-zh.png')
+    const realMeta = await readWorkspaceFileFastMeta(process.cwd(), 'docs/assets/step1-login-zh.png')
+    assert.equal(realMeta.ok, true)
+    assert.equal(realMeta.kind, 'image')
+    if (process.platform === 'darwin' && realMeta.size > 300 * 1024) {
+      const thumbChunk = await readWorkspaceFileStreamChunk(process.cwd(), 'docs/assets/step1-login-zh.png', {
+        thumb: true,
+        dshHome,
+      })
+      assert.equal(thumbChunk.ok, true)
+      assert.equal(thumbChunk.isThumb, true)
+      assert.equal(thumbChunk.mime, 'image/jpeg')
+      assert.ok(thumbChunk.buffer.length < realMeta.size, 'Smart JPEG thumbnail should be smaller than raw PNG')
+    } else if (process.platform === 'darwin') {
+      // Create a >350KB uncompressed BMP/PNG via sips from step1-login-zh.png to verify >300KB compression
+      const bigBmp = join(wsDir, 'assets', 'big-screen.bmp')
+      const { execFile } = await import('node:child_process')
+      const { promisify } = await import('node:util')
+      await promisify(execFile)('/usr/bin/sips', ['-s', 'format', 'bmp', realPngPath, '--out', bigBmp])
+      const bmpStat = await stat(bigBmp)
+      if (bmpStat.size > 300 * 1024) {
+        const thumbChunk = await readWorkspaceFileStreamChunk(wsDir, 'assets/big-screen.bmp', {
+          thumb: true,
+          dshHome,
+        })
+        assert.equal(thumbChunk.ok, true)
+        assert.equal(thumbChunk.isThumb, true)
+        assert.equal(thumbChunk.mime, 'image/jpeg')
+        assert.ok(thumbChunk.buffer.length < bmpStat.size * 0.4, 'Thumbnail should shrink >300KB image substantially')
+      }
+    }
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
+test('In-flight prompt tracking: sent messages never vanish between command pull and disk transcript sync (even on repeated text)', () => {
+  let nowMs = 1_770_000_000_000
+  const hub = new HubCore({ now: () => nowMs })
+  hub.handleHeartbeat({
+    hostId: 'mac-pro',
+    hostName: 'Mac Pro',
+    bridgeState: {
+      tasks: [
+        {
+          id: 'sess-1',
+          status: 'idle',
+          messageCount: 2,
+          transcript: [
+            { role: 'user', text: '继续' },
+            { role: 'assistant', text: '第一阶段已完成。' },
+          ],
+        },
+      ],
+      approvals: [],
+      workspaces: [],
+    },
+  })
+
+  // User sends repeated text '继续' on mobile
+  const enq = hub.queueCommand('mac-pro', {
+    type: 'prompt',
+    agentId: 'sess-1',
+    text: '继续',
+  })
+  assert.equal(enq.ok, true)
+
+  // Host pulls the command via liteHeartbeat BEFORE disk transcript has the new '继续'
+  nowMs += 150
+  const pullRes = hub.handleHeartbeat({
+    hostId: 'mac-pro',
+    hostName: 'Mac Pro',
+    liteHeartbeat: true,
+    expectedTaskCount: 1,
+  })
+  assert.equal(pullRes.commands.length, 1)
+
+  // During execution gap: pendingCommands is empty, but inflightCommands MUST still preserve the second '继续'
+  const gapState = hub.getFullState()
+  const gapHost = gapState.hosts.find(h => h.hostId === 'mac-pro')
+  assert.equal(gapHost.pendingCommands.length, 0)
+  assert.equal(gapHost.inflightCommands.length, 1)
+  assert.equal(gapHost.inflightCommands[0].text, '继续')
+  assert.equal(gapHost.inflightCommands[0].baselineSameCount, 1)
+
+  // Once Host finishes writing the new '继续' to disk and sends full heartbeat, inflightCommands auto-retires
+  nowMs += 900
+  hub.handleHeartbeat({
+    hostId: 'mac-pro',
+    hostName: 'Mac Pro',
+    bridgeState: {
+      tasks: [
+        {
+          id: 'sess-1',
+          status: 'running',
+          messageCount: 3,
+          transcript: [
+            { role: 'user', text: '继续' },
+            { role: 'assistant', text: '第一阶段已完成。' },
+            { role: 'user', text: '继续' },
+          ],
+        },
+      ],
+      approvals: [],
+      workspaces: [],
+    },
+  })
+  const syncedState = hub.getFullState()
+  const syncedHost = syncedState.hosts.find(h => h.hostId === 'mac-pro')
+  assert.equal(syncedHost.inflightCommands.length, 0)
 })
 
 

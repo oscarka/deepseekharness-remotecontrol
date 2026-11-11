@@ -46,7 +46,11 @@ export class HubCore {
     this.pushHistory = []
     this.sseListeners = new Set()
     this.hostCommandListeners = new Set()
+    this.hostFsListeners = new Set()
     this.fullTranscriptCache = new Map()
+    this.mediaTicketSecret = randomBytes(32)
+    this.pendingFsRequests = new Map()
+    this.fsHotCache = new Map()
   }
 
   onStateChange(listener) {
@@ -57,6 +61,22 @@ export class HubCore {
   onHostCommand(listener) {
     this.hostCommandListeners.add(listener)
     return () => this.hostCommandListeners.delete(listener)
+  }
+
+  onHostFsRequest(listener) {
+    this.hostFsListeners.add(listener)
+    return () => this.hostFsListeners.delete(listener)
+  }
+
+  emitHostFsRequest(hostId, fsReq) {
+    if (this.hostFsListeners.size === 0) return
+    for (const listener of this.hostFsListeners) {
+      try {
+        listener(hostId, fsReq)
+      } catch {
+        // ignore listener error
+      }
+    }
   }
 
   emitHostCommand(hostId, pendingCommandsCount) {
@@ -347,6 +367,40 @@ export class HubCore {
       record.commands = kept
     }
     return prunedAny
+  }
+
+  pruneInflightCommands(record, now = this.now()) {
+    if (!record || !Array.isArray(record.inflightCommands) || record.inflightCommands.length === 0) {
+      return []
+    }
+    const tasks = Array.isArray(record.bridgeState?.tasks) ? record.bridgeState.tasks : []
+    const kept = []
+    for (const ic of record.inflightCommands) {
+      if (!ic || now - (ic.pulledAt || ic.createdAt || 0) > 25_000) continue
+      const task = tasks.find(t => t && t.id === ic.agentId)
+      const tr = Array.isArray(task?.transcript) ? task.transcript : []
+      const icText = String(ic.text || '').trim()
+      let sameCount = 0
+      let lastMatchIdx = -1
+      for (let i = 0; i < tr.length; i += 1) {
+        const m = tr[i]
+        const mText = String(m?.text || '').trim()
+        if (m && m.role === 'user' && icText && (mText === icText || mText.startsWith(`${icText}\n`))) {
+          sameCount += 1
+          lastMatchIdx = i
+        }
+      }
+      const curTotal = Math.max(Number(task?.messageCount) || 0, tr.length)
+      const synced =
+        lastMatchIdx >= 0 &&
+        ((ic.baselineSameCount || 0) === 0 ||
+          sameCount > (ic.baselineSameCount || 0) ||
+          (curTotal > (ic.baselineTotalCount || 0) && lastMatchIdx >= Math.max(0, tr.length - 3)))
+      if (synced) continue
+      kept.push(ic)
+    }
+    record.inflightCommands = kept
+    return kept
   }
 
   clearFilePreview(hostId) {
@@ -741,6 +795,16 @@ export class HubCore {
           expiresAt: c.expiresAt || 0,
           queued: Boolean(c.queued),
         })),
+        inflightCommands: this.pruneInflightCommands(host, now).map(ic => ({
+          id: ic.id,
+          type: ic.type,
+          agentId: ic.agentId || '',
+          text: ic.text || '',
+          createdAt: ic.createdAt || now,
+          pulledAt: ic.pulledAt || now,
+          baselineSameCount: ic.baselineSameCount || 0,
+          baselineTotalCount: ic.baselineTotalCount || 0,
+        })),
         recentResults: (host.recentResults ?? [])
           .slice(-10)
           .reverse()
@@ -776,6 +840,7 @@ export class HubCore {
       now,
       ...(this.buildInfo ? { build: this.buildInfo } : {}),
       activeHostId: this.activeHostId,
+      mediaTicket: this.issueMediaTicket(now),
       vapidPublicKey: this.vapidKeys.publicKey,
       pushSubscriptions: this.listPushSubscriptions(),
       pushHistory: this.pushHistory.slice(-10).reverse(),
@@ -1222,11 +1287,64 @@ export class HubCore {
       }
     }
 
+    if (Array.isArray(payload.prewarmedFiles) && payload.prewarmedFiles.length > 0 && !isStaleSnapshot) {
+      for (const item of payload.prewarmedFiles) {
+        if (!item?.relPath || typeof item.content !== 'string') continue
+        if (Buffer.byteLength(item.content, 'utf8') > 256 * 1024) continue
+        this.storeFsHotCache(hostId, item.relPath, {
+          ok: true,
+          kind: item.kind || 'text',
+          mime: item.mime || 'text/markdown; charset=utf-8',
+          name: item.name || String(item.relPath).split('/').filter(Boolean).pop() || 'file.md',
+          ext: item.ext || '.md',
+          relPath: item.relPath,
+          size: Number(item.size) || Buffer.byteLength(item.content, 'utf8'),
+          mtimeMs: Number(item.mtimeMs) || now,
+          etag: item.etag || '',
+          content: item.content,
+        })
+      }
+    }
+
     const hasCommandActivity = (Array.isArray(payload.commandResults) && payload.commandResults.length > 0)
       || record.commands.length > 0
     this.pruneExpiredCommands(record, now)
+    if (Array.isArray(payload.commandResults) && payload.commandResults.length > 0 && Array.isArray(record.inflightCommands)) {
+      const failedIds = new Set(
+        payload.commandResults.filter(r => r && r.id && r.ok === false).map(r => r.id),
+      )
+      if (failedIds.size > 0) {
+        record.inflightCommands = record.inflightCommands.filter(ic => !failedIds.has(ic.id))
+      }
+    }
+    this.pruneInflightCommands(record, now)
     const commands = isStaleSnapshot ? [] : record.commands.splice(0)
+    const fsRequests = isStaleSnapshot ? [] : this.drainPendingFsRequests(hostId)
     for (const cmd of commands) {
+      if ((cmd?.type === 'prompt' || cmd?.type === 'steer') && cmd.agentId) {
+        const curTask = (record.bridgeState?.tasks || []).find(t => t && t.id === cmd.agentId)
+        const curTr = Array.isArray(curTask?.transcript) ? curTask.transcript : []
+        const cmdText = String(cmd.text || cmd.prompt || '').trim()
+        const baselineSameCount = curTr.filter(m => {
+          const mText = String(m?.text || '').trim()
+          return m && m.role === 'user' && cmdText && (mText === cmdText || mText.startsWith(`${cmdText}\n`))
+        }).length
+        const baselineTotalCount = Math.max(Number(curTask?.messageCount) || 0, curTr.length)
+        record.inflightCommands = record.inflightCommands ?? []
+        record.inflightCommands.push({
+          id: cmd.id,
+          type: cmd.type,
+          agentId: cmd.agentId,
+          text: cmdText,
+          createdAt: cmd.createdAt || now,
+          pulledAt: now,
+          baselineSameCount,
+          baselineTotalCount,
+        })
+        if (record.inflightCommands.length > 15) {
+          record.inflightCommands.splice(0, record.inflightCommands.length - 15)
+        }
+      }
       if (cmd?.type === 'approve' || cmd?.type === 'deny' || cmd?.type === 'approval') {
         const code = String(cmd.code || '').trim().toUpperCase()
         const entry = code ? this.approvalLedger.get(`${hostId}:${code}`) : null
@@ -1252,6 +1370,7 @@ export class HubCore {
       activeHostId: this.activeHostId,
       shouldConnectFeishu: this.activeHostId === hostId,
       commands,
+      ...(fsRequests.length > 0 ? { fsRequests } : {}),
       hostsSummary: this.getHostsSummary(),
       ...(!payload.liteHeartbeat || needFullSync
         ? { pushSubscriptionsBackup: [...this.pushSubscriptions.values()] }
@@ -2194,5 +2313,159 @@ export class HubCore {
         }
       }
     }
+  }
+
+  issueMediaTicket(now = this.now()) {
+    const bucketMs = 30 * 60_000
+    const exp = Math.ceil((now + 60 * 60_000) / bucketMs) * bucketMs
+    const sig = createHmac('sha256', this.mediaTicketSecret)
+      .update(`mt1.${exp}`)
+      .digest('base64url')
+    return `mt1.${exp}.${sig}`
+  }
+
+  verifyMediaTicket(ticket, now = this.now()) {
+    const raw = String(ticket ?? '').trim()
+    if (!raw.startsWith('mt1.')) return false
+    const parts = raw.split('.')
+    if (parts.length !== 3) return false
+    const exp = Number(parts[1])
+    const sig = parts[2]
+    if (!Number.isFinite(exp) || exp <= now || !sig) return false
+    const expected = createHmac('sha256', this.mediaTicketSecret)
+      .update(`mt1.${exp}`)
+      .digest('base64url')
+    const a = Buffer.from(sig, 'utf8')
+    const b = Buffer.from(expected, 'utf8')
+    if (a.length !== b.length) return false
+    return timingSafeEqual(a, b)
+  }
+
+  storeFsHotCache(hostId, relPath, value, ttlMs = 10 * 60_000) {
+    const cleanHost = String(hostId ?? '').trim()
+    const cleanPath = String(relPath ?? '').trim()
+    if (!cleanHost || !cleanPath || !value) return
+    const key = `${cleanHost}::${cleanPath}`
+    this.fsHotCache.delete(key)
+    this.fsHotCache.set(key, {
+      value,
+      expiresAt: this.now() + ttlMs,
+    })
+    while (this.fsHotCache.size > 80) {
+      const oldestKey = this.fsHotCache.keys().next().value
+      this.fsHotCache.delete(oldestKey)
+    }
+  }
+
+  getFsHotCache(hostId, relPath) {
+    const cleanHost = String(hostId ?? '').trim()
+    const cleanPath = String(relPath ?? '').trim()
+    if (!cleanHost || !cleanPath) return null
+    const key = `${cleanHost}::${cleanPath}`
+    const hit = this.fsHotCache.get(key)
+    if (!hit) return null
+    if (this.now() > hit.expiresAt) {
+      this.fsHotCache.delete(key)
+      return null
+    }
+    this.fsHotCache.delete(key)
+    this.fsHotCache.set(key, hit)
+    return hit.value
+  }
+
+  drainPendingFsRequests(hostId) {
+    const cleanHost = String(hostId ?? '').trim()
+    if (!cleanHost || this.pendingFsRequests.size === 0) return []
+    const now = this.now()
+    const out = []
+    for (const [reqId, entry] of this.pendingFsRequests.entries()) {
+      if (now > entry.expiresAt) {
+        clearTimeout(entry.timer)
+        this.pendingFsRequests.delete(reqId)
+        entry.resolve({ ok: false, status: 504, meta: { ok: false, status: 504, error: 'FS request expired' }, buffer: null })
+        continue
+      }
+      if (entry.hostId === cleanHost && !entry.dispatchedViaHb) {
+        entry.dispatchedViaHb = true
+        out.push(entry.fsReq)
+      }
+    }
+    return out
+  }
+
+  dispatchFastFsRequest(hostId, reqSpec = {}, { timeoutMs = 12_000 } = {}) {
+    const cleanHost = String(hostId ?? '').trim()
+    const host = this.hosts.get(cleanHost)
+    if (!cleanHost || !host) {
+      return Promise.resolve({
+        ok: false,
+        status: 404,
+        meta: { ok: false, status: 404, error: `Unknown host: ${cleanHost}` },
+        buffer: null,
+      })
+    }
+    if (!this.isOnline(host)) {
+      return Promise.resolve({
+        ok: false,
+        status: 503,
+        meta: { ok: false, status: 503, error: `Host offline: ${cleanHost}` },
+        buffer: null,
+      })
+    }
+    const now = this.now()
+    const reqId = `fsr-${randomBytes(8).toString('hex')}`
+    const fsReq = {
+      reqId,
+      hostId: cleanHost,
+      op: String(reqSpec.op || 'read'),
+      path: String(reqSpec.path || ''),
+      cwd: String(reqSpec.cwd || ''),
+      agentId: String(reqSpec.agentId || ''),
+      rangeHeader: String(reqSpec.rangeHeader || ''),
+      ifNoneMatch: String(reqSpec.ifNoneMatch || ''),
+      thumb: Boolean(reqSpec.thumb),
+      transcode: Boolean(reqSpec.transcode),
+      createdAt: now,
+    }
+    return new Promise(resolve => {
+      const timer = setTimeout(() => {
+        this.pendingFsRequests.delete(reqId)
+        resolve({
+          ok: false,
+          status: 504,
+          meta: { ok: false, status: 504, error: '等待电脑端响应文件流超时（12s）' },
+          buffer: null,
+        })
+      }, timeoutMs)
+      timer.unref?.()
+      this.pendingFsRequests.set(reqId, {
+        reqId,
+        hostId: cleanHost,
+        fsReq,
+        createdAt: now,
+        expiresAt: now + timeoutMs,
+        dispatchedViaHb: false,
+        timer,
+        resolve,
+      })
+      this.emitHostFsRequest(cleanHost, fsReq)
+    })
+  }
+
+  fulfillFastFsRequest(reqId, meta = {}, buffer = null) {
+    const cleanId = String(reqId ?? '').trim()
+    const entry = this.pendingFsRequests.get(cleanId)
+    if (!entry) {
+      return { ok: false, status: 404, error: 'Unknown or expired fs request' }
+    }
+    clearTimeout(entry.timer)
+    this.pendingFsRequests.delete(cleanId)
+    entry.resolve({
+      ok: meta?.ok !== false,
+      status: Number(meta?.status) || (meta?.ok === false ? 400 : 200),
+      meta: meta || {},
+      buffer: Buffer.isBuffer(buffer) ? buffer : null,
+    })
+    return { ok: true, reqId: cleanId, hostId: entry.hostId }
   }
 }

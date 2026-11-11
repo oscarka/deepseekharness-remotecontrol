@@ -36,10 +36,13 @@ import {
   extractSessionTranscript,
   formatUserQuestionReplyText,
   invalidateDshSessionParseCache,
+  listWorkspaceFiles,
   loadDiskSessionsFromDshHome,
   loadOrCreateHostIdentity,
   persistCommandAttachments,
   readPendingDshInteractions,
+  readWorkspaceFileFastMeta,
+  readWorkspaceFileStreamChunk,
   removePendingDshInteraction,
   renameDiskSession,
   writePendingDshInteractionResponse,
@@ -132,6 +135,8 @@ export class HubAgent {
     this.cachedAdaptersHealth = []
     this.lastAdaptersHealthAt = 0
     this.executedIds = new Set()
+    this.handledFsReqIds = new Set()
+    this.prewarmedArtifactMtimes = new Map()
     this.identity = null
     this.turbo = null
     this.pendingRetick = false
@@ -180,6 +185,9 @@ export class HubAgent {
       execImpl: this.execImpl,
       onTriggerSync: () => {
         void this.tick()
+      },
+      onFsRequest: fsReq => {
+        void this.handleFastFsRequest(fsReq)
       },
     })
     void this.turbo.start()
@@ -358,6 +366,176 @@ export class HubAgent {
       result['x-hub-token'] = this.config.hubToken
     }
     return result
+  }
+
+  resolveFsRootCwd(cwd = '', agentId = '') {
+    const explicit = String(cwd || '').trim()
+    if (explicit) return explicit
+    const targetId = String(agentId || '').trim()
+    if (targetId) {
+      const liveAgent = this.bridge?.agents?.get?.(targetId)
+      const liveCwd = liveAgent?.session?.header?.cwd || liveAgent?.session?.cwd || liveAgent?.cwd
+      if (liveCwd) return String(liveCwd).trim()
+      const cachedSess =
+        (this.cachedDiskSessions || []).find(s => s.id === targetId) ||
+        (this.cachedAgySessions || []).find(s => s.id === targetId) ||
+        (this.cachedExternalSessions || []).find(s => s.id === targetId)
+      if (cachedSess?.cwd) return String(cachedSess.cwd).trim()
+    }
+    if (this.config?.defaultWorkspace) return String(this.config.defaultWorkspace).trim()
+    const firstLive = this.bridge?.agents?.list?.()?.[0]
+    const firstCwd = firstLive?.session?.header?.cwd || firstLive?.session?.cwd || firstLive?.cwd
+    if (firstCwd) return String(firstCwd).trim()
+    return process.cwd()
+  }
+
+  resolveExtraArtifactRoots() {
+    return [
+      this.config?.dshHome || '',
+      ...(Array.isArray(this.config?.antigravityBrainDirs) ? this.config.antigravityBrainDirs : []),
+    ].filter(Boolean)
+  }
+
+  async collectPrewarmedWalkthroughs(tasks = []) {
+    const prewarmed = []
+    if (!Array.isArray(tasks) || tasks.length === 0) return prewarmed
+    const extraRoots = this.resolveExtraArtifactRoots()
+    for (const task of tasks) {
+      if (prewarmed.length >= 2) break
+      const arts = Array.isArray(task?.artifacts) ? task.artifacts : []
+      for (const art of arts) {
+        if (prewarmed.length >= 2) break
+        const artName = String(art?.name || '').toLowerCase()
+        const artPath = String(art?.path || '').trim()
+        if (!artPath || artName !== 'walkthrough.md') continue
+        const mtimeKey = Number(art.mtimeMs) || 0
+        if (mtimeKey > 0 && this.prewarmedArtifactMtimes.get(artPath) === mtimeKey) continue
+        try {
+          const meta = await readWorkspaceFileFastMeta(
+            this.resolveFsRootCwd(task?.cwd || '', task?.id || ''),
+            artPath,
+            { extraRoots },
+          )
+          if (meta.ok && meta.kind === 'text' && typeof meta.content === 'string' && meta.size <= 128 * 1024) {
+            this.prewarmedArtifactMtimes.set(artPath, mtimeKey || meta.mtimeMs || Date.now())
+            while (this.prewarmedArtifactMtimes.size > 100) {
+              const oldest = this.prewarmedArtifactMtimes.keys().next().value
+              this.prewarmedArtifactMtimes.delete(oldest)
+            }
+            prewarmed.push({
+              relPath: artPath,
+              name: meta.name || 'walkthrough.md',
+              ext: meta.ext || '.md',
+              kind: 'text',
+              mime: meta.mime || 'text/markdown; charset=utf-8',
+              size: meta.size,
+              mtimeMs: meta.mtimeMs,
+              etag: meta.etag || '',
+              content: meta.content,
+            })
+          }
+        } catch {
+          // ignore prewarm read error
+        }
+      }
+    }
+    return prewarmed
+  }
+
+  async handleFastFsRequest(fsReq = {}) {
+    const reqId = String(fsReq?.reqId ?? '').trim()
+    if (!reqId || this.disposed || !this.config?.hubUrl) return
+    if (this.handledFsReqIds.has(reqId)) return
+    this.handledFsReqIds.add(reqId)
+    while (this.handledFsReqIds.size > 500) {
+      const oldest = this.handledFsReqIds.values().next().value
+      this.handledFsReqIds.delete(oldest)
+    }
+    const op = String(fsReq.op || 'read')
+    const rootCwd = this.resolveFsRootCwd(fsReq.cwd, fsReq.agentId)
+    const targetUrl = `${this.config.hubUrl.replace(/\/+$/, '')}/api/fs-tunnel/${encodeURIComponent(reqId)}`
+
+    try {
+      if (op === 'list') {
+        const listed = await listWorkspaceFiles(rootCwd, String(fsReq.path || ''))
+        await this.fetch(targetUrl, {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify({
+            meta: {
+              ...listed,
+              status: listed.ok ? 200 : 400,
+              hostId: this.config.hostId,
+              agentId: fsReq.agentId || '',
+            },
+          }),
+        })
+        return
+      }
+
+      if (op === 'read') {
+        const readMeta = await readWorkspaceFileFastMeta(rootCwd, String(fsReq.path || ''), {
+          extraRoots: this.resolveExtraArtifactRoots(),
+        })
+        await this.fetch(targetUrl, {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify({
+            meta: {
+              ...readMeta,
+              status: readMeta.ok ? 200 : 404,
+              hostId: this.config.hostId,
+              agentId: fsReq.agentId || '',
+            },
+          }),
+        })
+        return
+      }
+
+      const chunkRes = await readWorkspaceFileStreamChunk(rootCwd, String(fsReq.path || ''), {
+        rangeHeader: String(fsReq.rangeHeader || ''),
+        ifNoneMatch: String(fsReq.ifNoneMatch || ''),
+        thumb: Boolean(fsReq.thumb),
+        transcode: Boolean(fsReq.transcode),
+        dshHome: this.config?.dshHome || '',
+        extraRoots: this.resolveExtraArtifactRoots(),
+        execImpl: this.execImpl,
+      })
+      const { buffer, ...metaRest } = chunkRes
+      const metaHeader = Buffer.from(
+        JSON.stringify({
+          ...metaRest,
+          hostId: this.config.hostId,
+          agentId: fsReq.agentId || '',
+        }),
+        'utf8',
+      ).toString('base64url')
+      await this.fetch(targetUrl, {
+        method: 'POST',
+        headers: this.headers({
+          'content-type': 'application/octet-stream',
+          'x-fs-meta': metaHeader,
+        }),
+        body: Buffer.isBuffer(buffer) ? buffer : Buffer.alloc(0),
+      })
+    } catch (error) {
+      try {
+        await this.fetch(targetUrl, {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify({
+            meta: {
+              ok: false,
+              status: 500,
+              hostId: this.config.hostId,
+              error: safeError(error),
+            },
+          }),
+        })
+      } catch {
+        // ignore tunnel error reporting failure
+      }
+    }
   }
 
   async ensureIdentity() {
@@ -632,6 +810,9 @@ export class HubAgent {
         && capturedAt - this.lastFullHeartbeatAt < 60_000,
       )
       const resultsToSend = this.pendingResults.splice(0)
+      const prewarmedFiles = isLiteHeartbeat
+        ? []
+        : await this.collectPrewarmedWalkthroughs(bridgeState.tasks)
       const hbPayload = isLiteHeartbeat
         ? {
             hostId: this.config.hostId,
@@ -661,6 +842,7 @@ export class HubAgent {
             bridgeStateSig,
             commandResults: resultsToSend,
             pushSubscriptionsBackup: this.cachedPushSubscriptions,
+            ...(prewarmedFiles.length > 0 ? { prewarmedFiles } : {}),
           }
       const rawBody = JSON.stringify(hbPayload)
       const shouldGzip = this.fetch === globalThis.fetch && rawBody.length > 2048
@@ -678,6 +860,9 @@ export class HubAgent {
       }
       this.lastHeartbeatRttMs = Math.max(1, Date.now() - hbReqStart)
       const data = await response.json()
+      if (Array.isArray(data.fsRequests) && data.fsRequests.length > 0) {
+        await Promise.all(data.fsRequests.map(r => this.handleFastFsRequest(r)))
+      }
       if (data.needFullSync) {
         this.lastAckedBridgeStateSig = ''
         this.pendingRetick = true

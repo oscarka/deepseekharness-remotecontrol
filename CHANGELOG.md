@@ -2,6 +2,20 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.5.5] - 2026-11-11
+
+### Added
+
+- 独立反向 HTTP 流式文件与媒体直连隧道（`/api/hosts/:hostId/fs/list|read|stream` + `/api/fs-tunnel/:reqId` + Host SSE `event: fs_req` 0ms 唤醒）
+- 移动端原生视频预览与拖动分片秒播（`HTTP 206 Partial Content` + `Accept-Ranges: bytes` + `ETag` `304` 协商缓存 + `ffmpeg` / macOS `avconvert` 一键 H.264 转码兜底）
+- 保长截图清晰度的 `sips` 智能缩略图（`> 300KB` 位图自动压缩并保留无损原图一键切换）、`walkthrough.md` 增量热缓存预热，以及不暴露 `HUB_TOKEN` 的短效只读 `mediaTicket` 票据
+- OpenAI Codex（`codex app-server` JSON-RPC）与腾讯 WorkBuddy（ACP HTTP+SSE）全托管流式控制、实时插话与移动端权限审批支持
+
+### Fixed
+
+- 修复移动端/跨 Cloud Run 发送消息时，在「Host 心跳拉走指令 ~ 会话日志落盘回传」空窗期内气泡先消失再重现的问题（新增 `inflightCommands` 桥接与同名短句基线计数防误删）
+- 修复 `deploy-cloudrun.sh` 升级已有 Cloud Run 服务时未保留线上 `HUB_TOKEN` 的问题
+
 ## [0.5.4] - 2026-11-10
 
 ### Added
