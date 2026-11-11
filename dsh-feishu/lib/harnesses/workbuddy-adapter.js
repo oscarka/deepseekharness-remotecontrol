@@ -148,7 +148,12 @@ export function findWorkBuddyBinary() {
 
 const DEFAULT_WORKBUDDY_MODELS = [
   { value: 'deepseek-v3.1', label: 'DeepSeek V3.1 (WorkBuddy)', default: true },
+  { value: 'auto', label: 'Auto (WorkBuddy 智能路由)' },
   { value: 'fast-model', label: 'Fast Model (WorkBuddy 极速)' },
+  { value: 'deepseek-v3-2-volc', label: 'DeepSeek V3.2 (Volc)' },
+  { value: 'kimi-k2.5', label: 'Kimi K2.5' },
+  { value: 'glm-5.1', label: 'GLM-5.1' },
+  { value: 'minimax-m2.7', label: 'MiniMax M2.7' },
   { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
   { value: 'gpt-5.4', label: 'GPT-5.4' },
   { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
@@ -905,12 +910,21 @@ export class WorkBuddyAdapter {
       const port = 43820 + Math.floor(Math.random() * 1000)
       const endpoint = `http://127.0.0.1:${port}/api/v1/acp`
       try {
-        const proc = this.spawnImpl(this.binaryPath, ['--serve', '--port', String(port)], {
-          cwd: process.cwd(),
-          env: { ...process.env },
-          stdio: 'ignore',
-          detached: true,
-        })
+        const proc = this.spawnImpl(
+          this.binaryPath,
+          ['--serve', '--port', String(port), '--auth', 'none'],
+          {
+            cwd: process.cwd(),
+            env: {
+              ...process.env,
+              CODEBUDDY_FORCE_LITE_WB_BUNDLE: '1',
+              CODEBUDDY_CONFIG_DIR: this.workbuddyHome,
+              WORKBUDDY_CONFIG_DIR: this.workbuddyHome,
+            },
+            stdio: 'ignore',
+            detached: true,
+          },
+        )
         proc?.on?.('error', () => {})
         if (proc && typeof proc.unref === 'function') proc.unref()
         this.spawnedServeProc = proc
@@ -925,8 +939,8 @@ export class WorkBuddyAdapter {
               })
               sock.on('error', () => {
                 sock.destroy()
-                if (attempts >= 12) resolve()
-                else setTimeout(tryConnect, 100)
+                if (attempts >= 60) resolve()
+                else setTimeout(tryConnect, 150)
               })
             }
             tryConnect()
