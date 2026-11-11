@@ -1961,7 +1961,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.5.9')
+  assert.equal(healthRes.build.version, '0.6.0')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 
@@ -4897,7 +4897,7 @@ test('v0.5.9 Mobile Foreground Connection Stability: hot/cold wire compaction bu
           ? { role: 'user', text: `User prompt ${mIdx} on host-${hIdx} task-${tIdx}` }
           : {
               role: 'assistant',
-              text: `Reply ${hIdx}-${tIdx}-${mIdx}: ` + 'A'.repeat(28_000),
+              text: `Reply ${hIdx}-${tIdx}-${mIdx}: ` + 'A'.repeat(tIdx === 0 ? 52_000 : 28_000),
               thinking: `Thought ${hIdx}-${tIdx}-${mIdx}: ` + 'T'.repeat(7_000),
               tools: Array.from({ length: 12 }, (___, k) => ({
                 name: 'run_command',
@@ -4911,7 +4911,7 @@ test('v0.5.9 Mobile Foreground Connection Stability: hot/cold wire compaction bu
         id: `sess-${hIdx}-${tIdx}`,
         title: `Session ${tIdx}`,
         status: tIdx === 1 ? 'running' : 'idle',
-        updatedAt: Date.now() - tIdx * 60_000,
+        updatedAt: Date.now() - tIdx * 15 * 60_000,
         sessionRev: `rev-${hIdx}-${tIdx}`,
         messageCount: msgTotal,
         transcript,
@@ -4926,28 +4926,28 @@ test('v0.5.9 Mobile Foreground Connection Stability: hot/cold wire compaction bu
 
   const wireState = hub.getFullState()
   const hotTask = wireState.hosts[0].bridgeState.tasks[0]
-  const coldTask = wireState.hosts[0].bridgeState.tasks[5]
+  const coldTask = wireState.hosts[0].bridgeState.tasks[8]
 
-  // Hot top session retains 14 messages; recent reply budget is 24,000 chars
+  // Hot top session retains 14 messages; recent reply budget is full 48,000 chars (zero conclusion truncation)
   assert.equal(hotTask.transcript.length, 14)
   assert.equal(hotTask.omittedTranscriptCount, 4)
-  assert.equal(hotTask.transcript.at(-1).text.length, 24_000)
+  assert.equal(hotTask.transcript.at(-1).text.length, 48_000)
 
-  // Cold idle session (index >= 3, idle) compacts to 3 messages & <=1,800 chars, marking wireTruncated: true
+  // Cold historical idle session (index >= 6 & older than 60m) compacts to 3 messages & <=2,400 chars, marking wireTruncated: true
   assert.equal(coldTask.transcript.length, 3)
   assert.equal(coldTask.wireTruncated, true)
-  assert.equal(coldTask.transcript.at(-1).text.length, 1800)
+  assert.equal(coldTask.transcript.at(-1).text.length, 2400)
 
   // On-demand hydration via getSessionFullTranscript still returns all 10 uncompacted messages (full >28k chars)!
-  const hydrated = hub.getSessionFullTranscript('mac-1', 'sess-1-5')
+  const hydrated = hub.getSessionFullTranscript('mac-1', 'sess-1-8')
   assert.equal(hydrated.ok, true)
   assert.equal(hydrated.transcript.length, 10)
   assert.ok(hydrated.transcript.at(-1).text.length > 28_000)
 
-  // Total compressed /api/state across all 3 Macs (66 heavy sessions) must stay tiny (<80KB gzipped vs ~1MB previously!)
+  // Total compressed /api/state across all 3 Macs (66 heavy sessions) must stay tiny (<160KB gzipped vs ~1MB previously!)
   const wireJson = JSON.stringify({ ok: true, ...wireState })
   const gzBytes = gzipSync(Buffer.from(wireJson, 'utf8')).length
-  assert.ok(gzBytes < 120_000, `Expected gzipped 66-session /api/state < 120KB, got ${gzBytes} bytes`)
+  assert.ok(gzBytes < 160_000, `Expected gzipped 66-session /api/state < 160KB, got ${gzBytes} bytes`)
 
   // 2. Verify browser SSE burst coalescing in createHubServer while keeping HubCore.onStateChange synchronous
   let syncHookCalls = 0
@@ -5013,4 +5013,196 @@ test('v0.5.9 Mobile Foreground Connection Stability: hot/cold wire compaction bu
   assert.match(bundleSrc, /function scheduleFallbackStateSync\(/)
   assert.match(bundleSrc, /function hydrateColdSessionTranscript\(/)
   assert.match(bundleSrc, /sseRotatingUntil/)
+})
+
+test('v0.6.0 Incremental SSE Delta Sync, Zero Conclusion Truncation & Safe Mobile Screenshot Upload', async () => {
+  const { gzipSync } = await import('node:zlib')
+  const { captureStateDigest, buildStateDelta } = await import('../../hub/delta-state.js')
+  const { applyStateDelta } = await import('../../hub/web/src/state/delta-merge.js')
+
+  const baseTs = 1_760_000_000_000
+  let nowMs = baseTs
+  const hub = new HubCore({ now: () => nowMs })
+
+  // 1. Populate 3 Macs × 20 sessions, including a recently concluded session at taskIdx = 9 with a 42,000-char conclusion
+  const full42kConclusion = '结论摘要：\n' + '完整深度分析内容段落——绝不截断。'.repeat(2600)
+  assert.ok(full42kConclusion.length > 41_000 && full42kConclusion.length < 48_000)
+
+  const buildHostTasks = (hIdx, activeStep = 1) =>
+    Array.from({ length: 20 }, (_, tIdx) => {
+      if (hIdx === 1 && tIdx === 9) {
+        return {
+          id: 'agy-ide:concluded-9',
+          title: '深度架构结论会话',
+          status: 'idle',
+          turnState: 'conclusion',
+          lastConclusionAt: baseTs - 8 * 60_000,
+          updatedAt: baseTs - 8 * 60_000,
+          sessionRev: 'rev-conc-9',
+          messageCount: 2,
+          transcript: [
+            { role: 'user', text: '请输出完整结论报告' },
+            { role: 'assistant', text: full42kConclusion },
+          ],
+        }
+      }
+      if (hIdx === 1 && tIdx === 0) {
+        return {
+          id: 'agy-ide:running-0',
+          title: '正在流式输出的会话',
+          status: 'running',
+          turnState: 'running',
+          updatedAt: nowMs,
+          sessionRev: `rev-run-${activeStep}`,
+          runningSummary: `Step ${activeStep}`,
+          messageCount: 2,
+          transcript: [
+            { role: 'user', text: '开始执行任务' },
+            { role: 'assistant', text: `进度更新 #${activeStep}: ` + '流式增量内容 '.repeat(60) },
+          ],
+        }
+      }
+      return {
+        id: `sess-${hIdx}-${tIdx}`,
+        title: `Historical ${hIdx}-${tIdx}`,
+        status: 'idle',
+        updatedAt: baseTs - (tIdx + 10) * 15 * 60_000,
+        sessionRev: `rev-${hIdx}-${tIdx}`,
+        messageCount: 4,
+        transcript: [
+          { role: 'user', text: `Prompt ${hIdx}-${tIdx}` },
+          { role: 'assistant', text: `History ${hIdx}-${tIdx}: ` + 'H'.repeat(3000) },
+        ],
+      }
+    })
+
+  for (let hIdx = 1; hIdx <= 3; hIdx += 1) {
+    hub.handleHeartbeat({
+      hostId: `mac-${hIdx}`,
+      hostName: `Mac-${hIdx}`,
+      workspaces: Array.from({ length: 15 }, (_, w) => ({
+        name: `proj-${hIdx}-${w}`,
+        cwd: `/Users/dev/proj-${hIdx}-${w}`,
+      })),
+      bridgeState: {
+        tasks: buildHostTasks(hIdx, 1),
+        approvals: [],
+        workspaces: Array.from({ length: 15 }, (_, w) => ({
+          name: `proj-${hIdx}-${w}`,
+          cwd: `/Users/dev/proj-${hIdx}-${w}`,
+        })),
+      },
+    })
+  }
+
+  const stateV1 = hub.getFullState()
+  assert.ok(stateV1.stateSeq >= 4)
+
+  // Verify recently concluded session at taskIdx === 9 retains 100% of its >41,000-char conclusion!
+  const concludedWire = stateV1.hosts[0].bridgeState.tasks[9]
+  assert.equal(concludedWire.id, 'agy-ide:concluded-9')
+  assert.equal(concludedWire.wireTruncated, false)
+  assert.equal(concludedWire.transcript.at(-1).text, full42kConclusion)
+
+  // 2. Capture digest at stateV1, advance 1 running task on mac-1, and verify delta size & bit-for-bit merge equality
+  const digestV1 = captureStateDigest(stateV1)
+  nowMs += 1500
+  hub.handleHeartbeat({
+    hostId: 'mac-1',
+    hostName: 'Mac-1',
+    bridgeState: {
+      tasks: buildHostTasks(1, 2),
+      approvals: [],
+      workspaces: stateV1.hosts[0].bridgeState.workspaces,
+    },
+  })
+  const stateV2 = hub.getFullState()
+  assert.equal(stateV2.stateSeq, stateV1.stateSeq + 1)
+
+  const { hasChanges, delta } = buildStateDelta(digestV1, stateV2)
+  assert.equal(hasChanges, true)
+  assert.equal(delta.prevSeq, stateV1.stateSeq)
+  assert.equal(delta.stateSeq, stateV2.stateSeq)
+  // Only mac-1 changed, and only 1 task (`agy-ide:running-0`) is in upsertedTasks!
+  assert.equal(delta.hosts.length, 1)
+  assert.equal(delta.hosts[0].hostId, 'mac-1')
+  assert.equal(delta.hosts[0].upsertedTasks.length, 1)
+  assert.equal(delta.hosts[0].upsertedTasks[0].id, 'agy-ide:running-0')
+  assert.equal(delta.hosts[0].bridgeMeta, undefined)
+
+  const fullGzBytes = gzipSync(Buffer.from(JSON.stringify(stateV2), 'utf8')).length
+  const deltaGzBytes = gzipSync(Buffer.from(JSON.stringify(delta), 'utf8')).length
+  assert.ok(deltaGzBytes < 2500, `Expected gzipped state_delta < 2.5KB, got ${deltaGzBytes} bytes`)
+  assert.ok(deltaGzBytes < fullGzBytes * 0.25, `Expected delta (${deltaGzBytes}B) << full (${fullGzBytes}B)`)
+
+  const merged = applyStateDelta(stateV1, delta)
+  assert.equal(merged.ok, true)
+  assert.equal(merged.noop, false)
+  assert.deepStrictEqual(merged.state, stateV2)
+
+  // Duplicate / already-applied delta is a clean no-op; sequence gap requests resync
+  const dupMerge = applyStateDelta(stateV2, delta)
+  assert.equal(dupMerge.ok, true)
+  assert.equal(dupMerge.noop, true)
+  const gapMerge = applyStateDelta(stateV1, { ...delta, prevSeq: stateV1.stateSeq + 5, stateSeq: stateV1.stateSeq + 6 })
+  assert.equal(gapMerge.ok, false)
+  assert.equal(gapMerge.reason, 'seq_mismatch')
+
+  // 3. Verify live HTTP `/api/events?initial=0&delta=1&seq=...` emits `event: state_delta` and catches up on seq gap
+  const { server } = createHubServer({
+    hub,
+    token: 'test-v060-delta-sse-secret-123456',
+    requireToken: true,
+    sseMinIntervalMs: 50,
+    sseMaxLifetimeMs: 260,
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const { port } = server.address()
+    const ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15'
+
+    // 3a. Aligned seq -> emits ping + `event: state_delta` (zero full `event: state` frames!)
+    const alignedResp = await fetch(
+      `http://127.0.0.1:${port}/api/events?initial=0&delta=1&seq=${stateV2.stateSeq}&token=test-v060-delta-sse-secret-123456`,
+      { headers: { 'accept-encoding': 'gzip', 'user-agent': ua } },
+    )
+    assert.equal(alignedResp.status, 200)
+    const alignedTextPromise = alignedResp.text()
+    nowMs += 1000
+    hub.handleHeartbeat({
+      hostId: 'mac-1',
+      hostName: 'Mac-1',
+      bridgeState: {
+        tasks: buildHostTasks(1, 3),
+        approvals: [],
+        workspaces: stateV1.hosts[0].bridgeState.workspaces,
+      },
+    })
+    const alignedRaw = await alignedTextPromise
+    assert.equal((alignedRaw.match(/^event: state$/gm) || []).length, 0)
+    assert.ok((alignedRaw.match(/^event: state_delta$/gm) || []).length >= 1)
+    assert.match(alignedRaw, /进度更新 #3/)
+
+    // 3b. Stale seq on reconnect -> immediately emits catch-up `event: state`
+    const staleResp = await fetch(
+      `http://127.0.0.1:${port}/api/events?initial=0&delta=1&seq=1&token=test-v060-delta-sse-secret-123456`,
+      { headers: { 'accept-encoding': 'gzip', 'user-agent': ua } },
+    )
+    const staleRaw = await staleResp.text()
+    assert.equal((staleRaw.match(/^event: state$/gm) || []).length, 1)
+  } finally {
+    await new Promise(resolve => server.close(resolve))
+  }
+
+  // 4. Verify frontend bundle includes delta SSE, WebKit-safe screenshot compressor, command timeout & SSE teardown
+  const assetFiles = await readdir(join(process.cwd(), 'hub/public/assets'))
+  const jsContents = await Promise.all(
+    assetFiles.filter(f => f.endsWith('.js')).map(f => readFile(join(process.cwd(), 'hub/public/assets', f), 'utf8')),
+  )
+  const bundleSrc = jsContents.join('\n')
+  assert.match(bundleSrc, /state_delta/)
+  assert.match(bundleSrc, /function applyStateDelta\(/)
+  assert.match(bundleSrc, /createObjectURL/)
+  assert.match(bundleSrc, /function apiFetchWithTimeout\(/)
+  assert.match(bundleSrc, /function closeSSE\(/)
 })

@@ -51,6 +51,7 @@ export class HubCore {
     this.mediaTicketSecret = randomBytes(32)
     this.pendingFsRequests = new Map()
     this.fsHotCache = new Map()
+    this.stateSeq = 1
   }
 
   onStateChange(listener) {
@@ -91,6 +92,7 @@ export class HubCore {
   }
 
   emitStateChange(event = 'state') {
+    this.stateSeq += 1
     if (this.sseListeners.size === 0) return
     const fullState = this.getFullState()
     for (const listener of this.sseListeners) {
@@ -599,23 +601,41 @@ export class HubCore {
     }
   }
 
-  compactBridgeStateForWire(bridgeState) {
+  compactBridgeStateForWire(bridgeState, now = this.now()) {
     if (!bridgeState || typeof bridgeState !== 'object') {
       return { tasks: [], approvals: [], workspaces: [] }
     }
+    const recentActiveCutoffMs = now - 60 * 60 * 1000
     const tasks = Array.isArray(bridgeState.tasks)
       ? bridgeState.tasks.map((nextTask, taskIdx) => {
           // Server-side transcript & preview budget guard:
-          // Hot sessions (top 3 per host + running/approval) keep 14 messages with generous recent budgets;
-          // Cold idle sessions keep 3 short preview messages and set `wireTruncated: true` for on-demand hydration.
+          // Hot sessions (top 6 per host, running/approval, or active/concluded within 60 min) keep 14 messages
+          // and full 48,000-char recent reply budgets so mobile conclusions are NEVER truncated.
+          // Cold historical idle sessions (>60 min old & index >= 6) keep 3 short preview messages
+          // and set `wireTruncated: true` for automatic on-demand full transcript hydration.
+          const taskRecentTs = Math.max(
+            Number(nextTask?.lastConclusionAt) || 0,
+            Number(nextTask?.updatedAt) || 0,
+            Number(nextTask?.lastActivity) || 0,
+          )
           const isHotSession =
-            taskIdx < 3 || nextTask?.status === 'running' || nextTask?.status === 'approval'
+            taskIdx < 6 ||
+            nextTask?.status === 'running' ||
+            nextTask?.status === 'approval' ||
+            taskRecentTs >= recentActiveCutoffMs
           const maxMsgs = isHotSession ? 14 : 3
           const rawTr = Array.isArray(nextTask?.transcript) ? nextTask.transcript : []
           const totalTranscriptCount = Math.max(Number(nextTask?.messageCount) || 0, rawTr.length)
           const slicedTr = rawTr.length > maxMsgs ? rawTr.slice(-maxMsgs) : rawTr
           const omittedTranscriptCount = Math.max(0, totalTranscriptCount - slicedTr.length)
           const recentCutoff = Math.max(0, slicedTr.length - 4)
+          let lastAssistantIdx = -1
+          for (let i = slicedTr.length - 1; i >= 0; i -= 1) {
+            if (slicedTr[i]?.role === 'assistant') {
+              lastAssistantIdx = i
+              break
+            }
+          }
           let wireTruncated = slicedTr.length < rawTr.length
           const compactedTr = slicedTr.map((m, mIdx) => {
             if (!m || typeof m !== 'object') return m
@@ -627,11 +647,11 @@ export class HubCore {
               }
               return mRest
             }
-            const isHotRecent = isHotSession && mIdx >= recentCutoff
-            const maxText = isHotRecent ? 24000 : isHotSession ? 6000 : 1800
-            const maxThink = isHotRecent ? 3600 : isHotSession ? 400 : 240
-            const maxTools = isHotRecent ? 16 : isHotSession ? 6 : 4
-            const maxCmd = isHotRecent ? 600 : isHotSession ? 180 : 140
+            const isHotRecent = isHotSession && (mIdx >= recentCutoff || mIdx === lastAssistantIdx)
+            const maxText = isHotRecent ? 48000 : isHotSession ? 16000 : 2400
+            const maxThink = isHotRecent ? 6000 : isHotSession ? 600 : 240
+            const maxTools = isHotRecent ? 20 : isHotSession ? 6 : 4
+            const maxCmd = isHotRecent ? 800 : isHotSession ? 200 : 140
             const rawTools = Array.isArray(m.tools) ? m.tools : Array.isArray(m.toolCalls) ? m.toolCalls : []
             const textTrunc = typeof m.text === 'string' && m.text.length > maxText
             const thinkTrunc = typeof m.thinking === 'string' && m.thinking.length > maxThink
@@ -789,6 +809,7 @@ export class HubCore {
           host.bridgeState ?? { tasks: [], approvals: [], workspaces: [] },
           now,
         ),
+        now,
       )
       return {
         ...summary,
@@ -850,10 +871,12 @@ export class HubCore {
       .slice(0, 10)
     const shares = this.listShares()
     if (prunedAnyHost) {
+      this.stateSeq += 1
       void this.persist()
     }
     return {
       now,
+      stateSeq: this.stateSeq,
       ...(this.buildInfo ? { build: this.buildInfo } : {}),
       activeHostId: this.activeHostId,
       mediaTicket: this.issueMediaTicket(now),

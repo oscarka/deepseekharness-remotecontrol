@@ -45,6 +45,9 @@ import {
   applyLangToDom,
   translateZhStringToEn,
 } from './utils/i18n';
+import { applyStateDelta } from './state/delta-merge';
+import { compressImageFile } from './utils/image-compress';
+import { compareSemver } from './utils/semver';
 
 export function initHubController() {
   // ==================== 1. 认证与安全 Token 管理（自动清除 URL 尾巴防止截图泄露） ====================
@@ -1471,6 +1474,9 @@ export function initHubController() {
     const found = foundArg && foundArg.session ? foundArg : findSessionGlobal(activeSessionId);
     if (!found) return;
     const { session: s } = found;
+    if (s._wireTruncated && !expandedTranscriptBySession.has(s.id)) {
+      void hydrateColdSessionTranscript(s.hostId, s.id, s.sessionRev || '');
+    }
 
     const chatHeaderTitle = s.harness !== 'dsh' && s.project && !s.title.startsWith(s.project)
       ? `${s.project} / ${s.title}`
@@ -2094,25 +2100,49 @@ export function initHubController() {
   }
 
   // ==================== 6. 发送指令 / 实时插话 / 停止 / 审批 ====================
+  async function apiFetchWithTimeout(path, options = {}, timeoutMs = 10000) {
+    const canAbort = typeof AbortController === 'function';
+    const ctrl = canAbort ? new AbortController() : null;
+    const timer = ctrl
+      ? setTimeout(() => {
+          try {
+            ctrl.abort();
+          } catch { }
+        }, timeoutMs)
+      : null;
+    try {
+      return await apiFetch(path, {
+        cache: 'no-store',
+        ...options,
+        ...(ctrl ? { signal: ctrl.signal } : {}),
+      });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   async function dispatchHostCommand(hostId, payload) {
     const cmdPayload =
       payload && typeof payload === 'object' && !payload.id
         ? { ...payload, id: `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}` }
         : payload;
+    const hasAttachments =
+      Array.isArray(cmdPayload?.attachments) && cmdPayload.attachments.length > 0;
+    const timeoutMs = hasAttachments ? 15000 : 10000;
     const reqInit = {
       method: 'POST',
       body: JSON.stringify(cmdPayload),
     };
     const url = `/api/hosts/${encodeURIComponent(hostId)}/command`;
     try {
-      const res = await apiFetch(url, reqInit);
+      const res = await apiFetchWithTimeout(url, reqInit, timeoutMs);
       return await res.json();
     } catch (err) {
       if (err && err.message === 'Unauthorized') throw err;
-      // iOS Safari / PWA 从后台唤醒或遇长连接轮转时，复用的旧 HTTP/2 连接对 POST 可能抛出 Load failed；
-      // 携带相同幂等 id 短暂退避后自动使用新连接静默重试一次，服务端按 id + approvalLedger 双重去重。
+      // iOS Safari / PWA 从后台唤醒、长连接轮转或代理偶发卡包时，带超时中断后使用相同幂等 id 自动重试一次，
+      // 防止无超时大 POST 卡死 WebKit 复用的单条 HTTP/2 连接。
       await new Promise(r => setTimeout(r, 250));
-      const retryRes = await apiFetch(url, reqInit);
+      const retryRes = await apiFetchWithTimeout(url, reqInit, timeoutMs);
       return await retryRes.json();
     }
   }
@@ -2199,85 +2229,6 @@ export function initHubController() {
       el.value = '';
       el.click();
     }
-  }
-
-  function readFileAsDataUrl(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(new Error('读取图片失败'));
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function compressImageFile(file) {
-    const rawDataUrl = await readFileAsDataUrl(file);
-    const commaIdx = rawDataUrl.indexOf(',');
-    const rawBase64 = commaIdx >= 0 ? rawDataUrl.slice(commaIdx + 1) : rawDataUrl;
-    const origMime = file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
-    const origName = file.name || `screenshot-${Date.now()}.jpg`;
-
-    try {
-      const img = await new Promise((resolve, reject) => {
-        const el = new Image();
-        el.onload = () => resolve(el);
-        el.onerror = () => reject(new Error('Image decode failed'));
-        el.src = rawDataUrl;
-      });
-      const w = img.naturalWidth || img.width || 0;
-      const h = img.naturalHeight || img.height || 0;
-      const maxSide = 1600;
-      const needsResize = w > maxSide || h > maxSide;
-      const needsCompress = file.size > 260 * 1024;
-      if (!needsResize && !needsCompress && w > 0 && h > 0) {
-        return {
-          name: origName,
-          mimeType: origMime,
-          dataBase64: rawBase64,
-          previewUrl: rawDataUrl,
-          sizeBytes: file.size || Math.round((rawBase64.length * 3) / 4),
-          width: w,
-          height: h,
-        };
-      }
-      if (w > 0 && h > 0) {
-        const scale = needsResize ? Math.min(maxSide / w, maxSide / h) : 1;
-        const targetW = Math.max(1, Math.round(w * scale));
-        const targetH = Math.max(1, Math.round(h * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = targetW;
-        canvas.height = targetH;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, targetW, targetH);
-          ctx.drawImage(img, 0, 0, targetW, targetH);
-          const outMime = 'image/jpeg';
-          const outDataUrl = canvas.toDataURL(outMime, 0.82);
-          const outComma = outDataUrl.indexOf(',');
-          const outBase64 = outComma >= 0 ? outDataUrl.slice(outComma + 1) : outDataUrl;
-          const baseName = origName.replace(/\.[a-zA-Z0-9]+$/, '') || 'screenshot';
-          return {
-            name: `${baseName}.jpg`,
-            mimeType: outMime,
-            dataBase64: outBase64,
-            previewUrl: outDataUrl,
-            sizeBytes: Math.round((outBase64.length * 3) / 4),
-            width: targetW,
-            height: targetH,
-          };
-        }
-      }
-    } catch {
-      // Fallback to raw data URL when browser Image decode is unavailable
-    }
-    return {
-      name: origName,
-      mimeType: origMime,
-      dataBase64: rawBase64,
-      previewUrl: rawDataUrl,
-      sizeBytes: file.size || Math.round((rawBase64.length * 3) / 4),
-    };
   }
 
   function renderAttachmentStrip(target = 'chat') {
@@ -2377,6 +2328,10 @@ export function initHubController() {
   window.addEventListener('pagehide', () => {
     persistComposerDraft();
     stopVoiceInput();
+    closeSSE();
+  });
+  window.addEventListener('beforeunload', () => {
+    closeSSE();
   });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
@@ -5186,15 +5141,6 @@ export function initHubController() {
     }, 900);
   }
 
-  function compareSemver(a, b) {
-    const pa = String(a || '').trim().replace(/^v/i, '').split(/[.-]/).map(x => Number(x) || 0);
-    const pb = String(b || '').trim().replace(/^v/i, '').split(/[.-]/).map(x => Number(x) || 0);
-    for (let i = 0; i < 3; i += 1) {
-      if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) < (pb[i] || 0) ? -1 : 1;
-    }
-    return 0;
-  }
-
   async function upgradeHostTurbo(hostId, hostName = '') {
     const label = hostName || hostId;
     upgradingHostMap[hostId] = Date.now();
@@ -5657,7 +5603,7 @@ export function initHubController() {
             modelCatalog: h.bridgeState.modelCatalog || {},
             turbo: h.bridgeState.turbo || null,
             systemTelemetry: h.bridgeState.systemTelemetry || null,
-            tasks: (h.bridgeState.tasks || []).map(t => ({
+            tasks: (h.bridgeState.tasks || []).map((t, tIdx) => ({
               id: t.id,
               rawId: t.rawId,
               shortId: t.shortId,
@@ -5678,10 +5624,11 @@ export function initHubController() {
               pendingApproval: t.pendingApproval || null,
               artifacts: t.artifacts || [],
               messageCount: t.messageCount || 0,
+              wireTruncated: true,
               transcript: (t.transcript || []).slice(-2).map(m => ({
                 index: m.index,
                 role: m.role,
-                text: String(m.text || '').slice(0, 600),
+                text: String(m.text || '').slice(0, tIdx < 4 ? 4000 : 600),
                 time: m.time,
                 artifacts: m.artifacts || [],
               })),
@@ -5718,7 +5665,7 @@ export function initHubController() {
     return null;
   }
 
-  function applyHubState(nextState) {
+  function applyHubState(nextState, { skipCache = false } = {}) {
     const incomingBuild = String(nextState?.build?.uiBuild || '').trim();
     if (incomingBuild && incomingBuild !== 'dev') {
       if (!initialUiBuild) {
@@ -5729,13 +5676,16 @@ export function initHubController() {
         window.location &&
         typeof window.location.reload === 'function'
       ) {
+        closeSSE();
         window.location.reload();
         return;
       }
     }
     preservePreviewUiState(nextState);
     hubState = nextState;
-    saveCachedHubStateSnapshot(nextState);
+    if (!skipCache) {
+      saveCachedHubStateSnapshot(nextState);
+    }
   }
   let hasLoadedInitialState = false;
   let stateFetchInFlight = false;
@@ -5859,15 +5809,26 @@ export function initHubController() {
     }, 900);
   }
 
+  function closeSSE() {
+    if (sseSource) {
+      try {
+        sseSource.close();
+      } catch { }
+      sseSource = null;
+    }
+    sseConnected = false;
+  }
+
   function connectSSE() {
     if (urlParams.get('nosse') === '1') return;
     const prevSseEventAt = lastSseEventAt;
-    if (sseSource) {
-      try { sseSource.close(); } catch { }
-    }
-    sseConnected = false;
+    closeSSE();
     const tk = getToken();
-    const url = '/api/events?initial=0' + (tk ? '&token=' + encodeURIComponent(tk) : '');
+    const knownSeq = hasLoadedInitialState ? Number(hubState?.stateSeq || 0) : 0;
+    const url =
+      '/api/events?initial=0&delta=1' +
+      (knownSeq > 0 ? '&seq=' + encodeURIComponent(String(knownSeq)) : '') +
+      (tk ? '&token=' + encodeURIComponent(tk) : '');
     try {
       sseSource = new EventSource(url);
       sseSource.onopen = () => {
@@ -5876,7 +5837,7 @@ export function initHubController() {
         lastSseEventAt = Date.now();
         consecutiveStateFetchFailures = 0;
         setConnectionBanner(false);
-        // 仅当尚未加载初始状态，或重连前曾断流超过 15s 时才补拉 /api/state；240s 优雅轮转 (rotate) 零额外大包请求
+        // 仅当尚未加载初始状态，或重连前曾断流超过 15s 时才补拉 /api/state；240s 优雅轮转 (rotate) 携带 seq 对齐零额外大包
         if (!stateFetchInFlight && (!hasLoadedInitialState || !prevSseEventAt || Date.now() - prevSseEventAt > 15000)) {
           void fetchState({ silent: hasLoadedInitialState });
         }
@@ -5884,17 +5845,59 @@ export function initHubController() {
       sseSource.onerror = () => {
         sseConnected = false;
       };
-      sseSource.addEventListener('ping', () => {
+      sseSource.addEventListener('ping', evt => {
         sseConnected = true;
         sseRotatingUntil = 0;
         lastSseEventAt = Date.now();
         consecutiveStateFetchFailures = 0;
         setConnectionBanner(false);
+        try {
+          if (evt?.data && hasLoadedInitialState && !stateFetchInFlight) {
+            const pingData = JSON.parse(evt.data);
+            const serverSeq = Number(pingData?.stateSeq || 0);
+            const localSeq = Number(hubState?.stateSeq || 0);
+            if (serverSeq > 0 && localSeq > 0 && serverSeq !== localSeq) {
+              void fetchState({ silent: true, forceFresh: true });
+            }
+          }
+        } catch { }
       });
       sseSource.addEventListener('rotate', () => {
         // 服务端在 Cloud Run 300s 超时前（240s）主动优雅轮转 SSE，前端立即平滑换新流，零报错零断档
         sseRotatingUntil = Date.now() + 5000;
         connectSSE();
+      });
+      sseSource.addEventListener('state_delta', evt => {
+        try {
+          sseConnected = true;
+          sseRotatingUntil = 0;
+          const nowEvt = Date.now();
+          lastSseEventAt = nowEvt;
+          lastSseStateAt = nowEvt;
+          consecutiveStateFetchFailures = 0;
+          setConnectionBanner(false);
+          if (!hasLoadedInitialState) {
+            inFlightNeedsFollowup = true;
+            if (!stateFetchInFlight) {
+              void fetchState({ silent: true, forceFresh: true });
+            }
+            return;
+          }
+          const delta = JSON.parse(evt.data);
+          const merged = applyStateDelta(hubState, delta);
+          if (!merged.ok) {
+            void fetchState({ silent: true, forceFresh: true });
+            return;
+          }
+          if (!merged.noop) {
+            lastStateFetchAt = nowEvt;
+            applyHubState(merged.state, { skipCache: Boolean(merged.metaOnly) });
+            if (!merged.metaOnly) {
+              renderAll();
+              flushPendingDeepLink();
+            }
+          }
+        } catch { }
       });
       sseSource.addEventListener('state', evt => {
         try {

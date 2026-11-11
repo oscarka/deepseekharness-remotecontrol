@@ -28,7 +28,7 @@
 		fetch(link.href, fetchOpts);
 	}
 })();
-// node_modules/.pnpm/preact@11.1.1/node_modules/preact/dist/preact.mjs
+// ../../../Users/cc/deepseekharness-remote/node_modules/.pnpm/preact@11.1.1/node_modules/preact/dist/preact.mjs
 var n;
 var t;
 var i;
@@ -2006,6 +2006,255 @@ function applyLangToDom(root = typeof document !== "undefined" ? document.body :
 		node = walker.nextNode();
 	}
 }
+// hub/web/src/state/delta-merge.js
+function applyStateDelta(prevState, delta) {
+	if (!prevState || typeof prevState !== "object" || !Array.isArray(prevState.hosts)) return {
+		ok: false,
+		reason: "missing_base_state"
+	};
+	if (!delta || typeof delta !== "object") return {
+		ok: false,
+		reason: "invalid_delta"
+	};
+	const curSeq = Number(prevState.stateSeq) || 0;
+	const prevSeq = Number(delta.prevSeq) || 0;
+	const nextSeq = Number(delta.stateSeq) || 0;
+	if (!curSeq || !nextSeq) return {
+		ok: false,
+		reason: "uninitialized_seq"
+	};
+	if (curSeq === nextSeq) return {
+		ok: true,
+		state: prevState,
+		noop: true
+	};
+	if (curSeq !== prevSeq) return {
+		ok: false,
+		reason: "seq_mismatch",
+		curSeq,
+		prevSeq,
+		nextSeq
+	};
+	const nextState = { ...prevState };
+	if (delta.top && typeof delta.top === "object") Object.assign(nextState, delta.top);
+	if (Array.isArray(delta.topDeleted)) for (const k of delta.topDeleted) delete nextState[k];
+	nextState.stateSeq = nextSeq;
+	if (delta.now !== void 0) nextState.now = delta.now;
+	const hasHostChanges = Array.isArray(delta.removedHostIds) && delta.removedHostIds.length > 0 || Array.isArray(delta.hosts) && delta.hosts.length > 0 || Array.isArray(delta.hostOrder);
+	const metaOnly = !hasHostChanges && !delta.top && (!Array.isArray(delta.topDeleted) || delta.topDeleted.length === 0);
+	if (!hasHostChanges) return {
+		ok: true,
+		state: nextState,
+		noop: false,
+		metaOnly
+	};
+	const removedHostSet = new Set(Array.isArray(delta.removedHostIds) ? delta.removedHostIds : []);
+	const hostMap = /* @__PURE__ */ new Map();
+	const currentOrder = [];
+	for (const h of prevState.hosts) {
+		if (!h || !h.hostId || removedHostSet.has(h.hostId)) continue;
+		hostMap.set(h.hostId, h);
+		currentOrder.push(h.hostId);
+	}
+	if (Array.isArray(delta.hosts)) for (const patch of delta.hosts) {
+		if (!patch || !patch.hostId) continue;
+		if (patch.fullHost) {
+			if (!hostMap.has(patch.hostId)) currentOrder.push(patch.hostId);
+			hostMap.set(patch.hostId, patch.fullHost);
+			continue;
+		}
+		const prevHost = hostMap.get(patch.hostId);
+		if (!prevHost) return {
+			ok: false,
+			reason: "missing_host_for_patch",
+			hostId: patch.hostId
+		};
+		const nextHost = { ...prevHost };
+		if (patch.hostMeta && typeof patch.hostMeta === "object") Object.assign(nextHost, patch.hostMeta);
+		if (Array.isArray(patch.hostMetaDeleted)) for (const k of patch.hostMetaDeleted) delete nextHost[k];
+		if (patch.bridgeMeta || Array.isArray(patch.bridgeMetaDeleted) && patch.bridgeMetaDeleted.length > 0 || Array.isArray(patch.removedTaskIds) && patch.removedTaskIds.length > 0 || Array.isArray(patch.upsertedTasks) && patch.upsertedTasks.length > 0 || Array.isArray(patch.taskOrder)) {
+			const prevBridge = prevHost.bridgeState && typeof prevHost.bridgeState === "object" ? prevHost.bridgeState : {
+				tasks: [],
+				approvals: [],
+				workspaces: []
+			};
+			const nextBridge = { ...prevBridge };
+			if (patch.bridgeMeta && typeof patch.bridgeMeta === "object") Object.assign(nextBridge, patch.bridgeMeta);
+			if (Array.isArray(patch.bridgeMetaDeleted)) for (const k of patch.bridgeMetaDeleted) delete nextBridge[k];
+			if (Array.isArray(patch.removedTaskIds) && patch.removedTaskIds.length > 0 || Array.isArray(patch.upsertedTasks) && patch.upsertedTasks.length > 0 || Array.isArray(patch.taskOrder)) {
+				const removedTaskSet = new Set(Array.isArray(patch.removedTaskIds) ? patch.removedTaskIds : []);
+				const taskMap = /* @__PURE__ */ new Map();
+				const curTaskOrder = [];
+				for (const t of Array.isArray(prevBridge.tasks) ? prevBridge.tasks : []) {
+					if (!t || !t.id || removedTaskSet.has(t.id)) continue;
+					taskMap.set(t.id, t);
+					curTaskOrder.push(t.id);
+				}
+				if (Array.isArray(patch.upsertedTasks)) for (const ut of patch.upsertedTasks) {
+					if (!ut || !ut.id) continue;
+					if (!taskMap.has(ut.id)) curTaskOrder.push(ut.id);
+					taskMap.set(ut.id, ut);
+				}
+				const finalTaskOrder = Array.isArray(patch.taskOrder) ? patch.taskOrder : curTaskOrder;
+				const nextTasks = [];
+				const includedIds = /* @__PURE__ */ new Set();
+				for (const tid of finalTaskOrder) {
+					const taskObj = taskMap.get(tid);
+					if (!taskObj) return {
+						ok: false,
+						reason: "missing_task_in_order",
+						hostId: patch.hostId,
+						taskId: tid
+					};
+					nextTasks.push(taskObj);
+					includedIds.add(tid);
+				}
+				for (const [tid, taskObj] of taskMap.entries()) if (!includedIds.has(tid)) nextTasks.push(taskObj);
+				nextBridge.tasks = nextTasks;
+			}
+			nextHost.bridgeState = nextBridge;
+		}
+		hostMap.set(patch.hostId, nextHost);
+	}
+	const finalHostOrder = Array.isArray(delta.hostOrder) ? delta.hostOrder : currentOrder;
+	const nextHosts = [];
+	const addedHosts = /* @__PURE__ */ new Set();
+	for (const hid of finalHostOrder) {
+		const hObj = hostMap.get(hid);
+		if (!hObj) return {
+			ok: false,
+			reason: "missing_host_in_order",
+			hostId: hid
+		};
+		nextHosts.push(hObj);
+		addedHosts.add(hid);
+	}
+	for (const [hid, hObj] of hostMap.entries()) if (!addedHosts.has(hid)) nextHosts.push(hObj);
+	nextState.hosts = nextHosts;
+	return {
+		ok: true,
+		state: nextState,
+		noop: false,
+		metaOnly
+	};
+}
+// hub/web/src/utils/image-compress.js
+var MAX_DIMENSION_PX = 1440;
+var MAX_CANVAS_AREA_PX = 36e5;
+var MAX_RAW_FALLBACK_BYTES = 1258291.2;
+function readFileAsDataUrl(file) {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => resolve(String(reader.result || ""));
+		reader.onerror = () => reject(/* @__PURE__ */ new Error("读取图片失败"));
+		reader.readAsDataURL(file);
+	});
+}
+function loadImageElement(src) {
+	return new Promise((resolve, reject) => {
+		const el = new Image();
+		el.decoding = "async";
+		el.onload = () => resolve(el);
+		el.onerror = () => reject(/* @__PURE__ */ new Error("Image decode failed"));
+		el.src = src;
+	});
+}
+function encodeCanvasJpeg(img, targetW, targetH, quality) {
+	const canvas = document.createElement("canvas");
+	canvas.width = targetW;
+	canvas.height = targetH;
+	try {
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return null;
+		ctx.fillStyle = "#ffffff";
+		ctx.fillRect(0, 0, targetW, targetH);
+		ctx.drawImage(img, 0, 0, targetW, targetH);
+		return canvas.toDataURL("image/jpeg", quality);
+	} finally {
+		canvas.width = 0;
+		canvas.height = 0;
+	}
+}
+async function compressImageFile(file) {
+	if (!file) throw new Error("未选择图片文件");
+	const origMime = file.type && file.type.startsWith("image/") ? file.type : "image/jpeg";
+	const origName = file.name || `screenshot-${Date.now()}.jpg`;
+	const baseName = origName.replace(/\.[a-zA-Z0-9]+$/, "") || "screenshot";
+	const canUseObjectUrl = typeof URL !== "undefined" && typeof URL.createObjectURL === "function";
+	let objectUrl = "";
+	try {
+		const decodeSrc = canUseObjectUrl ? (objectUrl = URL.createObjectURL(file), objectUrl) : await readFileAsDataUrl(file);
+		const img = await loadImageElement(decodeSrc);
+		const w = img.naturalWidth || img.width || 0;
+		const h = img.naturalHeight || img.height || 0;
+		if (w > 0 && h > 0) {
+			const area = w * h;
+			const needsResize = w > MAX_DIMENSION_PX || h > MAX_DIMENSION_PX || area > MAX_CANVAS_AREA_PX;
+			const needsCompress = (file.size || 0) > 225280;
+			if (!needsResize && !needsCompress) {
+				const smallDataUrl = objectUrl ? await readFileAsDataUrl(file) : decodeSrc;
+				const commaIdx = smallDataUrl.indexOf(",");
+				const rawBase64 = commaIdx >= 0 ? smallDataUrl.slice(commaIdx + 1) : smallDataUrl;
+				return {
+					name: origName,
+					mimeType: origMime,
+					dataBase64: rawBase64,
+					previewUrl: smallDataUrl,
+					sizeBytes: file.size || Math.round(rawBase64.length * 3 / 4),
+					width: w,
+					height: h
+				};
+			}
+			const sideScale = MAX_DIMENSION_PX / Math.max(w, h);
+			const areaScale = Math.sqrt(MAX_CANVAS_AREA_PX / area);
+			const scale = Math.min(1, sideScale, areaScale);
+			let targetW = Math.max(1, Math.round(w * scale));
+			let targetH = Math.max(1, Math.round(h * scale));
+			let outDataUrl = encodeCanvasJpeg(img, targetW, targetH, .8);
+			if (outDataUrl && outDataUrl.length > 65e4) outDataUrl = encodeCanvasJpeg(img, targetW, targetH, .62) || outDataUrl;
+			if (outDataUrl && outDataUrl.length > 9e5) {
+				targetW = Math.max(1, Math.round(targetW * .75));
+				targetH = Math.max(1, Math.round(targetH * .75));
+				outDataUrl = encodeCanvasJpeg(img, targetW, targetH, .58) || outDataUrl;
+			}
+			if (outDataUrl) {
+				const outComma = outDataUrl.indexOf(",");
+				const outBase64 = outComma >= 0 ? outDataUrl.slice(outComma + 1) : outDataUrl;
+				return {
+					name: `${baseName}.jpg`,
+					mimeType: "image/jpeg",
+					dataBase64: outBase64,
+					previewUrl: outDataUrl,
+					sizeBytes: Math.round(outBase64.length * 3 / 4),
+					width: targetW,
+					height: targetH
+				};
+			}
+		}
+	} catch {} finally {
+		if (objectUrl) try {
+			URL.revokeObjectURL(objectUrl);
+		} catch {}
+	}
+	if ((file.size || 0) > MAX_RAW_FALLBACK_BYTES) throw new Error("图片体积过大或格式暂不支持直接解码，请截图为 PNG/JPG 后重试");
+	const fallbackDataUrl = await readFileAsDataUrl(file);
+	const commaIdx = fallbackDataUrl.indexOf(",");
+	const rawBase64 = commaIdx >= 0 ? fallbackDataUrl.slice(commaIdx + 1) : fallbackDataUrl;
+	return {
+		name: origName,
+		mimeType: origMime,
+		dataBase64: rawBase64,
+		previewUrl: fallbackDataUrl,
+		sizeBytes: file.size || Math.round(rawBase64.length * 3 / 4)
+	};
+}
+// hub/web/src/utils/semver.js
+function compareSemver(a, b) {
+	const pa = String(a || "").trim().replace(/^v/i, "").split(/[.-]/).map((x) => Number(x) || 0);
+	const pb = String(b || "").trim().replace(/^v/i, "").split(/[.-]/).map((x) => Number(x) || 0);
+	for (let i = 0; i < 3; i += 1) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) < (pb[i] || 0) ? -1 : 1;
+	return 0;
+}
 // hub/web/src/controller.js
 function initHubController() {
 	const urlParams = new URLSearchParams(location.search);
@@ -3227,6 +3476,7 @@ function initHubController() {
 		const found = foundArg && foundArg.session ? foundArg : findSessionGlobal(activeSessionId);
 		if (!found) return;
 		const { session: s } = found;
+		if (s._wireTruncated && !expandedTranscriptBySession.has(s.id)) hydrateColdSessionTranscript(s.hostId, s.id, s.sessionRev || "");
 		const chatHeaderTitle = s.harness !== "dsh" && s.project && !s.title.startsWith(s.project) ? `${s.project} / ${s.title}` : s.title;
 		document.getElementById("chatTitle").textContent = chatHeaderTitle;
 		const harnessPrefix = s.harness === "antigravity-ide" ? "⚡ Antigravity IDE · " : s.harness === "codex" ? "🧠 Codex · " : s.harness === "workbuddy" ? "🐼 WorkBuddy · " : s.harness === "claude" ? "✴️ Claude Code · " : "";
@@ -3725,22 +3975,40 @@ function initHubController() {
 			if (box.scrollHeight - box.scrollTop - box.clientHeight < 40) setScrollBottomVisible(false);
 		}, { passive: true });
 	}
+	async function apiFetchWithTimeout(path, options = {}, timeoutMs = 1e4) {
+		const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+		const timer = ctrl ? setTimeout(() => {
+			try {
+				ctrl.abort();
+			} catch {}
+		}, timeoutMs) : null;
+		try {
+			return await apiFetch(path, {
+				cache: "no-store",
+				...options,
+				...ctrl ? { signal: ctrl.signal } : {}
+			});
+		} finally {
+			if (timer) clearTimeout(timer);
+		}
+	}
 	async function dispatchHostCommand(hostId, payload) {
 		const cmdPayload = payload && typeof payload === "object" && !payload.id ? {
 			...payload,
 			id: `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 		} : payload;
+		const timeoutMs = Array.isArray(cmdPayload?.attachments) && cmdPayload.attachments.length > 0 ? 15e3 : 1e4;
 		const reqInit = {
 			method: "POST",
 			body: JSON.stringify(cmdPayload)
 		};
 		const url = `/api/hosts/${encodeURIComponent(hostId)}/command`;
 		try {
-			return await (await apiFetch(url, reqInit)).json();
+			return await (await apiFetchWithTimeout(url, reqInit, timeoutMs)).json();
 		} catch (err) {
 			if (err && err.message === "Unauthorized") throw err;
 			await new Promise((r) => setTimeout(r, 250));
-			return await (await apiFetch(url, reqInit)).json();
+			return await (await apiFetchWithTimeout(url, reqInit, timeoutMs)).json();
 		}
 	}
 	let composerSessionId = "";
@@ -3815,77 +4083,6 @@ function initHubController() {
 			el.value = "";
 			el.click();
 		}
-	}
-	function readFileAsDataUrl(file) {
-		return new Promise((resolve, reject) => {
-			const reader = new FileReader();
-			reader.onload = () => resolve(String(reader.result || ""));
-			reader.onerror = () => reject(/* @__PURE__ */ new Error("读取图片失败"));
-			reader.readAsDataURL(file);
-		});
-	}
-	async function compressImageFile(file) {
-		const rawDataUrl = await readFileAsDataUrl(file);
-		const commaIdx = rawDataUrl.indexOf(",");
-		const rawBase64 = commaIdx >= 0 ? rawDataUrl.slice(commaIdx + 1) : rawDataUrl;
-		const origMime = file.type && file.type.startsWith("image/") ? file.type : "image/jpeg";
-		const origName = file.name || `screenshot-${Date.now()}.jpg`;
-		try {
-			const img = await new Promise((resolve, reject) => {
-				const el = new Image();
-				el.onload = () => resolve(el);
-				el.onerror = () => reject(/* @__PURE__ */ new Error("Image decode failed"));
-				el.src = rawDataUrl;
-			});
-			const w = img.naturalWidth || img.width || 0;
-			const h = img.naturalHeight || img.height || 0;
-			const maxSide = 1600;
-			const needsResize = w > maxSide || h > maxSide;
-			const needsCompress = file.size > 266240;
-			if (!needsResize && !needsCompress && w > 0 && h > 0) return {
-				name: origName,
-				mimeType: origMime,
-				dataBase64: rawBase64,
-				previewUrl: rawDataUrl,
-				sizeBytes: file.size || Math.round(rawBase64.length * 3 / 4),
-				width: w,
-				height: h
-			};
-			if (w > 0 && h > 0) {
-				const scale = needsResize ? Math.min(maxSide / w, maxSide / h) : 1;
-				const targetW = Math.max(1, Math.round(w * scale));
-				const targetH = Math.max(1, Math.round(h * scale));
-				const canvas = document.createElement("canvas");
-				canvas.width = targetW;
-				canvas.height = targetH;
-				const ctx = canvas.getContext("2d");
-				if (ctx) {
-					ctx.fillStyle = "#ffffff";
-					ctx.fillRect(0, 0, targetW, targetH);
-					ctx.drawImage(img, 0, 0, targetW, targetH);
-					const outMime = "image/jpeg";
-					const outDataUrl = canvas.toDataURL(outMime, .82);
-					const outComma = outDataUrl.indexOf(",");
-					const outBase64 = outComma >= 0 ? outDataUrl.slice(outComma + 1) : outDataUrl;
-					return {
-						name: `${origName.replace(/\.[a-zA-Z0-9]+$/, "") || "screenshot"}.jpg`,
-						mimeType: outMime,
-						dataBase64: outBase64,
-						previewUrl: outDataUrl,
-						sizeBytes: Math.round(outBase64.length * 3 / 4),
-						width: targetW,
-						height: targetH
-					};
-				}
-			}
-		} catch {}
-		return {
-			name: origName,
-			mimeType: origMime,
-			dataBase64: rawBase64,
-			previewUrl: rawDataUrl,
-			sizeBytes: file.size || Math.round(rawBase64.length * 3 / 4)
-		};
 	}
 	function renderAttachmentStrip(target = "chat") {
 		const stripId = target === "newTask" ? "newTaskAttachmentsStrip" : "composerAttachmentsStrip";
@@ -3965,6 +4162,10 @@ function initHubController() {
 	window.addEventListener("pagehide", () => {
 		persistComposerDraft();
 		stopVoiceInput();
+		closeSSE();
+	});
+	window.addEventListener("beforeunload", () => {
+		closeSSE();
 	});
 	document.addEventListener("visibilitychange", () => {
 		if (document.visibilityState === "hidden") {
@@ -6399,12 +6600,6 @@ function initHubController() {
 			if (document.getElementById("turboGuideSheet").classList.contains("open")) openTurboGuideSheet();
 		}, 900);
 	}
-	function compareSemver(a, b) {
-		const pa = String(a || "").trim().replace(/^v/i, "").split(/[.-]/).map((x) => Number(x) || 0);
-		const pb = String(b || "").trim().replace(/^v/i, "").split(/[.-]/).map((x) => Number(x) || 0);
-		for (let i = 0; i < 3; i += 1) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) < (pb[i] || 0) ? -1 : 1;
-		return 0;
-	}
 	async function upgradeHostTurbo(hostId, hostName = "") {
 		const label = hostName || hostId;
 		upgradingHostMap[hostId] = Date.now();
@@ -6819,7 +7014,7 @@ function initHubController() {
 					modelCatalog: h.bridgeState.modelCatalog || {},
 					turbo: h.bridgeState.turbo || null,
 					systemTelemetry: h.bridgeState.systemTelemetry || null,
-					tasks: (h.bridgeState.tasks || []).map((t) => ({
+					tasks: (h.bridgeState.tasks || []).map((t, tIdx) => ({
 						id: t.id,
 						rawId: t.rawId,
 						shortId: t.shortId,
@@ -6840,10 +7035,11 @@ function initHubController() {
 						pendingApproval: t.pendingApproval || null,
 						artifacts: t.artifacts || [],
 						messageCount: t.messageCount || 0,
+						wireTruncated: true,
 						transcript: (t.transcript || []).slice(-2).map((m) => ({
 							index: m.index,
 							role: m.role,
-							text: String(m.text || "").slice(0, 600),
+							text: String(m.text || "").slice(0, tIdx < 4 ? 4e3 : 600),
 							time: m.time,
 							artifacts: m.artifacts || []
 						}))
@@ -6872,18 +7068,19 @@ function initHubController() {
 		} catch {}
 		return null;
 	}
-	function applyHubState(nextState) {
+	function applyHubState(nextState, { skipCache = false } = {}) {
 		const incomingBuild = String(nextState?.build?.uiBuild || "").trim();
 		if (incomingBuild && incomingBuild !== "dev") {
 			if (!initialUiBuild) initialUiBuild = incomingBuild;
 			else if (initialUiBuild !== incomingBuild && typeof window !== "undefined" && window.location && typeof window.location.reload === "function") {
+				closeSSE();
 				window.location.reload();
 				return;
 			}
 		}
 		preservePreviewUiState(nextState);
 		hubState = nextState;
-		saveCachedHubStateSnapshot(nextState);
+		if (!skipCache) saveCachedHubStateSnapshot(nextState);
 	}
 	let hasLoadedInitialState = false;
 	let stateFetchInFlight = false;
@@ -7013,15 +7210,22 @@ function initHubController() {
 			});
 		}, 900);
 	}
+	function closeSSE() {
+		if (sseSource) {
+			try {
+				sseSource.close();
+			} catch {}
+			sseSource = null;
+		}
+		sseConnected = false;
+	}
 	function connectSSE() {
 		if (urlParams.get("nosse") === "1") return;
 		const prevSseEventAt = lastSseEventAt;
-		if (sseSource) try {
-			sseSource.close();
-		} catch {}
-		sseConnected = false;
+		closeSSE();
 		const tk = getToken();
-		const url = "/api/events?initial=0" + (tk ? "&token=" + encodeURIComponent(tk) : "");
+		const knownSeq = hasLoadedInitialState ? Number(hubState?.stateSeq || 0) : 0;
+		const url = "/api/events?initial=0&delta=1" + (knownSeq > 0 ? "&seq=" + encodeURIComponent(String(knownSeq)) : "") + (tk ? "&token=" + encodeURIComponent(tk) : "");
 		try {
 			sseSource = new EventSource(url);
 			sseSource.onopen = () => {
@@ -7035,16 +7239,62 @@ function initHubController() {
 			sseSource.onerror = () => {
 				sseConnected = false;
 			};
-			sseSource.addEventListener("ping", () => {
+			sseSource.addEventListener("ping", (evt) => {
 				sseConnected = true;
 				sseRotatingUntil = 0;
 				lastSseEventAt = Date.now();
 				consecutiveStateFetchFailures = 0;
 				setConnectionBanner(false);
+				try {
+					if (evt?.data && hasLoadedInitialState && !stateFetchInFlight) {
+						const pingData = JSON.parse(evt.data);
+						const serverSeq = Number(pingData?.stateSeq || 0);
+						const localSeq = Number(hubState?.stateSeq || 0);
+						if (serverSeq > 0 && localSeq > 0 && serverSeq !== localSeq) fetchState({
+							silent: true,
+							forceFresh: true
+						});
+					}
+				} catch {}
 			});
 			sseSource.addEventListener("rotate", () => {
 				sseRotatingUntil = Date.now() + 5e3;
 				connectSSE();
+			});
+			sseSource.addEventListener("state_delta", (evt) => {
+				try {
+					sseConnected = true;
+					sseRotatingUntil = 0;
+					const nowEvt = Date.now();
+					lastSseEventAt = nowEvt;
+					lastSseStateAt = nowEvt;
+					consecutiveStateFetchFailures = 0;
+					setConnectionBanner(false);
+					if (!hasLoadedInitialState) {
+						inFlightNeedsFollowup = true;
+						if (!stateFetchInFlight) fetchState({
+							silent: true,
+							forceFresh: true
+						});
+						return;
+					}
+					const delta = JSON.parse(evt.data);
+					const merged = applyStateDelta(hubState, delta);
+					if (!merged.ok) {
+						fetchState({
+							silent: true,
+							forceFresh: true
+						});
+						return;
+					}
+					if (!merged.noop) {
+						applyHubState(merged.state, { skipCache: Boolean(merged.metaOnly) });
+						if (!merged.metaOnly) {
+							renderAll();
+							flushPendingDeepLink();
+						}
+					}
+				} catch {}
 			});
 			sseSource.addEventListener("state", (evt) => {
 				try {

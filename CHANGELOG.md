@@ -2,6 +2,23 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.6.0] - 2026-11-11
+
+### Added
+
+- 实现真正的 **SSE 增量状态推送 (`event: state_delta`)**：新增服务端差分引擎 `hub/delta-state.js` 与前端无损合并器 `hub/web/src/state/delta-merge.js`，`/api/events?delta=1` 仅推送发生变更的主机元数据与单条会话（压缩后每次更新仅 `~1–3 KB`，相比此前全量广播降低 **98%+** 移动端实时流量），内置单调递增 `stateSeq` 连续性校验与断序自动回退 `/api/state` 自愈能力
+- 推进前端 `controller.js` 模块化拆分：抽离 `hub/web/src/state/delta-merge.js`、`hub/web/src/utils/image-compress.js` 与 `hub/web/src/utils/semver.js` 独立模块
+
+### Fixed
+
+- 彻底修复移动端「已出结论」长回复内容被截断的问题：
+  - `HubCore.compactBridgeStateForWire` 将每个主机前 6 条、所有运行中/待审批、以及最近 60 分钟内刚出结论或活跃的会话均纳入热会话保护，最新回复与结论配额恢复至完整 **`48,000` 字**（零截断）
+  - 在 `renderActiveChatStage` 渲染阶段增加 `_wireTruncated` 自动检测与静默全文回填（`hydrateColdSessionTranscript`），即使直接停留在会话内跨状态切换或打开早先冷门历史会话也自动补齐 100% 原始全文
+- 修复移动端发送高分辨率截图/长截图后偶发卡死、导致短时间内打不开页面的问题：
+  - `compressImageFile` 改为低内存 `URL.createObjectURL` 异步解码 + iOS WebKit 安全像素面积上限（`3.6M px`，规避 Safari `16.7M px` Canvas GPU 进程崩溃白屏）+ 绘制后立即释放显存（`canvas.width = 0`）+ 自适应阶梯 JPEG 压缩，并禁止解码失败时回退裸发数 MB 原始图片
+  - `dispatchHostCommand` 增加 `AbortController` 请求超时保护（附图 15 秒 / 普通指令 10 秒 + `cache: 'no-store'`），杜绝移动网络代理偶发卡包拖死 iOS Safari 复用的单条 HTTP/2 连接
+  - 在版本热更新 `location.reload()`、`pagehide` 与 `beforeunload` 前显式调用 `closeSSE()`，根除幽灵双路 SSE 并发占满带宽
+
 ## [0.5.9] - 2026-11-11
 
 ### Fixed

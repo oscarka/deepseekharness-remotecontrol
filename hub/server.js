@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { createGzip, gunzipSync, gzip, constants as zlibConstants } from 'node:zlib'
 import { HubCore } from './hub-core.js'
+import { captureStateDigest, buildStateDelta } from './delta-state.js'
 
 const gzipAsync = promisify(gzip)
 
@@ -1097,19 +1098,48 @@ export function createHubServer({
           } catch {}
         }
         safeWrite('retry: 1000\n\n')
+        const wantDelta = urlObj.searchParams.get('delta') === '1'
+        const clientSeq = Number(urlObj.searchParams.get('seq') || 0)
+        let prevDigest = null
         const sendEvent = stateData => {
           lastSsePushAt = Date.now()
+          if (wantDelta) {
+            prevDigest = captureStateDigest(stateData)
+          }
           safeWrite(`event: state\ndata: ${JSON.stringify({ ok: true, ...stateData })}\n\n`)
         }
+        const sendStateOrDelta = stateData => {
+          if (!wantDelta || !prevDigest) {
+            sendEvent(stateData)
+            return
+          }
+          const { hasChanges, delta, nextDigest } = buildStateDelta(prevDigest, stateData)
+          prevDigest = nextDigest
+          if (!hasChanges || !delta) return
+          lastSsePushAt = Date.now()
+          safeWrite(`event: state_delta\ndata: ${JSON.stringify({ ok: true, ...delta })}\n\n`)
+        }
         if (urlObj.searchParams.get('initial') === '0') {
-          safeWrite(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
+          if (wantDelta) {
+            const curState = hub.getFullState()
+            if (clientSeq > 0 && clientSeq !== curState.stateSeq) {
+              sendEvent(curState)
+            } else {
+              prevDigest = captureStateDigest(curState)
+              safeWrite(
+                `event: ping\ndata: {"ts":${Date.now()},"stateSeq":${Number(curState.stateSeq) || 0}}\n\n`,
+              )
+            }
+          } else {
+            safeWrite(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
+          }
         } else {
           sendEvent(hub.getFullState())
         }
         const flushLatestState = () => {
           pendingSseTimer = null
           if (closed || res.writableEnded || res.destroyed) return
-          sendEvent(hub.getFullState())
+          sendStateOrDelta(hub.getFullState())
         }
         const unsubscribe = hub.onStateChange((evt, stateData) => {
           if (closed || res.writableEnded || res.destroyed) return
@@ -1124,7 +1154,7 @@ export function createHubServer({
               clearTimeout(pendingSseTimer)
               pendingSseTimer = null
             }
-            sendEvent(stateData || hub.getFullState())
+            sendStateOrDelta(stateData || hub.getFullState())
             return
           }
           if (!pendingSseTimer) {
@@ -1134,7 +1164,7 @@ export function createHubServer({
           }
         })
         const keepAlive = setInterval(() => {
-          safeWrite(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
+          safeWrite(`event: ping\ndata: {"ts":${Date.now()},"stateSeq":${Number(hub.stateSeq) || 0}}\n\n`)
         }, 12_000)
         keepAlive.unref?.()
         const cleanupClientSse = () => {
