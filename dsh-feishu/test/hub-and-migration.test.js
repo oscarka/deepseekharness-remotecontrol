@@ -3906,17 +3906,109 @@ test('WorkBuddy v5.9.3 Streamable HTTP POST SSE frames, takeWriter session/load,
   }
 })
 
+test('WorkBuddy bundled CLI spawns with isolated ACC_PRODUCT_CONFIG_PATH (workbuddy-cli) to avoid Desktop auth file collision', async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-wb-product-cfg-'))
+  const prevAccPath = process.env.ACC_PRODUCT_CONFIG_PATH
+  delete process.env.ACC_PRODUCT_CONFIG_PATH
+  try {
+    const cliRoot = join(tmpDir, 'WorkBuddy.app', 'Contents', 'Resources', 'app.asar.unpacked', 'cli')
+    const binDir = join(cliRoot, 'bin')
+    const binPath = join(binDir, 'codebuddy')
+    const wbHome = join(tmpDir, '.workbuddy')
+    await mkdir(binDir, { recursive: true })
+    await writeFile(binPath, '#!/usr/bin/env node\n', 'utf8')
+    await writeFile(
+      join(cliRoot, 'product.json'),
+      JSON.stringify({
+        productName: 'WorkBuddy',
+        productConfigPathEnv: 'ACC_PRODUCT_CONFIG_PATH',
+        endpoint: 'https://www.workbuddy.cn',
+        stagingEndpoint: 'https://staging.workbuddy.cn',
+        authentication: {
+          id: 'workbuddy-desktop',
+          type: 'account-scoped-external-link',
+          label: 'TencentCloud',
+          attributes: {
+            platform: 'workbuddy',
+            prefixPath: '/plugin',
+          },
+        },
+      }),
+      'utf8',
+    )
 
+    let capturedSpawn = null
+    const wb = new WorkBuddyAdapter({
+      workbuddyHome: wbHome,
+      binaryPath: binPath,
+      querySidecarImpl: async () => null,
+      spawnImpl: (cmd, args, opts) => {
+        capturedSpawn = { cmd, args, opts }
+        const fakeProc = new EventEmitter()
+        fakeProc.unref = () => {}
+        fakeProc.kill = () => {}
+        return fakeProc
+      },
+      fetchImpl: async url => {
+        if (String(url).endsWith('/connect')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { connectionId: 'conn-iso-1', sessionToken: 'tok-1' } }),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/json' },
+          text: async () => JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }),
+        }
+      },
+      openSseImpl: () => ({ destroy() {} }),
+    })
 
+    const resolvedEndpoint = await wb._resolveDefaultAcpEndpoint()
+    assert.match(resolvedEndpoint, /^http:\/\/127\.0\.0\.1:\d+\/api\/v1\/acp$/)
+    assert.ok(capturedSpawn, 'spawnImpl should be invoked')
+    assert.equal(capturedSpawn.cmd, binPath)
+    assert.equal(capturedSpawn.opts.env.CODEBUDDY_FORCE_LITE_WB_BUNDLE, '1')
+    assert.equal(capturedSpawn.opts.env.CODEBUDDY_CONFIG_DIR, wbHome)
+    assert.equal(capturedSpawn.opts.env.WORKBUDDY_CONFIG_DIR, wbHome)
 
+    const expectedProductCfgPath = join(wbHome, 'dsh-cli-product.json')
+    assert.equal(capturedSpawn.opts.env.ACC_PRODUCT_CONFIG_PATH, expectedProductCfgPath)
 
+    const writtenProductCfg = JSON.parse(await readFile(expectedProductCfgPath, 'utf8'))
+    assert.equal(writtenProductCfg.endpoint, 'https://www.workbuddy.cn')
+    assert.equal(writtenProductCfg.authentication.id, 'workbuddy-cli')
+    assert.equal(writtenProductCfg.authentication.type, 'account-scoped-external-link')
+    assert.equal(writtenProductCfg.authentication.attributes.platform, 'workbuddy')
 
+    // Also verify WorkBuddyAcpClient.authenticate defaults to 'internal' when authMethods is empty
+    let sentMethodId = ''
+    const client = new WorkBuddyAcpClient({
+      acpEndpoint: resolvedEndpoint,
+      fetchImpl: async (_url, init) => {
+        const parsed = JSON.parse(init.body)
+        if (parsed.method === 'authenticate') {
+          sentMethodId = parsed.params?.methodId || ''
+        }
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/json' },
+          text: async () => JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { ok: true } }),
+        }
+      },
+      openSseImpl: () => ({ destroy() {} }),
+    })
+    await client.authenticate()
+    assert.equal(sentMethodId, 'internal')
 
-
-
-
-
-
-
-
-
+    wb.shutdown()
+  } finally {
+    if (prevAccPath === undefined) delete process.env.ACC_PRODUCT_CONFIG_PATH
+    else process.env.ACC_PRODUCT_CONFIG_PATH = prevAccPath
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})

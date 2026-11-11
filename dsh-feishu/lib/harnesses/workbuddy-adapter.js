@@ -552,7 +552,7 @@ export class WorkBuddyAcpClient extends EventEmitter {
     const resolvedMethodId =
       String(methodId || '').trim() ||
       this.authMethods?.[0]?.id ||
-      'external'
+      'internal'
     return this.request('authenticate', { methodId: resolvedMethodId })
   }
 
@@ -1088,6 +1088,88 @@ export class WorkBuddyAdapter {
     }
   }
 
+  _ensureCliProductConfigPath() {
+    if (process.env.ACC_PRODUCT_CONFIG_PATH) {
+      return process.env.ACC_PRODUCT_CONFIG_PATH
+    }
+    if (!this.binaryPath) return ''
+
+    const productCandidates = [path.resolve(path.dirname(this.binaryPath), '..', 'product.json')]
+    try {
+      if (fs.existsSync(this.binaryPath)) {
+        const realBin = fs.realpathSync(this.binaryPath)
+        const realCandidate = path.resolve(path.dirname(realBin), '..', 'product.json')
+        if (!productCandidates.includes(realCandidate)) {
+          productCandidates.push(realCandidate)
+        }
+      }
+    } catch {
+      // ignore realpath errors
+    }
+    if (/workbuddy\.app/i.test(String(this.binaryPath))) {
+      productCandidates.push(
+        '/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/product.json',
+        path.join(os.homedir(), 'Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/product.json'),
+      )
+    }
+
+    let baseProduct = null
+    for (const candidate of productCandidates) {
+      try {
+        if (!candidate || !fs.existsSync(candidate)) continue
+        const parsed = safeJsonParse(fs.readFileSync(candidate, 'utf8'))
+        if (parsed && typeof parsed === 'object') {
+          baseProduct = parsed
+          break
+        }
+      } catch {
+        // ignore read errors
+      }
+    }
+
+    const isWorkBuddyDesktopAuth = baseProduct?.authentication?.id === 'workbuddy-desktop'
+    const isWorkBuddyAppBin = /workbuddy\.app/i.test(String(this.binaryPath))
+    if (!isWorkBuddyDesktopAuth && !isWorkBuddyAppBin) {
+      return ''
+    }
+
+    const baseAuth =
+      baseProduct?.authentication && typeof baseProduct.authentication === 'object'
+        ? baseProduct.authentication
+        : {
+            type: 'account-scoped-external-link',
+            label: 'TencentCloud',
+            attributes: {
+              usernameHeader: 'X-User-Id',
+              usernameEncode: 'URLEncode',
+              tokenHeader: 'Authorization',
+              tokenType: 'bearerToken',
+              startChatAfterCompleted: true,
+              prefixPath: '/plugin',
+              platform: 'workbuddy',
+            },
+          }
+
+    const cliProductOverride = {
+      ...(baseProduct?.productName ? { productName: baseProduct.productName } : { productName: 'WorkBuddy' }),
+      endpoint: baseProduct?.endpoint || 'https://www.workbuddy.cn',
+      ...(baseProduct?.stagingEndpoint ? { stagingEndpoint: baseProduct.stagingEndpoint } : {}),
+      authentication: {
+        ...baseAuth,
+        id: 'workbuddy-cli',
+      },
+    }
+
+    try {
+      fs.mkdirSync(this.workbuddyHome, { recursive: true })
+      const outPath = path.join(this.workbuddyHome, 'dsh-cli-product.json')
+      fs.writeFileSync(outPath, `${JSON.stringify(cliProductOverride, null, 2)}\n`, 'utf8')
+      return outPath
+    } catch {
+      return ''
+    }
+  }
+
   async _resolveDefaultAcpEndpoint() {
     if (this.defaultEndpoint) return this.defaultEndpoint
 
@@ -1111,6 +1193,7 @@ export class WorkBuddyAdapter {
     if (this.binaryPath && typeof this.spawnImpl === 'function') {
       const port = 43820 + Math.floor(Math.random() * 1000)
       const endpoint = `http://127.0.0.1:${port}/api/v1/acp`
+      const cliProductConfigPath = this._ensureCliProductConfigPath()
       try {
         this.logger?.log?.(`[dsh-feishu] 🐼 Spawning WorkBuddy ACP server on 127.0.0.1:${port}...`)
         const proc = this.spawnImpl(
@@ -1123,6 +1206,7 @@ export class WorkBuddyAdapter {
               CODEBUDDY_FORCE_LITE_WB_BUNDLE: '1',
               CODEBUDDY_CONFIG_DIR: this.workbuddyHome,
               WORKBUDDY_CONFIG_DIR: this.workbuddyHome,
+              ...(cliProductConfigPath ? { ACC_PRODUCT_CONFIG_PATH: cliProductConfigPath } : {}),
             },
             stdio: 'ignore',
             detached: true,
