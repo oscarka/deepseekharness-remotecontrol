@@ -29,6 +29,7 @@ if (!config.hubUrl) {
 }
 
 let daemonLock = null
+let hubAgent = null
 if (!once) {
   daemonLock = await acquireDaemonLock({
     dshHome: config.dshHome,
@@ -42,6 +43,9 @@ if (!once) {
     process.exit(0)
   }
   const cleanupLock = () => {
+    try {
+      hubAgent?.stop?.()
+    } catch {}
     try {
       daemonLock?.release?.()
     } catch {}
@@ -67,7 +71,7 @@ const bridge = new FeishuBridge({
   sendCard: async () => ({ messageId: 'noop' }),
 })
 
-const hubAgent = new HubAgent({
+hubAgent = new HubAgent({
   config,
   bridge,
   transport: null,

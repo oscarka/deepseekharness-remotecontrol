@@ -15,6 +15,7 @@ import { CodexAdapter, CodexAppServerClient, discoverCodexModels } from '../lib/
 import {
   discoverWorkBuddyModels,
   parseWorkBuddyReplayEvents,
+  queryWorkBuddySidecar,
   WorkBuddyAcpClient,
   WorkBuddyAdapter,
 } from '../lib/harnesses/workbuddy-adapter.js'
@@ -3609,6 +3610,254 @@ test('WorkBuddy v5.9.3 projects JSONL transcript parsing & wbipc/endpoint.json d
     await rm(tmpDir, { recursive: true, force: true })
   }
 })
+
+test('WorkBuddy v5.9.3 Streamable HTTP POST SSE frames, takeWriter session/load, auth error surfacing, and wbipc fast-skip', async () => {
+  const http = await import('node:http')
+  const net = await import('node:net')
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-wb-sse-post-'))
+  let acpServer = null
+  let wbipcDummyServer = null
+
+  try {
+    // 1. Verify wbipc socket (b-*.sock) is skipped immediately instead of hanging 1.5s
+    const wbipcDir = join(tmpDir, 'wbipc')
+    await mkdir(wbipcDir, { recursive: true })
+    const wbipcSock = join(wbipcDir, 'b-b7602d5aabc793dd.sock')
+    wbipcDummyServer = net.createServer(() => {
+      // Intentionally never replies to sidecar JSON-RPC (simulates real wbipc socket)
+    })
+    await new Promise(resolve => wbipcDummyServer.listen(wbipcSock, resolve))
+    const tStart = Date.now()
+    const sidecarRes = await queryWorkBuddySidecar(wbipcSock, 'session.list', {}, 1500)
+    assert.equal(sidecarRes, null)
+    assert.ok(Date.now() - tStart < 150, 'wbipc socket should fast-skip without waiting 1500ms timeout')
+
+    // 2. Start a real HTTP server speaking WorkBuddy v5.9.3 Streamable HTTP (`text/event-stream` on POST /api/v1/acp)
+    let isLoggedIn = false
+    let pendingPromptSseRes = null
+    let pendingPromptReqId = null
+
+    acpServer = http.createServer((req, res) => {
+      const url = new URL(req.url, 'http://127.0.0.1')
+      if (req.method === 'POST' && url.pathname.endsWith('/connect')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ data: { connectionId: 'conn-v593', sessionToken: '' } }))
+        return
+      }
+      if (req.method === 'GET' && url.pathname === '/api/v1/acp') {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', Connection: 'keep-alive' })
+        res.write(':ok\n\n')
+        return
+      }
+      if (req.method === 'POST' && url.pathname === '/api/v1/acp') {
+        let raw = ''
+        req.on('data', c => { raw += c })
+        req.on('end', () => {
+          const msg = JSON.parse(raw || '{}')
+          if (msg.method === 'initialize') {
+            res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+            res.end(`:ok\n\nevent: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } })}\n\n`)
+            return
+          }
+          if (msg.method === 'session/load') {
+            res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+            if (!msg.params?.takeWriter || !msg.params?._meta?.['codebuddy.ai/takeWriter']) {
+              res.end(
+                `:ok\n\nevent: message\ndata: ${JSON.stringify({
+                  jsonrpc: '2.0',
+                  id: msg.id,
+                  error: {
+                    code: -32000,
+                    message: 'Persistent Session already has an external writer',
+                    data: { reason: 'writer_occupied' },
+                  },
+                })}\n\n`,
+              )
+              return
+            }
+            if (!isLoggedIn) {
+              res.end(
+                `:ok\n\nevent: message\ndata: ${JSON.stringify({
+                  jsonrpc: '2.0',
+                  id: msg.id,
+                  error: {
+                    code: -32000,
+                    message: 'Authentication required. Please use /login command to sign in to your account',
+                    data: { category: 'auth' },
+                  },
+                })}\n\n`,
+              )
+              return
+            }
+            // Replay historical chunk BEFORE id result (must be ignored by entry.isLoadingSession!)
+            res.write(
+              `:ok\n\nevent: message\ndata: ${JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'session/update',
+                params: {
+                  sessionId: msg.params.sessionId,
+                  update: { sessionUpdate: 'agent_message_chunk', content: 'OLD_HISTORY_REPLAY_SHOULD_IGNORE' },
+                },
+              })}\n\n`,
+            )
+            res.end(
+              `event: message\ndata: ${JSON.stringify({
+                jsonrpc: '2.0',
+                id: msg.id,
+                result: { models: { currentModelId: 'auto' } },
+              })}\n\n`,
+            )
+            return
+          }
+          if (msg.method === 'session/prompt') {
+            res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+            res.write(':ok\n\n')
+            // Stream chunk 1 + in-band serverRequest (session/request_permission) on the POST SSE stream!
+            res.write(
+              `event: message\ndata: ${JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'session/update',
+                params: {
+                  sessionId: msg.params.sessionId,
+                  update: { sessionUpdate: 'agent_message_chunk', content: '第一段流式回复，' },
+                },
+              })}\n\n`,
+            )
+            res.write(
+              `event: message\ndata: ${JSON.stringify({
+                jsonrpc: '2.0',
+                id: 888,
+                method: 'session/request_permission',
+                params: {
+                  sessionId: msg.params.sessionId,
+                  toolCall: { toolCallId: 'tc-post-1', title: 'Bash: ls -la', kind: 'execute' },
+                  options: [{ optionId: 'allow_once', name: '允许', kind: 'allow_once' }],
+                },
+              })}\n\n`,
+            )
+            pendingPromptSseRes = res
+            pendingPromptReqId = msg.id
+            return
+          }
+          if (msg.id === 888 && msg.result) {
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true }))
+            if (pendingPromptSseRes && !pendingPromptSseRes.writableEnded) {
+              pendingPromptSseRes.write(
+                `event: message\ndata: ${JSON.stringify({
+                  jsonrpc: '2.0',
+                  method: 'session/update',
+                  params: {
+                    sessionId: '869a441a-5fd3-4862-8bf8-deb63bbfea5a',
+                    update: { sessionUpdate: 'agent_message_chunk', content: '授权通过后完成第二段回复！' },
+                  },
+                })}\n\n`,
+              )
+              pendingPromptSseRes.end(
+                `event: message\ndata: ${JSON.stringify({
+                  jsonrpc: '2.0',
+                  id: pendingPromptReqId,
+                  result: { stopReason: 'end_turn' },
+                })}\n\n`,
+              )
+            }
+            return
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end('{}')
+        })
+      }
+    })
+
+    await new Promise(resolve => acpServer.listen(0, '127.0.0.1', resolve))
+    const port = acpServer.address().port
+    const endpoint = `http://127.0.0.1:${port}/api/v1/acp`
+
+    const wbHome = join(tmpDir, '.workbuddy')
+    const projDir = join(wbHome, 'projects', 'Users-test-proj')
+    await mkdir(projDir, { recursive: true })
+    const sessId = '869a441a-5fd3-4862-8bf8-deb63bbfea5a'
+    await writeFile(
+      join(projDir, `${sessId}.jsonl`),
+      [
+        JSON.stringify({ type: 'message', role: 'user', content: [{ type: 'input_text', text: '<user_query>你好</user_query>' }], cwd: '/Users/test/proj', timestamp: 1000 }),
+        JSON.stringify({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '你好！我是 WorkBuddy。' }], cwd: '/Users/test/proj', timestamp: 2000 }),
+      ].join('\n') + '\n',
+      'utf8',
+    )
+
+    const logs = []
+    const wb = new WorkBuddyAdapter({
+      workbuddyHome: wbHome,
+      acpEndpoint: endpoint,
+      logger: {
+        log: m => logs.push(m),
+        warn: m => logs.push(m),
+      },
+    })
+
+    await wb.listSessions()
+
+    // 3. Before CLI login -> sendPrompt fails fast and surfaces actionable /login instructions instead of silent ok:true
+    const unauthRes = await wb.sendPrompt({
+      sessionId: `workbuddy:${sessId}`,
+      text: '帮我看看目录结构',
+    })
+    assert.equal(unauthRes.ok, false)
+    assert.match(unauthRes.error, /WorkBuddy CLI 尚未登录账号/)
+    assert.match(unauthRes.error, /\/login/)
+    assert.ok(logs.some(l => l.includes('尚未登录账号')))
+
+    // 4. User completes `/login` -> next sendPrompt succeeds immediately without restarting adapter,
+    //    passes takeWriter:true, ignores historical replay, streams POST SSE chunks, and handles in-stream permission!
+    isLoggedIn = true
+    const okRes = await wb.sendPrompt({
+      sessionId: `workbuddy:${sessId}`,
+      text: '帮我看看目录结构',
+    })
+    assert.equal(okRes.ok, true)
+
+    // Wait briefly for in-stream permission frame on POST SSE stream
+    for (let i = 0; i < 20; i++) {
+      const s = await wb.getSession(`workbuddy:${sessId}`)
+      if (s?.pendingApproval?.code) break
+      await new Promise(r => setTimeout(r, 20))
+    }
+
+    let sess = await wb.getSession(`workbuddy:${sessId}`)
+    assert.equal(sess.status, 'approval')
+    assert.ok(sess.pendingApproval?.code.startsWith('WB-'))
+    assert.ok(!sess.transcript.some(m => m.text.includes('OLD_HISTORY_REPLAY_SHOULD_IGNORE')))
+    assert.match(sess.transcript.at(-1).text, /第一段流式回复/)
+
+    const approveOut = await wb.resolveApproval({
+      sessionId: `workbuddy:${sessId}`,
+      code: sess.pendingApproval.code,
+      allow: true,
+      optionIndex: 1,
+    })
+    assert.equal(approveOut.ok, true)
+
+    // Wait for POST SSE stream to finish after approval
+    for (let i = 0; i < 20; i++) {
+      sess = await wb.getSession(`workbuddy:${sessId}`)
+      if (sess.status === 'idle') break
+      await new Promise(r => setTimeout(r, 20))
+    }
+
+    assert.equal(sess.status, 'idle')
+    assert.equal(sess.transcript.at(-1).text, '第一段流式回复，授权通过后完成第二段回复！')
+    wb.shutdown()
+  } finally {
+    if (wbipcDummyServer) await new Promise(resolve => wbipcDummyServer.close(resolve))
+    if (acpServer) {
+      acpServer.closeAllConnections?.()
+      await new Promise(resolve => acpServer.close(resolve))
+    }
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
 
 
 
