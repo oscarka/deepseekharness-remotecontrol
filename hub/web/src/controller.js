@@ -1586,6 +1586,9 @@ export function initHubController() {
           : '发指令继续对话...';
         sendBtn.textContent = '发送';
       }
+      if (chatInput) {
+        chatInput.dataset.origPlaceholder = chatInput.placeholder;
+      }
       if (voiceBtn) {
         voiceBtn.style.opacity = chatInput.disabled ? '0.52' : '';
       }
@@ -2193,17 +2196,25 @@ export function initHubController() {
     } catch { }
   }
 
-  function autoGrowComposer() {
+  function autoGrowComposer(event) {
     const input = document.getElementById('globalPromptInput');
     if (!input || input.tagName !== 'TEXTAREA') return;
+    if (
+      event &&
+      event.isComposing &&
+      !String(input.value || '').includes('\n') &&
+      input.scrollHeight <= (input.clientHeight || 28) + 2
+    ) {
+      return;
+    }
     input.style.height = 'auto';
     const fullHeight = input.scrollHeight || 24;
     input.style.height = Math.min(fullHeight, 132) + 'px';
     input.style.overflowY = fullHeight > 132 ? 'auto' : 'hidden';
   }
 
-  function onComposerInput() {
-    autoGrowComposer();
+  function onComposerInput(event) {
+    autoGrowComposer(event);
     clearTimeout(composerDraftTimer);
     composerDraftTimer = setTimeout(() => persistComposerDraft(), 250);
   }

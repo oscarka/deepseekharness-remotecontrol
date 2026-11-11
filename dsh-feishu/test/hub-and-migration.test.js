@@ -1557,6 +1557,7 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
       setAttribute(k, v) { this.attrs[k] = v },
     },
     newTaskVoiceBtn: {
+      id: 'newTaskVoiceBtn',
       textContent: '🎤 语音输入',
       attrs: {},
       classes: new Set(['voice-pill-btn']),
@@ -1573,6 +1574,8 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
     },
   }
 
+  assert.doesNotMatch(bundle, /豆包/, 'Bundle must not contain any third-party Doubao IME prompts')
+
   const fakeWindow = {
     webkitSpeechRecognition: class FakeSpeechRecognition {
       constructor() {
@@ -1584,13 +1587,14 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
     },
   }
   const fakeDocument = {
+    activeElement: null,
     getElementById(id) { return fakeElements[id] || null },
   }
-  // Simulate mobile iPhone (Safari & Standalone PWA) — MUST use phone native keyboard voice input and NEVER call webkitSpeechRecognition!
+  // Simulate mobile iPhone — directly invokes phone's built-in SpeechRecognition WITHOUT popping up keyboard!
   const fakeNavigator = {
-    language: 'zh-CN',
+    language: 'zh-Hans-CN',
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1',
-    standalone: true,
+    standalone: false,
     maxTouchPoints: 5,
   }
   const toasts = []
@@ -1608,38 +1612,19 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
     onComposerInput() { composerInputCalls += 1 },
   }
 
-  // 1) Mobile iPhone (both Standalone PWA & Safari): focuses input for phone keyboard dictation, shows inline guide bar & toast, NEVER calls browser SpeechRecognition
-  voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
-  assert.equal(startCalled, 0)
-  assert.equal(voice.isVoiceRecording(), false)
-  assert.equal(fakeElements.globalPromptInput.focused, true)
-  assert.equal(fakeElements.chatVoiceHintBar.style.display, 'flex')
-  assert.equal(fakeElements.chatVoiceHintBar.classList.contains('fallback'), true)
-  assert.ok(toasts.some(t => t.includes('已唤起手机键盘')))
-  voice.hideVoiceHintBar('globalPromptInput')
-  assert.equal(fakeElements.chatVoiceHintBar.style.display, 'none')
-
-  // 1b) Mobile Safari (standalone: false) ALSO keeps phone native keyboard dictation (startCalled stays 0)
-  fakeNavigator.standalone = false
-  fakeElements.globalPromptInput.focused = false
-  voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
-  assert.equal(startCalled, 0)
-  assert.equal(fakeElements.globalPromptInput.focused, true)
-  voice.hideVoiceHintBar('globalPromptInput')
-
-  // 2) Desktop browser (macOS Chrome/Safari, maxTouchPoints: 0): starts SpeechRecognition + shows inline recording bar
-  fakeNavigator.userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-  fakeNavigator.maxTouchPoints = 0
+  // 1) Mobile iPhone Safari: directly starts native webkitSpeechRecognition WITHOUT focusing input (no keyboard popup)
   voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
   assert.equal(startCalled, 1)
+  assert.equal(lastInstance.lang, 'zh-CN')
   assert.equal(voice.isVoiceRecording(), true)
+  assert.equal(fakeElements.globalPromptInput.focused, false)
   assert.equal(fakeElements.chatVoiceBtn.classList.contains('recording'), true)
   assert.equal(fakeElements.chatVoiceBtn.textContent, '⏹')
   assert.equal(fakeElements.chatVoiceBtn.attrs['aria-pressed'], 'true')
   assert.equal(fakeElements.chatVoiceHintBar.style.display, 'flex')
   assert.equal(fakeElements.chatVoiceHintBar.classList.contains('recording'), true)
 
-  // 3) Speech recognition emits interim + final result without cumulative duplication
+  // 2) Speech recognition emits interim + final result on iPhone without cumulative duplication
   lastInstance.onresult({
     resultIndex: 0,
     results: [
@@ -1655,7 +1640,7 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
   assert.equal(fakeElements.globalPromptInput.value, '已有前缀 帮我检查测试')
   assert.equal(composerInputCalls, 2)
 
-  // 4) Second click on desktop immediately stops recording, calls abort() + stop(), detaches callbacks, resets UI & hint bar
+  // 3) Second click immediately stops recording, calls abort() + stop(), detaches callbacks, resets UI & hint bar
   const savedOnResult = lastInstance.onresult
   assert.equal(typeof savedOnResult, 'function')
   voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
@@ -1671,12 +1656,29 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
   assert.equal(fakeElements.chatVoiceHintBar.style.display, 'none')
   assert.ok(toasts.some(t => t.includes('已关闭语音输入')))
 
+  // 4) New task voice button switches '🎤 语音输入' <-> '⏹ 停止听写' and surfaces audio-capture conflict clearly
+  fakeElements.newTaskInput = { value: '', focused: false, disabled: false, focus() { this.focused = true } }
+  voice.toggleVoiceInput('newTaskInput', 'newTaskVoiceBtn', deps)
+  assert.equal(startCalled, 2)
+  assert.equal(fakeElements.newTaskVoiceBtn.textContent, '⏹ 停止听写')
+  lastInstance.onerror({ error: 'audio-capture' })
+  assert.equal(voice.isVoiceRecording(), false)
+  assert.equal(fakeElements.newTaskVoiceBtn.textContent, '🎤 语音输入')
+  assert.ok(toasts.some(t => t.includes('麦克风被后台软件占用')))
+
   // 5) Disabled input (running non-steerable or observe-only session) shows immediate explanation toast
   fakeElements.globalPromptInput.disabled = true
   voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
-  assert.equal(startCalled, 1)
+  assert.equal(startCalled, 2)
   assert.ok(toasts.some(t => t.includes('暂不可语音输入')))
   fakeElements.globalPromptInput.disabled = false
+
+  // 6) If iOS standalone container rejects with service-not-allowed, gracefully remembers block & focuses input once
+  voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
+  assert.equal(startCalled, 3)
+  lastInstance.onerror({ error: 'service-not-allowed' })
+  assert.equal(voice.isVoiceRecording(), false)
+  assert.equal(fakeElements.globalPromptInput.focused, true)
   voice.hideVoiceHintBar()
 })
 
@@ -1961,7 +1963,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.6.1')
+  assert.equal(healthRes.build.version, '0.6.2')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 
@@ -4678,7 +4680,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
 
     // Wait for async prompt completion & SQLite sync
     let dbExistingRows = []
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 80; i++) {
       const s = await wb.getSession(`workbuddy:${existingId}`)
       dbExistingRows = JSON.parse(
         execFileSync('sqlite3', ['-json', dbPath, `SELECT * FROM sessions WHERE id = '${existingId}';`], { encoding: 'utf8' }) || '[]',
@@ -4715,7 +4717,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
     assert.equal(spawnedCalls[2].cwd, newCwd)
 
     let dbNewRows = []
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 80; i++) {
       const s = await wb.getSession('workbuddy:wb-phone-new-99')
       dbNewRows = JSON.parse(
         execFileSync('sqlite3', ['-json', dbPath, "SELECT * FROM sessions WHERE id = 'wb-phone-new-99';"], { encoding: 'utf8' }) || '[]',
@@ -4746,7 +4748,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
     assert.equal(spawnedCalls.length, 4, 'Should auto-respawn a fresh ACP server when cached server died')
     assert.equal(spawnedCalls[3].cwd, existingCwd)
 
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 80; i++) {
       const s = await wb.getSession(`workbuddy:${existingId}`)
       const rows = JSON.parse(
         execFileSync('sqlite3', ['-json', dbPath, `SELECT status FROM sessions WHERE id = '${existingId}';`], { encoding: 'utf8' }) || '[]',
@@ -4770,7 +4772,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
     assert.equal(spawnedCalls.length, 5, 'steer() should evict dead ACP server and respawn cleanly')
     assert.equal(spawnedCalls[4].cwd, existingCwd)
 
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 80; i++) {
       const s = await wb.getSession(`workbuddy:${existingId}`)
       const rows = JSON.parse(
         execFileSync('sqlite3', ['-json', dbPath, `SELECT status FROM sessions WHERE id = '${existingId}';`], { encoding: 'utf8' }) || '[]',

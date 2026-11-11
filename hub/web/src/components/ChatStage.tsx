@@ -109,11 +109,11 @@ export function ChatStage() {
             autocorrect="on"
             autocapitalize="sentences"
             spellcheck={true}
-            onInput={() => {
-              if (!(window as any).isVoiceRecording?.()) {
+            onInput={e => {
+              if (!(window as any).isVoiceRecording?.() && !(e as any)?.isComposing) {
                 (window as any).hideVoiceHintBar?.('globalPromptInput');
               }
-              (window as any).onComposerInput?.();
+              (window as any).onComposerInput?.(e);
             }}
             onKeyDown={e => (window as any).onComposerKeydown?.(e)}
             onPaste={e => (window as any).onComposerPaste?.(e, 'chat')}
@@ -134,37 +134,23 @@ export function ChatStage() {
               >
                 🖼️
               </button>
-              <label
-                htmlFor="globalPromptInput"
-                role="button"
-                tabIndex={0}
+              <button
+                type="button"
                 class="voice-btn composer-mini-btn"
                 id="chatVoiceBtn"
-                title="语音输入（唤起手机系统键盘语音）"
+                title="语音输入（点击直接说话，再点停止）"
                 aria-label="语音输入"
                 onMouseDown={e => {
-                  const ua = String(navigator?.userAgent || '');
-                  const isMobile =
-                    /iPhone|iPad|iPod|Android|Mobile/i.test(ua) ||
-                    (/Macintosh/i.test(ua) && Number((navigator as any)?.maxTouchPoints || 0) > 1);
-                  if (!isMobile) {
-                    e.preventDefault();
-                  }
+                  e.preventDefault();
                 }}
                 onClick={e => {
-                  const ua = String(navigator?.userAgent || '');
-                  const isMobile =
-                    /iPhone|iPad|iPod|Android|Mobile/i.test(ua) ||
-                    (/Macintosh/i.test(ua) && Number((navigator as any)?.maxTouchPoints || 0) > 1);
-                  if (!isMobile) {
-                    e.preventDefault();
-                  }
+                  e.preventDefault();
                   e.stopPropagation();
                   (window as any).toggleVoiceInput?.('globalPromptInput', 'chatVoiceBtn');
                 }}
               >
                 🎤
-              </label>
+              </button>
               <button
                 type="button"
                 class="composer-model-pill"

@@ -87,35 +87,21 @@ export function Sheets() {
               >
                 🖼️ 传截图
               </button>
-              <label
-                htmlFor="newTaskInput"
-                role="button"
-                tabIndex={0}
+              <button
+                type="button"
                 class="voice-pill-btn"
                 id="newTaskVoiceBtn"
                 onMouseDown={e => {
-                  const ua = String(navigator?.userAgent || '');
-                  const isMobile =
-                    /iPhone|iPad|iPod|Android|Mobile/i.test(ua) ||
-                    (/Macintosh/i.test(ua) && Number((navigator as any)?.maxTouchPoints || 0) > 1);
-                  if (!isMobile) {
-                    e.preventDefault();
-                  }
+                  e.preventDefault();
                 }}
                 onClick={e => {
-                  const ua = String(navigator?.userAgent || '');
-                  const isMobile =
-                    /iPhone|iPad|iPod|Android|Mobile/i.test(ua) ||
-                    (/Macintosh/i.test(ua) && Number((navigator as any)?.maxTouchPoints || 0) > 1);
-                  if (!isMobile) {
-                    e.preventDefault();
-                  }
+                  e.preventDefault();
                   e.stopPropagation();
                   (window as any).toggleVoiceInput?.('newTaskInput', 'newTaskVoiceBtn');
                 }}
               >
                 🎤 语音输入
-              </label>
+              </button>
             </div>
           </div>
           <div class="chip-selector" style="margin-bottom:6px;">
@@ -163,8 +149,8 @@ export function Sheets() {
             autocorrect="on"
             autocapitalize="sentences"
             spellcheck={true}
-            onInput={() => {
-              if (!(window as any).isVoiceRecording?.()) {
+            onInput={e => {
+              if (!(window as any).isVoiceRecording?.() && !(e as any)?.isComposing) {
                 (window as any).hideVoiceHintBar?.('newTaskInput');
               }
             }}

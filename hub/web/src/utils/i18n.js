@@ -290,6 +290,8 @@ const EXACT_ZH_TO_EN = {
   '3. 任务指令': '3. Task Prompt',
   '📎 上传截图': '📎 Add Screenshot',
   '🎤 语音输入': '🎤 Voice Input',
+  '🎤 语音': '🎤 Voice',
+  '⏹ 停止': '⏹ Stop',
   '⏹ 停止听写': '⏹ Stop Dictation',
   '⏹ 已关闭语音输入': '⏹ Voice input stopped',
   '🎙️ 正在听写，请直接说话（再点「⏹」立即关闭）':
@@ -298,14 +300,20 @@ const EXACT_ZH_TO_EN = {
     '🔴 Listening… Speak now (tap ⏹ below to stop)',
   '⏳ 当前会话正在执行或为观察模式，暂不可语音输入':
     '⏳ Session is running or observe-only; voice input unavailable right now',
-  '🎙️ 已唤起手机键盘 👉 请点键盘右下角「🎤」或豆包语音说话':
-    '🎙️ Phone keyboard opened 👉 tap 🎤 at bottom-right of keyboard to speak',
-  '🎙️ 当前浏览器不支持网页直接听写，请使用系统语音输入':
-    '🎙️ Browser speech input unavailable; please use system dictation',
-  '🎙️ 系统未开启网页听写服务（Siri/听写或主屏幕限制），请点下方输入框用键盘右下角「🎤」说话':
-    '🎙️ System web dictation disabled (Siri/Dictation); tap 🎤 at bottom-right of your keyboard',
-  '🎙️ 未开启浏览器麦克风权限：请在地址栏允许麦克风，或用手机键盘右下角「🎤」语音输入':
-    '🎙️ Mic permission denied: allow mic in address bar, or tap 🎤 on your phone keyboard',
+  '🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话':
+    '🎙️ Home Screen mode blocks direct speech API on iOS: open in Safari, or tap 🎤 on your keyboard',
+  '🎙️ 当前浏览器不支持直接语音识别，请点输入框用系统键盘「🎤」说话':
+    '🎙️ Browser speech input unavailable; please tap 🎤 on your system keyboard',
+  '🎙️ 未开启麦克风权限：请在浏览器地址栏允许麦克风后重试':
+    '🎙️ Mic permission denied: allow microphone in the address bar and retry',
+  '🎙️ 未开启麦克风权限：请在地址栏允许麦克风':
+    '🎙️ Mic permission denied: allow microphone in the address bar',
+  '🎙️ 麦克风正被其他后台语音软件占用，请先关闭后台语音后再点「🎤」':
+    '🎙️ Microphone is in use by another background app; close it and tap 🎤 again',
+  '🎙️ 麦克风被后台软件占用，请关闭后再试':
+    '🎙️ Microphone is busy in another app; close it and retry',
+  '🎙️ 当前无法直接启动语音识别，请点输入框用系统键盘「🎤」说话':
+    '🎙️ Unable to start speech recognition directly; please use system keyboard 🎤',
   'ℹ️ 未检测到说话声，可再点「🎤」重试': 'ℹ️ No speech detected; tap 🎤 to retry',
   '🛠️ 检查 git status 并跑测试': '🛠️ Check git status & run tests',
   '📦 总结最近一次 commit 改动': '📦 Summarize latest commit changes',
@@ -535,6 +543,8 @@ export function translateZhStringToEn(raw) {
   return out;
 }
 
+let domHasEnTranslation = false;
+
 export function applyLangToDom(root = typeof document !== 'undefined' ? document.body : null, lang = getLangPref()) {
   if (!root || typeof document === 'undefined') return;
   const isEn = lang === 'en';
@@ -548,6 +558,13 @@ export function applyLangToDom(root = typeof document !== 'undefined' ? document
     btn.setAttribute('title', isEn ? 'Switch to Chinese (切换中文)' : 'Switch to English');
   });
 
+  // Fast path: in default Chinese mode (when DOM has never been translated to English),
+  // skip full-DOM walks and never mutate focused input attributes during SSE updates.
+  if (!isEn && !domHasEnTranslation) {
+    return;
+  }
+  domHasEnTranslation = isEn;
+
   // Translate element attributes (placeholder, title)
   const attrEls = root.querySelectorAll('[placeholder], [title]');
   attrEls.forEach(el => {
@@ -555,14 +572,20 @@ export function applyLangToDom(root = typeof document !== 'undefined' ? document
       const cur = el.getAttribute('placeholder') || '';
       if (el.dataset.origPlaceholder === undefined) {
         el.dataset.origPlaceholder = cur;
+      } else if (/[\u4e00-\u9fa5]/.test(cur) && cur !== el.dataset.origPlaceholder) {
+        el.dataset.origPlaceholder = cur;
       }
       const orig = el.dataset.origPlaceholder;
       const target = isEn ? translateZhStringToEn(orig) : orig;
-      if (cur !== target) el.setAttribute('placeholder', target);
+      if (cur !== target && document.activeElement !== el) {
+        el.setAttribute('placeholder', target);
+      }
     }
     if (el.hasAttribute('title') && !el.hasAttribute('data-lang-toggle')) {
       const cur = el.getAttribute('title') || '';
       if (el.dataset.origTitle === undefined) {
+        el.dataset.origTitle = cur;
+      } else if (/[\u4e00-\u9fa5]/.test(cur) && cur !== el.dataset.origTitle) {
         el.dataset.origTitle = cur;
       }
       const orig = el.dataset.origTitle;

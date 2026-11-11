@@ -55,12 +55,16 @@ function showVoiceHintBar(targetInputId: string, msg: string, mode: string, auto
 
 function focusInputWithVisualPulse(input: any, targetInputId: string, hintMsg: string, showToast: any): void {
   try {
-    if (typeof input.focus === 'function') {
-      input.focus();
-    }
-    const len = String(input.value || '').length;
-    if (typeof input.setSelectionRange === 'function') {
-      input.setSelectionRange(len, len);
+    const alreadyFocused =
+      typeof document !== 'undefined' && document && document.activeElement === input;
+    if (!alreadyFocused) {
+      if (typeof input.focus === 'function') {
+        input.focus();
+      }
+      const len = String(input.value || '').length;
+      if (typeof input.setSelectionRange === 'function') {
+        input.setSelectionRange(len, len);
+      }
     }
   } catch {}
   try {
@@ -86,6 +90,8 @@ export function setVoiceBtnRecording(btnId: string, recording: boolean): void {
   btn.setAttribute('aria-pressed', recording ? 'true' : 'false');
   if (btn.classList.contains('voice-pill-btn')) {
     btn.textContent = recording ? '⏹ 停止听写' : '🎤 语音输入';
+  } else if (btn.id === 'newTaskVoiceBtn' || btn.classList.contains('new-task-tool-btn')) {
+    btn.textContent = recording ? '⏹ 停止' : '🎤 语音';
   } else {
     btn.textContent = recording ? '⏹' : '🎤';
   }
@@ -164,26 +170,35 @@ export function toggleVoiceInput(
     return;
   }
 
-  const ua = String(nav?.userAgent || '');
-  const isMobileTouch =
-    /iPhone|iPad|iPod|Android|Mobile/i.test(ua) ||
-    (/Macintosh/i.test(ua) && Number(nav?.maxTouchPoints || 0) > 1);
-
   const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-  // 手机端一律走手机系统自带键盘语音 / 豆包输入法语音（绝不调用识别不准的浏览器 webkitSpeechRecognition）
-  if (isMobileTouch || !SpeechRecognitionCtor || webSpeechServiceBlocked) {
-    const fallbackMsg = isMobileTouch
-      ? '🎙️ 已唤起手机键盘 👉 请点键盘右下角「🎤」或豆包语音说话'
-      : '🎙️ 当前浏览器不支持网页直接听写，请使用系统语音输入';
+  // 优先直接调用手机 / 电脑系统自带的原生语音识别（不弹软键盘，直接说话上屏）；
+  // 仅当浏览器无此接口或被 iOS 主屏幕全屏沙盒拦截（webSpeechServiceBlocked）时，才回退聚焦输入框。
+  if (!SpeechRecognitionCtor || webSpeechServiceBlocked) {
+    const fallbackMsg = webSpeechServiceBlocked
+      ? '🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话'
+      : '🎙️ 当前浏览器不支持直接语音识别，请点输入框用系统键盘「🎤」说话';
     focusInputWithVisualPulse(inputEl, targetInputId, fallbackMsg, showToast);
     return;
   }
 
   try {
     const recognition = new SpeechRecognitionCtor();
-    recognition.lang =
-      nav?.language && String(nav.language).startsWith('zh') ? nav.language : 'zh-CN';
+    const rawLang = String(nav?.language || '').toLowerCase();
+    let preferEn = false;
+    try {
+      preferEn =
+        typeof localStorage !== 'undefined' &&
+        localStorage.getItem('dsh_lang_pref') === 'en' &&
+        rawLang.startsWith('en');
+    } catch {}
+    recognition.lang = preferEn
+      ? String(nav.language)
+      : rawLang.startsWith('zh-tw') || rawLang.startsWith('zh-hant')
+        ? 'zh-TW'
+        : rawLang.startsWith('zh-hk')
+          ? 'zh-HK'
+          : 'zh-CN';
     recognition.interimResults = true;
     recognition.continuous = false;
     recognition.maxAlternatives = 1;
@@ -195,7 +210,9 @@ export function toggleVoiceInput(
     activeVoiceBtnId = btnId;
     setVoiceBtnRecording(btnId, true);
     showVoiceHintBar(targetInputId, '🔴 正在听写… 请直接说话（再点下方「⏹」结束）', 'recording', 0);
-    showToast('🎙️ 正在听写，请直接说话（再点「⏹」立即关闭）');
+    if (!document.getElementById(resolveHintBarId(targetInputId))) {
+      showToast('🎙️ 正在听写，请直接说话（再点「⏹」立即关闭）');
+    }
 
     // 60 秒看门狗自动释放麦克风，防止系统挂起
     voiceWatchdogTimer = setTimeout(() => {
@@ -232,21 +249,30 @@ export function toggleVoiceInput(
         focusInputWithVisualPulse(
           inputEl,
           targetInputId,
-          '🎙️ 系统未开启网页听写服务（Siri/听写或主屏幕限制），请点下方输入框用键盘右下角「🎤」说话',
+          '🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话',
           showToast
         );
       } else if (errCode === 'not-allowed') {
-        focusInputWithVisualPulse(
-          inputEl,
+        showVoiceHintBar(
           targetInputId,
-          '🎙️ 未开启浏览器麦克风权限：请在地址栏允许麦克风，或用手机键盘右下角「🎤」语音输入',
-          showToast
+          '🎙️ 未开启麦克风权限：请在浏览器地址栏允许麦克风后重试',
+          'fallback',
+          5500
         );
+        showToast('🎙️ 未开启麦克风权限：请在地址栏允许麦克风');
+      } else if (errCode === 'audio-capture') {
+        showVoiceHintBar(
+          targetInputId,
+          '🎙️ 麦克风正被其他后台语音软件占用，请先关闭后台语音后再点「🎤」',
+          'fallback',
+          5500
+        );
+        showToast('🎙️ 麦克风被后台软件占用，请关闭后再试');
       } else if (errCode === 'no-speech') {
         showVoiceHintBar(targetInputId, 'ℹ️ 未检测到说话声，已自动结束听写（可再点「🎤」重试）', 'fallback', 3500);
         showToast('ℹ️ 未检测到说话声，可再点「🎤」重试');
       } else if (errCode && errCode !== 'aborted') {
-        showVoiceHintBar(targetInputId, '⚠️ 语音识别异常（' + errCode + '），请使用键盘右下角「🎤」输入', 'fallback', 5000);
+        showVoiceHintBar(targetInputId, '⚠️ 语音识别异常（' + errCode + '），可再点「🎤」重试', 'fallback', 5000);
         showToast('⚠️ 语音识别已停止：' + errCode);
       }
     };
@@ -266,7 +292,7 @@ export function toggleVoiceInput(
     focusInputWithVisualPulse(
       inputEl,
       targetInputId,
-      '🎙️ 已聚焦输入框，请使用手机键盘右下角「🎤 麦克风」语音输入',
+      '🎙️ 当前无法直接启动语音识别，请点输入框用系统键盘「🎤」说话',
       showToast
     );
   }

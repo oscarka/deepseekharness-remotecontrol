@@ -453,9 +453,9 @@ function ChatStage() {
 		autocorrect: "on",
 		autocapitalize: "sentences",
 		spellcheck: true,
-		onInput: () => {
-			if (!window.isVoiceRecording?.()) window.hideVoiceHintBar?.("globalPromptInput");
-			window.onComposerInput?.();
+		onInput: (e) => {
+			if (!window.isVoiceRecording?.() && !e?.isComposing) window.hideVoiceHintBar?.("globalPromptInput");
+			window.onComposerInput?.(e);
 		},
 		onKeyDown: (e) => window.onComposerKeydown?.(e),
 		onPaste: (e) => window.onComposerPaste?.(e, "chat")
@@ -470,21 +470,17 @@ function ChatStage() {
 			e.stopPropagation();
 			window.triggerImagePicker?.("chat");
 		}
-	}, "🖼️"), /* @__PURE__ */ k("label", {
-		htmlFor: "globalPromptInput",
-		role: "button",
-		tabIndex: 0,
+	}, "🖼️"), /* @__PURE__ */ k("button", {
+		type: "button",
 		class: "voice-btn composer-mini-btn",
 		id: "chatVoiceBtn",
-		title: "语音输入（唤起手机系统键盘语音）",
+		title: "语音输入（点击直接说话，再点停止）",
 		"aria-label": "语音输入",
 		onMouseDown: (e) => {
-			const ua = String(navigator?.userAgent || "");
-			if (!(/iPhone|iPad|iPod|Android|Mobile/i.test(ua) || /Macintosh/i.test(ua) && Number(navigator?.maxTouchPoints || 0) > 1)) e.preventDefault();
+			e.preventDefault();
 		},
 		onClick: (e) => {
-			const ua = String(navigator?.userAgent || "");
-			if (!(/iPhone|iPad|iPod|Android|Mobile/i.test(ua) || /Macintosh/i.test(ua) && Number(navigator?.maxTouchPoints || 0) > 1)) e.preventDefault();
+			e.preventDefault();
 			e.stopPropagation();
 			window.toggleVoiceInput?.("globalPromptInput", "chatVoiceBtn");
 		}
@@ -562,19 +558,15 @@ function Sheets() {
 			e.stopPropagation();
 			window.triggerImagePicker?.("newTask");
 		}
-	}, "🖼️ 传截图"), /* @__PURE__ */ k("label", {
-		htmlFor: "newTaskInput",
-		role: "button",
-		tabIndex: 0,
+	}, "🖼️ 传截图"), /* @__PURE__ */ k("button", {
+		type: "button",
 		class: "voice-pill-btn",
 		id: "newTaskVoiceBtn",
 		onMouseDown: (e) => {
-			const ua = String(navigator?.userAgent || "");
-			if (!(/iPhone|iPad|iPod|Android|Mobile/i.test(ua) || /Macintosh/i.test(ua) && Number(navigator?.maxTouchPoints || 0) > 1)) e.preventDefault();
+			e.preventDefault();
 		},
 		onClick: (e) => {
-			const ua = String(navigator?.userAgent || "");
-			if (!(/iPhone|iPad|iPod|Android|Mobile/i.test(ua) || /Macintosh/i.test(ua) && Number(navigator?.maxTouchPoints || 0) > 1)) e.preventDefault();
+			e.preventDefault();
 			e.stopPropagation();
 			window.toggleVoiceInput?.("newTaskInput", "newTaskVoiceBtn");
 		}
@@ -609,8 +601,8 @@ function Sheets() {
 		autocorrect: "on",
 		autocapitalize: "sentences",
 		spellcheck: true,
-		onInput: () => {
-			if (!window.isVoiceRecording?.()) window.hideVoiceHintBar?.("newTaskInput");
+		onInput: (e) => {
+			if (!window.isVoiceRecording?.() && !e?.isComposing) window.hideVoiceHintBar?.("newTaskInput");
 		},
 		onPaste: (e) => window.onComposerPaste?.(e, "newTask")
 	}), /* @__PURE__ */ k("button", {
@@ -1240,9 +1232,11 @@ function showVoiceHintBar(targetInputId, msg, mode, autoHideMs) {
 }
 function focusInputWithVisualPulse(input, targetInputId, hintMsg, showToast) {
 	try {
-		if (typeof input.focus === "function") input.focus();
-		const len = String(input.value || "").length;
-		if (typeof input.setSelectionRange === "function") input.setSelectionRange(len, len);
+		if (!(typeof document !== "undefined" && document && document.activeElement === input)) {
+			if (typeof input.focus === "function") input.focus();
+			const len = String(input.value || "").length;
+			if (typeof input.setSelectionRange === "function") input.setSelectionRange(len, len);
+		}
 	} catch {}
 	try {
 		const card = input.closest ? input.closest(".composer-unified-card") || input : input;
@@ -1265,6 +1259,7 @@ function setVoiceBtnRecording(btnId, recording) {
 	btn.classList.toggle("recording", Boolean(recording));
 	btn.setAttribute("aria-pressed", recording ? "true" : "false");
 	if (btn.classList.contains("voice-pill-btn")) btn.textContent = recording ? "⏹ 停止听写" : "🎤 语音输入";
+	else if (btn.id === "newTaskVoiceBtn" || btn.classList.contains("new-task-tool-btn")) btn.textContent = recording ? "⏹ 停止" : "🎤 语音";
 	else btn.textContent = recording ? "⏹" : "🎤";
 }
 function isVoiceRecording() {
@@ -1319,16 +1314,19 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 		showToast(disabledMsg);
 		return;
 	}
-	const ua = String(nav?.userAgent || "");
-	const isMobileTouch = /iPhone|iPad|iPod|Android|Mobile/i.test(ua) || /Macintosh/i.test(ua) && Number(nav?.maxTouchPoints || 0) > 1;
 	const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-	if (isMobileTouch || !SpeechRecognitionCtor || webSpeechServiceBlocked) {
-		focusInputWithVisualPulse(inputEl, targetInputId, isMobileTouch ? "🎙️ 已唤起手机键盘 👉 请点键盘右下角「🎤」或豆包语音说话" : "🎙️ 当前浏览器不支持网页直接听写，请使用系统语音输入", showToast);
+	if (!SpeechRecognitionCtor || webSpeechServiceBlocked) {
+		focusInputWithVisualPulse(inputEl, targetInputId, webSpeechServiceBlocked ? "🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话" : "🎙️ 当前浏览器不支持直接语音识别，请点输入框用系统键盘「🎤」说话", showToast);
 		return;
 	}
 	try {
 		const recognition = new SpeechRecognitionCtor();
-		recognition.lang = nav?.language && String(nav.language).startsWith("zh") ? nav.language : "zh-CN";
+		const rawLang = String(nav?.language || "").toLowerCase();
+		let preferEn = false;
+		try {
+			preferEn = typeof localStorage !== "undefined" && localStorage.getItem("dsh_lang_pref") === "en" && rawLang.startsWith("en");
+		} catch {}
+		recognition.lang = preferEn ? String(nav.language) : rawLang.startsWith("zh-tw") || rawLang.startsWith("zh-hant") ? "zh-TW" : rawLang.startsWith("zh-hk") ? "zh-HK" : "zh-CN";
 		recognition.interimResults = true;
 		recognition.continuous = false;
 		recognition.maxAlternatives = 1;
@@ -1338,7 +1336,7 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 		activeVoiceBtnId = btnId;
 		setVoiceBtnRecording(btnId, true);
 		showVoiceHintBar(targetInputId, "🔴 正在听写… 请直接说话（再点下方「⏹」结束）", "recording", 0);
-		showToast("🎙️ 正在听写，请直接说话（再点「⏹」立即关闭）");
+		if (!document.getElementById(resolveHintBarId(targetInputId))) showToast("🎙️ 正在听写，请直接说话（再点「⏹」立即关闭）");
 		voiceWatchdogTimer = setTimeout(() => {
 			if (activeVoiceRecognition === recognition) stopVoiceInput();
 		}, 6e4);
@@ -1358,13 +1356,18 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 			stopVoiceInput();
 			if (errCode === "service-not-allowed") {
 				webSpeechServiceBlocked = true;
-				focusInputWithVisualPulse(inputEl, targetInputId, "🎙️ 系统未开启网页听写服务（Siri/听写或主屏幕限制），请点下方输入框用键盘右下角「🎤」说话", showToast);
-			} else if (errCode === "not-allowed") focusInputWithVisualPulse(inputEl, targetInputId, "🎙️ 未开启浏览器麦克风权限：请在地址栏允许麦克风，或用手机键盘右下角「🎤」语音输入", showToast);
-			else if (errCode === "no-speech") {
+				focusInputWithVisualPulse(inputEl, targetInputId, "🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话", showToast);
+			} else if (errCode === "not-allowed") {
+				showVoiceHintBar(targetInputId, "🎙️ 未开启麦克风权限：请在浏览器地址栏允许麦克风后重试", "fallback", 5500);
+				showToast("🎙️ 未开启麦克风权限：请在地址栏允许麦克风");
+			} else if (errCode === "audio-capture") {
+				showVoiceHintBar(targetInputId, "🎙️ 麦克风正被其他后台语音软件占用，请先关闭后台语音后再点「🎤」", "fallback", 5500);
+				showToast("🎙️ 麦克风被后台软件占用，请关闭后再试");
+			} else if (errCode === "no-speech") {
 				showVoiceHintBar(targetInputId, "ℹ️ 未检测到说话声，已自动结束听写（可再点「🎤」重试）", "fallback", 3500);
 				showToast("ℹ️ 未检测到说话声，可再点「🎤」重试");
 			} else if (errCode && errCode !== "aborted") {
-				showVoiceHintBar(targetInputId, "⚠️ 语音识别异常（" + errCode + "），请使用键盘右下角「🎤」输入", "fallback", 5e3);
+				showVoiceHintBar(targetInputId, "⚠️ 语音识别异常（" + errCode + "），可再点「🎤」重试", "fallback", 5e3);
 				showToast("⚠️ 语音识别已停止：" + errCode);
 			}
 		};
@@ -1375,7 +1378,7 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 		recognition.start();
 	} catch {
 		stopVoiceInput();
-		focusInputWithVisualPulse(inputEl, targetInputId, "🎙️ 已聚焦输入框，请使用手机键盘右下角「🎤 麦克风」语音输入", showToast);
+		focusInputWithVisualPulse(inputEl, targetInputId, "🎙️ 当前无法直接启动语音识别，请点输入框用系统键盘「🎤」说话", showToast);
 	}
 }
 // hub/web/src/utils/qrcode.js
@@ -1864,15 +1867,20 @@ var EXACT_ZH_TO_EN = {
 	"3. 任务指令": "3. Task Prompt",
 	"📎 上传截图": "📎 Add Screenshot",
 	"🎤 语音输入": "🎤 Voice Input",
+	"🎤 语音": "🎤 Voice",
+	"⏹ 停止": "⏹ Stop",
 	"⏹ 停止听写": "⏹ Stop Dictation",
 	"⏹ 已关闭语音输入": "⏹ Voice input stopped",
 	"🎙️ 正在听写，请直接说话（再点「⏹」立即关闭）": "🎙️ Listening… Speak now (tap ⏹ to stop)",
 	"🔴 正在听写… 请直接说话（再点下方「⏹」结束）": "🔴 Listening… Speak now (tap ⏹ below to stop)",
 	"⏳ 当前会话正在执行或为观察模式，暂不可语音输入": "⏳ Session is running or observe-only; voice input unavailable right now",
-	"🎙️ 已唤起手机键盘 👉 请点键盘右下角「🎤」或豆包语音说话": "🎙️ Phone keyboard opened 👉 tap 🎤 at bottom-right of keyboard to speak",
-	"🎙️ 当前浏览器不支持网页直接听写，请使用系统语音输入": "🎙️ Browser speech input unavailable; please use system dictation",
-	"🎙️ 系统未开启网页听写服务（Siri/听写或主屏幕限制），请点下方输入框用键盘右下角「🎤」说话": "🎙️ System web dictation disabled (Siri/Dictation); tap 🎤 at bottom-right of your keyboard",
-	"🎙️ 未开启浏览器麦克风权限：请在地址栏允许麦克风，或用手机键盘右下角「🎤」语音输入": "🎙️ Mic permission denied: allow mic in address bar, or tap 🎤 on your phone keyboard",
+	"🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话": "🎙️ Home Screen mode blocks direct speech API on iOS: open in Safari, or tap 🎤 on your keyboard",
+	"🎙️ 当前浏览器不支持直接语音识别，请点输入框用系统键盘「🎤」说话": "🎙️ Browser speech input unavailable; please tap 🎤 on your system keyboard",
+	"🎙️ 未开启麦克风权限：请在浏览器地址栏允许麦克风后重试": "🎙️ Mic permission denied: allow microphone in the address bar and retry",
+	"🎙️ 未开启麦克风权限：请在地址栏允许麦克风": "🎙️ Mic permission denied: allow microphone in the address bar",
+	"🎙️ 麦克风正被其他后台语音软件占用，请先关闭后台语音后再点「🎤」": "🎙️ Microphone is in use by another background app; close it and tap 🎤 again",
+	"🎙️ 麦克风被后台软件占用，请关闭后再试": "🎙️ Microphone is busy in another app; close it and retry",
+	"🎙️ 当前无法直接启动语音识别，请点输入框用系统键盘「🎤」说话": "🎙️ Unable to start speech recognition directly; please use system keyboard 🎤",
 	"ℹ️ 未检测到说话声，可再点「🎤」重试": "ℹ️ No speech detected; tap 🎤 to retry",
 	"🛠️ 检查 git status 并跑测试": "🛠️ Check git status & run tests",
 	"📦 总结最近一次 commit 改动": "📦 Summarize latest commit changes",
@@ -2073,6 +2081,7 @@ function translateZhStringToEn(raw) {
 	]) if (out.includes(zhSub)) out = out.split(zhSub).join(enSub);
 	return out;
 }
+var domHasEnTranslation = false;
 function applyLangToDom(root = typeof document !== "undefined" ? document.body : null, lang = getLangPref()) {
 	if (!root || typeof document === "undefined") return;
 	const isEn = lang === "en";
@@ -2081,17 +2090,21 @@ function applyLangToDom(root = typeof document !== "undefined" ? document.body :
 		btn.textContent = isEn ? "🌐 中文" : "🌐 EN";
 		btn.setAttribute("title", isEn ? "Switch to Chinese (切换中文)" : "Switch to English");
 	});
+	if (!isEn && !domHasEnTranslation) return;
+	domHasEnTranslation = isEn;
 	root.querySelectorAll("[placeholder], [title]").forEach((el) => {
 		if (el.hasAttribute("placeholder")) {
 			const cur = el.getAttribute("placeholder") || "";
 			if (el.dataset.origPlaceholder === void 0) el.dataset.origPlaceholder = cur;
+			else if (/[\u4e00-\u9fa5]/.test(cur) && cur !== el.dataset.origPlaceholder) el.dataset.origPlaceholder = cur;
 			const orig = el.dataset.origPlaceholder;
 			const target = isEn ? translateZhStringToEn(orig) : orig;
-			if (cur !== target) el.setAttribute("placeholder", target);
+			if (cur !== target && document.activeElement !== el) el.setAttribute("placeholder", target);
 		}
 		if (el.hasAttribute("title") && !el.hasAttribute("data-lang-toggle")) {
 			const cur = el.getAttribute("title") || "";
 			if (el.dataset.origTitle === void 0) el.dataset.origTitle = cur;
+			else if (/[\u4e00-\u9fa5]/.test(cur) && cur !== el.dataset.origTitle) el.dataset.origTitle = cur;
 			const orig = el.dataset.origTitle;
 			const target = isEn ? translateZhStringToEn(orig) : orig;
 			if (cur !== target) el.setAttribute("title", target);
@@ -3787,6 +3800,7 @@ function initHubController() {
 				chatInput.placeholder = s.controlMode === "idle-resumable" ? `发指令通过 ${s.harnessLabel || s.harness} CLI 继续对话...` : "发指令继续对话...";
 				sendBtn.textContent = "发送";
 			}
+			if (chatInput) chatInput.dataset.origPlaceholder = chatInput.placeholder;
 			if (voiceBtn) voiceBtn.style.opacity = chatInput.disabled ? "0.52" : "";
 		}
 		const trSig = s.transcript.slice(-6).map((m) => `${m.role}:${m.queuedCmdId || ""}:${m.expiredCmdId || ""}:${(m.text || "").length}:${(m.text || "").slice(-32)}:${(m.thinking || "").length}:${(m.tools || []).length}:${(m.artifacts || []).length}:${m.waitingForInput ? 1 : 0}`).join("|");
@@ -4278,16 +4292,17 @@ function initHubController() {
 			else localStorage.removeItem(composerDraftKey(sessionId));
 		} catch {}
 	}
-	function autoGrowComposer() {
+	function autoGrowComposer(event) {
 		const input = document.getElementById("globalPromptInput");
 		if (!input || input.tagName !== "TEXTAREA") return;
+		if (event && event.isComposing && !String(input.value || "").includes("\n") && input.scrollHeight <= (input.clientHeight || 28) + 2) return;
 		input.style.height = "auto";
 		const fullHeight = input.scrollHeight || 24;
 		input.style.height = Math.min(fullHeight, 132) + "px";
 		input.style.overflowY = fullHeight > 132 ? "auto" : "hidden";
 	}
-	function onComposerInput() {
-		autoGrowComposer();
+	function onComposerInput(event) {
+		autoGrowComposer(event);
 		clearTimeout(composerDraftTimer);
 		composerDraftTimer = setTimeout(() => persistComposerDraft(), 250);
 	}

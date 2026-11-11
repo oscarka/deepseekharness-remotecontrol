@@ -2,6 +2,13 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.6.2] - 2026-11-11
+
+### Fixed
+
+- 恢复手机端点击 `🎤` 直接调用系统自带原生语音识别（`SpeechRecognition` / `webkitSpeechRecognition`）而无需弹起软键盘的能力（移除 `useVoiceInput.ts` 中的 `isMobileTouch` 人为封锁与 `<label>` 强制弹键盘行为，彻底清理所有第三方输入法提示文案，新增 `audio-capture` 麦克风占用明确提示）
+- 优化 `applyLangToDom` 与 `autoGrowComposer`：默认中文模式下跳过每次 SSE 推送的全页面 DOM 遍历且绝不改写聚焦输入框的 `placeholder` 属性，流式输入/听写期间避免无谓高度重算，防止打断系统听写
+
 ## [0.6.1] - 2026-11-11
 
 ### Changed
