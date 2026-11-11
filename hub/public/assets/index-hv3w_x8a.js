@@ -440,7 +440,12 @@ function ChatStage() {
 		multiple: true,
 		style: "display:none;",
 		onChange: (e) => window.onChatImageSelected?.(e, "chat")
-	}), /* @__PURE__ */ k("div", { class: "composer-unified-card" }, /* @__PURE__ */ k("textarea", {
+	}), /* @__PURE__ */ k("div", { class: "composer-unified-card" }, /* @__PURE__ */ k("div", {
+		class: "voice-hint-bar",
+		id: "chatVoiceHintBar",
+		style: "display:none;",
+		onClick: () => window.hideVoiceHintBar?.("globalPromptInput")
+	}), /* @__PURE__ */ k("textarea", {
 		class: "chat-input",
 		id: "globalPromptInput",
 		rows: 1,
@@ -448,7 +453,10 @@ function ChatStage() {
 		autocorrect: "on",
 		autocapitalize: "sentences",
 		spellcheck: true,
-		onInput: () => window.onComposerInput?.(),
+		onInput: () => {
+			if (!window.isVoiceRecording?.()) window.hideVoiceHintBar?.("globalPromptInput");
+			window.onComposerInput?.();
+		},
 		onKeyDown: (e) => window.onComposerKeydown?.(e),
 		onPaste: (e) => window.onComposerPaste?.(e, "chat")
 	}), /* @__PURE__ */ k("div", { class: "composer-toolbar-row" }, /* @__PURE__ */ k("div", { class: "composer-tools-left" }, /* @__PURE__ */ k("button", {
@@ -462,14 +470,21 @@ function ChatStage() {
 			e.stopPropagation();
 			window.triggerImagePicker?.("chat");
 		}
-	}, "🖼️"), /* @__PURE__ */ k("button", {
-		type: "button",
+	}, "🖼️"), /* @__PURE__ */ k("label", {
+		htmlFor: "globalPromptInput",
+		role: "button",
+		tabIndex: 0,
 		class: "voice-btn composer-mini-btn",
 		id: "chatVoiceBtn",
-		title: "语音输入（点击说话，再点停止）",
+		title: "语音输入（唤起手机系统键盘语音）",
 		"aria-label": "语音输入",
+		onMouseDown: (e) => {
+			const ua = String(navigator?.userAgent || "");
+			if (!(/iPhone|iPad|iPod|Android|Mobile/i.test(ua) || /Macintosh/i.test(ua) && Number(navigator?.maxTouchPoints || 0) > 1)) e.preventDefault();
+		},
 		onClick: (e) => {
-			e.preventDefault();
+			const ua = String(navigator?.userAgent || "");
+			if (!(/iPhone|iPad|iPod|Android|Mobile/i.test(ua) || /Macintosh/i.test(ua) && Number(navigator?.maxTouchPoints || 0) > 1)) e.preventDefault();
 			e.stopPropagation();
 			window.toggleVoiceInput?.("globalPromptInput", "chatVoiceBtn");
 		}
@@ -547,12 +562,19 @@ function Sheets() {
 			e.stopPropagation();
 			window.triggerImagePicker?.("newTask");
 		}
-	}, "🖼️ 传截图"), /* @__PURE__ */ k("button", {
-		type: "button",
+	}, "🖼️ 传截图"), /* @__PURE__ */ k("label", {
+		htmlFor: "newTaskInput",
+		role: "button",
+		tabIndex: 0,
 		class: "voice-pill-btn",
 		id: "newTaskVoiceBtn",
+		onMouseDown: (e) => {
+			const ua = String(navigator?.userAgent || "");
+			if (!(/iPhone|iPad|iPod|Android|Mobile/i.test(ua) || /Macintosh/i.test(ua) && Number(navigator?.maxTouchPoints || 0) > 1)) e.preventDefault();
+		},
 		onClick: (e) => {
-			e.preventDefault();
+			const ua = String(navigator?.userAgent || "");
+			if (!(/iPhone|iPad|iPod|Android|Mobile/i.test(ua) || /Macintosh/i.test(ua) && Number(navigator?.maxTouchPoints || 0) > 1)) e.preventDefault();
 			e.stopPropagation();
 			window.toggleVoiceInput?.("newTaskInput", "newTaskVoiceBtn");
 		}
@@ -575,6 +597,11 @@ function Sheets() {
 		class: "composer-attachments-strip",
 		id: "newTaskAttachmentsStrip",
 		style: "display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"
+	}), /* @__PURE__ */ k("div", {
+		class: "voice-hint-bar",
+		id: "newTaskVoiceHintBar",
+		style: "display:none;margin-bottom:8px;",
+		onClick: () => window.hideVoiceHintBar?.("newTaskInput")
 	}), /* @__PURE__ */ k("textarea", {
 		class: "new-task-textarea",
 		id: "newTaskInput",
@@ -582,6 +609,9 @@ function Sheets() {
 		autocorrect: "on",
 		autocapitalize: "sentences",
 		spellcheck: true,
+		onInput: () => {
+			if (!window.isVoiceRecording?.()) window.hideVoiceHintBar?.("newTaskInput");
+		},
 		onPaste: (e) => window.onComposerPaste?.(e, "newTask")
 	}), /* @__PURE__ */ k("button", {
 		type: "button",
@@ -1067,6 +1097,62 @@ var activeVoiceRecognition = null;
 var activeVoiceInputId = "";
 var activeVoiceBtnId = "";
 var voiceWatchdogTimer = null;
+var voiceHintTimer = null;
+var webSpeechServiceBlocked = false;
+function resolveHintBarId(targetInputId) {
+	return targetInputId === "newTaskInput" ? "newTaskVoiceHintBar" : "chatVoiceHintBar";
+}
+function hideVoiceHintBar(targetInputId = "") {
+	if (voiceHintTimer) {
+		clearTimeout(voiceHintTimer);
+		voiceHintTimer = null;
+	}
+	const ids = targetInputId ? [resolveHintBarId(targetInputId)] : ["chatVoiceHintBar", "newTaskVoiceHintBar"];
+	for (let i = 0; i < ids.length; i += 1) {
+		const bar = document.getElementById(ids[i]);
+		if (bar) {
+			bar.style.display = "none";
+			bar.classList.remove("recording", "fallback");
+			bar.textContent = "";
+		}
+	}
+}
+function showVoiceHintBar(targetInputId, msg, mode, autoHideMs) {
+	if (voiceHintTimer) {
+		clearTimeout(voiceHintTimer);
+		voiceHintTimer = null;
+	}
+	const bar = document.getElementById(resolveHintBarId(targetInputId));
+	if (!bar) return;
+	bar.textContent = msg;
+	bar.classList.remove("recording", "fallback");
+	bar.classList.add(mode === "recording" ? "recording" : "fallback");
+	bar.style.display = "flex";
+	if (autoHideMs) voiceHintTimer = setTimeout(() => {
+		if (bar.classList.contains("fallback")) bar.style.display = "none";
+	}, autoHideMs);
+}
+function focusInputWithVisualPulse(input, targetInputId, hintMsg, showToast) {
+	try {
+		if (typeof input.focus === "function") input.focus();
+		const len = String(input.value || "").length;
+		if (typeof input.setSelectionRange === "function") input.setSelectionRange(len, len);
+	} catch {}
+	try {
+		const card = input.closest ? input.closest(".composer-unified-card") || input : input;
+		if (card && card.classList) {
+			card.classList.remove("composer-voice-flash");
+			card.classList.add("composer-voice-flash");
+			setTimeout(() => {
+				try {
+					card.classList.remove("composer-voice-flash");
+				} catch {}
+			}, 900);
+		}
+	} catch {}
+	showVoiceHintBar(targetInputId, hintMsg, "fallback", 6500);
+	showToast(hintMsg);
+}
 function setVoiceBtnRecording(btnId, recording) {
 	const btn = document.getElementById(btnId);
 	if (!btn) return;
@@ -1091,6 +1177,7 @@ function stopVoiceInput() {
 	if (btnId) setVoiceBtnRecording(btnId, false);
 	setVoiceBtnRecording("chatVoiceBtn", false);
 	setVoiceBtnRecording("newTaskVoiceBtn", false);
+	hideVoiceHintBar();
 	if (rec) {
 		try {
 			rec.onresult = null;
@@ -1106,8 +1193,10 @@ function stopVoiceInput() {
 	}
 }
 function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoiceBtn", deps) {
-	const showToast = deps?.showToast || (window.showToast ?? (() => {}));
-	const onComposerInput = deps?.onComposerInput || (window.onComposerInput ?? (() => {}));
+	const win = window;
+	const nav = navigator;
+	const showToast = deps?.showToast || (win.showToast ?? (() => {}));
+	const onComposerInput = deps?.onComposerInput || (win.onComposerInput ?? (() => {}));
 	const btn = document.getElementById(btnId);
 	if (activeVoiceRecognition && activeVoiceInputId === targetInputId || btn?.classList.contains("recording")) {
 		stopVoiceInput();
@@ -1117,52 +1206,61 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 	if (activeVoiceRecognition) stopVoiceInput();
 	const input = document.getElementById(targetInputId);
 	if (!input) return;
-	const ua = String(navigator?.userAgent || "");
-	const isMobileTouch = /iPhone|iPad|iPod|Android/i.test(ua) || /Macintosh/i.test(ua) && Number(navigator?.maxTouchPoints) > 1;
+	const inputEl = input;
+	if (inputEl.disabled || inputEl.readOnly) {
+		const disabledMsg = "⏳ 当前会话正在执行或为观察模式，暂不可语音输入";
+		showVoiceHintBar(targetInputId, disabledMsg, "fallback", 4500);
+		showToast(disabledMsg);
+		return;
+	}
+	const ua = String(nav?.userAgent || "");
+	const isMobileTouch = /iPhone|iPad|iPod|Android|Mobile/i.test(ua) || /Macintosh/i.test(ua) && Number(nav?.maxTouchPoints || 0) > 1;
 	const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-	if (isMobileTouch || !SpeechRecognitionCtor) {
-		input.focus();
-		try {
-			const len = String(input.value || "").length;
-			if (typeof input.setSelectionRange === "function") input.setSelectionRange(len, len);
-		} catch {}
-		showToast("🎙️ 已唤起手机键盘，请点键盘右下角「🎤」或豆包语音，中英代码词识别更准");
+	if (isMobileTouch || !SpeechRecognitionCtor || webSpeechServiceBlocked) {
+		focusInputWithVisualPulse(inputEl, targetInputId, isMobileTouch ? "🎙️ 已唤起手机键盘 👉 请点键盘右下角「🎤」或豆包语音说话" : "🎙️ 当前浏览器不支持网页直接听写，请使用系统语音输入", showToast);
 		return;
 	}
 	try {
 		const recognition = new SpeechRecognitionCtor();
-		recognition.lang = navigator.language && navigator.language.startsWith("zh") ? navigator.language : "zh-CN";
+		recognition.lang = nav?.language && String(nav.language).startsWith("zh") ? nav.language : "zh-CN";
 		recognition.interimResults = true;
 		recognition.continuous = false;
 		recognition.maxAlternatives = 1;
 		const baseText = input.value || "";
-		let finalTranscript = "";
 		activeVoiceRecognition = recognition;
 		activeVoiceInputId = targetInputId;
 		activeVoiceBtnId = btnId;
 		setVoiceBtnRecording(btnId, true);
-		showToast("🎙️ 正在听写，再点一次「⏹」立即关闭");
+		showVoiceHintBar(targetInputId, "🔴 正在听写… 请直接说话（再点下方「⏹」结束）", "recording", 0);
+		showToast("🎙️ 正在听写，请直接说话（再点「⏹」立即关闭）");
 		voiceWatchdogTimer = setTimeout(() => {
 			if (activeVoiceRecognition === recognition) stopVoiceInput();
 		}, 6e4);
 		recognition.onresult = (event) => {
 			if (activeVoiceRecognition !== recognition) return;
-			let interim = "";
-			for (let i = event.resultIndex; i < event.results.length; i += 1) {
-				const seg = event.results[i][0]?.transcript || "";
-				if (event.results[i].isFinal) finalTranscript += seg;
-				else interim += seg;
-			}
-			input.value = baseText + finalTranscript + interim;
+			let utterance = "";
+			const total = event?.results ? event.results.length : 0;
+			for (let i = 0; i < total; i += 1) utterance += event.results[i]?.[0]?.transcript || "";
+			input.value = baseText + utterance;
 			if (targetInputId === "globalPromptInput") onComposerInput();
+			else try {
+				if (typeof Event === "function" && typeof inputEl.dispatchEvent === "function") inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+			} catch {}
 		};
 		recognition.onerror = (event) => {
 			const errCode = event?.error || "";
 			stopVoiceInput();
-			if (errCode === "not-allowed" || errCode === "service-not-allowed") {
-				input.focus();
-				showToast("🎙️ 未授予浏览器麦克风权限，可直接点手机键盘右下角「🎤」语音输入");
-			} else if (errCode && errCode !== "aborted" && errCode !== "no-speech") showToast("⚠️ 语音识别已停止：" + errCode);
+			if (errCode === "service-not-allowed") {
+				webSpeechServiceBlocked = true;
+				focusInputWithVisualPulse(inputEl, targetInputId, "🎙️ 系统未开启网页听写服务（Siri/听写或主屏幕限制），请点下方输入框用键盘右下角「🎤」说话", showToast);
+			} else if (errCode === "not-allowed") focusInputWithVisualPulse(inputEl, targetInputId, "🎙️ 未开启浏览器麦克风权限：请在地址栏允许麦克风，或用手机键盘右下角「🎤」语音输入", showToast);
+			else if (errCode === "no-speech") {
+				showVoiceHintBar(targetInputId, "ℹ️ 未检测到说话声，已自动结束听写（可再点「🎤」重试）", "fallback", 3500);
+				showToast("ℹ️ 未检测到说话声，可再点「🎤」重试");
+			} else if (errCode && errCode !== "aborted") {
+				showVoiceHintBar(targetInputId, "⚠️ 语音识别异常（" + errCode + "），请使用键盘右下角「🎤」输入", "fallback", 5e3);
+				showToast("⚠️ 语音识别已停止：" + errCode);
+			}
 		};
 		recognition.onend = () => {
 			if (activeVoiceRecognition === recognition) stopVoiceInput();
@@ -1171,8 +1269,7 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 		recognition.start();
 	} catch {
 		stopVoiceInput();
-		input.focus();
-		showToast("🎙️ 已聚焦输入框，请使用键盘右下角「🎤 麦克风」语音输入");
+		focusInputWithVisualPulse(inputEl, targetInputId, "🎙️ 已聚焦输入框，请使用手机键盘右下角「🎤 麦克风」语音输入", showToast);
 	}
 }
 // hub/web/src/utils/qrcode.js
@@ -1660,6 +1757,16 @@ var EXACT_ZH_TO_EN = {
 	"3. 任务指令": "3. Task Prompt",
 	"📎 上传截图": "📎 Add Screenshot",
 	"🎤 语音输入": "🎤 Voice Input",
+	"⏹ 停止听写": "⏹ Stop Dictation",
+	"⏹ 已关闭语音输入": "⏹ Voice input stopped",
+	"🎙️ 正在听写，请直接说话（再点「⏹」立即关闭）": "🎙️ Listening… Speak now (tap ⏹ to stop)",
+	"🔴 正在听写… 请直接说话（再点下方「⏹」结束）": "🔴 Listening… Speak now (tap ⏹ below to stop)",
+	"⏳ 当前会话正在执行或为观察模式，暂不可语音输入": "⏳ Session is running or observe-only; voice input unavailable right now",
+	"🎙️ 已唤起手机键盘 👉 请点键盘右下角「🎤」或豆包语音说话": "🎙️ Phone keyboard opened 👉 tap 🎤 at bottom-right of keyboard to speak",
+	"🎙️ 当前浏览器不支持网页直接听写，请使用系统语音输入": "🎙️ Browser speech input unavailable; please use system dictation",
+	"🎙️ 系统未开启网页听写服务（Siri/听写或主屏幕限制），请点下方输入框用键盘右下角「🎤」说话": "🎙️ System web dictation disabled (Siri/Dictation); tap 🎤 at bottom-right of your keyboard",
+	"🎙️ 未开启浏览器麦克风权限：请在地址栏允许麦克风，或用手机键盘右下角「🎤」语音输入": "🎙️ Mic permission denied: allow mic in address bar, or tap 🎤 on your phone keyboard",
+	"ℹ️ 未检测到说话声，可再点「🎤」重试": "ℹ️ No speech detected; tap 🎤 to retry",
 	"🛠️ 检查 git status 并跑测试": "🛠️ Check git status & run tests",
 	"📦 总结最近一次 commit 改动": "📦 Summarize latest commit changes",
 	"🔍 排查当前目录报错日志": "🔍 Diagnose errors in current project",
@@ -2408,10 +2515,14 @@ function initHubController() {
 	let migWipeSource = false;
 	function showToast(msg) {
 		const el = document.getElementById("toastPill");
+		if (!el) return;
 		el.textContent = langPref === "en" ? translateZhStringToEn(String(msg || "")) : msg;
+		const vvOffsetTop = Number(window.visualViewport?.offsetTop || 0);
+		if (vvOffsetTop > 4) el.style.top = `${Math.round(vvOffsetTop + 14)}px`;
+		else el.style.top = "";
 		el.classList.add("show");
 		clearTimeout(window.__toastTimer);
-		window.__toastTimer = setTimeout(() => el.classList.remove("show"), 2400);
+		window.__toastTimer = setTimeout(() => el.classList.remove("show"), 2800);
 	}
 	const expandedTranscriptBySession = /* @__PURE__ */ new Map();
 	const OPT_MSGS_STORAGE_KEY = "dsh_optimistic_msgs_v1";
@@ -3144,6 +3255,7 @@ function initHubController() {
 			const runningBar = document.getElementById("runningControlBar");
 			const chatInput = document.getElementById("globalPromptInput");
 			const sendBtn = document.getElementById("chatSendBtn");
+			const voiceBtn = document.getElementById("chatVoiceBtn");
 			if (isObserveOnly) {
 				runningBar.classList.remove("show");
 				chatInput.disabled = true;
@@ -3174,6 +3286,7 @@ function initHubController() {
 				chatInput.placeholder = s.controlMode === "idle-resumable" ? `发指令通过 ${s.harnessLabel || s.harness} CLI 继续对话...` : "发指令继续对话...";
 				sendBtn.textContent = "发送";
 			}
+			if (voiceBtn) voiceBtn.style.opacity = chatInput.disabled ? "0.52" : "";
 		}
 		const trSig = s.transcript.slice(-6).map((m) => `${m.role}:${m.queuedCmdId || ""}:${m.expiredCmdId || ""}:${(m.text || "").length}:${(m.text || "").slice(-32)}:${(m.thinking || "").length}:${(m.tools || []).length}:${(m.artifacts || []).length}:${m.waitingForInput ? 1 : 0}`).join("|");
 		const chatKey = `${s.id}:${s.status}:${s.sessionRev || ""}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${(s.changedFiles || []).length}:${(s.artifacts || []).length}`;
@@ -6900,6 +7013,7 @@ function initHubController() {
 		removeComposerAttachment,
 		renderAttachmentStrip,
 		compressImageFile,
+		hideVoiceHintBar,
 		setVoiceBtnRecording,
 		isVoiceRecording,
 		stopVoiceInput,

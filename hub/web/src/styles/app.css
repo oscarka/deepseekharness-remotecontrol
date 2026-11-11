@@ -21,6 +21,7 @@
       --red-soft: #fef2f2;
       --code-bg: #0f172a;
       --mono: "SF Mono", Menlo, Monaco, Consolas, monospace;
+      --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
 
@@ -1858,9 +1859,73 @@
     }
 
     .composer-mini-btn {
-      width: 28px;
-      height: 28px;
+      width: 30px;
+      height: 30px;
       font-size: 14px;
+    }
+
+    @media (max-width: 768px) {
+      .composer-mini-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 15px;
+      }
+    }
+
+    .voice-btn:active,
+    .voice-pill-btn:active {
+      transform: scale(0.92);
+    }
+
+    .voice-hint-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+
+    .voice-hint-bar.recording {
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid rgba(220, 38, 38, 0.35);
+    }
+
+    .voice-hint-bar.fallback {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid rgba(37, 99, 235, 0.32);
+    }
+
+    :root[data-theme="dark"] .voice-hint-bar.recording {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+    }
+
+    :root[data-theme="dark"] .voice-hint-bar.fallback {
+      background: rgba(59, 130, 246, 0.22);
+      color: #93c5fd;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .voice-hint-bar.recording {
+        background: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+      }
+
+      :root:not([data-theme="light"]) .voice-hint-bar.fallback {
+        background: rgba(59, 130, 246, 0.22);
+        color: #93c5fd;
+      }
+    }
+
+    .composer-voice-flash {
+      border-color: var(--primary) !important;
+      box-shadow: 0 0 0 3px rgba(37, 99, 246, 0.24) !important;
     }
 
     .composer-model-pill {
@@ -2182,20 +2247,25 @@
 
     .toast-pill {
       position: fixed;
-      top: 20px;
+      top: calc(var(--safe-top, 0px) + 16px);
       left: 50%;
       transform: translateX(-50%) translateY(-20px);
-      background: rgba(15, 23, 42, 0.92);
+      max-width: calc(100vw - 28px);
+      width: max-content;
+      text-align: center;
+      line-height: 1.4;
+      word-break: break-word;
+      background: rgba(15, 23, 42, 0.94);
       color: #fff;
-      padding: 9px 18px;
-      border-radius: 999px;
+      padding: 9px 16px;
+      border-radius: 18px;
       font-size: 13px;
       font-weight: 600;
       z-index: 10000;
       opacity: 0;
       pointer-events: none;
-      transition: all 0.2s ease;
-      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.28);
     }
 
     .toast-pill.show {

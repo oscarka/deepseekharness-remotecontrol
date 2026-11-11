@@ -187,6 +187,10 @@ docker run -d --name dsh-hub \
 
 ## 📅 最近版本更新记录
 
+- **`2026-11-11 · v0.5.7` — iOS 主屏幕模式原生键盘/豆包语音唤醒、跨端审批亚秒级消失与防误敲幂等保护**
+  - **iOS 主屏幕模式（Standalone PWA）原生键盘语音直唤**：移动端统一坚持使用手机自带键盘 / 豆包语音输入（不调用识别不准的浏览器自带语音），将 `🎤` 按钮升级为原生 `<label for="...">` 无拦截焦点关联，突破 iOS 主屏幕模式 WebKit 软键盘唤起限制，配合灵动岛安全区适配提示与输入框上方即时引导条（打字后自动收起）。
+  - **电脑点完手机亚秒级消失 & 迟到点击防误敲 `"1"`**：待审批期间将实时轨迹缓存缩短至 `350ms`；当电脑端已先点击通过、手机端再点残留按钮时，严格校验 `CORTEX_STEP_STATUS_WAITING` 并直接幂等返回 `alreadySettled: true`，彻底杜绝回退模拟按键向电脑聊天框误敲数字 `"1"`。
+
 - **`2026-11-11 · v0.5.6` — 独立反向流式文件隧道、手机 `206 Range` 视频秒播、气泡零闪烁与 Cloud Run 连接防断加固**
   - **反向 HTTP 流式文件直连隧道 & 手机原生视频播放**：新增 `/fs/list|read|stream` 与 `/api/fs-tunnel` 二进制直连通道，配合 Host SSE `event: fs_req` `0ms` 唤醒本地读取，彻底消除 `/api/state` 轮询风暴；全面支持手机 `<video playsinline>` 拖动进度条分片秒播（`206 Partial Content`）、一键 H.264 转码兼容播放（`ffmpeg` / macOS `avconvert`）、保长截图清晰度的 `sips` 智能省流缩略图（可一键切换无损原图）、`walkthrough.md` 热缓存预热，以及不暴露 `HUB_TOKEN` 的短效只读 `mediaTicket` 票据。
   - **手机发送消息零闪烁 & Cloud Run 审批无感防断**：新增服务端 `inflightCommands` 追踪消除已发送气泡消失重现空窗；新增 `/api/events` 240 秒优雅轮转（`event: rotate`，彻底避开 Cloud Run 300 秒强制截断）与客户端幂等 `id` + 网络闪断（`Load failed`）自动静默重试。

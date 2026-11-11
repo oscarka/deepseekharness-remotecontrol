@@ -53,22 +53,36 @@ export function resolveConfig(raw = {}) {
   config.notifyApprovals = config.notifyApprovals !== false && process.env.FEISHU_NOTIFY_APPROVALS !== 'false'
   config.notifyIntervalMs = clampInt(config.notifyIntervalMs, 500, 10000, 1000)
   config.notifyDigestMs = clampInt(config.notifyDigestMs, 1000, 60_000, 5000)
-  config.dshHome = expandHome(process.env.FEISHU_DSH_HOME || process.env.DSH_HOME || config.dshHome || '~/.dsh')
+  const hasExplicitDshHome = raw && Object.prototype.hasOwnProperty.call(raw, 'dshHome')
+  const rawDshHome =
+    process.env.FEISHU_DSH_HOME ??
+    process.env.DSH_HOME ??
+    (hasExplicitDshHome ? raw.dshHome : config.dshHome)
+  config.dshHome = rawDshHome === '' ? '' : expandHome(rawDshHome || '~/.dsh')
+  const defaultFromDshHome = name => (config.dshHome ? join(config.dshHome, name) : '')
   config.appSecretFile = expandHome(
     process.env.FEISHU_APP_SECRET_FILE ||
-      (raw?.appSecretFile ? raw.appSecretFile : join(config.dshHome, 'feishu.env')),
+      (raw && Object.prototype.hasOwnProperty.call(raw, 'appSecretFile')
+        ? raw.appSecretFile
+        : defaultFromDshHome('feishu.env')),
   )
   config.auditFile = expandHome(
     process.env.FEISHU_AUDIT_FILE ||
-      (raw?.auditFile ? raw.auditFile : join(config.dshHome, 'feishu-audit.jsonl')),
+      (raw && Object.prototype.hasOwnProperty.call(raw, 'auditFile')
+        ? raw.auditFile
+        : defaultFromDshHome('feishu-audit.jsonl')),
   )
   config.controlChatFile = expandHome(
     process.env.FEISHU_CONTROL_CHAT_FILE ||
-      (raw?.controlChatFile ? raw.controlChatFile : join(config.dshHome, 'feishu-control-chat')),
+      (raw && Object.prototype.hasOwnProperty.call(raw, 'controlChatFile')
+        ? raw.controlChatFile
+        : defaultFromDshHome('feishu-control-chat')),
   )
   config.remoteStateFile = expandHome(
     process.env.FEISHU_REMOTE_STATE_FILE ||
-      (raw?.remoteStateFile ? raw.remoteStateFile : join(config.dshHome, 'feishu-remote.json')),
+      (raw && Object.prototype.hasOwnProperty.call(raw, 'remoteStateFile')
+        ? raw.remoteStateFile
+        : defaultFromDshHome('feishu-remote.json')),
   )
   config.remoteIdleMs = clampInt(config.remoteIdleMs, 5 * 60_000, 24 * 60 * 60_000, 2 * 60 * 60_000)
 

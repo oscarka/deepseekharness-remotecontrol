@@ -8,6 +8,10 @@ import { resolveConfig, parseEnvFile } from '../lib/config.js'
 import { parseCommand } from '../lib/commands.js'
 import { redactText, truncateText } from '../lib/redact.js'
 
+for (const k of ['ANTIGRAVITY_LS_ADDRESS', 'ANTIGRAVITY_CSRF_TOKEN', 'FEISHU_DSH_HOME', 'DSH_HOME']) {
+  delete process.env[k]
+}
+
 const APP_ID = 'cli_0123456789abcdef'
 const USER = 'ou_user_1'
 const CHAT = 'oc_chat_1'
@@ -75,6 +79,7 @@ function makeHarness({ agents = [makeAgent()], config = {}, cards = false, now }
     config: resolveConfig({
       appId: APP_ID,
       allowedOpenIds: [USER],
+      dshHome: '',
       auditFile: '',
       controlChatFile: '',
       remoteStateFile: '',

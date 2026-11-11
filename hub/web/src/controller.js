@@ -32,6 +32,7 @@ import {
   shouldDismissVerticalSwipe,
 } from './utils/gestures';
 import {
+  hideVoiceHintBar,
   setVoiceBtnRecording,
   isVoiceRecording,
   stopVoiceInput,
@@ -534,10 +535,17 @@ export function initHubController() {
 
   function showToast(msg) {
     const el = document.getElementById('toastPill');
+    if (!el) return;
     el.textContent = langPref === 'en' ? translateZhStringToEn(String(msg || '')) : msg;
+    const vvOffsetTop = Number(window.visualViewport?.offsetTop || 0);
+    if (vvOffsetTop > 4) {
+      el.style.top = `${Math.round(vvOffsetTop + 14)}px`;
+    } else {
+      el.style.top = '';
+    }
     el.classList.add('show');
     clearTimeout(window.__toastTimer);
-    window.__toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+    window.__toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
   }
 
   // ==================== 3. 数据聚合与扁平化 ====================
@@ -1500,6 +1508,7 @@ export function initHubController() {
       const runningBar = document.getElementById('runningControlBar');
       const chatInput = document.getElementById('globalPromptInput');
       const sendBtn = document.getElementById('chatSendBtn');
+      const voiceBtn = document.getElementById('chatVoiceBtn');
       if (isObserveOnly) {
         runningBar.classList.remove('show');
         chatInput.disabled = true;
@@ -1532,6 +1541,9 @@ export function initHubController() {
           ? `发指令通过 ${s.harnessLabel || s.harness} CLI 继续对话...`
           : '发指令继续对话...';
         sendBtn.textContent = '发送';
+      }
+      if (voiceBtn) {
+        voiceBtn.style.opacity = chatInput.disabled ? '0.52' : '';
       }
     }
 
@@ -5592,40 +5604,40 @@ export function initHubController() {
         lastSeenAt: h.lastSeenAt,
         bridgeState: h.bridgeState
           ? {
-              workspaces: h.bridgeState.workspaces || [],
-              modelCatalog: h.bridgeState.modelCatalog || {},
-              turbo: h.bridgeState.turbo || null,
-              systemTelemetry: h.bridgeState.systemTelemetry || null,
-              tasks: (h.bridgeState.tasks || []).map(t => ({
-                id: t.id,
-                rawId: t.rawId,
-                shortId: t.shortId,
-                harness: t.harness,
-                harnessLabel: t.harnessLabel,
-                model: t.model,
-                title: t.title,
-                status: t.status,
-                turnState: t.turnState,
-                statusLabel: t.statusLabel,
-                project: t.project,
-                cwd: t.cwd,
-                lastActivity: t.lastActivity,
-                updatedAt: t.updatedAt,
-                lastConclusionAt: t.lastConclusionAt,
-                lastOutput: String(t.lastOutput || '').slice(0, 260),
-                runningSummary: String(t.runningSummary || '').slice(0, 200),
-                pendingApproval: t.pendingApproval || null,
-                artifacts: t.artifacts || [],
-                messageCount: t.messageCount || 0,
-                transcript: (t.transcript || []).slice(-2).map(m => ({
-                  index: m.index,
-                  role: m.role,
-                  text: String(m.text || '').slice(0, 600),
-                  time: m.time,
-                  artifacts: m.artifacts || [],
-                })),
+            workspaces: h.bridgeState.workspaces || [],
+            modelCatalog: h.bridgeState.modelCatalog || {},
+            turbo: h.bridgeState.turbo || null,
+            systemTelemetry: h.bridgeState.systemTelemetry || null,
+            tasks: (h.bridgeState.tasks || []).map(t => ({
+              id: t.id,
+              rawId: t.rawId,
+              shortId: t.shortId,
+              harness: t.harness,
+              harnessLabel: t.harnessLabel,
+              model: t.model,
+              title: t.title,
+              status: t.status,
+              turnState: t.turnState,
+              statusLabel: t.statusLabel,
+              project: t.project,
+              cwd: t.cwd,
+              lastActivity: t.lastActivity,
+              updatedAt: t.updatedAt,
+              lastConclusionAt: t.lastConclusionAt,
+              lastOutput: String(t.lastOutput || '').slice(0, 260),
+              runningSummary: String(t.runningSummary || '').slice(0, 200),
+              pendingApproval: t.pendingApproval || null,
+              artifacts: t.artifacts || [],
+              messageCount: t.messageCount || 0,
+              transcript: (t.transcript || []).slice(-2).map(m => ({
+                index: m.index,
+                role: m.role,
+                text: String(m.text || '').slice(0, 600),
+                time: m.time,
+                artifacts: m.artifacts || [],
               })),
-            }
+            })),
+          }
           : { tasks: [] },
       }));
       localStorage.setItem(
@@ -5843,6 +5855,7 @@ export function initHubController() {
     removeComposerAttachment,
     renderAttachmentStrip,
     compressImageFile,
+    hideVoiceHintBar,
     setVoiceBtnRecording,
     isVoiceRecording,
     stopVoiceInput,

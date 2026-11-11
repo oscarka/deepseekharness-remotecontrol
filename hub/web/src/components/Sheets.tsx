@@ -87,18 +87,35 @@ export function Sheets() {
               >
                 🖼️ 传截图
               </button>
-              <button
-                type="button"
+              <label
+                htmlFor="newTaskInput"
+                role="button"
+                tabIndex={0}
                 class="voice-pill-btn"
                 id="newTaskVoiceBtn"
+                onMouseDown={e => {
+                  const ua = String(navigator?.userAgent || '');
+                  const isMobile =
+                    /iPhone|iPad|iPod|Android|Mobile/i.test(ua) ||
+                    (/Macintosh/i.test(ua) && Number((navigator as any)?.maxTouchPoints || 0) > 1);
+                  if (!isMobile) {
+                    e.preventDefault();
+                  }
+                }}
                 onClick={e => {
-                  e.preventDefault();
+                  const ua = String(navigator?.userAgent || '');
+                  const isMobile =
+                    /iPhone|iPad|iPod|Android|Mobile/i.test(ua) ||
+                    (/Macintosh/i.test(ua) && Number((navigator as any)?.maxTouchPoints || 0) > 1);
+                  if (!isMobile) {
+                    e.preventDefault();
+                  }
                   e.stopPropagation();
                   (window as any).toggleVoiceInput?.('newTaskInput', 'newTaskVoiceBtn');
                 }}
               >
                 🎤 语音输入
-              </button>
+              </label>
             </div>
           </div>
           <div class="chip-selector" style="margin-bottom:6px;">
@@ -133,6 +150,12 @@ export function Sheets() {
             id="newTaskAttachmentsStrip"
             style="display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"
           ></div>
+          <div
+            class="voice-hint-bar"
+            id="newTaskVoiceHintBar"
+            style="display:none;margin-bottom:8px;"
+            onClick={() => (window as any).hideVoiceHintBar?.('newTaskInput')}
+          ></div>
           <textarea
             class="new-task-textarea"
             id="newTaskInput"
@@ -140,6 +163,11 @@ export function Sheets() {
             autocorrect="on"
             autocapitalize="sentences"
             spellcheck={true}
+            onInput={() => {
+              if (!(window as any).isVoiceRecording?.()) {
+                (window as any).hideVoiceHintBar?.('newTaskInput');
+              }
+            }}
             onPaste={e => (window as any).onComposerPaste?.(e, 'newTask')}
           ></textarea>
 

@@ -1553,7 +1553,7 @@ export class HubAgent {
             const sess = (this.cachedAgySessions || []).find(s => s.id === targetId)
             const res = await executeAntigravityIdeAction(
               { type, agentId: targetId, text: effectiveText, cwd: sess?.cwd || cmd.cwd, model: requestedModel, imagePaths },
-              { execImpl: this.execImpl },
+              { execImpl: this.execImpl, fetchImpl: this.fetch },
             )
             if (res.ok && (type === 'prompt' || type === 'steer')) {
               const trimmedText = effectiveText
@@ -1694,7 +1694,7 @@ export class HubAgent {
                 model: requestedNewModel,
                 imagePaths,
               },
-              { execImpl: this.execImpl },
+              { execImpl: this.execImpl, fetchImpl: this.fetch },
             )
             if (agyRes?.agentId && requestedNewModel) {
               this.sessionModelOverrides.set(agyRes.agentId, requestedNewModel)
@@ -1764,6 +1764,8 @@ export class HubAgent {
               maxSessions: 40,
               maxMessages: 120,
               settledApprovals: this.settledAgyApprovals,
+              execImpl: this.execImpl,
+              fetchImpl: this.fetch,
             })
             const found = agySessions.find(s => s.id === targetId)
             if (found) {

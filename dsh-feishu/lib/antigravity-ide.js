@@ -1542,7 +1542,15 @@ async function loadLiveTrajectorySummaries({
 } = {}) {
   const isDefaultRuntime = execImpl === execFileAsync && fetchImpl === globalThis.fetch
   const now = Date.now()
-  const ttlMs = cachedLiveSummariesAt >= minFreshAt ? 2500 : 150
+  const hasWaitingInCache = Boolean(
+    cachedLiveSummaries &&
+    [...cachedLiveSummaries.values()].some(
+      s =>
+        s?.status === 'CASCADE_RUN_STATUS_WAITING_FOR_USER' ||
+        (Array.isArray(s?.waitingSteps) && s.waitingSteps.length > 0),
+    ),
+  )
+  const ttlMs = hasWaitingInCache ? 350 : cachedLiveSummariesAt >= minFreshAt ? 2500 : 150
   if (isDefaultRuntime && now - cachedLiveSummariesAt < ttlMs) {
     return cachedLiveSummaries
   }
@@ -1802,7 +1810,9 @@ function buildCleanAgentApiEnv(hub) {
     delete env[k]
   }
   if (hub?.address) env.ANTIGRAVITY_LS_ADDRESS = hub.address
+  else delete env.ANTIGRAVITY_LS_ADDRESS
   if (hub?.csrfToken) env.ANTIGRAVITY_CSRF_TOKEN = hub.csrfToken
+  else delete env.ANTIGRAVITY_CSRF_TOKEN
   return env
 }
 
@@ -2063,6 +2073,7 @@ export async function executeAntigravityIdeAction(action, {
 
   if (type === 'approve' || type === 'deny') {
     const allow = type === 'approve'
+    let reachedAnyLsHub = false
     if (typeof fetchImpl === 'function') {
       try {
         const hubs = await discoverAntigravityHubInstances({ execImpl, preferredCwd })
@@ -2079,6 +2090,9 @@ export async function executeAntigravityIdeAction(action, {
                 body: JSON.stringify({}),
               },
             )
+            if (sumResp?.ok) {
+              reachedAnyLsHub = true
+            }
             const sumData = sumResp?.ok ? await sumResp.json().catch(() => null) : null
             const summaries = sumData?.trajectorySummaries || {}
 
@@ -2121,7 +2135,9 @@ export async function executeAntigravityIdeAction(action, {
                   const stepsList = Array.isArray(stepsData?.steps) ? stepsData.steps : []
                   for (let idx = stepsList.length - 1; idx >= 0; idx -= 1) {
                     const st = stepsList[idx]
-                    if (st?.status === 'CORTEX_STEP_STATUS_WAITING' || st?.requestedInteraction) {
+                    // ONLY match steps genuinely still waiting for user interaction!
+                    // Completed/running steps retain `requestedInteraction` in history and must NEVER be re-submitted.
+                    if (st?.status === 'CORTEX_STEP_STATUS_WAITING') {
                       waitingEntry = {
                         stepIndex: st?.metadata?.sourceTrajectoryStepInfo?.stepIndex ?? idx,
                         step: st,
@@ -2135,11 +2151,22 @@ export async function executeAntigravityIdeAction(action, {
               }
             }
 
+            if (hasConversationOnHub && !waitingEntry) {
+              cachedLiveSummariesAt = 0
+              return {
+                ok: true,
+                engine: 'connect-rpc-noop',
+                alreadySettled: true,
+                message: allow
+                  ? '✅ 该审批已在电脑端处理完毕，无需重复提交'
+                  : 'ℹ️ 该步骤已在电脑端执行完毕，无需拒绝',
+              }
+            }
+
             const stepIndex =
               waitingEntry?.step?.metadata?.sourceTrajectoryStepInfo?.stepIndex ??
               waitingEntry?.stepIndex ??
-              action?.pendingApproval?.waitingStepIndex ??
-              action?.stepIndex
+              (!hasConversationOnHub ? (action?.pendingApproval?.waitingStepIndex ?? action?.stepIndex) : undefined)
             const trajectoryId = String(
               waitingEntry?.step?.metadata?.sourceTrajectoryStepInfo?.trajectoryId ||
               liveSummary?.trajectoryId ||
@@ -2247,8 +2274,8 @@ export async function executeAntigravityIdeAction(action, {
                   }),
                 },
               )
+              cachedLiveSummariesAt = 0
               if (rpcResp?.ok) {
-                cachedLiveSummariesAt = 0
                 return {
                   ok: true,
                   engine: 'connect-rpc',
@@ -2257,30 +2284,39 @@ export async function executeAntigravityIdeAction(action, {
                     : '🔴 [Antigravity RPC] 已远程拒绝执行',
                 }
               }
-            } else if (hasConversationOnHub && waitingSteps.length === 0) {
-              cachedLiveSummariesAt = 0
-              return {
-                ok: true,
-                engine: 'connect-rpc-noop',
-                alreadySettled: true,
-                message: allow
-                  ? '✅ 该步骤已在电脑端自动授权通过或已完成'
-                  : 'ℹ️ 该步骤已在电脑端执行完毕，无需拒绝',
+              // RPC reached LanguageServer for this conversation, so failure means the step was JUST settled on desktop;
+              // NEVER fall back to blind keystroke injection (which would type "1" + Enter into the chat box!).
+              if (hasConversationOnHub) {
+                return {
+                  ok: true,
+                  engine: 'connect-rpc-noop',
+                  alreadySettled: true,
+                  message: '✅ 该审批已在电脑端处理完毕，无需重复提交',
+                }
               }
             }
           } catch {
-            // Try next hub instance or fall back to native keystroke / AppleScript
+            // Try next hub instance
+          }
+        }
+        if (reachedAnyLsHub) {
+          cachedLiveSummariesAt = 0
+          return {
+            ok: true,
+            engine: 'connect-rpc-noop',
+            alreadySettled: true,
+            message: '✅ 该审批已在电脑端处理完毕，无需重复提交',
           }
         }
       } catch {
-        // Fall back to native keystroke / AppleScript
+        // Fall back to native keystroke / AppleScript only when no LanguageServer RPC is reachable
       }
     }
   }
 
   if (type === 'approve') {
     if (execImpl === execFileAsync) {
-      const nativeAction = optionIndex === 2 ? 'approve-2' : optionIndex === 3 ? 'approve-3' : 'approve-1'
+      const nativeAction = optionIndex === 2 ? 'approve-2' : optionIndex === 3 ? 'approve-3' : 'opt-enter'
       const nativeRes = await sendNativeKeystroke(nativeAction)
       if (nativeRes.ok) {
         return {

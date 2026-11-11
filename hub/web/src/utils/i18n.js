@@ -289,6 +289,23 @@ const EXACT_ZH_TO_EN = {
   '3. 任务指令': '3. Task Prompt',
   '📎 上传截图': '📎 Add Screenshot',
   '🎤 语音输入': '🎤 Voice Input',
+  '⏹ 停止听写': '⏹ Stop Dictation',
+  '⏹ 已关闭语音输入': '⏹ Voice input stopped',
+  '🎙️ 正在听写，请直接说话（再点「⏹」立即关闭）':
+    '🎙️ Listening… Speak now (tap ⏹ to stop)',
+  '🔴 正在听写… 请直接说话（再点下方「⏹」结束）':
+    '🔴 Listening… Speak now (tap ⏹ below to stop)',
+  '⏳ 当前会话正在执行或为观察模式，暂不可语音输入':
+    '⏳ Session is running or observe-only; voice input unavailable right now',
+  '🎙️ 已唤起手机键盘 👉 请点键盘右下角「🎤」或豆包语音说话':
+    '🎙️ Phone keyboard opened 👉 tap 🎤 at bottom-right of keyboard to speak',
+  '🎙️ 当前浏览器不支持网页直接听写，请使用系统语音输入':
+    '🎙️ Browser speech input unavailable; please use system dictation',
+  '🎙️ 系统未开启网页听写服务（Siri/听写或主屏幕限制），请点下方输入框用键盘右下角「🎤」说话':
+    '🎙️ System web dictation disabled (Siri/Dictation); tap 🎤 at bottom-right of your keyboard',
+  '🎙️ 未开启浏览器麦克风权限：请在地址栏允许麦克风，或用手机键盘右下角「🎤」语音输入':
+    '🎙️ Mic permission denied: allow mic in address bar, or tap 🎤 on your phone keyboard',
+  'ℹ️ 未检测到说话声，可再点「🎤」重试': 'ℹ️ No speech detected; tap 🎤 to retry',
   '🛠️ 检查 git status 并跑测试': '🛠️ Check git status & run tests',
   '📦 总结最近一次 commit 改动': '📦 Summarize latest commit changes',
   '🔍 排查当前目录报错日志': '🔍 Diagnose errors in current project',

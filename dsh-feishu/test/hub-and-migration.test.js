@@ -31,6 +31,10 @@ import {
   readWorkspaceFileStreamChunk,
 } from '../lib/workspace-ops.js'
 
+for (const k of ['ANTIGRAVITY_LS_ADDRESS', 'ANTIGRAVITY_CSRF_TOKEN', 'FEISHU_DSH_HOME', 'DSH_HOME']) {
+  delete process.env[k]
+}
+
 const APP_ID = 'cli_0123456789abcdef'
 const USER = 'ou_user_1'
 const CHAT = 'oc_chat_1'
@@ -1512,12 +1516,31 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
   let startCalled = 0
   let lastInstance = null
 
+  const makeHintBar = () => {
+    const classes = new Set(['voice-hint-bar'])
+    return {
+      textContent: '',
+      style: { display: 'none' },
+      classes,
+      classList: {
+        add(...items) { for (const c of items) classes.add(c) },
+        remove(...items) { for (const c of items) classes.delete(c) },
+        contains(c) { return classes.has(c) },
+      },
+    }
+  }
+
   const fakeElements = {
     globalPromptInput: {
       value: '已有前缀 ',
       focused: false,
+      clicked: false,
+      disabled: false,
       focus() { this.focused = true },
+      click() { this.clicked = true },
     },
+    chatVoiceHintBar: makeHintBar(),
+    newTaskVoiceHintBar: makeHintBar(),
     chatVoiceBtn: {
       textContent: '🎤',
       attrs: {},
@@ -1563,7 +1586,13 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
   const fakeDocument = {
     getElementById(id) { return fakeElements[id] || null },
   }
-  const fakeNavigator = { language: 'zh-CN' }
+  // Simulate mobile iPhone (Safari & Standalone PWA) — MUST use phone native keyboard voice input and NEVER call webkitSpeechRecognition!
+  const fakeNavigator = {
+    language: 'zh-CN',
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1',
+    standalone: true,
+    maxTouchPoints: 5,
+  }
   const toasts = []
   let composerInputCalls = 0
 
@@ -1571,7 +1600,7 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
     'window',
     'document',
     'navigator',
-    `${cleanJs}\nreturn { toggleVoiceInput, stopVoiceInput, isVoiceRecording };`,
+    `${cleanJs}\nreturn { toggleVoiceInput, stopVoiceInput, isVoiceRecording, hideVoiceHintBar };`,
   )
   const voice = factory(fakeWindow, fakeDocument, fakeNavigator)
   const deps = {
@@ -1579,15 +1608,44 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
     onComposerInput() { composerInputCalls += 1 },
   }
 
-  // 1) First click starts recording
+  // 1) Mobile iPhone (both Standalone PWA & Safari): focuses input for phone keyboard dictation, shows inline guide bar & toast, NEVER calls browser SpeechRecognition
+  voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
+  assert.equal(startCalled, 0)
+  assert.equal(voice.isVoiceRecording(), false)
+  assert.equal(fakeElements.globalPromptInput.focused, true)
+  assert.equal(fakeElements.chatVoiceHintBar.style.display, 'flex')
+  assert.equal(fakeElements.chatVoiceHintBar.classList.contains('fallback'), true)
+  assert.ok(toasts.some(t => t.includes('已唤起手机键盘')))
+  voice.hideVoiceHintBar('globalPromptInput')
+  assert.equal(fakeElements.chatVoiceHintBar.style.display, 'none')
+
+  // 1b) Mobile Safari (standalone: false) ALSO keeps phone native keyboard dictation (startCalled stays 0)
+  fakeNavigator.standalone = false
+  fakeElements.globalPromptInput.focused = false
+  voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
+  assert.equal(startCalled, 0)
+  assert.equal(fakeElements.globalPromptInput.focused, true)
+  voice.hideVoiceHintBar('globalPromptInput')
+
+  // 2) Desktop browser (macOS Chrome/Safari, maxTouchPoints: 0): starts SpeechRecognition + shows inline recording bar
+  fakeNavigator.userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+  fakeNavigator.maxTouchPoints = 0
   voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
   assert.equal(startCalled, 1)
   assert.equal(voice.isVoiceRecording(), true)
   assert.equal(fakeElements.chatVoiceBtn.classList.contains('recording'), true)
   assert.equal(fakeElements.chatVoiceBtn.textContent, '⏹')
   assert.equal(fakeElements.chatVoiceBtn.attrs['aria-pressed'], 'true')
+  assert.equal(fakeElements.chatVoiceHintBar.style.display, 'flex')
+  assert.equal(fakeElements.chatVoiceHintBar.classList.contains('recording'), true)
 
-  // 2) Speech recognition emits interim + final result
+  // 3) Speech recognition emits interim + final result without cumulative duplication
+  lastInstance.onresult({
+    resultIndex: 0,
+    results: [
+      { isFinal: false, 0: { transcript: '帮我检查' } },
+    ],
+  })
   lastInstance.onresult({
     resultIndex: 0,
     results: [
@@ -1595,9 +1653,9 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
     ],
   })
   assert.equal(fakeElements.globalPromptInput.value, '已有前缀 帮我检查测试')
-  assert.equal(composerInputCalls, 1)
+  assert.equal(composerInputCalls, 2)
 
-  // 3) Second click immediately stops recording, calls abort() + stop(), detaches callbacks, resets UI
+  // 4) Second click on desktop immediately stops recording, calls abort() + stop(), detaches callbacks, resets UI & hint bar
   const savedOnResult = lastInstance.onresult
   assert.equal(typeof savedOnResult, 'function')
   voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
@@ -1610,7 +1668,16 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
   assert.equal(fakeElements.chatVoiceBtn.classList.contains('recording'), false)
   assert.equal(fakeElements.chatVoiceBtn.textContent, '🎤')
   assert.equal(fakeElements.chatVoiceBtn.attrs['aria-pressed'], 'false')
+  assert.equal(fakeElements.chatVoiceHintBar.style.display, 'none')
   assert.ok(toasts.some(t => t.includes('已关闭语音输入')))
+
+  // 5) Disabled input (running non-steerable or observe-only session) shows immediate explanation toast
+  fakeElements.globalPromptInput.disabled = true
+  voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
+  assert.equal(startCalled, 1)
+  assert.ok(toasts.some(t => t.includes('暂不可语音输入')))
+  fakeElements.globalPromptInput.disabled = false
+  voice.hideVoiceHintBar()
 })
 
 test('antigravity-ide approval sync & RPC: suppresses false-positive pendingApproval when computer auto-approved, annotates sandbox retry, and approves via HandleCascadeUserInteraction RPC', async () => {
@@ -1805,6 +1872,81 @@ test('antigravity-ide approval sync & RPC: suppresses false-positive pendingAppr
   assert.equal(handleCall.body.interaction.permission.allow, true)
   assert.equal(handleCall.body.interaction.permission.scope, 'PERMISSION_SCOPE_GLOBAL')
   assert.deepEqual(handleCall.body.interaction.permission.persistGrants.allow, ['unsandboxed(git add *)'])
+
+  // Case D: Desktop already clicked Approve first (`waitingSteps: []`, step 6 is DONE with historical `requestedInteraction`),
+  // then mobile user taps stale Approve button -> MUST return `alreadySettled: true` (connect-rpc-noop)
+  // and MUST NEVER fall back to native keystroke `approve-1` / `osascript` (which previously typed literal "1" into desktop chat!)
+  const staleExecBins = []
+  const staleRpcCalls = []
+  const staleRes = await executeAntigravityIdeAction(
+    {
+      type: 'approve',
+      agentId: `agy-ide:${convId}`,
+      optionIndex: 1,
+      pendingApproval: waitingParsed.pendingApproval,
+    },
+    {
+      execImpl: async (bin) => {
+        staleExecBins.push(bin)
+        if (bin === 'ps') {
+          return {
+            stdout:
+              '/Applications/Antigravity.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm --csrf_token test-csrf-999\n',
+          }
+        }
+        if (bin === 'lsof') {
+          return {
+            stdout: 'language_ 12345 cc 10u IPv4 0x123 0t0 TCP 127.0.0.1:59123 (LISTEN)\n',
+          }
+        }
+        return { stdout: '' }
+      },
+      fetchImpl: async (url, init) => {
+        const body = init?.body ? JSON.parse(init.body) : {}
+        staleRpcCalls.push({ url: String(url), body })
+        if (String(url).endsWith('/GetAllCascadeTrajectories')) {
+          return new Response(
+            JSON.stringify({
+              trajectorySummaries: {
+                [convId]: {
+                  trajectoryId: 'traj-998877',
+                  status: 'CASCADE_RUN_STATUS_RUNNING',
+                  waitingSteps: [],
+                },
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        if (String(url).endsWith('/GetCascadeTrajectorySteps')) {
+          return new Response(
+            JSON.stringify({
+              steps: [
+                {}, {}, {}, {}, {}, {},
+                {
+                  status: 'CORTEX_STEP_STATUS_DONE',
+                  requestedInteraction: {
+                    permission: { suggestedPersistPattern: 'unsandboxed(git add *)' },
+                  },
+                },
+              ],
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        if (String(url).endsWith('/HandleCascadeUserInteraction')) {
+          return new Response('step is no longer waiting', { status: 400 })
+        }
+        return new Response('not found', { status: 404 })
+      },
+    },
+  )
+  assert.equal(staleRes.ok, true)
+  assert.equal(staleRes.alreadySettled, true)
+  assert.equal(staleRes.engine, 'connect-rpc-noop')
+  assert.equal(staleRpcCalls.some(c => c.url.endsWith('/HandleCascadeUserInteraction')), false)
+  assert.equal(staleExecBins.includes('osascript'), false)
+  assert.equal(staleExecBins.some(b => String(b).includes('dsh-turbo')), false)
 })
 
 test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from getFullState & streamed via /file-preview, offline command queueing/cancel/TTL, pairing rate-limit, and build metadata', async () => {
@@ -1819,7 +1961,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.5.6')
+  assert.equal(healthRes.build.version, '0.5.7')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 
@@ -3041,7 +3183,7 @@ test('Phase 3 Deep Integration: Codex app-server JSON-RPC & WorkBuddy ACP HTTP+S
       acpEndpoint: 'http://127.0.0.1:43999/api/v1/acp',
       openSseImpl: ({ onPayload }) => {
         ssePush = onPayload
-        return { destroy() {} }
+        return { destroy() { } }
       },
       fetchImpl: async (url, init = {}) => {
         const u = String(url)
@@ -3281,8 +3423,8 @@ test('Fast FS Tunnel & Mobile Media Streaming (Plan 1 + Plan 2): HTTP 206 Range 
         get: id => (id === liveTask.id ? liveTask : undefined),
       },
       sender: { sendText: async () => ({}), sendCard: async () => ({}), updateCard: async () => ({}) },
-      audit: { write: async () => {} },
-      logger: { info() {}, warn() {}, error() {} },
+      audit: { write: async () => { } },
+      logger: { info() { }, warn() { }, error() { } },
     })
     const hostAgent = new HubAgent({
       config: cfg,
@@ -3773,7 +3915,7 @@ test('WorkBuddy real local SQLite + Unix sidecar socket + HTTP/SSE stream + HubA
     wbAdapter.shutdown()
   } finally {
     for (const sse of activeSseResponses) {
-      try { sse.end() } catch {}
+      try { sse.end() } catch { }
     }
     if (sidecarServer) await new Promise(resolve => sidecarServer.close(resolve))
     if (acpHttpServer) {
@@ -4221,8 +4363,8 @@ test('WorkBuddy bundled CLI spawns with isolated ACC_PRODUCT_CONFIG_PATH (workbu
       spawnImpl: (cmd, args, opts) => {
         capturedSpawn = { cmd, args, opts }
         const fakeProc = new EventEmitter()
-        fakeProc.unref = () => {}
-        fakeProc.kill = () => {}
+        fakeProc.unref = () => { }
+        fakeProc.kill = () => { }
         return fakeProc
       },
       fetchImpl: async url => {
@@ -4240,7 +4382,7 @@ test('WorkBuddy bundled CLI spawns with isolated ACC_PRODUCT_CONFIG_PATH (workbu
           text: async () => JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }),
         }
       },
-      openSseImpl: () => ({ destroy() {} }),
+      openSseImpl: () => ({ destroy() { } }),
     })
 
     const resolvedEndpoint = await wb._resolveDefaultAcpEndpoint()
@@ -4276,7 +4418,7 @@ test('WorkBuddy bundled CLI spawns with isolated ACC_PRODUCT_CONFIG_PATH (workbu
           text: async () => JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { ok: true } }),
         }
       },
-      openSseImpl: () => ({ destroy() {} }),
+      openSseImpl: () => ({ destroy() { } }),
     })
     await client.authenticate()
     assert.equal(sentMethodId, 'internal')
@@ -4465,8 +4607,8 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
         const port = portIdx !== -1 ? args[portIdx + 1] : '0'
         spawnedCalls.push({ cmd, args, cwd: opts.cwd, port })
         const proc = new EventEmitter()
-        proc.unref = () => {}
-        proc.kill = () => {}
+        proc.unref = () => { }
+        proc.kill = () => { }
         return proc
       },
       fetchImpl: async (url, init = {}) => {
@@ -4502,7 +4644,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
           text: async () => JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result }),
         }
       },
-      openSseImpl: () => ({ destroy() {} }),
+      openSseImpl: () => ({ destroy() { } }),
     })
 
     // Dot-preserving slug resolution check
@@ -4528,9 +4670,13 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
     assert.equal(spawnedCalls[1].cwd, existingCwd)
 
     // Wait for async prompt completion & SQLite sync
-    for (let i = 0; i < 30; i++) {
+    let dbExistingRows = []
+    for (let i = 0; i < 40; i++) {
       const s = await wb.getSession(`workbuddy:${existingId}`)
-      if (s?.status === 'idle' && s.transcript.length === 4) break
+      dbExistingRows = JSON.parse(
+        execFileSync('sqlite3', ['-json', dbPath, `SELECT * FROM sessions WHERE id = '${existingId}';`], { encoding: 'utf8' }) || '[]',
+      )
+      if (s?.status === 'idle' && s.transcript.length === 4 && dbExistingRows[0]?.status === 'completed') break
       await new Promise(r => setTimeout(r, 20))
     }
 
@@ -4543,9 +4689,6 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
     assert.equal(targetSess.transcript[2].text, '手机端追问：今天天气怎么样？')
     assert.match(targetSess.transcript[3].text, new RegExp(`来自端口 ${spawnedCalls[1].port} 的 AI 回复`))
 
-    const dbExistingRows = JSON.parse(
-      execFileSync('sqlite3', ['-json', dbPath, `SELECT * FROM sessions WHERE id = '${existingId}';`], { encoding: 'utf8' }),
-    )
     assert.equal(dbExistingRows.length, 1)
     assert.equal(dbExistingRows[0].user_id, realUserId)
     assert.equal(dbExistingRows[0].title, '你好')
@@ -4564,15 +4707,16 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
     assert.equal(spawnedCalls.length, 3)
     assert.equal(spawnedCalls[2].cwd, newCwd)
 
-    for (let i = 0; i < 30; i++) {
+    let dbNewRows = []
+    for (let i = 0; i < 40; i++) {
       const s = await wb.getSession('workbuddy:wb-phone-new-99')
-      if (s?.status === 'idle') break
+      dbNewRows = JSON.parse(
+        execFileSync('sqlite3', ['-json', dbPath, "SELECT * FROM sessions WHERE id = 'wb-phone-new-99';"], { encoding: 'utf8' }) || '[]',
+      )
+      if (s?.status === 'idle' && dbNewRows[0]?.status === 'completed') break
       await new Promise(r => setTimeout(r, 20))
     }
 
-    const dbNewRows = JSON.parse(
-      execFileSync('sqlite3', ['-json', dbPath, "SELECT * FROM sessions WHERE id = 'wb-phone-new-99';"], { encoding: 'utf8' }),
-    )
     assert.equal(dbNewRows.length, 1)
     assert.equal(dbNewRows[0].cwd, newCwd)
     assert.equal(dbNewRows[0].user_id, realUserId)
