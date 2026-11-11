@@ -1961,7 +1961,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.5.7')
+  assert.equal(healthRes.build.version, '0.5.8')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 
@@ -4598,6 +4598,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
     const binPath = join(tmpDir, 'fake-codebuddy')
     await writeFile(binPath, '#!/usr/bin/env node\n', 'utf8')
 
+    const deadPorts = new Set()
     const wb = new WorkBuddyAdapter({
       workbuddyHome: wbHome,
       binaryPath: binPath,
@@ -4607,12 +4608,17 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
         const port = portIdx !== -1 ? args[portIdx + 1] : '0'
         spawnedCalls.push({ cmd, args, cwd: opts.cwd, port })
         const proc = new EventEmitter()
-        proc.unref = () => { }
-        proc.kill = () => { }
+        proc.unref = () => {}
+        proc.kill = () => {
+          proc.killed = true
+        }
         return proc
       },
       fetchImpl: async (url, init = {}) => {
         const u = new URL(String(url))
+        if (deadPorts.has(u.port)) {
+          throw new Error(`fetch failed: connect ECONNREFUSED 127.0.0.1:${u.port}`)
+        }
         if (u.pathname.endsWith('/connect')) {
           return {
             ok: true,
@@ -4647,11 +4653,12 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
       openSseImpl: () => ({ destroy() { } }),
     })
 
-    // Dot-preserving slug resolution check
+    // Dot-preserving slug & explicit project cwd resolution checks
     assert.equal(
       wb._findProjectJsonlPath('dot-sess-01', '/Users/digtalhealthlink/.dsh/remotecontrol'),
       join(dotProjDir, 'dot-sess-01.jsonl'),
     )
+    assert.equal(wb._resolveDefaultNewSessionCwd('/Users/digtalhealthlink/MyRepo'), '/Users/digtalhealthlink/MyRepo')
 
     // 2. First run CLI authenticate() -> spawns server #1 in process.cwd()
     const authOut = await wb.authenticate()
@@ -4729,7 +4736,54 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
     )
     assert.equal(dbWorkspaces.length, 1)
 
-    // 5. Verify renameSession & deleteSession also sync to workbuddy.db
+    // 5. Simulate spawned server #2 dying -> next sendPrompt transparently evicts dead endpoint & respawns server #4 in existingCwd
+    deadPorts.add(spawnedCalls[1].port)
+    const retryPromptOut = await wb.sendPrompt({
+      sessionId: `workbuddy:${existingId}`,
+      text: '服务重启后追问：近7天趋势如何？',
+    })
+    assert.equal(retryPromptOut.ok, true)
+    assert.equal(spawnedCalls.length, 4, 'Should auto-respawn a fresh ACP server when cached server died')
+    assert.equal(spawnedCalls[3].cwd, existingCwd)
+
+    for (let i = 0; i < 40; i++) {
+      const s = await wb.getSession(`workbuddy:${existingId}`)
+      const rows = JSON.parse(
+        execFileSync('sqlite3', ['-json', dbPath, `SELECT status FROM sessions WHERE id = '${existingId}';`], { encoding: 'utf8' }) || '[]',
+      )
+      if (s?.status === 'idle' && s.transcript.length === 6 && rows[0]?.status === 'completed') break
+      await new Promise(r => setTimeout(r, 20))
+    }
+    const recoveredSess = await wb.getSession(`workbuddy:${existingId}`)
+    assert.equal(recoveredSess.transcript.length, 6)
+    assert.match(recoveredSess.transcript[5].text, new RegExp(`来自端口 ${spawnedCalls[3].port} 的 AI 回复`))
+
+    // 5b. Simulate active session running while server #4 dies -> steer() evicts dead endpoint, respawns server #5 without duplicating user bubble!
+    const runtimeEntry = wb.runtimeSessions.get(existingId)
+    runtimeEntry.status = 'running'
+    deadPorts.add(spawnedCalls[3].port)
+    const steerRecoveredOut = await wb.steer({
+      sessionId: `workbuddy:${existingId}`,
+      text: '运行中服务器重拉插话：补一条风险提示',
+    })
+    assert.equal(steerRecoveredOut.ok, true)
+    assert.equal(spawnedCalls.length, 5, 'steer() should evict dead ACP server and respawn cleanly')
+    assert.equal(spawnedCalls[4].cwd, existingCwd)
+
+    for (let i = 0; i < 40; i++) {
+      const s = await wb.getSession(`workbuddy:${existingId}`)
+      const rows = JSON.parse(
+        execFileSync('sqlite3', ['-json', dbPath, `SELECT status FROM sessions WHERE id = '${existingId}';`], { encoding: 'utf8' }) || '[]',
+      )
+      if (s?.status === 'idle' && s.transcript.length === 8 && rows[0]?.status === 'completed') break
+      await new Promise(r => setTimeout(r, 20))
+    }
+    const afterSteerRecover = await wb.getSession(`workbuddy:${existingId}`)
+    assert.equal(afterSteerRecover.transcript.length, 8, 'User prompt must NOT be duplicated when steer falls back to sendPrompt')
+    assert.equal(afterSteerRecover.transcript[6].text, '运行中服务器重拉插话：补一条风险提示')
+    assert.match(afterSteerRecover.transcript[7].text, new RegExp(`来自端口 ${spawnedCalls[4].port} 的 AI 回复`))
+
+    // 6. Verify renameSession & deleteSession also sync to workbuddy.db
     await wb.renameSession({ sessionId: 'workbuddy:wb-phone-new-99', title: 'A股收盘总结' })
     const renamedRows = JSON.parse(
       execFileSync('sqlite3', ['-json', dbPath, "SELECT title, custom_title FROM sessions WHERE id = 'wb-phone-new-99';"], { encoding: 'utf8' }),
@@ -4744,6 +4798,88 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
 
     wb.shutdown()
   } finally {
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
+test('daemon.mjs --workbuddy-login runs as a standalone one-shot CLI command without FEISHU_HUB_URL or --once and exits cleanly', async () => {
+  const { createServer } = await import('node:http')
+  const { execFile: cpExecFile } = await import('node:child_process')
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-wb-login-cli-'))
+  const fakeBin = join(tmpDir, 'fake-codebuddy')
+  await writeFile(fakeBin, '#!/usr/bin/env node\nprocess.exit(0)\n', { mode: 0o755 })
+
+  let authCalled = 0
+  const mockAcpServer = createServer(async (req, res) => {
+    const u = new URL(req.url, 'http://127.0.0.1')
+    if (req.method === 'POST' && u.pathname.endsWith('/connect')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ connectionId: 'conn-login-1', sessionToken: 'tok-login-1' }))
+      return
+    }
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' })
+      return
+    }
+    const chunks = []
+    for await (const ch of req) chunks.push(ch)
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')
+    if (body.method === 'initialize') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { authMethods: [{ id: 'oauth-browser' }] } }))
+      return
+    }
+    if (body.method === 'authenticate') {
+      authCalled += 1
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: body.id,
+          result: { _meta: { 'codebuddy.ai/userinfo': { userName: 'TestWBUser', userId: 'u-wb-88' } } },
+        }),
+      )
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: {} }))
+  })
+
+  try {
+    const port = await new Promise((resolve, reject) => {
+      mockAcpServer.listen(0, '127.0.0.1', () => resolve(mockAcpServer.address().port))
+      mockAcpServer.on('error', reject)
+    })
+
+    const daemonScript = new URL('../daemon.mjs', import.meta.url).pathname
+    const out = await new Promise((resolve, reject) => {
+      cpExecFile(
+        process.execPath,
+        [daemonScript, '--workbuddy-login'],
+        {
+          timeout: 5000,
+          env: {
+            ...process.env,
+            FEISHU_DSH_HOME: tmpDir,
+            DSH_HOME: tmpDir,
+            FEISHU_HUB_URL: '',
+            FEISHU_HUB_TOKEN: '',
+            WORKBUDDY_CONFIG_DIR: tmpDir,
+            WORKBUDDY_BIN: fakeBin,
+            WORKBUDDY_ACP_ENDPOINT: `http://127.0.0.1:${port}/acp`,
+          },
+        },
+        (err, stdout, stderr) => {
+          if (err) return reject(new Error(`exit=${err.code} stdout=${stdout} stderr=${stderr} msg=${err.message}`))
+          resolve({ stdout, stderr })
+        },
+      )
+    })
+
+    assert.equal(authCalled, 1)
+    assert.match(out.stdout, /WorkBuddy CLI 浏览器授权成功 \(TestWBUser\)/)
+  } finally {
+    await new Promise(r => mockAcpServer.close(r)).catch(() => {})
     await rm(tmpDir, { recursive: true, force: true })
   }
 })

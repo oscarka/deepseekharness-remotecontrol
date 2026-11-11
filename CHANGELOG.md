@@ -2,6 +2,20 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.5.8] - 2026-11-11
+
+### Added
+
+- 完善腾讯 WorkBuddy（v5.9.3）真机生产闭环：通过 `ACC_PRODUCT_CONFIG_PATH` 隔离独立 `workbuddy-cli` OAuth 凭证（与桌面端钥匙串凭证互不覆盖，支持自动弹浏览器授权与 `node dsh-feishu/daemon.mjs --workbuddy-login` 一键独立预授权）、按会话 `cwd` 隔离 `codebuddy --serve` 进程池（含进程退出与断连自动驱逐重拉，覆盖新建、追问与实时插话）、手机新建会话自动创建 `~/WorkBuddy/<时间戳>` Playground 目录，以及 `workbuddy.db` 与 `.jsonl` 双向落盘同步
+
+## [0.5.7] - 2026-11-11
+
+### Fixed
+
+- 修复 iOS 主屏幕模式（Standalone PWA）点击语音按钮无法唤起系统键盘的问题：移动端统一采用手机自带键盘 / 豆包语音输入，升级为原生 `<label for>` 无拦截焦点关联并适配灵动岛安全区引导提示
+- 修复电脑端先点审批、手机端再点残留按钮导致回退敲入数字 `"1"` 的竞态问题（待审批轨迹缓存缩短至 `350ms`，已处理审批幂等返回 `alreadySettled: true` 绝不触发模拟按键）
+- 修复单元测试在宿主环境变量继承及空 `dshHome` 配置下的测试隔离问题
+
 ## [0.5.6] - 2026-11-11
 
 ### Fixed

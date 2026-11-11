@@ -187,9 +187,10 @@ docker run -d --name dsh-hub \
 
 ## 📅 最近版本更新记录
 
-- **`2026-11-11 · v0.5.7` — iOS 主屏幕模式原生键盘/豆包语音唤醒、跨端审批亚秒级消失与防误敲幂等保护**
-  - **iOS 主屏幕模式（Standalone PWA）原生键盘语音直唤**：移动端统一坚持使用手机自带键盘 / 豆包语音输入（不调用识别不准的浏览器自带语音），将 `🎤` 按钮升级为原生 `<label for="...">` 无拦截焦点关联，突破 iOS 主屏幕模式 WebKit 软键盘唤起限制，配合灵动岛安全区适配提示与输入框上方即时引导条（打字后自动收起）。
-  - **电脑点完手机亚秒级消失 & 迟到点击防误敲 `"1"`**：待审批期间将实时轨迹缓存缩短至 `350ms`；当电脑端已先点击通过、手机端再点残留按钮时，严格校验 `CORTEX_STEP_STATUS_WAITING` 并直接幂等返回 `alreadySettled: true`，彻底杜绝回退模拟按键向电脑聊天框误敲数字 `"1"`。
+- **`2026-11-11 · v0.5.8` — 腾讯 WorkBuddy 真机生产闭环自愈、iOS 主屏幕原生键盘语音唤醒与审批防误敲幂等保护**
+  - **腾讯 WorkBuddy（v5.9.3）生产闭环与进程自愈**：通过 `ACC_PRODUCT_CONFIG_PATH` 隔离独立 `workbuddy-cli` OAuth 凭证（与桌面端钥匙串登录态互不顶号，支持 `node dsh-feishu/daemon.mjs --workbuddy-login` 独立一键预授权）；按项目 `cwd` 隔离 `codebuddy --serve` 进程池并在进程退出/断连时自动重拉恢复（覆盖新建、追问与实时插话）；手机新建会话自动创建 `~/WorkBuddy/<时间戳>` Playground 目录，并与 `workbuddy.db` 及 `.jsonl` 双向落盘同步。
+  - **iOS 主屏幕模式（Standalone PWA）原生键盘语音直唤（`v0.5.7`）**：移动端统一坚持使用手机自带键盘 / 豆包语音输入（不调用识别不准的浏览器自带语音），将 `🎤` 按钮升级为原生 `<label for="...">` 无拦截焦点关联，突破 iOS 主屏幕模式 WebKit 软键盘唤起限制，配合灵动岛安全区适配提示与输入框上方即时引导条（打字后自动收起）。
+  - **电脑点完手机亚秒级消失 & 迟到点击防误敲 `"1"`（`v0.5.7`）**：待审批期间将实时轨迹缓存缩短至 `350ms`；当电脑端已先点击通过、手机端再点残留按钮时，严格校验 `CORTEX_STEP_STATUS_WAITING` 并直接幂等返回 `alreadySettled: true`，彻底杜绝回退模拟按键向电脑聊天框误敲数字 `"1"`。
 
 - **`2026-11-11 · v0.5.6` — 独立反向流式文件隧道、手机 `206 Range` 视频秒播、气泡零闪烁与 Cloud Run 连接防断加固**
   - **反向 HTTP 流式文件直连隧道 & 手机原生视频播放**：新增 `/fs/list|read|stream` 与 `/api/fs-tunnel` 二进制直连通道，配合 Host SSE `event: fs_req` `0ms` 唤醒本地读取，彻底消除 `/api/state` 轮询风暴；全面支持手机 `<video playsinline>` 拖动进度条分片秒播（`206 Partial Content`）、一键 H.264 转码兼容播放（`ffmpeg` / macOS `avconvert`）、保长截图清晰度的 `sips` 智能省流缩略图（可一键切换无损原图）、`walkthrough.md` 热缓存预热，以及不暴露 `HUB_TOKEN` 的短效只读 `mediaTicket` 票据。
@@ -237,7 +238,14 @@ docker run -d --name dsh-hub \
 <summary><strong>3. 怎么在电脑上停止或卸载后台服务？</strong></summary>
 <br/>
 在项目目录执行 <code>./connect-host.sh --uninstall</code>，或者在终端运行：<br/>
-<code>launchctl unload ~/Library/LaunchAgents/com.dsh.remotecontrol.agent.plist</code>
+<code>launchctl unload ~/Library/LaunchAgents/com.dsh.remotecontrol.plist</code>
+</details>
+
+<details>
+<summary><strong>4. 手机给腾讯 WorkBuddy 发消息提示登录授权，或电脑上已打开的会话没实时刷出新消息？</strong></summary>
+<br/>
+• <strong>首次一次浏览器授权</strong>：WorkBuddy 桌面端通过系统钥匙串加密保存 GUI 登录态，因此守护进程为独立 CLI 隔离了专用 OAuth 凭证（<code>workbuddy-cli.info</code>），与桌面端互不顶号。首次从手机发消息时电脑会自动弹出浏览器授权页（也可在电脑运行 <code>node dsh-feishu/daemon.mjs --workbuddy-login</code> 提前完成），点一次「确认授权」即永久生效。<br/>
+• <strong>桌面端缓存刷新</strong>：手机收发的消息均实时写入 <code>~/.workbuddy/projects/</code> 与 <code>workbuddy.db</code>；若某个会话此前已在电脑 WorkBuddy 窗口点开过（受桌面端内存缓存机制影响），回到电脑前按 <code>Cmd + Q</code> 重开一次 WorkBuddy 桌面端即可完整加载手机期间的全部记录。
 </details>
 
 ---

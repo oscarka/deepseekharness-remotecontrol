@@ -187,9 +187,10 @@ The background daemon automatically discovers local sessions across all 5 suppor
 
 ## 📅 What's New (Recent Releases)
 
-- **`2026-11-11 · v0.5.7` — iOS Home Screen PWA Native Keyboard Voice Wakeup, Sub-Second Approval Sync & Race-Free Approval Idempotency**
-  - **iOS Standalone PWA Native Keyboard / Input-Method Voice Wakeup**: Upgraded mobile `🎤` triggers (`#chatVoiceBtn`, `#newTaskVoiceBtn`) to native `<label for="...">` focus transfer without JS `preventDefault` blocking on touch devices, reliably popping up the phone's native system keyboard / Doubao voice dictation in iOS Home Screen Standalone PWA mode while never invoking low-accuracy browser `webkitSpeechRecognition`, paired with safe-area/visualViewport-aware toasts and inline guide bars.
-  - **Sub-Second Desktop-to-Mobile Approval Dismissal & Zero-Keystroke Idempotency**: Shortened live trajectory summary cache TTL to `350ms` while approvals are pending and hardened `executeAntigravityIdeAction` so late mobile taps on desktop-settled approvals immediately return `connect-rpc-noop` (`alreadySettled: true`) instead of matching historical `requestedInteraction` fields or injecting fallback keystrokes.
+- **`2026-11-11 · v0.5.8` — Tencent WorkBuddy Production Hardening, Dead-ACP Auto-Recovery & iOS PWA Native Keyboard Voice Wakeup**
+  - **WorkBuddy v5.9.3 Production Loop & Auto-Recovery**: Isolated `workbuddy-cli` OAuth credentials via `ACC_PRODUCT_CONFIG_PATH` (never logging out WorkBuddy Desktop, with standalone `node dsh-feishu/daemon.mjs --workbuddy-login` pre-auth), per-`cwd` `codebuddy --serve` ACP process pool with automatic dead-server eviction/respawn across new sessions, follow-up prompts, and live `steer()`, automatic `~/WorkBuddy/<timestamp>` Playground folder routing for mobile new tasks, and bidirectional `workbuddy.db` + `.jsonl` sync.
+  - **iOS Standalone PWA Native Keyboard / Input-Method Voice Wakeup (`v0.5.7`)**: Upgraded mobile `🎤` triggers (`#chatVoiceBtn`, `#newTaskVoiceBtn`) to native `<label for="...">` focus transfer without JS `preventDefault` blocking on touch devices, reliably popping up the phone's native system keyboard / Doubao voice dictation in iOS Home Screen Standalone PWA mode while never invoking low-accuracy browser `webkitSpeechRecognition`, paired with safe-area/visualViewport-aware toasts and inline guide bars.
+  - **Sub-Second Desktop-to-Mobile Approval Dismissal & Zero-Keystroke Idempotency (`v0.5.7`)**: Shortened live trajectory summary cache TTL to `350ms` while approvals are pending and hardened `executeAntigravityIdeAction` so late mobile taps on desktop-settled approvals immediately return `connect-rpc-noop` (`alreadySettled: true`) instead of matching historical `requestedInteraction` fields or injecting fallback keystrokes.
 
 - **`2026-11-11 · v0.5.6` — Streaming Reverse File Tunnel, Mobile `206 Range` Video Player, Zero-Flicker Chat & Cloud Run SSE Resilience**
   - **Reverse HTTP Streaming File Tunnel & Mobile Video Player**: Added a dedicated `/fs/list|read|stream` + `/api/fs-tunnel` binary channel with `0ms` Host SSE wakeup (`event: fs_req`), eliminating `/api/state` polling storms. Supports `HTTP 206 Partial Content` video scrubbing (`<video playsinline>`), 1-tap H.264 compatibility transcoding (`ffmpeg` / macOS `avconvert`), smart `sips` thumbnails that preserve tall-screenshot text sharpness with a 1-tap lossless toggle, `walkthrough.md` hot-cache pre-warming, and short-lived read-only HMAC `mediaTicket` URLs.
@@ -237,7 +238,14 @@ iOS only allows Web Push for web apps added to the Home Screen. Open your Contro
 <summary><strong>3. How do I uninstall or stop the background agent on my computer?</strong></summary>
 <br/>
 Run <code>./connect-host.sh --uninstall</code> in the repo directory, or unload the LaunchAgent with:<br/>
-<code>launchctl unload ~/Library/LaunchAgents/com.dsh.remotecontrol.agent.plist</code>
+<code>launchctl unload ~/Library/LaunchAgents/com.dsh.remotecontrol.plist</code>
+</details>
+
+<details>
+<summary><strong>4. Why did Tencent WorkBuddy ask for a one-time browser login, or why didn't an already-open Desktop tab refresh live?</strong></summary>
+<br/>
+• <strong>One-time CLI OAuth</strong>: WorkBuddy Desktop encrypts its GUI token via OS Keychain, so the daemon isolates a dedicated <code>workbuddy-cli</code> OAuth credential (<code>workbuddy-cli.info</code>) so neither side logs the other out. On your first mobile prompt (or via <code>node dsh-feishu/daemon.mjs --workbuddy-login</code>), click <strong>Authorize</strong> once in the browser window opened on your computer.<br/>
+• <strong>Desktop session cache</strong>: Mobile turns sync directly to <code>~/.workbuddy/projects/*.jsonl</code> and <code>workbuddy.db</code>. Because WorkBuddy Desktop caches already-opened conversations in memory without watching external file appends, quit and reopen WorkBuddy Desktop (<code>Cmd + Q</code>) when back at your Mac to view mobile turns inside previously opened tabs.
 </details>
 
 ---

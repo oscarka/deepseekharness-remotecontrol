@@ -1,6 +1,6 @@
 {
   "name": "deepseekharness-remotecontrol",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "private": true,
   "type": "module",
   "description": "Feishu long-connection remote control & Google Cloud Run multi-host Web Control Hub for DeepSeek Harness (DSH).",

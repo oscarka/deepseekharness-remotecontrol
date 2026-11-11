@@ -1082,7 +1082,48 @@ export class WorkBuddyAdapter {
     entry.thoughtBuffer = ''
   }
 
-  async _getClientForEndpoint(acpEndpoint = '', targetCwd = '') {
+  _isTransientTransportError(err) {
+    const msg = String(err?.message || err || '')
+    return /(fetch failed|ECONNREFUSED|ECONNRESET|EPIPE|socket hang up|UND_ERR_)/i.test(msg)
+  }
+
+  _evictDeadEndpoint(endpoint) {
+    if (!endpoint) return
+    const client = this.clientsByEndpoint.get(endpoint)
+    if (client) {
+      client.close()
+      this.clientsByEndpoint.delete(endpoint)
+    }
+    for (const [cwdKey, srv] of this.spawnedServersByCwd.entries()) {
+      if (srv.endpoint === endpoint) {
+        this.spawnedServersByCwd.delete(cwdKey)
+        try {
+          srv.proc?.kill?.()
+        } catch {
+          // ignore
+        }
+      }
+    }
+    if (this.spawnedEndpoint === endpoint) {
+      this.spawnedEndpoint = ''
+      this.spawnedServeProc = null
+    }
+    if (!this.hasExplicitEndpoint && this.defaultEndpoint === endpoint) {
+      this.defaultEndpoint = ''
+    }
+    for (const entry of this.runtimeSessions.values()) {
+      if (entry.acpEndpoint === endpoint) {
+        entry.acpEndpoint = ''
+        if (entry.status === 'running' || entry.status === 'approval') {
+          entry.status = 'idle'
+          entry.turnState = 'idle'
+          entry.pendingApproval = null
+        }
+      }
+    }
+  }
+
+  async _getClientForEndpoint(acpEndpoint = '', targetCwd = '', _retried = false) {
     let candidateEndpoint = acpEndpoint
     if (candidateEndpoint && targetCwd && !this.hasExplicitEndpoint) {
       const resolvedTargetCwd = path.resolve(targetCwd)
@@ -1112,6 +1153,10 @@ export class WorkBuddyAdapter {
     } catch (err) {
       client.close()
       this.clientsByEndpoint.delete(targetEndpoint)
+      if (!_retried && !this.hasExplicitEndpoint) {
+        this._evictDeadEndpoint(targetEndpoint)
+        return this._getClientForEndpoint('', targetCwd, true)
+      }
       throw err
     }
   }
@@ -1222,8 +1267,16 @@ export class WorkBuddyAdapter {
       const effectiveCwd = targetCwd ? path.resolve(targetCwd) : process.cwd()
       const existingSrv = this.spawnedServersByCwd.get(effectiveCwd)
       if (existingSrv?.endpoint) {
-        existingSrv.lastUsedAt = Date.now()
-        return existingSrv.endpoint
+        const procDead =
+          existingSrv.proc &&
+          (existingSrv.proc.killed ||
+            (existingSrv.proc.exitCode !== null && existingSrv.proc.exitCode !== undefined))
+        if (procDead) {
+          this._evictDeadEndpoint(existingSrv.endpoint)
+        } else {
+          existingSrv.lastUsedAt = Date.now()
+          return existingSrv.endpoint
+        }
       }
 
       if (this.spawnedServersByCwd.size >= 4) {
@@ -1238,21 +1291,7 @@ export class WorkBuddyAdapter {
           .sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt)
         const victim = candidates[0]
         if (victim) {
-          const [victimCwd, victimInfo] = victim
-          this.spawnedServersByCwd.delete(victimCwd)
-          const oldClient = this.clientsByEndpoint.get(victimInfo.endpoint)
-          if (oldClient) {
-            oldClient.close()
-            this.clientsByEndpoint.delete(victimInfo.endpoint)
-          }
-          try {
-            victimInfo.proc?.kill?.()
-          } catch {
-            // ignore
-          }
-          for (const entry of this.runtimeSessions.values()) {
-            if (entry.acpEndpoint === victimInfo.endpoint) entry.acpEndpoint = ''
-          }
+          this._evictDeadEndpoint(victim[1].endpoint)
         }
       }
 
@@ -1292,6 +1331,9 @@ export class WorkBuddyAdapter {
           },
         )
         proc?.on?.('error', () => {})
+        proc?.once?.('exit', () => {
+          this._evictDeadEndpoint(endpoint)
+        })
         if (proc && typeof proc.unref === 'function') proc.unref()
         this.spawnedServeProc = proc
         this.spawnedEndpoint = endpoint
@@ -1566,23 +1608,51 @@ export class WorkBuddyAdapter {
 
   _resolveDefaultNewSessionCwd(explicitCwd = '') {
     const trimmed = String(explicitCwd || '').trim()
-    if (trimmed) return path.resolve(trimmed)
+    const isInternalOrOldPlayground =
+      !trimmed ||
+      trimmed.includes(`${path.sep}.dsh${path.sep}`) ||
+      /[\\/]WorkBuddy[\\/]\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}$/.test(trimmed)
+    if (!isInternalOrOldPlayground) {
+      return path.resolve(trimmed)
+    }
     if (this.spawnImpl === cpSpawn) {
       try {
         const wbPlaygroundRoot = path.join(os.homedir(), 'WorkBuddy')
         if (fs.existsSync(wbPlaygroundRoot)) {
-          const d = new Date()
           const pad = n => String(n).padStart(2, '0')
-          const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`
-          const pgDir = path.join(wbPlaygroundRoot, stamp)
-          fs.mkdirSync(pgDir, { recursive: true })
-          return pgDir
+          const baseMs = Date.now()
+          for (let offsetSec = 0; offsetSec < 10; offsetSec++) {
+            const d = new Date(baseMs + offsetSec * 1000)
+            const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`
+            const pgDir = path.join(wbPlaygroundRoot, stamp)
+            if (!fs.existsSync(pgDir)) {
+              fs.mkdirSync(pgDir, { recursive: true })
+              return pgDir
+            }
+          }
         }
       } catch {
         // ignore playground mkdir errors
       }
     }
-    return process.cwd()
+    return trimmed ? path.resolve(trimmed) : process.cwd()
+  }
+
+  _findWorkBuddyDbPath() {
+    const dbCandidates = [
+      path.join(this.workbuddyHome, 'workbuddy.db'),
+      path.join(this.workbuddyHome, 'data', 'workbuddy.db'),
+      path.join(this.workbuddyHome, 'storage', 'workbuddy.db'),
+    ]
+    return (
+      dbCandidates.find(p => {
+        try {
+          return fs.existsSync(p)
+        } catch {
+          return false
+        }
+      }) || ''
+    )
   }
 
   async _syncSessionToWorkBuddyDb({
@@ -1597,18 +1667,7 @@ export class WorkBuddyAdapter {
     if (typeof this.queryDbImpl === 'function') return
     if (!rawId || !cwd) return
 
-    const dbCandidates = [
-      path.join(this.workbuddyHome, 'workbuddy.db'),
-      path.join(this.workbuddyHome, 'data', 'workbuddy.db'),
-      path.join(this.workbuddyHome, 'storage', 'workbuddy.db'),
-    ]
-    const dbPath = dbCandidates.find(p => {
-      try {
-        return fs.existsSync(p)
-      } catch {
-        return false
-      }
-    })
+    const dbPath = this._findWorkBuddyDbPath()
     if (!dbPath) return
 
     const runSql = (sql, json = false) =>
@@ -2107,12 +2166,27 @@ export class WorkBuddyAdapter {
     const explicitModel = model && model !== 'auto' && model !== 'fast-model' ? model : ''
 
     try {
-      const client = await this._getClientForEndpoint(this.defaultEndpoint, resolvedCwd)
-      const newRes = await client.request('session/new', {
-        cwd: resolvedCwd,
-        mcpServers: [],
-        ...(explicitModel ? { model: explicitModel } : {}),
-      })
+      let client = await this._getClientForEndpoint(this.defaultEndpoint, resolvedCwd)
+      let newRes
+      try {
+        newRes = await client.request('session/new', {
+          cwd: resolvedCwd,
+          mcpServers: [],
+          ...(explicitModel ? { model: explicitModel } : {}),
+        })
+      } catch (reqErr) {
+        if (!this.hasExplicitEndpoint && this._isTransientTransportError(reqErr)) {
+          this._evictDeadEndpoint(client.acpEndpoint)
+          client = await this._getClientForEndpoint('', resolvedCwd)
+          newRes = await client.request('session/new', {
+            cwd: resolvedCwd,
+            mcpServers: [],
+            ...(explicitModel ? { model: explicitModel } : {}),
+          })
+        } else {
+          throw reqErr
+        }
+      }
       const rawId = toRawWorkBuddyId(newRes?.sessionId || newRes?.id || `wb-${Date.now()}`)
       const resolvedTitle = truncateText(title || cleanPrompt, 90)
       const entry = this._ensureRuntimeEntry(rawId, {
@@ -2283,7 +2357,7 @@ export class WorkBuddyAdapter {
       })
   }
 
-  async sendPrompt({ sessionId = '', prompt = '', text = '', cwd = '', model = '', mode = 'prompt' } = {}) {
+  async sendPrompt({ sessionId = '', prompt = '', text = '', cwd = '', model = '', mode = 'prompt', _fromSteerFallback = false } = {}) {
     const rawId = toRawWorkBuddyId(sessionId)
     const cleanPrompt = String(prompt || text || '').trim()
     if (!rawId || !cleanPrompt) {
@@ -2295,7 +2369,7 @@ export class WorkBuddyAdapter {
     }
 
     const existing = this.runtimeSessions.get(rawId)
-    if (existing && (existing.status === 'running' || mode === 'steer')) {
+    if (!_fromSteerFallback && existing && (existing.status === 'running' || mode === 'steer')) {
       return this.steer({ sessionId, prompt: cleanPrompt, cwd, model })
     }
 
@@ -2313,21 +2387,34 @@ export class WorkBuddyAdapter {
         model: model || '',
       })
       if (model) entry.model = model
-      const client = await this._getClientForEndpoint(entry.acpEndpoint, entry.cwd)
+      let client = await this._getClientForEndpoint(entry.acpEndpoint, entry.cwd)
       entry.acpEndpoint = client.acpEndpoint
 
       entry.isLoadingSession = true
       try {
-        await client.request('session/load', {
-          sessionId: rawId,
-          cwd: entry.cwd || process.cwd(),
-          mcpServers: [],
-          takeWriter: true,
-          _meta: { 'codebuddy.ai/takeWriter': true },
-        })
-      } catch (loadErr) {
-        if (!/already loaded/i.test(String(loadErr?.message || ''))) {
-          throw loadErr
+        try {
+          await client.request('session/load', {
+            sessionId: rawId,
+            cwd: entry.cwd || process.cwd(),
+            mcpServers: [],
+            takeWriter: true,
+            _meta: { 'codebuddy.ai/takeWriter': true },
+          })
+        } catch (loadErr) {
+          if (!this.hasExplicitEndpoint && this._isTransientTransportError(loadErr)) {
+            this._evictDeadEndpoint(client.acpEndpoint)
+            client = await this._getClientForEndpoint('', entry.cwd)
+            entry.acpEndpoint = client.acpEndpoint
+            await client.request('session/load', {
+              sessionId: rawId,
+              cwd: entry.cwd || process.cwd(),
+              mcpServers: [],
+              takeWriter: true,
+              _meta: { 'codebuddy.ai/takeWriter': true },
+            })
+          } else if (!/already loaded/i.test(String(loadErr?.message || ''))) {
+            throw loadErr
+          }
         }
       } finally {
         entry.isLoadingSession = false
@@ -2418,10 +2505,6 @@ export class WorkBuddyAdapter {
 
     try {
       const client = await this._getClientForEndpoint(entry.acpEndpoint, entry.cwd)
-      this._appendUserMessage(entry, cleanPrompt)
-      entry.runningSummary = '⚡ 已实时注入补充指令 (Steer)，WorkBuddy 正在调整执行...'
-      entry.lastProgress = `Steered: ${truncateText(cleanPrompt, 160)}`
-
       try {
         await client.request('session/request_yield', { sessionId: rawId })
       } catch {
@@ -2432,6 +2515,10 @@ export class WorkBuddyAdapter {
         prompt: [{ type: 'text', text: cleanPrompt }],
       })
 
+      this._appendUserMessage(entry, cleanPrompt)
+      entry.runningSummary = '⚡ 已实时注入补充指令 (Steer)，WorkBuddy 正在调整执行...'
+      entry.lastProgress = `Steered: ${truncateText(cleanPrompt, 160)}`
+
       return {
         ok: true,
         steered: true,
@@ -2440,8 +2527,12 @@ export class WorkBuddyAdapter {
         session: this._formatSessionRecord(entry),
         message: `⚡ 已向正在运行的 WorkBuddy 会话 (${rawId.slice(0, 8)}) 实时注入指令`,
       }
-    } catch {
-      return this.sendPrompt({ sessionId, prompt: cleanPrompt, cwd, model, mode: 'prompt' })
+    } catch (steerErr) {
+      if (!this.hasExplicitEndpoint && this._isTransientTransportError(steerErr)) {
+        this._evictDeadEndpoint(entry.acpEndpoint)
+      }
+      entry.status = 'idle'
+      return this.sendPrompt({ sessionId, prompt: cleanPrompt, cwd, model, mode: 'prompt', _fromSteerFallback: true })
     }
   }
 
@@ -2606,17 +2697,19 @@ export class WorkBuddyAdapter {
     entry.title = cleanTitle
     entry.updatedAt = Date.now()
     if (typeof this.queryDbImpl !== 'function') {
-      const dbPath = path.join(this.workbuddyHome, 'workbuddy.db')
-      if (fs.existsSync(dbPath)) {
+      const dbPath = this._findWorkBuddyDbPath()
+      if (dbPath) {
         const sqlStr = val => `'${String(val ?? '').replace(/'/g, "''")}'`
         await new Promise(resolve => {
           execFile(
             'sqlite3',
             [
+              '-cmd',
+              '.timeout 2000',
               dbPath,
-              `PRAGMA busy_timeout = 2000; UPDATE sessions SET custom_title = ${sqlStr(cleanTitle)}, title = ${sqlStr(cleanTitle)}, updated_at = ${entry.updatedAt} WHERE id = ${sqlStr(rawId)};`,
+              `UPDATE sessions SET custom_title = ${sqlStr(cleanTitle)}, title = ${sqlStr(cleanTitle)}, updated_at = ${entry.updatedAt} WHERE id = ${sqlStr(rawId)};`,
             ],
-            { timeout: 1500 },
+            { timeout: 2000 },
             () => resolve(),
           )
         })
@@ -2636,18 +2729,20 @@ export class WorkBuddyAdapter {
     this.deletedIds.add(rawId)
     this.runtimeSessions.delete(rawId)
     if (typeof this.queryDbImpl !== 'function') {
-      const dbPath = path.join(this.workbuddyHome, 'workbuddy.db')
-      if (fs.existsSync(dbPath)) {
+      const dbPath = this._findWorkBuddyDbPath()
+      if (dbPath) {
         const sqlStr = val => `'${String(val ?? '').replace(/'/g, "''")}'`
         const nowMs = Date.now()
         await new Promise(resolve => {
           execFile(
             'sqlite3',
             [
+              '-cmd',
+              '.timeout 2000',
               dbPath,
-              `PRAGMA busy_timeout = 2000; UPDATE sessions SET deleted_at = ${nowMs}, updated_at = ${nowMs} WHERE id = ${sqlStr(rawId)};`,
+              `UPDATE sessions SET deleted_at = ${nowMs}, updated_at = ${nowMs} WHERE id = ${sqlStr(rawId)};`,
             ],
-            { timeout: 1500 },
+            { timeout: 2000 },
             () => resolve(),
           )
         })
