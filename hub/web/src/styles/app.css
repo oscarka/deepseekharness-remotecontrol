@@ -814,7 +814,7 @@
       padding: 1px 6px;
       border-radius: 5px;
       flex-shrink: 0;
-      max-width: 88px;
+      max-width: 96px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -829,7 +829,7 @@
       padding: 1.5px 6px;
       border-radius: 5px;
       flex-shrink: 0;
-      max-width: 108px;
+      max-width: 112px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;

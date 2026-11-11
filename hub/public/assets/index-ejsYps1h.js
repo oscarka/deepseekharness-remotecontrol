@@ -711,7 +711,7 @@ function Sheets() {
 	}, "✕")), /* @__PURE__ */ k("div", { id: "modelPickerBody" }))));
 }
 // hub/web/src/App.tsx
-var HARNESS_SVG_SPRITE = `<svg id="dshHarnessSvgDefs" width="0" height="0" xmlns="http://www.w3.org/2000/svg">
+var HARNESS_SVG_SPRITE = `<svg id="dshHarnessSvgDefs" width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="dsh-grad-ocean" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#3B82F6"/>
@@ -815,7 +815,7 @@ var HARNESS_SVG_SPRITE = `<svg id="dshHarnessSvgDefs" width="0" height="0" xmlns
 </svg>`;
 function App() {
 	return /* @__PURE__ */ k(M, null, /* @__PURE__ */ k("div", {
-		style: "position:absolute;width:0;height:0;overflow:hidden;pointer-events:none;",
+		style: "position:fixed;left:-9999px;top:-9999px;width:24px;height:24px;overflow:hidden;opacity:0;pointer-events:none;",
 		"aria-hidden": "true",
 		dangerouslySetInnerHTML: { __html: HARNESS_SVG_SPRITE }
 	}), /* @__PURE__ */ k("div", {
@@ -2362,6 +2362,116 @@ function compareSemver(a, b) {
 	for (let i = 0; i < 3; i += 1) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) < (pb[i] || 0) ? -1 : 1;
 	return 0;
 }
+// hub/web/src/utils/session-labels.js
+function escapeAttr(str) {
+	return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function renderHarnessBadgeHtml(harness = "dsh", variant = "row", titleText = "") {
+	const symId = harness === "antigravity-ide" ? "dsh-icon-ide" : harness === "workbuddy" ? "dsh-icon-workbuddy" : harness === "codex" ? "dsh-icon-codex" : harness === "claude" ? "dsh-icon-claude" : "dsh-icon-dsh";
+	const titleAttr = titleText ? ` title="${escapeAttr(titleText)}"` : "";
+	return `<span class="harness-icon-badge ${escapeAttr(variant)}"${titleAttr}><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="#${symId}"/></svg></span>`;
+}
+function stripRedundantProjectPrefix(rawTitle, rawProject) {
+	const title = String(rawTitle || "").trim();
+	const project = String(rawProject || "").trim();
+	if (!title || !project) return title;
+	const prefix = `${project} / `;
+	if (title.startsWith(prefix)) return title.slice(prefix.length).trim() || title;
+	return title;
+}
+function formatCompactProjectLabel(rawProject, nowDate = /* @__PURE__ */ new Date()) {
+	const raw = String(rawProject || "").trim();
+	if (!raw) return "默认工作区";
+	const m = /^(\d{4})[-_](\d{1,2})[-_](\d{1,2})(?:[-_T](\d{1,2})[-_:](\d{2})(?:[-_:](\d{2}))?)?$/.exec(raw);
+	if (m) {
+		const y = Number(m[1]);
+		const mo = Number(m[2]);
+		const d = Number(m[3]);
+		if (y >= 2020 && y <= 2100 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+			const isSameYear = nowDate.getFullYear() === y;
+			const isSameDay = isSameYear && nowDate.getMonth() + 1 === mo && nowDate.getDate() === d;
+			const hasTime = m[4] != null && m[5] != null;
+			const mmdd = `${String(mo).padStart(2, "0")}/${String(d).padStart(2, "0")}`;
+			if (isSameDay && hasTime) return `${Number(m[4])}:${String(m[5]).padStart(2, "0")}`;
+			const hhmmPadded = hasTime ? `${String(Number(m[4])).padStart(2, "0")}:${String(m[5]).padStart(2, "0")}` : "";
+			if (isSameYear) return hasTime ? `${mmdd} ${hhmmPadded}` : mmdd;
+			return hasTime ? `${y}/${mmdd} ${hhmmPadded}` : `${y}/${mmdd}`;
+		}
+	}
+	return raw;
+}
+function normalizeDeviceModelShort(rawModel, { compact = false } = {}) {
+	const clean = String(rawModel || "").trim();
+	if (!clean) return "";
+	if (/^macbook[\s-]*air\b/i.test(clean)) return "Air";
+	if (/^macbook[\s-]*pro\b/i.test(clean)) return "MBP";
+	if (/^mac[\s-]*mini\b/i.test(clean)) return compact ? "Mini" : "Mac mini";
+	if (/^mac[\s-]*studio\b/i.test(clean)) return "Studio";
+	if (/^mac[\s-]*pro\b/i.test(clean)) return compact ? "Pro" : "Mac Pro";
+	if (/^imac\b/i.test(clean)) return "iMac";
+	return clean;
+}
+function buildShortHostNameMap(hosts = []) {
+	const parsed = (hosts || []).map((h) => {
+		const raw = String(h?.hostName || h?.hostId || "").trim().replace(/\.(local|lan)$/i, "");
+		let owner = "";
+		let device = raw;
+		const zhSplit = /^(.+?)的\s*(.+)$/.exec(raw);
+		const enSplit = !zhSplit ? /^(.+?)(?:'s|’s)\s+(.+)$/i.exec(raw) : null;
+		if (zhSplit) {
+			owner = zhSplit[1].trim();
+			device = zhSplit[2].trim();
+		} else if (enSplit) {
+			owner = enSplit[1].trim();
+			device = enSplit[2].trim();
+		} else {
+			const slugMac = /^([a-z0-9_-]+?)(?:-|de)(MacBook[- ]?Air|MacBook[- ]?Pro|Mac[- ]?mini|Mac[- ]?Studio|iMac|Mac[- ]?Pro)$/i.exec(raw);
+			if (slugMac) {
+				owner = slugMac[1].trim();
+				device = slugMac[2].replace(/-/g, " ").trim();
+			}
+		}
+		let shortBase = "";
+		let compactBase = "";
+		if (/^(电脑|pc|computer|laptop|host)$/i.test(device) && owner) {
+			shortBase = owner;
+			compactBase = owner;
+		} else {
+			shortBase = normalizeDeviceModelShort(device, { compact: false }) || raw;
+			compactBase = normalizeDeviceModelShort(device, { compact: true }) || shortBase;
+		}
+		return {
+			hostId: h?.hostId || raw,
+			raw,
+			owner,
+			shortBase,
+			compactBase
+		};
+	});
+	const baseCounts = {};
+	for (const item of parsed) baseCounts[item.compactBase] = (baseCounts[item.compactBase] || 0) + 1;
+	const provisional = parsed.map((item) => {
+		if (baseCounts[item.compactBase] > 1 && item.owner) {
+			const cleanOwner = item.owner.length > 6 ? item.owner.slice(0, 6) : item.owner;
+			return {
+				...item,
+				label: `${cleanOwner}·${item.compactBase}`
+			};
+		}
+		return {
+			...item,
+			label: item.shortBase
+		};
+	});
+	const labelCounts = {};
+	for (const item of provisional) labelCounts[item.label] = (labelCounts[item.label] || 0) + 1;
+	const map = {};
+	for (const item of provisional) if (labelCounts[item.label] > 1 && item.owner.length > 6) {
+		const tailOwner = `${item.owner.slice(0, 4)}…${item.owner.slice(-1)}`;
+		map[item.hostId] = `${tailOwner}·${item.compactBase}`;
+	} else map[item.hostId] = item.label;
+	return map;
+}
 // hub/web/src/controller.js
 function initHubController() {
 	const urlParams = new URLSearchParams(location.search);
@@ -2924,76 +3034,6 @@ function initHubController() {
 		if (serverTotalCount > baseTotal && lastMatchIdx >= Math.max(0, wireTranscript.length - 3)) return true;
 		return false;
 	}
-	function renderHarnessBadgeHtml(harness = "dsh", variant = "row", titleText = "") {
-		const symId = harness === "antigravity-ide" ? "dsh-icon-ide" : harness === "workbuddy" ? "dsh-icon-workbuddy" : harness === "codex" ? "dsh-icon-codex" : harness === "claude" ? "dsh-icon-claude" : "dsh-icon-dsh";
-		const titleAttr = titleText ? ` title="${esc(titleText)}"` : "";
-		return `<span class="harness-icon-badge ${esc(variant)}"${titleAttr}><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${symId}"/></svg></span>`;
-	}
-	function formatCompactProjectLabel(rawProject, nowDate = /* @__PURE__ */ new Date()) {
-		const raw = String(rawProject || "").trim();
-		if (!raw) return "默认工作区";
-		const m = /^(\d{4})[-_](\d{1,2})[-_](\d{1,2})(?:[-_T](\d{1,2})[-_:](\d{2})(?:[-_:](\d{2}))?)?$/.exec(raw);
-		if (m) {
-			const y = Number(m[1]);
-			const mo = Number(m[2]);
-			const d = Number(m[3]);
-			if (y >= 2020 && y <= 2100 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
-				if (nowDate.getFullYear() === y && nowDate.getMonth() + 1 === mo && nowDate.getDate() === d && m[4] != null && m[5] != null) return `${Number(m[4])}:${String(m[5]).padStart(2, "0")}`;
-				return `${y}/${String(mo).padStart(2, "0")}/${String(d).padStart(2, "0")}`;
-			}
-		}
-		return raw;
-	}
-	function normalizeDeviceModelShort(rawModel) {
-		const clean = String(rawModel || "").trim();
-		if (!clean) return "";
-		if (/^macbook\s*air\b/i.test(clean)) return "Air";
-		if (/^macbook\s*pro\b/i.test(clean)) return "MBP";
-		if (/^mac\s*mini\b/i.test(clean)) return "Mac mini";
-		if (/^mac\s*studio\b/i.test(clean)) return "Studio";
-		if (/^mac\s*pro\b/i.test(clean)) return "Mac Pro";
-		if (/^imac\b/i.test(clean)) return "iMac";
-		return clean;
-	}
-	function buildShortHostNameMap(hosts = []) {
-		const parsed = (hosts || []).map((h) => {
-			const raw = String(h?.hostName || h?.hostId || "").trim().replace(/\.(local|lan)$/i, "");
-			let owner = "";
-			let device = raw;
-			const zhSplit = /^(.+?)的\s*(.+)$/.exec(raw);
-			const enSplit = !zhSplit ? /^(.+?)(?:'s|’s)\s+(.+)$/i.exec(raw) : null;
-			if (zhSplit) {
-				owner = zhSplit[1].trim();
-				device = zhSplit[2].trim();
-			} else if (enSplit) {
-				owner = enSplit[1].trim();
-				device = enSplit[2].trim();
-			} else {
-				const dashMac = /^([a-z0-9_-]+)-(MacBook-Air|MacBook-Pro|Mac-mini|Mac-Studio|iMac|Mac-Pro)$/i.exec(raw);
-				if (dashMac) {
-					owner = dashMac[1].trim();
-					device = dashMac[2].replace(/-/g, " ").trim();
-				}
-			}
-			let shortBase = "";
-			if (/^(电脑|pc|computer|laptop|host)$/i.test(device) && owner) shortBase = owner;
-			else shortBase = normalizeDeviceModelShort(device) || raw;
-			return {
-				hostId: h?.hostId || raw,
-				raw,
-				owner,
-				shortBase
-			};
-		});
-		const baseCounts = {};
-		for (const item of parsed) baseCounts[item.shortBase] = (baseCounts[item.shortBase] || 0) + 1;
-		const map = {};
-		for (const item of parsed) if (baseCounts[item.shortBase] > 1 && item.owner) {
-			const shortOwner = item.owner.length > 6 ? `${item.owner.slice(0, 6)}…` : item.owner;
-			map[item.hostId] = `${shortOwner}·${item.shortBase}`;
-		} else map[item.hostId] = item.shortBase;
-		return map;
-	}
 	function getNormalizedSessions() {
 		const list = [];
 		const optMap = ensureOptimisticMsgsMap();
@@ -3510,9 +3550,7 @@ function initHubController() {
 			const harnessBadgeHtml = renderHarnessBadgeHtml(s.harness, "row", s.harnessLabel);
 			const compactProject = formatCompactProjectLabel(s.project, nowDate);
 			const rolePrefix = s.status === "running" ? "" : s.lastRole === "user" ? "🧑 我: " : "🤖 ";
-			const rawTitle = String(s.title || "").trim();
-			const projSlashPrefix = s.project ? `${s.project} / ` : "";
-			const displayTitle = projSlashPrefix && rawTitle.startsWith(projSlashPrefix) ? rawTitle.slice(projSlashPrefix.length).trim() || rawTitle : rawTitle;
+			const displayTitle = stripRedundantProjectPrefix(s.title, s.project);
 			return `
           <div class="session-row ${rowStateClass} ${s.pinned ? "pinned-row" : ""} ${s.id === activeSessionId ? "selected-desktop" : ""}" onclick="openChat('${esc(s.id)}')">
             <div class="session-main">
@@ -3664,15 +3702,23 @@ function initHubController() {
 		if (!found) return;
 		const { session: s } = found;
 		if (s._wireTruncated && !expandedTranscriptBySession.has(s.id)) hydrateColdSessionTranscript(s.hostId, s.id, s.sessionRev || "");
-		const rawChatTitle = String(s.title || "").trim();
-		const chatProjSlash = s.project ? `${s.project} / ` : "";
-		const chatHeaderTitle = chatProjSlash && rawChatTitle.startsWith(chatProjSlash) ? rawChatTitle.slice(chatProjSlash.length).trim() || rawChatTitle : rawChatTitle;
-		document.getElementById("chatTitle").textContent = chatHeaderTitle;
+		const chatHeaderTitle = stripRedundantProjectPrefix(s.title, s.project);
+		const chatTitleEl = document.getElementById("chatTitle");
+		if (chatTitleEl && chatTitleEl.dataset.titleKey !== `${langPref}:${chatHeaderTitle}`) {
+			chatTitleEl.dataset.titleKey = `${langPref}:${chatHeaderTitle}`;
+			chatTitleEl.textContent = chatHeaderTitle;
+		}
 		const harnessNameText = s.harness === "antigravity-ide" ? "Antigravity IDE" : s.harness === "codex" ? "Codex" : s.harness === "workbuddy" ? "WorkBuddy" : s.harness === "claude" ? "Claude Code" : "DSH";
 		const isObserveOnly = s.controlMode === "observe-only" && s.harness !== "dsh";
 		const modeTag = isObserveOnly ? " · 👀 仅观测" : s.controlMode === "idle-resumable" || s.controlMode === "observe-only" && s.harness === "dsh" ? " · 🔵 可续聊" : "";
 		const compactChatProj = formatCompactProjectLabel(s.project);
-		document.getElementById("chatSub").innerHTML = `${renderHarnessBadgeHtml(s.harness, "inline")} ${esc(harnessNameText)} · 📁 ${esc(compactChatProj)} · 💻 ${esc(s.hostName)} (${s.msgCount} 条对话)${esc(modeTag)}`;
+		const nextSubHtml = `${renderHarnessBadgeHtml(s.harness, "inline")} ${esc(harnessNameText)} · 📁 ${esc(compactChatProj)} · 💻 ${esc(s.hostName)} (${s.msgCount} 条对话)${esc(modeTag)}`;
+		const chatSubEl = document.getElementById("chatSub");
+		const nextSubSig = `${langPref}:${nextSubHtml}`;
+		if (chatSubEl && chatSubEl.dataset.subSig !== nextSubSig) {
+			chatSubEl.dataset.subSig = nextSubSig;
+			chatSubEl.innerHTML = nextSubHtml;
+		}
 		let otherApproval = null;
 		for (const h of hubState.hosts || []) {
 			const app = (h.bridgeState?.approvals || []).find((a) => a.agentId !== s.id);
@@ -3687,12 +3733,21 @@ function initHubController() {
 		const alertBar = document.getElementById("chatSwitchAlert");
 		if (otherApproval) {
 			const isOtherQuestion = Boolean(otherApproval.app.kind === "question" || Array.isArray(otherApproval.app.questions));
-			alertBar.style.display = "flex";
-			alertBar.innerHTML = `
-          <span>${isOtherQuestion ? "💬" : "⏳"} [${esc(otherApproval.host.hostName)}]「${esc(otherApproval.app.project ? `${otherApproval.app.project} / ` : "")}${esc(otherApproval.app.title || otherApproval.app.toolName)}」${isOtherQuestion ? "待你选择" : "待你审批"}</span>
+			const otherProj = otherApproval.app.project ? `${formatCompactProjectLabel(otherApproval.app.project)} / ` : "";
+			const nextAlertHtml = `
+          <span>${isOtherQuestion ? "💬" : "⏳"} [${esc(otherApproval.host.hostName)}]「${esc(otherProj)}${esc(otherApproval.app.title || otherApproval.app.toolName)}」${isOtherQuestion ? "待你选择" : "待你审批"}</span>
           <button style="border:none;background:#d97706;color:#fff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600;cursor:pointer;" onclick="openChat('${esc(otherApproval.app.agentId)}')">立即切换 ›</button>
         `;
-		} else alertBar.style.display = "none";
+			alertBar.style.display = "flex";
+			const nextAlertSig = `${langPref}:${nextAlertHtml}`;
+			if (alertBar.dataset.alertSig !== nextAlertSig) {
+				alertBar.dataset.alertSig = nextAlertSig;
+				alertBar.innerHTML = nextAlertHtml;
+			}
+		} else {
+			alertBar.style.display = "none";
+			alertBar.dataset.alertSig = "";
+		}
 		switchComposerSession(s.id);
 		updateChatModelPill(s, found.host);
 		const composerKey = `${s.id}:${s.status}:${s.controlMode || ""}`;
@@ -7704,7 +7759,12 @@ function initHubController() {
 		applyHubState,
 		getHubState: () => hubState,
 		fetchState,
-		connectSSE
+		connectSSE,
+		renderHarnessBadgeHtml,
+		formatCompactProjectLabel,
+		normalizeDeviceModelShort,
+		buildShortHostNameMap,
+		stripRedundantProjectPrefix
 	});
 	setupOverlayGestures();
 	setupChatScrollWatcher();

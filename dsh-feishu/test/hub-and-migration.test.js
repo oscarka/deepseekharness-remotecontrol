@@ -1961,7 +1961,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.6.0')
+  assert.equal(healthRes.build.version, '0.6.1')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 
@@ -5205,4 +5205,86 @@ test('v0.6.0 Incremental SSE Delta Sync, Zero Conclusion Truncation & Safe Mobil
   assert.match(bundleSrc, /createObjectURL/)
   assert.match(bundleSrc, /function apiFetchWithTimeout\(/)
   assert.match(bundleSrc, /function closeSSE\(/)
+})
+
+test('v0.6.1: compact session list labels, multi-mini host disambiguation, timestamp workspace labels & SVG sprite badges', async () => {
+  const {
+    renderHarnessBadgeHtml,
+    formatCompactProjectLabel,
+    normalizeDeviceModelShort,
+    buildShortHostNameMap,
+    stripRedundantProjectPrefix,
+  } = await import('../../hub/web/src/utils/session-labels.js')
+
+  // 1. User's 3 real Macs: Air + 2 Mac minis (Chinese `的` and macOS pinyin `de` hostname)
+  const threeMacsMap = buildShortHostNameMap([
+    { hostId: 'ccs-macbook-air', hostName: 'cc的MacBook Air' },
+    { hostId: 'digtalhealthlinkdemac-mini', hostName: 'digtalhealthlink的Mac mini' },
+    { hostId: 'no2demac-mini', hostName: 'no2demac-mini' },
+  ])
+  assert.deepStrictEqual(threeMacsMap, {
+    'ccs-macbook-air': 'Air',
+    'digtalhealthlinkdemac-mini': 'digtal·Mini',
+    'no2demac-mini': 'no2·Mini',
+  })
+
+  // Single Mac mini without collision keeps readable `Mac mini`
+  const singleMiniMap = buildShortHostNameMap([
+    { hostId: 'ccs-macbook-air', hostName: 'cc的MacBook Air' },
+    { hostId: 'digtalhealthlinkdemac-mini', hostName: 'digtalhealthlink的Mac mini' },
+  ])
+  assert.deepStrictEqual(singleMiniMap, {
+    'ccs-macbook-air': 'Air',
+    'digtalhealthlinkdemac-mini': 'Mac mini',
+  })
+
+  // Corporate numbered hosts sharing 6-char prefix remain distinct
+  const numberedMap = buildShortHostNameMap([
+    { hostId: 'm1', hostName: 'studio-node-1的Mac mini' },
+    { hostId: 'm2', hostName: 'studio-node-2的Mac mini' },
+  ])
+  assert.notEqual(numberedMap.m1, numberedMap.m2)
+  assert.equal(normalizeDeviceModelShort('MacBook Pro 16'), 'MBP')
+
+  // 2. Timestamped WorkBuddy playground folders: today -> H:mm, yesterday -> MM/DD HH:mm (no collision!), cross-year -> YYYY/MM/DD HH:mm
+  const refNow = new Date(2026, 10, 11, 14, 30, 0) // 2026-11-11 14:30 local
+  assert.equal(formatCompactProjectLabel('2026-11-11-11-59-48', refNow), '11:59')
+  assert.equal(formatCompactProjectLabel('2026-11-11-09-05-00', refNow), '9:05')
+  assert.equal(formatCompactProjectLabel('2026-11-10-15-09-31', refNow), '11/10 15:09')
+  assert.equal(formatCompactProjectLabel('2026-11-10-10-12-05', refNow), '11/10 10:12')
+  assert.notEqual(
+    formatCompactProjectLabel('2026-11-10-15-09-31', refNow),
+    formatCompactProjectLabel('2026-11-10-10-12-05', refNow),
+  )
+  assert.equal(formatCompactProjectLabel('2026-11-10', refNow), '11/10')
+  assert.equal(formatCompactProjectLabel('2025-12-31-09-05-00', refNow), '2025/12/31 09:05')
+  assert.equal(formatCompactProjectLabel('deepseekharness-remote', refNow), 'deepseekharness-remote')
+  assert.equal(formatCompactProjectLabel('', refNow), '默认工作区')
+
+  // 3. Redundant `<project> / ` prefix stripping
+  assert.equal(
+    stripRedundantProjectPrefix('deepseekharness-remote / 开源准备与文档审查', 'deepseekharness-remote'),
+    '开源准备与文档审查',
+  )
+  assert.equal(stripRedundantProjectPrefix('2026-11-10-15-09-31 / 你好', '2026-11-10-15-09-31'), '你好')
+  assert.equal(stripRedundantProjectPrefix('独立标题不含前缀', 'blender'), '独立标题不含前缀')
+
+  // 4. SVG badge HTML & compiled bundle checks (WebKit-safe 24x24 sprite + intrinsic 16x16 fallback)
+  const ideBadge = renderHarnessBadgeHtml('antigravity-ide', 'row', 'Antigravity IDE')
+  assert.match(ideBadge, /width="16" height="16" viewBox="0 0 24 24"/)
+  assert.match(ideBadge, /<use href="#dsh-icon-ide"\/>/)
+  assert.match(renderHarnessBadgeHtml('workbuddy', 'pill'), /#dsh-icon-workbuddy/)
+  assert.match(renderHarnessBadgeHtml('codex', 'chip'), /#dsh-icon-codex/)
+  assert.match(renderHarnessBadgeHtml('claude', 'inline'), /#dsh-icon-claude/)
+  assert.match(renderHarnessBadgeHtml('dsh', 'row'), /#dsh-icon-dsh/)
+
+  const assetFiles = await readdir(join(process.cwd(), 'hub/public/assets'))
+  const jsContents = await Promise.all(
+    assetFiles.filter(f => f.endsWith('.js')).map(f => readFile(join(process.cwd(), 'hub/public/assets', f), 'utf8')),
+  )
+  const bundleSrc = jsContents.join('\n')
+  assert.match(bundleSrc, /dshHarnessSvgDefs/)
+  assert.match(bundleSrc, /width="24" height="24" viewBox="0 0 24 24"/)
+  assert.match(bundleSrc, /dsh-icon-workbuddy/)
+  assert.match(bundleSrc, /dsh-icon-codex/)
 })

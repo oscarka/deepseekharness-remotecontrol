@@ -4,7 +4,7 @@ import { BottomTabs } from './components/BottomTabs';
 import { ChatStage } from './components/ChatStage';
 import { Sheets } from './components/Sheets';
 
-const HARNESS_SVG_SPRITE = `<svg id="dshHarnessSvgDefs" width="0" height="0" xmlns="http://www.w3.org/2000/svg">
+const HARNESS_SVG_SPRITE = `<svg id="dshHarnessSvgDefs" width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="dsh-grad-ocean" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#3B82F6"/>
@@ -111,7 +111,7 @@ export function App() {
   return (
     <Fragment>
       <div
-        style="position:absolute;width:0;height:0;overflow:hidden;pointer-events:none;"
+        style="position:fixed;left:-9999px;top:-9999px;width:24px;height:24px;overflow:hidden;opacity:0;pointer-events:none;"
         aria-hidden="true"
         dangerouslySetInnerHTML={{ __html: HARNESS_SVG_SPRITE }}
       />

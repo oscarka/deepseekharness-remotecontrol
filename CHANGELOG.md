@@ -2,6 +2,16 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.6.1] - 2026-11-11
+
+### Changed
+
+- 精简会话列表与头部信息架构，全面升级官方品牌矢量图标体系（抽离独立模块 `hub/web/src/utils/session-labels.js`）：
+  - 内置 Antigravity IDE、腾讯 WorkBuddy、OpenAI Codex、Claude Code、DeepSeek Harness 5 套官方矢量 `<symbol>` 图标（采用 `24×24` 离屏视口容器保障 iOS Safari WebKit `<mask>` / `<filter>` 零裁剪渲染，并为聊天头 `#chatSub` 增加增量 DOM 比对防流式重绘闪烁）
+  - 会话列表标题自动剥离与下方 `📁 工作区` 标签重复的 `<project> / ` 前缀，消除双倍冗余
+  - 多机视图下的电脑徽章自动简写（如 `cc的MacBook Air` → `Air`；多台同型号 Mac mini 智能区分归属前缀并兼容拼音 `de` 主机名，如 `digtal·Mini`、`no2·Mini`，告别双重省略号截断）
+  - WorkBuddy 时间戳工作区目录（`YYYY-MM-DD-HH-mm-ss`）智能浓缩：今日显示 `11:59`，同年份跨日显示 `11/10 15:09`（避免多会话筛选胶囊同名碰撞），跨年显示 `2025/12/31 09:05`
+
 ## [0.6.0] - 2026-11-11
 
 ### Added
