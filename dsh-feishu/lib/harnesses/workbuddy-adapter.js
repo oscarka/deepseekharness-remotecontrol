@@ -163,6 +163,7 @@ const DEFAULT_WORKBUDDY_MODELS = [
   { value: 'glm-5.0', label: 'GLM-5.0' },
   { value: 'glm-5.0-turbo', label: 'GLM-5.0 Turbo' },
   { value: 'glm-5v-turbo', label: 'GLM-5V Turbo' },
+  { value: 'glm-4.7', label: 'GLM-4.7' },
   { value: 'minimax-m2.7', label: 'MiniMax M2.7' },
   { value: 'fast-model', label: 'Fast Model (WorkBuddy 极速)' },
   { value: 'deepseek-v3.1', label: 'DeepSeek V3.1 (WorkBuddy)' },
@@ -244,10 +245,11 @@ export function isWorkBuddyAuthError(err) {
   return /authentication required|\/login\b|not logged in|please sign in|unauthorized/i.test(msg)
 }
 
-export function formatWorkBuddyAuthError(binaryPath = '', workbuddyHome = getWorkBuddyHome()) {
-  const bin = binaryPath || '/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy'
-  const loginCmd = `CODEBUDDY_FORCE_LITE_WB_BUNDLE=1 WORKBUDDY_CONFIG_DIR="${workbuddyHome}" CODEBUDDY_CONFIG_DIR="${workbuddyHome}" "${bin}"`
-  return `WorkBuddy CLI 尚未登录账号（桌面端加密凭证不与独立 CLI 共享）。请在电脑终端运行一次：${loginCmd} 并输入 /login 完成授权登录，之后无需重启即可直接在手机发送消息。`
+export function formatWorkBuddyAuthError(_binaryPath = '', _workbuddyHome = getWorkBuddyHome(), { autoOpenedBrowser = false } = {}) {
+  if (autoOpenedBrowser) {
+    return 'WorkBuddy CLI 需首次授权登录（桌面端加密凭证不与独立 CLI 共享）：已在电脑浏览器自动打开 WorkBuddy 官方登录页，请点击确认授权后直接在手机重发消息（也可在电脑终端运行 node dsh-feishu/daemon.mjs --replace --workbuddy-login）。'
+  }
+  return 'WorkBuddy CLI 尚未登录账号（桌面端加密凭证不与独立 CLI 共享）：请在电脑浏览器完成弹出的 WorkBuddy 官方登录确认，或在终端运行 node dsh-feishu/daemon.mjs --replace --workbuddy-login 完成授权。'
 }
 
 export function queryWorkBuddySidecar(socketPath, method, params = {}, timeoutMs = 1500) {
@@ -499,6 +501,7 @@ export class WorkBuddyAcpClient extends EventEmitter {
     this.openSseImpl = options.openSseImpl || null
     this.connectionId = ''
     this.sessionToken = ''
+    this.authMethods = []
     this.connected = false
     this.nextId = 1
     this.sseReq = null
@@ -528,7 +531,7 @@ export class WorkBuddyAcpClient extends EventEmitter {
 
     this._startSseStream()
 
-    await this.request('initialize', {
+    const initRes = await this.request('initialize', {
       protocolVersion: 1,
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },
@@ -540,6 +543,17 @@ export class WorkBuddyAcpClient extends EventEmitter {
         version: '0.5.1',
       },
     })
+    if (Array.isArray(initRes?.authMethods)) {
+      this.authMethods = initRes.authMethods
+    }
+  }
+
+  async authenticate(methodId = '') {
+    const resolvedMethodId =
+      String(methodId || '').trim() ||
+      this.authMethods?.[0]?.id ||
+      'external'
+    return this.request('authenticate', { methodId: resolvedMethodId })
   }
 
   _startSseStream() {
@@ -787,13 +801,61 @@ export class WorkBuddyAdapter {
     this.deletedIds = new Set()
     this.spawnedServeProc = null
     this.spawnedEndpoint = ''
+    this.pendingAuthPromise = null
   }
 
-  _formatError(err) {
+  _formatError(err, opts = {}) {
     if (isWorkBuddyAuthError(err)) {
-      return formatWorkBuddyAuthError(this.binaryPath, this.workbuddyHome)
+      return formatWorkBuddyAuthError(this.binaryPath, this.workbuddyHome, opts)
     }
     return String(err?.message || err || 'Unknown WorkBuddy error')
+  }
+
+  async authenticate({ methodId = '' } = {}) {
+    if (this.pendingAuthPromise) {
+      return this.pendingAuthPromise
+    }
+    this.pendingAuthPromise = Promise.resolve()
+      .then(async () => {
+        const client = await this._getClientForEndpoint(this.defaultEndpoint)
+        this.logger?.log?.('[dsh-feishu] 🔐 正在通过官方 ACP authenticate 拉起 WorkBuddy 浏览器授权登录...')
+        const res = await client.authenticate(methodId)
+        const userInfo = res?._meta?.['codebuddy.ai/userinfo'] || null
+        const who = userInfo?.userName || userInfo?.userId || 'WorkBuddy User'
+        this.logger?.log?.(`[dsh-feishu] ✅ WorkBuddy CLI 授权登录成功 (${who})！`)
+        this.onStateChange?.()
+        return { ok: true, userInfo, raw: res }
+      })
+      .catch(err => {
+        const msg = String(err?.message || err || 'WorkBuddy ACP authenticate failed')
+        this.logger?.warn?.(`[dsh-feishu] ⚠️ WorkBuddy ACP authenticate 未完成: ${msg}`)
+        return { ok: false, error: msg }
+      })
+      .finally(() => {
+        this.pendingAuthPromise = null
+      })
+    return this.pendingAuthPromise
+  }
+
+  _triggerBackgroundAuth(entry = null) {
+    this.authenticate()
+      .then(res => {
+        if (res?.ok && entry) {
+          const who = res.userInfo?.userName || res.userInfo?.userId || ''
+          const suffix = who ? ` (${who})` : ''
+          entry.lastProgress = `✅ WorkBuddy 已完成登录授权${suffix}，请重发消息`
+          entry.recentActivity.push({
+            role: 'system',
+            text: `✅ WorkBuddy CLI 授权登录成功${suffix}！现在可以直接在手机发送消息。`,
+            at: new Date().toISOString(),
+          })
+          entry.updatedAt = Date.now()
+          this.onStateChange?.()
+        }
+      })
+      .catch(() => {
+        // handled inside authenticate()
+      })
   }
 
   _resetSpawnedServe() {
@@ -1782,14 +1844,15 @@ export class WorkBuddyAdapter {
         message: `🚀 已在电脑端启动 WorkBuddy 会话「${resolvedTitle.slice(0, 28)}」`,
       }
     } catch (err) {
-      if (isWorkBuddyAuthError(err)) {
-        this._resetSpawnedServe()
+      const authFailed = isWorkBuddyAuthError(err)
+      if (authFailed) {
+        this._triggerBackgroundAuth()
       }
-      const friendly = this._formatError(err)
+      const friendly = this._formatError(err, { autoOpenedBrowser: authFailed })
       this.logger?.warn?.(`[dsh-feishu] ⚠️ WorkBuddy startSession failed: ${friendly}`)
       return {
         ok: false,
-        error: isWorkBuddyAuthError(err) ? friendly : `WorkBuddy startSession failed: ${friendly}`,
+        error: authFailed ? friendly : `WorkBuddy startSession failed: ${friendly}`,
       }
     }
   }
@@ -1844,7 +1907,7 @@ export class WorkBuddyAdapter {
       })
       .catch(err => {
         const authFailed = isWorkBuddyAuthError(err)
-        const friendlyMsg = this._formatError(err)
+        const friendlyMsg = this._formatError(err, { autoOpenedBrowser: authFailed })
         this._finalizeStreamingActivities(entry)
         entry.status = 'idle'
         entry.turnState = 'interrupted'
@@ -1860,7 +1923,7 @@ export class WorkBuddyAdapter {
         })
         entry.updatedAt = Date.now()
         if (authFailed) {
-          this._resetSpawnedServe()
+          this._triggerBackgroundAuth(entry)
         }
         this.logger?.warn?.(`[dsh-feishu] ⚠️ WorkBuddy prompt error (${entry.rawId.slice(0, 8)}): ${friendlyMsg}`)
         this.onStateChange?.()
@@ -1881,9 +1944,10 @@ export class WorkBuddyAdapter {
     }
 
     const explicitModel = model && model !== 'auto' && model !== 'fast-model' ? model : ''
+    let entry = null
 
     try {
-      const entry = this._ensureRuntimeEntry(rawId, {
+      entry = this._ensureRuntimeEntry(rawId, {
         cwd: cwd || process.cwd(),
         model: model || '',
       })
@@ -1946,14 +2010,25 @@ export class WorkBuddyAdapter {
         message: `🚀 已在 WorkBuddy 会话 (${rawId.slice(0, 8)}) 中继续执行`,
       }
     } catch (err) {
-      if (isWorkBuddyAuthError(err)) {
-        this._resetSpawnedServe()
+      const authFailed = isWorkBuddyAuthError(err)
+      const friendly = this._formatError(err, { autoOpenedBrowser: authFailed })
+      if (entry) {
+        entry.lastProgress = `Error: ${truncateText(friendly, 220)}`
+        entry.recentActivity.push({
+          role: 'system',
+          text: `⚠️ ${friendly}`,
+          at: new Date().toISOString(),
+        })
+        entry.updatedAt = Date.now()
+        this.onStateChange?.()
       }
-      const friendly = this._formatError(err)
+      if (authFailed) {
+        this._triggerBackgroundAuth(entry)
+      }
       this.logger?.warn?.(`[dsh-feishu] ⚠️ WorkBuddy sendPrompt failed (${rawId.slice(0, 8)}): ${friendly}`)
       return {
         ok: false,
-        error: isWorkBuddyAuthError(err) ? friendly : `WorkBuddy sendPrompt failed: ${friendly}`,
+        error: authFailed ? friendly : `WorkBuddy sendPrompt failed: ${friendly}`,
       }
     }
   }

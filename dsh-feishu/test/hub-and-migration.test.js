@@ -3634,6 +3634,8 @@ test('WorkBuddy v5.9.3 Streamable HTTP POST SSE frames, takeWriter session/load,
 
     // 2. Start a real HTTP server speaking WorkBuddy v5.9.3 Streamable HTTP (`text/event-stream` on POST /api/v1/acp)
     let isLoggedIn = false
+    let authCalledMethods = []
+    let resolvePendingAuth = null
     let pendingPromptSseRes = null
     let pendingPromptReqId = null
 
@@ -3656,7 +3658,39 @@ test('WorkBuddy v5.9.3 Streamable HTTP POST SSE frames, takeWriter session/load,
           const msg = JSON.parse(raw || '{}')
           if (msg.method === 'initialize') {
             res.writeHead(200, { 'Content-Type': 'text/event-stream' })
-            res.end(`:ok\n\nevent: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: 1 } })}\n\n`)
+            res.end(
+              `:ok\n\nevent: message\ndata: ${JSON.stringify({
+                jsonrpc: '2.0',
+                id: msg.id,
+                result: {
+                  protocolVersion: 1,
+                  authMethods: [{ id: 'external', name: 'WorkBuddy Account' }],
+                },
+              })}\n\n`,
+            )
+            return
+          }
+          if (msg.method === 'authenticate') {
+            authCalledMethods.push(msg.params?.methodId)
+            res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+            res.write(':ok\n\n')
+            resolvePendingAuth = () => {
+              isLoggedIn = true
+              res.end(
+                `event: message\ndata: ${JSON.stringify({
+                  jsonrpc: '2.0',
+                  id: msg.id,
+                  result: {
+                    _meta: {
+                      'codebuddy.ai/userinfo': {
+                        userId: 'u-1001',
+                        userName: 'digtalhealthlink',
+                      },
+                    },
+                  },
+                })}\n\n`,
+              )
+            }
             return
           }
           if (msg.method === 'session/load') {
@@ -3798,19 +3832,33 @@ test('WorkBuddy v5.9.3 Streamable HTTP POST SSE frames, takeWriter session/load,
 
     await wb.listSessions()
 
-    // 3. Before CLI login -> sendPrompt fails fast and surfaces actionable /login instructions instead of silent ok:true
+    // 3. Before CLI login -> sendPrompt fails fast, surfaces browser OAuth notice, and automatically triggers ACP authenticate({ methodId: 'external' })!
     const unauthRes = await wb.sendPrompt({
       sessionId: `workbuddy:${sessId}`,
       text: '帮我看看目录结构',
     })
     assert.equal(unauthRes.ok, false)
-    assert.match(unauthRes.error, /WorkBuddy CLI 尚未登录账号/)
-    assert.match(unauthRes.error, /\/login/)
-    assert.ok(logs.some(l => l.includes('尚未登录账号')))
+    assert.match(unauthRes.error, /WorkBuddy CLI 需首次授权登录/)
+    assert.match(unauthRes.error, /--workbuddy-login/)
 
-    // 4. User completes `/login` -> next sendPrompt succeeds immediately without restarting adapter,
+    for (let i = 0; i < 20 && !resolvePendingAuth; i++) {
+      await new Promise(r => setTimeout(r, 20))
+    }
+    assert.deepEqual(authCalledMethods, ['external'])
+    assert.equal(typeof resolvePendingAuth, 'function')
+
+    // Simulate user clicking "确认授权" in browser -> ACP authenticate resolves!
+    resolvePendingAuth()
+    for (let i = 0; i < 20; i++) {
+      const s = await wb.getSession(`workbuddy:${sessId}`)
+      if (s?.lastProgress?.includes('已完成登录授权')) break
+      await new Promise(r => setTimeout(r, 20))
+    }
+    const authedSess = await wb.getSession(`workbuddy:${sessId}`)
+    assert.match(authedSess.lastProgress, /digtalhealthlink/)
+
+    // 4. Next sendPrompt succeeds immediately without restarting adapter,
     //    passes takeWriter:true, ignores historical replay, streams POST SSE chunks, and handles in-stream permission!
-    isLoggedIn = true
     const okRes = await wb.sendPrompt({
       sessionId: `workbuddy:${sessId}`,
       text: '帮我看看目录结构',
