@@ -107,9 +107,14 @@ try {
 
 await hubAgent.tick()
 
+const extSessions = Array.isArray(hubAgent.cachedExternalSessions) ? hubAgent.cachedExternalSessions : []
+const wbSessionsCount = extSessions.filter(s => s?.harness === 'workbuddy').length
+const codexSessionsCount = extSessions.filter(s => s?.harness === 'codex').length
 console.log(`✅ 已连接总控中心: ${config.hubUrl}`)
 console.log(`💻 当前电脑名称: ${config.hostName} (${config.hostId})`)
-console.log(`📂 已同步本机 DSH 会话数: ${hubAgent.cachedDiskSessions?.length || 0} 条 | ⚡ Antigravity IDE 会话数: ${hubAgent.cachedAgySessions?.length || 0} 条`)
+console.log(
+  `📂 已同步本机 DSH 会话数: ${hubAgent.cachedDiskSessions?.length || 0} 条 | ⚡ Antigravity IDE 会话数: ${hubAgent.cachedAgySessions?.length || 0} 条 | 🐼 WorkBuddy 会话数: ${wbSessionsCount} 条 | 🧠 Codex 会话数: ${codexSessionsCount} 条`,
+)
 
 if (!once) {
   hubAgent.start()

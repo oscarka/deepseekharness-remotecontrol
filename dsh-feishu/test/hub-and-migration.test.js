@@ -3507,6 +3507,109 @@ test('WorkBuddy real local SQLite + Unix sidecar socket + HTTP/SSE stream + HubA
   }
 })
 
+test('WorkBuddy v5.9.3 projects JSONL transcript parsing & wbipc/endpoint.json discovery', async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-wb-v593-'))
+  try {
+    const wbHome = join(tmpDir, '.workbuddy')
+    const wbipcDir = join(wbHome, 'wbipc')
+    const projSlugDir = join(wbHome, 'projects', 'Users-digtalhealthlink-WorkBuddy-2026-11-10-15-09-31')
+    await mkdir(wbipcDir, { recursive: true })
+    await mkdir(projSlugDir, { recursive: true })
+
+    const fakeSockPath = join(tmpDir, 'b-b7602d5aabc793dd.sock')
+    await writeFile(fakeSockPath, '', 'utf8')
+    await writeFile(
+      join(wbipcDir, 'endpoint.json'),
+      JSON.stringify({ endpoint: fakeSockPath, ticket: 'test-ticket' }),
+      'utf8',
+    )
+
+    const sessionId = '869a441a-5fd3-4862-8bf8-deb63bbfea5a'
+    const jsonlLines = [
+      JSON.stringify({
+        type: 'session-meta',
+        id: 'meta-1',
+        sessionId,
+        timestamp: 1794294571000,
+        meta: { 'codebuddy.ai/hostKind': 'unopted' },
+      }),
+      JSON.stringify({
+        id: 'msg-user-1',
+        timestamp: 1794294571675,
+        type: 'message',
+        role: 'user',
+        content: [
+          {
+            type: 'input_text',
+            text: '<system-reminder data-role="user-context">\nSOUL.md context...\n</system-reminder>\n<user_query>你好</user_query>',
+          },
+        ],
+        sessionId,
+        cwd: '/Users/digtalhealthlink/WorkBuddy/2026-11-10-15-09-31',
+      }),
+      JSON.stringify({
+        id: 'title-1',
+        timestamp: 1794294573000,
+        type: 'ai-title',
+        aiTitle: '你好',
+        sessionId,
+        cwd: '/Users/digtalhealthlink/WorkBuddy/2026-11-10-15-09-31',
+      }),
+      JSON.stringify({
+        id: 'msg-asst-1',
+        timestamp: 1794294574445,
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [
+          {
+            type: 'output_text',
+            text: '你好！👋 很高兴见到你。\n\n我是 WorkBuddy，你的智能助手。',
+          },
+        ],
+        sessionId,
+        cwd: '/Users/digtalhealthlink/WorkBuddy/2026-11-10-15-09-31',
+      }),
+    ]
+    await writeFile(join(projSlugDir, `${sessionId}.jsonl`), jsonlLines.join('\n') + '\n', 'utf8')
+
+    const wb = new WorkBuddyAdapter({
+      workbuddyHome: wbHome,
+      querySidecarImpl: async () => null,
+      queryDbImpl: async () => [
+        {
+          id: sessionId,
+          title: '你好',
+          cwd: '/Users/digtalhealthlink/WorkBuddy/2026-11-10-15-09-31',
+          status: 'completed',
+          model: 'fast-model',
+          deleted_at: null,
+          created_at: 1794294571675,
+          updated_at: 1794294574445,
+        },
+      ],
+    })
+
+    const health = await wb.detectHealth()
+    assert.equal(health.installed, true)
+    assert.equal(health.attachedDesktop, true)
+    assert.equal(wb.sidecarSocketPath, fakeSockPath)
+
+    const sessions = await wb.listSessions()
+    assert.equal(sessions.length, 1)
+    assert.equal(sessions[0].id, `workbuddy:${sessionId}`)
+    assert.equal(sessions[0].title, '你好')
+    assert.equal(sessions[0].transcript.length, 2)
+    assert.equal(sessions[0].transcript[0].role, 'user')
+    assert.equal(sessions[0].transcript[0].text, '你好')
+    assert.equal(sessions[0].transcript[1].role, 'assistant')
+    assert.match(sessions[0].transcript[1].text, /我是 WorkBuddy，你的智能助手/)
+    wb.shutdown()
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
 
 
 

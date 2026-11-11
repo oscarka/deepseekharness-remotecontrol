@@ -51,6 +51,19 @@ export function getWorkBuddyHome(overrideDir = '') {
 }
 
 export function getWorkBuddySidecarSocketPath(workbuddyHome = getWorkBuddyHome()) {
+  try {
+    const endpointFile = path.join(workbuddyHome, 'wbipc', 'endpoint.json')
+    if (fs.existsSync(endpointFile)) {
+      const parsed = safeJsonParse(fs.readFileSync(endpointFile, 'utf8'))
+      const ep = typeof parsed?.endpoint === 'string' ? parsed.endpoint.trim() : ''
+      if (ep && (ep.startsWith('\\\\.\\pipe\\') || fs.existsSync(ep))) {
+        return ep
+      }
+    }
+  } catch {
+    // ignore wbipc/endpoint.json read errors
+  }
+
   if (process.platform === 'win32') {
     const hash = crypto
       .createHash('sha1')
@@ -74,6 +87,11 @@ export function getWorkBuddySidecarSocketPath(workbuddyHome = getWorkBuddyHome()
         for (const sub of subDirs) {
           const candidate = path.join(wbFull, sub, 'sidecar.sock')
           if (fs.existsSync(candidate)) return candidate
+          const wbipcDir = path.join(wbFull, sub, 'wbipc')
+          if (fs.existsSync(wbipcDir)) {
+            const socks = fs.readdirSync(wbipcDir).filter(f => f.endsWith('.sock'))
+            if (socks.length > 0) return path.join(wbipcDir, socks[0])
+          }
         }
       }
     }
@@ -88,6 +106,10 @@ export function findWorkBuddyBinary() {
   const candidates = [
     process.env.WORKBUDDY_BIN,
     process.env.CODEBUDDY_BIN,
+    '/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy',
+    path.join(home, 'Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy'),
+    '/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy-lowmem',
+    path.join(home, 'Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy-lowmem'),
     '/Applications/WorkBuddy.app/Contents/Resources/app/node_modules/@tencent/codebuddy-cli/bin/codebuddy',
     '/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/node_modules/@tencent/codebuddy-cli/bin/codebuddy',
     path.join(home, 'Applications/WorkBuddy.app/Contents/Resources/app/node_modules/@tencent/codebuddy-cli/bin/codebuddy'),
@@ -126,6 +148,7 @@ export function findWorkBuddyBinary() {
 
 const DEFAULT_WORKBUDDY_MODELS = [
   { value: 'deepseek-v3.1', label: 'DeepSeek V3.1 (WorkBuddy)', default: true },
+  { value: 'fast-model', label: 'Fast Model (WorkBuddy 极速)' },
   { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
   { value: 'gpt-5.4', label: 'GPT-5.4' },
   { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
@@ -153,26 +176,28 @@ export function discoverWorkBuddyModels(workbuddyHome = getWorkBuddyHome()) {
     const configCandidates = [
       path.join(workbuddyHome, 'config.json'),
       path.join(workbuddyHome, 'settings.json'),
+      path.join(workbuddyHome, 'models.json'),
       path.join(os.homedir(), '.codebuddy', 'config.json'),
     ]
     for (const cfgPath of configCandidates) {
       if (!fs.existsSync(cfgPath)) continue
       const parsed = safeJsonParse(fs.readFileSync(cfgPath, 'utf8'))
       if (!parsed || typeof parsed !== 'object') continue
-      if (typeof parsed.model === 'string' && parsed.model.trim()) {
+      if (!Array.isArray(parsed) && typeof parsed.model === 'string' && parsed.model.trim()) {
         defaultModel = parsed.model.trim()
         addModel(defaultModel, `${defaultModel}`, true)
       }
-      if (Array.isArray(parsed.models)) {
-        for (const entry of parsed.models) {
-          if (typeof entry === 'string') addModel(entry, entry)
-          else if (entry && typeof entry === 'object') {
-            addModel(
-              entry.id || entry.value || entry.model || entry.slug,
-              entry.label || entry.displayName || entry.name,
-              Boolean(entry.default),
-            )
-          }
+      const modelEntries = Array.isArray(parsed)
+        ? parsed
+        : (Array.isArray(parsed.models) ? parsed.models : [])
+      for (const entry of modelEntries) {
+        if (typeof entry === 'string') addModel(entry, entry)
+        else if (entry && typeof entry === 'object') {
+          addModel(
+            entry.id || entry.value || entry.model || entry.slug,
+            entry.label || entry.displayName || entry.name,
+            Boolean(entry.default),
+          )
         }
       }
     }
@@ -251,11 +276,30 @@ export function queryWorkBuddySidecar(socketPath, method, params = {}, timeoutMs
   })
 }
 
+export function cleanWorkBuddyUserText(rawText = '') {
+  const raw = String(rawText || '')
+  if (!raw) return ''
+  const withoutReminder = raw.replace(/<system-reminder[\s\S]*?<\/system-reminder>/gi, '').trim()
+  const queryMatch = withoutReminder.match(/<user_query>([\s\S]*?)<\/user_query>/i)
+  if (queryMatch) return queryMatch[1].trim()
+  return withoutReminder.replace(/<\/?user_query>/gi, '').trim()
+}
+
 function extractTextFromAcpContent(content) {
   if (!content) return ''
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
-    return content.map(part => extractTextFromAcpContent(part)).filter(Boolean).join('\n')
+    return content
+      .map(part => {
+        if (!part) return ''
+        if (typeof part === 'string') return part
+        if (part.type === 'thinking' || part.type === 'reasoning' || part.type === 'tool_use' || part.type === 'tool_call' || part.type === 'function_call') {
+          return ''
+        }
+        return extractTextFromAcpContent(part)
+      })
+      .filter(Boolean)
+      .join('\n')
   }
   if (typeof content === 'object') {
     if (typeof content.text === 'string') return content.text
@@ -268,6 +312,8 @@ export function parseWorkBuddyReplayEvents(events = []) {
   const transcript = []
   const recentActivity = []
   let lastProgress = ''
+  let aiTitle = ''
+  let cwd = ''
 
   const ensureAssistantMsg = timeMs => {
     const last = transcript.at(-1)
@@ -287,13 +333,23 @@ export function parseWorkBuddyReplayEvents(events = []) {
 
   for (const item of events) {
     if (!item || typeof item !== 'object') continue
+    if (typeof item.cwd === 'string' && item.cwd.trim() && !cwd) {
+      cwd = item.cwd.trim()
+    }
+    if (item.type === 'ai-title' && typeof item.aiTitle === 'string' && item.aiTitle.trim()) {
+      aiTitle = item.aiTitle.trim()
+      continue
+    }
     const update = item.update || item.params?.update || item
     const tag = update.sessionUpdate || update.type || item.type || ''
-    const ts = item.timestamp ? Number(new Date(item.timestamp)) || Date.now() : Date.now()
+    const ts = item.timestamp
+      ? (typeof item.timestamp === 'number' ? item.timestamp : (Number(new Date(item.timestamp)) || Date.now()))
+      : Date.now()
     const iso = new Date(ts).toISOString()
 
     if (tag === 'user_message_chunk' || tag === 'user_message' || item.role === 'user') {
-      const text = extractTextFromAcpContent(update.content ?? update.text ?? item.text).trim()
+      const rawText = extractTextFromAcpContent(update.content ?? update.text ?? item.content ?? item.text)
+      const text = cleanWorkBuddyUserText(rawText)
       if (!text) continue
       const prev = transcript.at(-1)
       if (prev && prev.role === 'user' && tag === 'user_message_chunk') {
@@ -311,10 +367,39 @@ export function parseWorkBuddyReplayEvents(events = []) {
       }
       recentActivity.push({ role: 'user', text: truncateText(text, 1600), at: iso })
     } else if (tag === 'agent_message_chunk' || tag === 'agent_message' || item.role === 'assistant') {
-      const text = extractTextFromAcpContent(update.content ?? update.text ?? item.text)
+      const rawContent = update.content ?? update.text ?? item.content ?? item.text
+      if (Array.isArray(rawContent)) {
+        for (const part of rawContent) {
+          if (!part || typeof part !== 'object') continue
+          if (part.type === 'thinking' || part.type === 'reasoning') {
+            const thoughtText = String(part.thinking || part.text || '').trim()
+            if (thoughtText) {
+              const msg = ensureAssistantMsg(ts)
+              msg.thinking = msg.thinking ? `${msg.thinking}\n${thoughtText}` : thoughtText
+              msg.time = ts
+              recentActivity.push({ role: 'thought', text: truncateText(msg.thinking, 1600), at: iso })
+            }
+          } else if (part.type === 'tool_use' || part.type === 'tool_call' || part.type === 'function_call') {
+            const title = part.name || part.title || part.toolName || 'Tool Call'
+            const msg = ensureAssistantMsg(ts)
+            if (!msg.tools.includes(title)) msg.tools.push(title)
+            msg.toolCalls.push({
+              name: title,
+              argsSummary: String(part.input?.command || part.arguments || part.title || '').slice(0, 120),
+            })
+            recentActivity.push({ role: 'tool', text: `Running ${title}`, at: iso })
+            lastProgress = `Running ${title}`
+          }
+        }
+      }
+      const text = extractTextFromAcpContent(rawContent)
       if (!text) continue
       const msg = ensureAssistantMsg(ts)
-      msg.text = `${msg.text || ''}${text}`
+      if (tag === 'agent_message_chunk') {
+        msg.text = `${msg.text || ''}${text}`
+      } else {
+        msg.text = msg.text ? `${msg.text}\n\n${text}` : text
+      }
       msg.time = ts
       lastProgress = truncateText(msg.text, 260)
       const prevAct = recentActivity.at(-1)
@@ -325,7 +410,7 @@ export function parseWorkBuddyReplayEvents(events = []) {
         recentActivity.push({ role: 'assistant', text: truncateText(msg.text, 1600), at: iso })
       }
     } else if (tag === 'agent_thought_chunk' || tag === 'agent_thought' || item.role === 'thought') {
-      const text = extractTextFromAcpContent(update.content ?? update.text ?? item.text)
+      const text = extractTextFromAcpContent(update.content ?? update.text ?? item.content ?? item.text)
       if (!text) continue
       const msg = ensureAssistantMsg(ts)
       msg.thinking = `${msg.thinking || ''}${text}`
@@ -363,6 +448,8 @@ export function parseWorkBuddyReplayEvents(events = []) {
     transcript: transcript.slice(-MAX_TRANSCRIPT_MESSAGES).map((m, idx) => ({ ...m, index: idx })),
     recentActivity: recentActivity.slice(-MAX_TRANSCRIPT_MESSAGES),
     lastProgress,
+    aiTitle,
+    cwd,
   }
 }
 
@@ -1040,6 +1127,29 @@ export class WorkBuddyAdapter {
     })
   }
 
+  _findProjectJsonlPath(rawId, cwd = '') {
+    const projectsRoot = path.join(this.workbuddyHome, 'projects')
+    try {
+      if (!fs.existsSync(projectsRoot)) return ''
+      if (cwd) {
+        const slug = String(cwd).replace(/^[\\/]+/, '').replace(/[^a-zA-Z0-9]/g, '-')
+        if (slug) {
+          const directCandidate = path.join(projectsRoot, slug, `${rawId}.jsonl`)
+          if (fs.existsSync(directCandidate)) return directCandidate
+        }
+      }
+      const subDirs = fs.readdirSync(projectsRoot, { withFileTypes: true })
+      for (const dirent of subDirs) {
+        if (!dirent.isDirectory()) continue
+        const candidate = path.join(projectsRoot, dirent.name, `${rawId}.jsonl`)
+        if (fs.existsSync(candidate)) return candidate
+      }
+    } catch {
+      // ignore
+    }
+    return ''
+  }
+
   async _readDbSessions() {
     if (typeof this.queryDbImpl === 'function') {
       return (await this.queryDbImpl(this.workbuddyHome)) || []
@@ -1087,7 +1197,16 @@ export class WorkBuddyAdapter {
         })
         for (const row of rows) {
           const rowId = row?.id || row?.session_id
-          if (!rowId || row.deleted_at) continue
+          const isDeleted = typeof row?.deleted_at === 'number'
+            ? row.deleted_at > 0
+            : (
+                row?.deleted_at !== null &&
+                row?.deleted_at !== undefined &&
+                String(row.deleted_at).trim() !== '' &&
+                Number(row.deleted_at) !== 0 &&
+                Number(row.deleted_at) !== -1
+              )
+          if (!rowId || isDeleted) continue
           const normalizedRow = {
             ...row,
             id: String(rowId),
@@ -1130,16 +1249,73 @@ export class WorkBuddyAdapter {
       // ignore
     }
 
+    const projectsDir = path.join(this.workbuddyHome, 'projects')
+    try {
+      if (fs.existsSync(projectsDir)) {
+        const projectFolders = fs.readdirSync(projectsDir, { withFileTypes: true })
+        for (const folder of projectFolders) {
+          if (!folder.isDirectory()) continue
+          const folderPath = path.join(projectsDir, folder.name)
+          const files = fs.readdirSync(folderPath).filter(f => f.endsWith('.jsonl'))
+          for (const f of files) {
+            const rawId = path.basename(f, '.jsonl')
+            if (!rawId || results.some(existing => existing.id === rawId)) continue
+            const fullPath = path.join(folderPath, f)
+            const st = fs.statSync(fullPath)
+            const lines = fs
+              .readFileSync(fullPath, 'utf8')
+              .split(/\r?\n/)
+              .map(l => safeJsonParse(l.trim()))
+              .filter(Boolean)
+            const parsed = parseWorkBuddyReplayEvents(lines)
+            if (parsed.transcript.length === 0) continue
+            const firstUserText = parsed.transcript.find(m => m.role === 'user')?.text || ''
+            results.push({
+              id: rawId,
+              title: parsed.aiTitle || truncateText(firstUserText, 60) || '',
+              cwd: parsed.cwd || '',
+              model: '',
+              status: 'idle',
+              created_at: st.birthtimeMs || st.mtimeMs,
+              updated_at: st.mtimeMs,
+              events: lines,
+            })
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     return results
   }
 
-  async _fetchReplayForSession(rawId, acpEndpoint = '') {
+  async _fetchReplayForSession(rawId, acpEndpoint = '', cwd = '') {
     try {
       const localReplayPath = path.join(this.workbuddyHome, 'sessions', `${rawId}.json`)
       if (fs.existsSync(localReplayPath)) {
         const parsed = safeJsonParse(fs.readFileSync(localReplayPath, 'utf8'))
         const events = Array.isArray(parsed) ? parsed : (parsed?.events || parsed?.data?.events || [])
         if (events.length > 0) return parseWorkBuddyReplayEvents(events)
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const jsonlPath = this._findProjectJsonlPath(rawId, cwd)
+      if (jsonlPath && fs.existsSync(jsonlPath)) {
+        const lines = fs
+          .readFileSync(jsonlPath, 'utf8')
+          .split(/\r?\n/)
+          .map(l => safeJsonParse(l.trim()))
+          .filter(Boolean)
+        if (lines.length > 0) {
+          const parsed = parseWorkBuddyReplayEvents(lines)
+          if (parsed.transcript.length > 0 || parsed.recentActivity.length > 0) {
+            return parsed
+          }
+        }
       }
     } catch {
       // ignore
@@ -1274,13 +1450,21 @@ export class WorkBuddyAdapter {
           entry.transcript = parsed.transcript
           entry.recentActivity = parsed.recentActivity
           if (parsed.lastProgress) entry.lastProgress = parsed.lastProgress
+          if (parsed.aiTitle && (!entry.title || entry.title.startsWith('WorkBuddy ('))) {
+            entry.title = parsed.aiTitle
+          }
+          if (parsed.cwd && !entry.cwd) entry.cwd = parsed.cwd
           entry.lastReplayUpdatedAt = updatedAt
         } else {
-          const replayed = await this._fetchReplayForSession(rawId, entry.acpEndpoint)
+          const replayed = await this._fetchReplayForSession(rawId, entry.acpEndpoint, entry.cwd)
           if (replayed && (replayed.transcript.length > 0 || replayed.recentActivity.length > 0)) {
             entry.transcript = replayed.transcript
             entry.recentActivity = replayed.recentActivity
             if (replayed.lastProgress) entry.lastProgress = replayed.lastProgress
+            if (replayed.aiTitle && (!entry.title || entry.title.startsWith('WorkBuddy ('))) {
+              entry.title = replayed.aiTitle
+            }
+            if (replayed.cwd && !entry.cwd) entry.cwd = replayed.cwd
             entry.lastReplayUpdatedAt = updatedAt
           }
         }
@@ -1303,11 +1487,15 @@ export class WorkBuddyAdapter {
     const entry = this.runtimeSessions.get(rawId)
     if (!entry) return null
     if (entry.transcript.length === 0) {
-      const replayed = await this._fetchReplayForSession(rawId, entry.acpEndpoint)
+      const replayed = await this._fetchReplayForSession(rawId, entry.acpEndpoint, entry.cwd)
       if (replayed && (replayed.transcript.length > 0 || replayed.recentActivity.length > 0)) {
         entry.transcript = replayed.transcript
         entry.recentActivity = replayed.recentActivity
         if (replayed.lastProgress) entry.lastProgress = replayed.lastProgress
+        if (replayed.aiTitle && (!entry.title || entry.title.startsWith('WorkBuddy ('))) {
+          entry.title = replayed.aiTitle
+        }
+        if (replayed.cwd && !entry.cwd) entry.cwd = replayed.cwd
       }
     }
     return this._formatSessionRecord(entry)
