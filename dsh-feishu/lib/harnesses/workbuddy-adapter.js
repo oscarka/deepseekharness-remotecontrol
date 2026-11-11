@@ -22,6 +22,25 @@ export function toRawWorkBuddyId(sessionId = '') {
     : value
 }
 
+export function isWorkBuddyProcessHeartbeatRecord(rawId = '', parsed = null) {
+  const cleanId = String(rawId || '').trim()
+  const events = Array.isArray(parsed) ? parsed : (parsed?.events || parsed?.data?.events)
+  const hasReplayEvents = Array.isArray(events) && events.length > 0
+  if (hasReplayEvents) return false
+
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    if (
+      typeof parsed.pid === 'number' ||
+      typeof parsed.lastHeartbeat === 'number' ||
+      (parsed.kind === 'interactive' && !parsed.title && !parsed.custom_title)
+    ) {
+      return true
+    }
+  }
+
+  return /^\d+$/.test(cleanId)
+}
+
 function truncateText(text = '', maxLen = 1600) {
   const normalized = String(text || '').trim()
   if (!normalized) return ''
@@ -970,6 +989,7 @@ export class WorkBuddyAdapter {
   _ensureRuntimeEntry(rawId, defaults = {}) {
     let entry = this.runtimeSessions.get(rawId)
     const now = Date.now()
+    const hasExplicitUpdatedAt = Number.isFinite(Number(defaults.updatedAt)) && Number(defaults.updatedAt) > 0
     if (!entry) {
       entry = {
         rawId,
@@ -981,7 +1001,8 @@ export class WorkBuddyAdapter {
         turnState: defaults.turnState || 'idle',
         runningSummary: defaults.runningSummary || '',
         createdAt: defaults.createdAt || now,
-        updatedAt: defaults.updatedAt || now,
+        updatedAt: hasExplicitUpdatedAt ? Number(defaults.updatedAt) : now,
+        hasExplicitUpdatedAt,
         lastReplayUpdatedAt: 0,
         lastProgress: defaults.lastProgress || 'Ready in WorkBuddy',
         transcript: Array.isArray(defaults.transcript) ? [...defaults.transcript] : [],
@@ -1003,8 +1024,12 @@ export class WorkBuddyAdapter {
       }
       if (defaults.model && !entry.model) entry.model = defaults.model
       if (defaults.acpEndpoint && !entry.acpEndpoint) entry.acpEndpoint = defaults.acpEndpoint
-      if (defaults.updatedAt && defaults.updatedAt > (entry.updatedAt || 0)) {
-        entry.updatedAt = defaults.updatedAt
+      if (hasExplicitUpdatedAt) {
+        const nextUpd = Number(defaults.updatedAt)
+        if (!entry.hasExplicitUpdatedAt || nextUpd > (entry.updatedAt || 0)) {
+          entry.updatedAt = nextUpd
+          entry.hasExplicitUpdatedAt = true
+        }
       }
     }
     return entry
@@ -1032,6 +1057,7 @@ export class WorkBuddyAdapter {
       at: new Date(now).toISOString(),
     })
     entry.updatedAt = now
+    entry.hasExplicitUpdatedAt = true
   }
 
   _ensureAssistantMessage(entry) {
@@ -1072,6 +1098,7 @@ export class WorkBuddyAdapter {
       }
     }
     entry.updatedAt = now
+    entry.hasExplicitUpdatedAt = true
   }
 
   _finalizeStreamingActivities(entry) {
@@ -1327,7 +1354,7 @@ export class WorkBuddyAdapter {
               ...(cliProductConfigPath ? { ACC_PRODUCT_CONFIG_PATH: cliProductConfigPath } : {}),
             },
             stdio: 'ignore',
-            detached: true,
+            detached: false,
           },
         )
         proc?.on?.('error', () => {})
@@ -1864,6 +1891,9 @@ export class WorkBuddyAdapter {
           const fullPath = path.join(sessionsDir, f)
           const st = fs.statSync(fullPath)
           const parsed = safeJsonParse(fs.readFileSync(fullPath, 'utf8'))
+          // Skip WorkBuddy/CodeBuddy live process heartbeat lockfiles (`sessions/<pid>.json`)
+          // which overwrite `lastHeartbeat` / `mtimeMs` every ~30s and are NOT conversation transcripts.
+          if (isWorkBuddyProcessHeartbeatRecord(rawId, parsed)) continue
           const events = Array.isArray(parsed) ? parsed : (parsed?.events || parsed?.data?.events || [])
           results.push({
             id: rawId,
@@ -2108,7 +2138,13 @@ export class WorkBuddyAdapter {
     }
 
     const all = [...this.runtimeSessions.values()]
-      .filter(e => !this.deletedIds.has(e.rawId))
+      .filter(e => {
+        if (this.deletedIds.has(e.rawId)) return false
+        if (/^\d+$/.test(String(e.rawId || '').trim()) && e.transcript.length === 0 && e.status === 'idle' && !e.pendingApproval) {
+          return false
+        }
+        return true
+      })
       .map(e => this._formatSessionRecord(e))
     all.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
     return all

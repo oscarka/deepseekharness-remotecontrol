@@ -465,6 +465,15 @@ export class HubCore {
     for (const host of this.hosts.values()) {
       const online = this.isOnline(host)
       const bridge = host.bridgeState ?? {}
+      const rawBridgeTasks = Array.isArray(bridge.tasks) ? bridge.tasks : []
+      const phantomWbCount = rawBridgeTasks.filter(t =>
+        /^workbuddy:\d+$/.test(String(t?.id || '').trim()) &&
+        (!Array.isArray(t?.transcript) || t.transcript.length === 0) &&
+        !(Number(t?.messageCount) > 0) &&
+        t?.status !== 'running' &&
+        t?.status !== 'approval' &&
+        !t?.pendingApproval,
+      ).length
       const dsh = host.dshStats ?? {}
       const trust = host.trust ?? { status: 'unpinned', pinnedPublicKey: '', pinnedFingerprint: '' }
       list.push({
@@ -479,7 +488,7 @@ export class HubCore {
         feishuStandby: Boolean(bridge.feishuStandby),
         remoteActive: Boolean(bridge.remoteActive),
         runningCount: Number(bridge.runningCount) || 0,
-        taskCount: Number(bridge.taskCount) || 0,
+        taskCount: Math.max(0, (Number(bridge.taskCount) || rawBridgeTasks.length) - phantomWbCount),
         sessionCount: Number(dsh.sessionCount) || 0,
         totalBytes: Number(dsh.totalBytes) || 0,
         fileCount: Number(dsh.fileCount) || 0,
@@ -560,8 +569,21 @@ export class HubCore {
       ? bridgeState.approvals.map(decorateApproval).filter(Boolean)
       : []
 
-    const tasks = Array.isArray(bridgeState.tasks)
-      ? bridgeState.tasks.map((t, taskIdx) => {
+    const rawTasks = Array.isArray(bridgeState.tasks)
+      ? bridgeState.tasks.filter(
+          t =>
+            !(
+              /^workbuddy:\d+$/.test(String(t?.id || '').trim()) &&
+              (!Array.isArray(t?.transcript) || t.transcript.length === 0) &&
+              !(Number(t?.messageCount) > 0) &&
+              t?.status !== 'running' &&
+              t?.status !== 'approval' &&
+              !t?.pendingApproval
+            ),
+        )
+      : []
+
+    const tasks = rawTasks.map((t, taskIdx) => {
           let nextTask = t
           const isDshTask =
             nextTask?.harness === 'dsh' ||
@@ -592,10 +614,10 @@ export class HubCore {
           }
           return nextTask
         })
-      : []
 
     return {
       ...bridgeState,
+      ...(typeof bridgeState.taskCount === 'number' ? { taskCount: tasks.length } : {}),
       tasks,
       approvals,
     }

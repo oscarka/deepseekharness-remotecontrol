@@ -14,6 +14,7 @@ import { ClaudeAdapter } from '../lib/harnesses/claude-adapter.js'
 import { CodexAdapter, CodexAppServerClient, discoverCodexModels } from '../lib/harnesses/codex-adapter.js'
 import {
   discoverWorkBuddyModels,
+  isWorkBuddyProcessHeartbeatRecord,
   parseWorkBuddyReplayEvents,
   queryWorkBuddySidecar,
   WorkBuddyAcpClient,
@@ -5287,4 +5288,136 @@ test('v0.6.1: compact session list labels, multi-mini host disambiguation, times
   assert.match(bundleSrc, /width="24" height="24" viewBox="0 0 24 24"/)
   assert.match(bundleSrc, /dsh-icon-workbuddy/)
   assert.match(bundleSrc, /dsh-icon-codex/)
+})
+
+test('WorkBuddy skips sessions/<pid>.json live process heartbeat lockfiles and HubCore strips legacy phantom workbuddy:<pid> entries', async () => {
+  const { execFileSync } = await import('node:child_process')
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-wb-pid-heartbeat-'))
+  try {
+    const wbHome = join(tmpDir, '.workbuddy')
+    const sessionsDir = join(wbHome, 'sessions')
+    const projDir = join(wbHome, 'projects', 'Users-digtalhealthlink-WorkBuddy-2026-11-10-15-09-31')
+    await mkdir(sessionsDir, { recursive: true })
+    await mkdir(projDir, { recursive: true })
+
+    const realSessionId = '869a441a-5fd3-4862-8bf8-deb63bbfea5a'
+    const realUpdatedAt = Date.now() - 3 * 3600 * 1000 // 3 hours ago
+    const heartbeatNow = Date.now()
+
+    // 1. Real SQLite DB row from 3 hours ago
+    const dbPath = join(wbHome, 'workbuddy.db')
+    execFileSync('sqlite3', [
+      dbPath,
+      `
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        cwd TEXT,
+        title TEXT,
+        status TEXT,
+        created_at INTEGER,
+        updated_at INTEGER,
+        deleted_at INTEGER
+      );
+      INSERT INTO sessions (id, cwd, title, status, created_at, updated_at, deleted_at)
+      VALUES ('${realSessionId}', '/Users/digtalhealthlink/WorkBuddy/2026-11-10-15-09-31', '你好', 'completed', ${realUpdatedAt - 30_000}, ${realUpdatedAt}, NULL);
+      `,
+    ])
+
+    // 2. Live codebuddy --serve process heartbeat file (`sessions/70776.json`) touched every ~30s
+    const pidHeartbeatPayload = {
+      pid: 70776,
+      lastHeartbeat: heartbeatNow,
+      sessionId: realSessionId,
+      cwd: '/Users/digtalhealthlink/WorkBuddy/2026-11-10-15-09-31',
+      startedAt: realUpdatedAt - 30_000,
+      kind: 'interactive',
+      url: 'http://127.0.0.1:44560',
+      endpoint: 'http://127.0.0.1:44560',
+      mode: 'local',
+      version: '2.165.0',
+      updatedAt: heartbeatNow,
+    }
+    await writeFile(join(sessionsDir, '70776.json'), JSON.stringify(pidHeartbeatPayload, null, 2), 'utf8')
+
+    // Unit helper verification
+    assert.equal(isWorkBuddyProcessHeartbeatRecord('70776', pidHeartbeatPayload), true)
+    assert.equal(isWorkBuddyProcessHeartbeatRecord('70776', null), true)
+    assert.equal(
+      isWorkBuddyProcessHeartbeatRecord('wb-replay-01', {
+        events: [{ timestamp: realUpdatedAt, update: { sessionUpdate: 'user_message', content: 'hi' } }],
+      }),
+      false,
+    )
+
+    // 3. Even if sidecar `session.list` discovers `realSessionId` first without `updatedAt`,
+    // historical DB `updatedAt` (3h ago) must win instead of sticking at daemon boot `Date.now()`.
+    const wb = new WorkBuddyAdapter({
+      workbuddyHome: wbHome,
+      querySidecarImpl: async () => ({
+        sessions: [
+          {
+            sessionId: realSessionId,
+            cwd: '/Users/digtalhealthlink/WorkBuddy/2026-11-10-15-09-31',
+            acpEndpoint: 'http://127.0.0.1:44560/api/v1/acp',
+          },
+        ],
+      }),
+      fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) }),
+    })
+
+    const listed = await wb.listSessions()
+    assert.equal(listed.length, 1, 'Phantom workbuddy:70776 must not be imported as a session')
+    assert.equal(listed[0].id, `workbuddy:${realSessionId}`)
+    assert.equal(
+      listed[0].updatedAt,
+      realUpdatedAt,
+      'Real session updatedAt must remain 3h ago rather than daemon boot time or PID heartbeat time',
+    )
+    wb.shutdown()
+
+    // 4. HubCore server-side defense-in-depth: strips legacy `workbuddy:70776` sent by un-restarted hosts
+    const hub = new HubCore()
+    hub.handleHeartbeat({
+      hostId: 'digtalhealthlinkdemac-mini',
+      hostName: 'digtalhealthlink的Mac mini',
+      bridgeState: {
+        taskCount: 2,
+        runningCount: 0,
+        tasks: [
+          {
+            id: 'workbuddy:70776',
+            rawId: '70776',
+            harness: 'workbuddy',
+            title: 'WorkBuddy (70776)',
+            status: 'idle',
+            turnState: 'idle',
+            updatedAt: heartbeatNow,
+            lastActivity: heartbeatNow,
+            transcript: [],
+          },
+          {
+            id: `workbuddy:${realSessionId}`,
+            rawId: realSessionId,
+            harness: 'workbuddy',
+            title: '你好',
+            status: 'idle',
+            turnState: 'idle',
+            updatedAt: realUpdatedAt,
+            lastActivity: realUpdatedAt,
+            transcript: [{ index: 0, role: 'user', text: '半导体吧', time: realUpdatedAt }],
+          },
+        ],
+        approvals: [],
+      },
+    })
+
+    const state = hub.getFullState()
+    const miniHost = state.hosts.find(h => h.hostId === 'digtalhealthlinkdemac-mini')
+    assert.ok(miniHost)
+    assert.equal(miniHost.taskCount, 1)
+    assert.equal(miniHost.bridgeState.tasks.length, 1)
+    assert.equal(miniHost.bridgeState.tasks[0].id, `workbuddy:${realSessionId}`)
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true })
+  }
 })

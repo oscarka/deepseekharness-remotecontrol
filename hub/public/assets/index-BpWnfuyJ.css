@@ -2185,23 +2185,285 @@
       font-weight: 600;
     }
 
-    .new-task-textarea {
-      width: 100%;
-      min-height: 86px;
-      border: 1px solid var(--border);
-      background: var(--subtle);
-      border-radius: 14px;
-      padding: 11px 13px;
-      font-size: 16px !important;
-      font-family: inherit;
-      resize: none;
-      outline: none;
-      margin-top: 6px;
+    /* ==================== 新建任务弹窗 (New Task Sheet) 现代重构 ==================== */
+    .new-task-sheet-panel {
+      max-height: 88vh;
+      display: flex;
+      flex-direction: column;
     }
 
-    .new-task-textarea:focus {
+    /* 1. 结构化执行目标卡片（合并电脑与引擎） */
+    .new-task-context-card {
+      background: var(--subtle);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+
+    .new-task-context-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .context-row-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      flex-shrink: 0;
+    }
+
+    .context-row-chips {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+      min-width: 0;
+    }
+    .context-row-chips::-webkit-scrollbar {
+      display: none;
+    }
+
+    .context-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 9px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 550;
+      color: var(--text-secondary);
       background: var(--surface);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+
+    .context-chip:hover {
       border-color: var(--primary);
+      color: var(--text);
+    }
+
+    .context-chip.selected {
+      background: var(--primary-soft);
+      border-color: var(--primary);
+      color: var(--primary);
+      font-weight: 700;
+    }
+
+    /* 2. 项目文件夹单行横滑，绝不平铺 */
+    .new-task-proj-section {
+      margin-bottom: 12px;
+    }
+
+    .new-task-proj-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .proj-header-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+    }
+
+    .proj-header-more-btn {
+      border: none;
+      background: transparent;
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 2px 4px;
+    }
+
+    .new-task-proj-scroll {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+      padding: 1px 0 3px;
+    }
+    .new-task-proj-scroll::-webkit-scrollbar {
+      display: none;
+    }
+
+    .new-task-proj-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: var(--subtle);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+
+    .new-task-proj-pill:hover {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    .new-task-proj-pill.selected {
+      background: var(--primary-soft);
+      border-color: var(--primary);
+      color: var(--primary);
+      font-weight: 700;
+    }
+
+    /* 3. 核心视觉主角：宽敞输入卡片 + 内置工具栏 */
+    .new-task-card-wrap {
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      background: var(--surface);
+      padding: 10px 12px 8px;
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .new-task-card-wrap:focus-within {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-soft);
+    }
+
+    .new-task-textarea {
+      width: 100%;
+      height: 125px;
+      min-height: 90px;
+      max-height: 240px;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--text);
+      font-size: 16px !important;
+      line-height: 1.5;
+      resize: vertical;
+      font-family: inherit;
+      padding: 0;
+      margin-top: 0;
+    }
+
+    .new-task-textarea::placeholder {
+      color: var(--muted);
+    }
+
+    .new-task-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      border-top: 1px solid var(--hairline);
+      padding-top: 8px;
+    }
+
+    .new-task-tool-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 9px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--subtle);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .new-task-tool-btn:hover {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    .new-task-tool-btn.model-btn {
+      max-width: 190px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .new-task-tool-btn.model-btn #newTaskModelBtnLabel {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .new-task-toolbar-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    /* 4. 快捷提示词微横条 */
+    .new-task-quick-strip {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+      margin-bottom: 12px;
+      padding: 1px 0;
+    }
+    .new-task-quick-strip::-webkit-scrollbar {
+      display: none;
+    }
+
+    .quick-prompt-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--muted);
+      background: var(--subtle);
+      border: 1px solid transparent;
+      padding: 4px 9px;
+      border-radius: 999px;
+      white-space: nowrap;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all 0.15s;
+    }
+
+    .quick-prompt-pill:hover {
+      background: var(--surface-2);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    /* 5. 立即启动大按钮 */
+    .new-task-submit-btn {
+      width: 100%;
+      margin-top: 0;
+      padding: 12px 16px;
+      font-size: 15px;
+      font-weight: 700;
+      border-radius: 12px;
+      box-shadow: 0 3px 10px rgba(37, 99, 235, 0.25);
     }
 
     .primary-block-btn {

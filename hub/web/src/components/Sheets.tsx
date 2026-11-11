@@ -26,34 +26,78 @@ export function Sheets() {
 
       {/* 抽屉 2：新建对话半屏面板 */}
       <div class="sheet-backdrop" id="newTaskSheet" onClick={closeIfBackdrop('newTaskSheet')}>
-        <div class="sheet-panel">
+        <div class="sheet-panel new-task-sheet-panel">
           <div class="sheet-handle"></div>
-          <div class="sheet-title">
+          <div class="sheet-title" style="margin-bottom:12px;">
             <span>✨ 新建远程对话任务</span>
             <button
               type="button"
-              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;"
+              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;"
               onClick={() => (window as any).closeSheet?.('newTaskSheet')}
             >
               ✕
             </button>
           </div>
 
-          <div class="form-label">1. 选择执行电脑</div>
-          <div class="chip-selector" id="newTaskHostChips"></div>
+          {/* 1. 结构化执行目标卡片（紧凑合并电脑与引擎） */}
+          <div class="new-task-context-card">
+            <div class="new-task-context-row">
+              <span class="context-row-label">💻 执行电脑</span>
+              <div class="context-row-chips" id="newTaskHostChips"></div>
+            </div>
+            <div class="new-task-context-row">
+              <span class="context-row-label">⚡ 执行引擎</span>
+              <div class="context-row-chips" id="newTaskHarnessChips"></div>
+            </div>
+          </div>
 
-          <div class="form-label">2. 选择执行引擎 (Harness / IDE)</div>
-          <div class="chip-selector" id="newTaskHarnessChips"></div>
+          {/* 2. 项目文件夹单行横滑，绝不平铺18个 */}
+          <div class="new-task-proj-section">
+            <div class="new-task-proj-header">
+              <span class="proj-header-title">📁 项目工作区</span>
+              <button
+                type="button"
+                class="proj-header-more-btn"
+                id="newTaskProjMoreBtn"
+                onClick={() => (window as any).openNewTaskProjectPickerSheet?.()}
+              >
+                全部 ▾
+              </button>
+            </div>
+            <div class="new-task-proj-scroll" id="newTaskProjectChips"></div>
+          </div>
 
-          <div class="form-label">3. 选择项目文件夹（免手敲路径）</div>
-          <div class="chip-selector" id="newTaskProjectChips"></div>
+          {/* 3. 核心视觉主角：宽敞输入卡片 + 内置底栏工具栏 */}
+          <div class="new-task-card-wrap">
+            <div
+              class="composer-attachments-strip"
+              id="newTaskAttachmentsStrip"
+              style="display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"
+            ></div>
+            <div
+              class="voice-hint-bar"
+              id="newTaskVoiceHintBar"
+              style="display:none;margin-bottom:8px;"
+              onClick={() => (window as any).hideVoiceHintBar?.('newTaskInput')}
+            ></div>
 
-          <div
-            class="form-label"
-            style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;"
-          >
-            <span>4. 任务指令（支持截图或语音）</span>
-            <div style="display:inline-flex;align-items:center;gap:6px;">
+            <textarea
+              class="new-task-textarea"
+              id="newTaskInput"
+              placeholder="输入你想让电脑执行的任务，或点击下方传截图/语音输入..."
+              autocorrect="on"
+              autocapitalize="sentences"
+              spellcheck={true}
+              onInput={() => {
+                if (!(window as any).isVoiceRecording?.()) {
+                  (window as any).hideVoiceHintBar?.('newTaskInput');
+                }
+              }}
+              onPaste={e => (window as any).onComposerPaste?.(e, 'newTask')}
+            ></textarea>
+
+            {/* 输入框内置底栏 */}
+            <div class="new-task-toolbar">
               <input
                 type="file"
                 id="newTaskImageInput"
@@ -64,8 +108,9 @@ export function Sheets() {
               />
               <button
                 type="button"
-                class="voice-pill-btn"
+                class="new-task-tool-btn model-btn"
                 id="newTaskModelBtn"
+                title="选择模型"
                 onClick={e => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -73,55 +118,60 @@ export function Sheets() {
                 }}
               >
                 <span id="newTaskModelBtnLabel">🤖 默认模型</span>
-                <span style="opacity:0.7;font-size:10px;">▾</span>
+                <span class="model-arrow" style="opacity:0.7;font-size:10px;margin-left:3px;">▾</span>
               </button>
-              <button
-                type="button"
-                class="voice-pill-btn"
-                id="newTaskImageBtn"
-                onClick={e => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  (window as any).triggerImagePicker?.('newTask');
-                }}
-              >
-                🖼️ 传截图
-              </button>
-              <label
-                htmlFor="newTaskInput"
-                role="button"
-                tabIndex={0}
-                class="voice-pill-btn"
-                id="newTaskVoiceBtn"
-                onMouseDown={e => {
-                  const ua = String(navigator?.userAgent || '');
-                  const isMobile =
-                    /iPhone|iPad|iPod|Android|Mobile/i.test(ua) ||
-                    (/Macintosh/i.test(ua) && Number((navigator as any)?.maxTouchPoints || 0) > 1);
-                  if (!isMobile) {
+
+              <div class="new-task-toolbar-actions">
+                <button
+                  type="button"
+                  class="new-task-tool-btn"
+                  id="newTaskImageBtn"
+                  onClick={e => {
                     e.preventDefault();
-                  }
-                }}
-                onClick={e => {
-                  const ua = String(navigator?.userAgent || '');
-                  const isMobile =
-                    /iPhone|iPad|iPod|Android|Mobile/i.test(ua) ||
-                    (/Macintosh/i.test(ua) && Number((navigator as any)?.maxTouchPoints || 0) > 1);
-                  if (!isMobile) {
-                    e.preventDefault();
-                  }
-                  e.stopPropagation();
-                  (window as any).toggleVoiceInput?.('newTaskInput', 'newTaskVoiceBtn');
-                }}
-              >
-                🎤 语音输入
-              </label>
+                    e.stopPropagation();
+                    (window as any).triggerImagePicker?.('newTask');
+                  }}
+                >
+                  🖼️ 截图
+                </button>
+                <label
+                  htmlFor="newTaskInput"
+                  role="button"
+                  tabIndex={0}
+                  class="new-task-tool-btn"
+                  id="newTaskVoiceBtn"
+                  onMouseDown={e => {
+                    const ua = String(navigator?.userAgent || '');
+                    const isMobile =
+                      /iPhone|iPad|iPod|Android|Mobile/i.test(ua) ||
+                      (/Macintosh/i.test(ua) && Number((navigator as any)?.maxTouchPoints || 0) > 1);
+                    if (!isMobile) {
+                      e.preventDefault();
+                    }
+                  }}
+                  onClick={e => {
+                    const ua = String(navigator?.userAgent || '');
+                    const isMobile =
+                      /iPhone|iPad|iPod|Android|Mobile/i.test(ua) ||
+                      (/Macintosh/i.test(ua) && Number((navigator as any)?.maxTouchPoints || 0) > 1);
+                    if (!isMobile) {
+                      e.preventDefault();
+                    }
+                    e.stopPropagation();
+                    (window as any).toggleVoiceInput?.('newTaskInput', 'newTaskVoiceBtn');
+                  }}
+                >
+                  🎤 语音
+                </label>
+              </div>
             </div>
           </div>
-          <div class="chip-selector" style="margin-bottom:6px;">
+
+          {/* 4. 快捷提示词微横条 */}
+          <div class="new-task-quick-strip">
             <button
               type="button"
-              class="choice-chip"
+              class="quick-prompt-pill"
               onClick={() =>
                 (window as any).fillQuickPrompt?.('帮我检查当前项目的定时任务和运行日志是否正常')
               }
@@ -130,14 +180,14 @@ export function Sheets() {
             </button>
             <button
               type="button"
-              class="choice-chip"
+              class="quick-prompt-pill"
               onClick={() => (window as any).fillQuickPrompt?.('运行单元测试并修复所有报错')}
             >
               🧪 跑测试修 Bug
             </button>
             <button
               type="button"
-              class="choice-chip"
+              class="quick-prompt-pill"
               onClick={() =>
                 (window as any).fillQuickPrompt?.('查看 git status 并总结最近的代码改动')
               }
@@ -145,39 +195,46 @@ export function Sheets() {
               📦 总结代码改动
             </button>
           </div>
-          <div
-            class="composer-attachments-strip"
-            id="newTaskAttachmentsStrip"
-            style="display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"
-          ></div>
-          <div
-            class="voice-hint-bar"
-            id="newTaskVoiceHintBar"
-            style="display:none;margin-bottom:8px;"
-            onClick={() => (window as any).hideVoiceHintBar?.('newTaskInput')}
-          ></div>
-          <textarea
-            class="new-task-textarea"
-            id="newTaskInput"
-            placeholder="输入你想让电脑执行的任务，或点击右上角🖼️传截图..."
-            autocorrect="on"
-            autocapitalize="sentences"
-            spellcheck={true}
-            onInput={() => {
-              if (!(window as any).isVoiceRecording?.()) {
-                (window as any).hideVoiceHintBar?.('newTaskInput');
-              }
-            }}
-            onPaste={e => (window as any).onComposerPaste?.(e, 'newTask')}
-          ></textarea>
 
           <button
             type="button"
-            class="primary-block-btn"
+            class="primary-block-btn new-task-submit-btn"
             onClick={() => (window as any).submitNewTask?.()}
           >
             🚀 立即在电脑上启动任务
           </button>
+        </div>
+      </div>
+
+      {/* 抽屉 2-b：项目文件夹完整选择抽屉（当项目很多时点全部唤起） */}
+      <div
+        class="sheet-backdrop"
+        id="newTaskProjectPickerSheet"
+        onClick={closeIfBackdrop('newTaskProjectPickerSheet')}
+      >
+        <div class="sheet-panel">
+          <div class="sheet-handle"></div>
+          <div class="sheet-title">
+            <span>📁 选择项目文件夹</span>
+            <button
+              type="button"
+              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;"
+              onClick={() => (window as any).closeSheet?.('newTaskProjectPickerSheet')}
+            >
+              ✕
+            </button>
+          </div>
+          <div style="padding:0 2px 10px;">
+            <input
+              type="text"
+              class="auth-input"
+              id="newTaskProjectSearchInput"
+              placeholder="搜索项目名称或路径..."
+              style="margin:0 0 10px;"
+              onInput={e => (window as any).filterNewTaskProjects?.((e.target as any).value)}
+            />
+          </div>
+          <div class="host-options-list" id="newTaskProjectPickerBody" style="max-height:50vh;overflow-y:auto;"></div>
         </div>
       </div>
 

@@ -312,7 +312,15 @@ const EXACT_ZH_TO_EN = {
   '🔍 排查当前目录报错日志': '🔍 Diagnose errors in current project',
   '描述你要让远程 AI 执行的开发任务（可点上方上传截图）...':
     'Describe the coding task for your remote AI agent (you can also attach screenshots)...',
+  '输入你想让电脑执行的任务，或点击下方传截图/语音输入...':
+    'Describe the task to run on your remote computer, or attach screenshots/voice below...',
+  '📁 项目工作区': '📁 Project Workspaces',
+  '📁 选择项目文件夹': '📁 Select Project Folder',
+  '搜索项目名称或路径...': 'Search project name or path...',
+  '未找到匹配的项目文件夹': 'No matching project folder found',
+  '全部 ▾': 'All ▾',
   '🚀 立即在远程电脑启动': '🚀 Launch on Remote Computer',
+  '🚀 立即在远程电脑启动任务': '🚀 Launch Task on Remote Computer',
   '📂 项目文件速览': '📂 Project Files',
   '关闭': 'Close',
   '‹ 返回目录': '‹ Back to folder',

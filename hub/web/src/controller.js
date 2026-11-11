@@ -305,13 +305,36 @@ export function initHubController() {
     btn.classList.toggle('active-override', Boolean(overrideVal));
   }
 
+  function cleanModelHumanLabel(rawLabel) {
+    let s = String(rawLabel || '').trim();
+    if (!s) return '默认模型';
+    s = s.replace(/\([^)]*-[0-9]{5,}[^)]*\)/g, '').trim();
+    s = s.replace(/\(\s*\)/g, '').trim();
+    if (/deepseek.*v3/i.test(s)) return 'DeepSeek V3';
+    if (/deepseek.*v4/i.test(s)) return 'DeepSeek V4';
+    if (/gemini.*2\.5.*pro/i.test(s)) return 'Gemini 2.5 Pro';
+    if (/gemini.*3\.8.*flash/i.test(s)) return 'Gemini 3.8 Flash';
+    if (/gemini.*4.*argon/i.test(s)) return 'Gemini 4 Argon';
+    if (/claude.*sonnet.*4/i.test(s)) return 'Claude Sonnet 4';
+    if (/claude.*opus.*5/i.test(s)) return 'Claude Opus 5';
+    if (/gpt-5\.5/i.test(s)) return 'GPT-5.5';
+    if (/gpt-5\.4/i.test(s)) return 'GPT-5.4';
+    const firstParen = s.indexOf('(');
+    if (firstParen > 2) {
+      const main = s.slice(0, firstParen).trim();
+      if (main.length >= 3) return main;
+    }
+    return s.length > 20 ? `${s.slice(0, 18)}…` : s;
+  }
+
   function updateNewTaskModelPill() {
     const labelEl = document.getElementById('newTaskModelBtnLabel');
     if (!labelEl) return;
     const host = (hubState.hosts || []).find(h => h.hostId === newTaskHostId);
     const catalog = getHarnessModelCatalog(host, newTaskHarness);
     const displayLabel = resolveModelShortLabel(catalog, newTaskModel, '');
-    labelEl.textContent = newTaskModel ? `🤖 ${displayLabel}` : `🤖 默认 (${displayLabel})`;
+    const cleanLabel = cleanModelHumanLabel(displayLabel);
+    labelEl.textContent = newTaskModel ? `🤖 ${cleanLabel}` : `🤖 默认 · ${cleanLabel}`;
   }
 
   function openModelPickerSheet(target = 'chat') {
@@ -628,6 +651,16 @@ export function initHubController() {
         return a;
       });
       for (const t of tasks) {
+        if (
+          /^workbuddy:\d+$/.test(String(t?.id || '').trim()) &&
+          (!Array.isArray(t?.transcript) || t.transcript.length === 0) &&
+          !(Number(t?.messageCount) > 0) &&
+          t?.status !== 'running' &&
+          t?.status !== 'approval' &&
+          !t?.pendingApproval
+        ) {
+          continue;
+        }
         const ts = t.updatedAt || t.lastActivity || 0;
         const pendingApp = approvals.find(a => a.agentId === t.id);
         const rawWireTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
@@ -3539,30 +3572,37 @@ export function initHubController() {
     const hosts = hubState.hosts || [];
     const hostChips = document.getElementById('newTaskHostChips');
     if (hosts.length === 0) {
-      hostChips.innerHTML = `
-          <div style="font-size:12.5px;color:#b45309;background:var(--amber-soft);border:1px solid #fde68a;padding:9px 11px;border-radius:10px;line-height:1.5;width:100%;">
-            ⚠️ 当前还没有已接入的电脑。请先关闭此面板，复制首页的「添加电脑」一行命令在电脑终端执行。
-          </div>
-        `;
-    } else {
-      hostChips.innerHTML = hosts.map(h => `
-          <button class="choice-chip ${h.hostId === newTaskHostId ? 'selected' : ''}" onclick="selectNewTaskHost('${esc(h.hostId)}')">
-            🟢 ${esc(h.hostName)}
-          </button>
-        `).join('');
+      if (hostChips) {
+        hostChips.innerHTML = `
+            <div style="font-size:12px;color:#b45309;background:var(--amber-soft);padding:4px 8px;border-radius:6px;width:100%;">
+              ⚠️ 暂无在线电脑
+            </div>
+          `;
+      }
+    } else if (hostChips) {
+      const shortHostMap = buildShortHostNameMap(hosts);
+      hostChips.innerHTML = hosts.map(h => {
+        const shortName = shortHostMap[h.hostId] || h.hostName;
+        const isSel = h.hostId === newTaskHostId;
+        return `
+            <button type="button" class="context-chip ${isSel ? 'selected' : ''}" title="${esc(h.hostName)}" onclick="selectNewTaskHost('${esc(h.hostId)}')">
+              🟢 ${esc(shortName)}
+            </button>
+          `;
+      }).join('');
     }
 
     const harnessChips = document.getElementById('newTaskHarnessChips');
     if (harnessChips) {
       const harnessOpts = [
-        { id: 'antigravity-ide', label: 'Antigravity IDE' },
-        { id: 'codex', label: 'OpenAI Codex' },
+        { id: 'antigravity-ide', label: 'IDE' },
+        { id: 'codex', label: 'Codex' },
         { id: 'workbuddy', label: 'WorkBuddy' },
-        { id: 'claude', label: 'Claude Code' },
-        { id: 'dsh', label: 'DeepSeek Harness' },
+        { id: 'claude', label: 'Claude' },
+        { id: 'dsh', label: 'DSH' },
       ];
       harnessChips.innerHTML = harnessOpts.map(opt => `
-          <button class="choice-chip ${opt.id === newTaskHarness ? 'selected' : ''}" onclick="selectNewTaskHarness('${opt.id}')">
+          <button type="button" class="context-chip ${opt.id === newTaskHarness ? 'selected' : ''}" onclick="selectNewTaskHarness('${opt.id}')">
             ${renderHarnessBadgeHtml(opt.id, 'chip')} ${esc(opt.label)}
           </button>
         `).join('');
@@ -3573,13 +3613,74 @@ export function initHubController() {
     if (!projects.some(p => p.cwd === newTaskCwd) && projects[0]) {
       newTaskCwd = projects[0].cwd;
     }
+
+    const moreBtn = document.getElementById('newTaskProjMoreBtn');
+    if (moreBtn) {
+      moreBtn.textContent = `全部 (${projects.length}) ▾`;
+    }
+
     const projChips = document.getElementById('newTaskProjectChips');
-    projChips.innerHTML = projects.map(p => `
-        <button class="choice-chip ${p.cwd === newTaskCwd ? 'selected' : ''}" title="${esc(p.name)}" onclick="selectNewTaskProject('${esc(p.cwd)}')">
-          📁 ${esc(formatCompactProjectLabel(p.name))}
-        </button>
-      `).join('');
+    if (projChips) {
+      projChips.innerHTML = projects.map(p => `
+          <button type="button" class="new-task-proj-pill ${p.cwd === newTaskCwd ? 'selected' : ''}" title="${esc(p.name)} (${esc(p.cwd)})" onclick="selectNewTaskProject('${esc(p.cwd)}')">
+            📁 ${esc(formatCompactProjectLabel(p.name))}
+          </button>
+        `).join('');
+      // 保持当前选中的项目滚动居中可见
+      const selBtn = projChips.querySelector('.new-task-proj-pill.selected');
+      if (selBtn) {
+        setTimeout(() => selBtn.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'smooth' }), 50);
+      }
+    }
     updateNewTaskModelPill();
+  }
+
+  let newTaskProjectSearchQuery = '';
+
+  function openNewTaskProjectPickerSheet() {
+    newTaskProjectSearchQuery = '';
+    const input = document.getElementById('newTaskProjectSearchInput');
+    if (input) input.value = '';
+    renderNewTaskProjectPickerList();
+    openSheet('newTaskProjectPickerSheet');
+    if (input) setTimeout(() => input.focus(), 150);
+  }
+
+  function filterNewTaskProjects(query) {
+    newTaskProjectSearchQuery = String(query || '').trim().toLowerCase();
+    renderNewTaskProjectPickerList();
+  }
+
+  function renderNewTaskProjectPickerList() {
+    const body = document.getElementById('newTaskProjectPickerBody');
+    if (!body) return;
+    const hosts = hubState.hosts || [];
+    const host = hosts.find(h => h.hostId === newTaskHostId);
+    const projects = getHostProjects(host);
+    const q = newTaskProjectSearchQuery;
+    const filtered = projects.filter(p => !q || p.name.toLowerCase().includes(q) || p.cwd.toLowerCase().includes(q));
+
+    if (filtered.length === 0) {
+      body.innerHTML = `
+        <div style="padding:24px 12px;text-align:center;color:var(--muted);font-size:13px;">
+          未找到匹配的项目文件夹
+        </div>
+      `;
+      return;
+    }
+
+    body.innerHTML = filtered.map(p => {
+      const isSel = p.cwd === newTaskCwd;
+      return `
+        <div class="host-option ${isSel ? 'selected' : ''}" onclick="selectNewTaskProject('${esc(p.cwd)}'); closeSheet('newTaskProjectPickerSheet');">
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:13.5px;font-weight:700;color:var(--text);">📁 ${esc(p.name)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.cwd)}</div>
+          </div>
+          ${isSel ? '<span style="color:var(--primary);font-weight:700;margin-left:8px;">✓</span>' : ''}
+        </div>
+      `;
+    }).join('');
   }
 
   function selectNewTaskHost(id) {
@@ -6054,6 +6155,8 @@ export function initHubController() {
     selectNewTaskHost,
     selectNewTaskHarness,
     selectNewTaskProject,
+    openNewTaskProjectPickerSheet,
+    filterNewTaskProjects,
     fillQuickPrompt,
     submitNewTask,
     openCurrentSessionActions,
