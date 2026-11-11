@@ -1819,7 +1819,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.5.5')
+  assert.equal(healthRes.build.version, '0.5.6')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 
@@ -4383,5 +4383,223 @@ test('hub graceful SSE rotation (<300s Cloud Run limit) & idempotent command ret
     assert.match(hostBody, /event: rotate/)
   } finally {
     await new Promise(resolve => server.close(resolve))
+  }
+})
+
+test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync keep Desktop sessions and transcripts aligned', async () => {
+  const { execFileSync } = await import('node:child_process')
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-wb-cwd-sync-'))
+  try {
+    const wbHome = join(tmpDir, '.workbuddy')
+    await mkdir(wbHome, { recursive: true })
+    const dbPath = join(wbHome, 'workbuddy.db')
+
+    const existingId = '869a441a-5fd3-4862-8bf8-deb63bbfea5a'
+    const existingCwd = '/Users/digtalhealthlink/WorkBuddy/2026-11-10-15-09-31'
+    const realUserId = 'a7c651f6-2ead-4e43-b753-15bb704ce89e'
+
+    // 1. Seed real SQLite workbuddy.db matching WorkBuddy v5.9.3 schema
+    execFileSync('sqlite3', [
+      dbPath,
+      `
+      CREATE TABLE workspaces (
+        path TEXT PRIMARY KEY,
+        last_opened_at INTEGER NOT NULL
+      );
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        cwd TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        title TEXT,
+        custom_title TEXT,
+        status TEXT NOT NULL DEFAULT 'completed',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        last_activity_at INTEGER,
+        deleted_at INTEGER,
+        is_playground INTEGER DEFAULT 0,
+        source_mode TEXT DEFAULT 'craft',
+        mode TEXT DEFAULT 'craft',
+        model TEXT DEFAULT 'fast-model',
+        permission_mode TEXT DEFAULT 'bypassPermissions',
+        use_sandbox_cli INTEGER DEFAULT 1,
+        addon_selection TEXT,
+        transport TEXT DEFAULT 'local',
+        unread INTEGER DEFAULT 0
+      );
+      INSERT INTO workspaces (path, last_opened_at) VALUES ('${existingCwd}', 1700000001000);
+      INSERT INTO sessions (
+        id, cwd, user_id, title, status, created_at, updated_at, last_activity_at, is_playground
+      ) VALUES (
+        '${existingId}', '${existingCwd}', '${realUserId}', '你好', 'completed', 1700000000000, 1700000002000, 1700000002000, 1
+      );
+      `,
+    ])
+
+    // Seed Desktop project JSONL + dot-path project JSONL to verify slug resolution
+    const existingProjDir = join(wbHome, 'projects', 'Users-digtalhealthlink-WorkBuddy-2026-11-10-15-09-31')
+    const dotProjDir = join(wbHome, 'projects', 'Users-digtalhealthlink-.dsh-remotecontrol')
+    await mkdir(existingProjDir, { recursive: true })
+    await mkdir(dotProjDir, { recursive: true })
+    await writeFile(
+      join(existingProjDir, `${existingId}.jsonl`),
+      [
+        JSON.stringify({ type: 'message', role: 'user', content: [{ type: 'input_text', text: '<user_query>你好</user_query>' }], cwd: existingCwd, timestamp: 1700000001000 }),
+        JSON.stringify({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '你好！我是 WorkBuddy。' }], cwd: existingCwd, timestamp: 1700000002000 }),
+      ].join('\n') + '\n',
+      'utf8',
+    )
+    await writeFile(join(dotProjDir, 'dot-sess-01.jsonl'), '{"type":"message"}\n', 'utf8')
+
+    const spawnedCalls = []
+    const rpcByOrigin = new Map()
+    const binPath = join(tmpDir, 'fake-codebuddy')
+    await writeFile(binPath, '#!/usr/bin/env node\n', 'utf8')
+
+    const wb = new WorkBuddyAdapter({
+      workbuddyHome: wbHome,
+      binaryPath: binPath,
+      querySidecarImpl: async () => null,
+      spawnImpl: (cmd, args, opts) => {
+        const portIdx = args.indexOf('--port')
+        const port = portIdx !== -1 ? args[portIdx + 1] : '0'
+        spawnedCalls.push({ cmd, args, cwd: opts.cwd, port })
+        const proc = new EventEmitter()
+        proc.unref = () => {}
+        proc.kill = () => {}
+        return proc
+      },
+      fetchImpl: async (url, init = {}) => {
+        const u = new URL(String(url))
+        if (u.pathname.endsWith('/connect')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { connectionId: `conn-${u.port}`, sessionToken: '' } }),
+          }
+        }
+        const parsed = init.body ? JSON.parse(init.body) : {}
+        const list = rpcByOrigin.get(u.origin) || []
+        list.push(parsed)
+        rpcByOrigin.set(u.origin, list)
+
+        let result = {}
+        if (parsed.method === 'initialize') {
+          result = { protocolVersion: 1, authMethods: [{ id: 'internal', name: 'TencentCloud' }] }
+        } else if (parsed.method === 'authenticate') {
+          result = { _meta: { 'codebuddy.ai/userinfo': { userId: realUserId, userName: 'digtalhealthlink' } } }
+        } else if (parsed.method === 'session/load') {
+          result = { models: { currentModelId: 'fast-model' } }
+        } else if (parsed.method === 'session/new') {
+          result = { sessionId: 'wb-phone-new-99', models: { currentModelId: 'fast-model' } }
+        } else if (parsed.method === 'session/prompt') {
+          result = { content: [{ type: 'text', text: `来自端口 ${u.port} 的 AI 回复` }] }
+        }
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/json' },
+          text: async () => JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result }),
+        }
+      },
+      openSseImpl: () => ({ destroy() {} }),
+    })
+
+    // Dot-preserving slug resolution check
+    assert.equal(
+      wb._findProjectJsonlPath('dot-sess-01', '/Users/digtalhealthlink/.dsh/remotecontrol'),
+      join(dotProjDir, 'dot-sess-01.jsonl'),
+    )
+
+    // 2. First run CLI authenticate() -> spawns server #1 in process.cwd()
+    const authOut = await wb.authenticate()
+    assert.equal(authOut.ok, true)
+    assert.equal(spawnedCalls.length, 1)
+    assert.equal(spawnedCalls[0].cwd, process.cwd())
+
+    // 3. Send prompt from phone to existing Desktop session `你好` WITHOUT pre-calling listSessions()
+    //    Must discover cwd from workbuddy.db and spawn server #2 in `existingCwd` (never reusing process.cwd() server!)
+    const promptOut = await wb.sendPrompt({
+      sessionId: `workbuddy:${existingId}`,
+      text: '手机端追问：今天天气怎么样？',
+    })
+    assert.equal(promptOut.ok, true)
+    assert.equal(spawnedCalls.length, 2, 'Should spawn a dedicated ACP server in the session exact cwd')
+    assert.equal(spawnedCalls[1].cwd, existingCwd)
+
+    // Wait for async prompt completion & SQLite sync
+    for (let i = 0; i < 30; i++) {
+      const s = await wb.getSession(`workbuddy:${existingId}`)
+      if (s?.status === 'idle' && s.transcript.length === 4) break
+      await new Promise(r => setTimeout(r, 20))
+    }
+
+    // Verify listSessions() preserves all 4 messages (2 Desktop + 2 Phone) and does NOT clobber with older disk JSONL
+    const listedAfterPrompt = await wb.listSessions()
+    const targetSess = listedAfterPrompt.find(s => s.id === `workbuddy:${existingId}`)
+    assert.ok(targetSess)
+    assert.equal(targetSess.cwd, existingCwd)
+    assert.equal(targetSess.transcript.length, 4)
+    assert.equal(targetSess.transcript[2].text, '手机端追问：今天天气怎么样？')
+    assert.match(targetSess.transcript[3].text, new RegExp(`来自端口 ${spawnedCalls[1].port} 的 AI 回复`))
+
+    const dbExistingRows = JSON.parse(
+      execFileSync('sqlite3', ['-json', dbPath, `SELECT * FROM sessions WHERE id = '${existingId}';`], { encoding: 'utf8' }),
+    )
+    assert.equal(dbExistingRows.length, 1)
+    assert.equal(dbExistingRows[0].user_id, realUserId)
+    assert.equal(dbExistingRows[0].title, '你好')
+    assert.equal(dbExistingRows[0].status, 'completed')
+    assert.ok(dbExistingRows[0].updated_at > 1700000002000)
+
+    // 4. Start a brand-new WorkBuddy session from the phone -> spawns server #3 in newCwd & inserts into workbuddy.db!
+    const newCwd = '/Users/digtalhealthlink/WorkBuddy/2026-11-11-20-30-00'
+    const newOut = await wb.startSession({
+      title: '手机新建大盘复盘',
+      prompt: '帮我复盘今日 A 股板块轮动',
+      cwd: newCwd,
+    })
+    assert.equal(newOut.ok, true)
+    assert.equal(newOut.agentId, 'workbuddy:wb-phone-new-99')
+    assert.equal(spawnedCalls.length, 3)
+    assert.equal(spawnedCalls[2].cwd, newCwd)
+
+    for (let i = 0; i < 30; i++) {
+      const s = await wb.getSession('workbuddy:wb-phone-new-99')
+      if (s?.status === 'idle') break
+      await new Promise(r => setTimeout(r, 20))
+    }
+
+    const dbNewRows = JSON.parse(
+      execFileSync('sqlite3', ['-json', dbPath, "SELECT * FROM sessions WHERE id = 'wb-phone-new-99';"], { encoding: 'utf8' }),
+    )
+    assert.equal(dbNewRows.length, 1)
+    assert.equal(dbNewRows[0].cwd, newCwd)
+    assert.equal(dbNewRows[0].user_id, realUserId)
+    assert.equal(dbNewRows[0].title, '手机新建大盘复盘')
+    assert.equal(dbNewRows[0].is_playground, 1)
+    assert.equal(dbNewRows[0].status, 'completed')
+
+    const dbWorkspaces = JSON.parse(
+      execFileSync('sqlite3', ['-json', dbPath, `SELECT * FROM workspaces WHERE path = '${newCwd}';`], { encoding: 'utf8' }),
+    )
+    assert.equal(dbWorkspaces.length, 1)
+
+    // 5. Verify renameSession & deleteSession also sync to workbuddy.db
+    await wb.renameSession({ sessionId: 'workbuddy:wb-phone-new-99', title: 'A股收盘总结' })
+    const renamedRows = JSON.parse(
+      execFileSync('sqlite3', ['-json', dbPath, "SELECT title, custom_title FROM sessions WHERE id = 'wb-phone-new-99';"], { encoding: 'utf8' }),
+    )
+    assert.equal(renamedRows[0].custom_title, 'A股收盘总结')
+
+    await wb.deleteSession({ sessionId: 'workbuddy:wb-phone-new-99' })
+    const deletedRows = JSON.parse(
+      execFileSync('sqlite3', ['-json', dbPath, "SELECT deleted_at FROM sessions WHERE id = 'wb-phone-new-99';"], { encoding: 'utf8' }),
+    )
+    assert.ok(deletedRows[0].deleted_at > 0)
+
+    wb.shutdown()
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true })
   }
 })
