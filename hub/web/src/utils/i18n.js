@@ -181,6 +181,7 @@ const EXACT_ZH_TO_EN = {
   '点击查看对话详情': 'Tap to view conversation',
   '未命名会话': 'Untitled Session',
   '默认工作区': 'Default Workspace',
+  '📁 默认工作区': '📁 Default Workspace',
   '➕ 添加电脑': '➕ Add Computer',
   '📋 复制命令': '📋 Copy Cmd',
   '💻 本机未接入 · 3 步开启手机远控': '💻 Connect Your Computer in 3 Steps',

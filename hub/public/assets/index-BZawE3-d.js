@@ -28,7 +28,7 @@
 		fetch(link.href, fetchOpts);
 	}
 })();
-// ../../../Users/cc/deepseekharness-remote/node_modules/.pnpm/preact@11.1.1/node_modules/preact/dist/preact.mjs
+// node_modules/.pnpm/preact@11.1.1/node_modules/preact/dist/preact.mjs
 var n;
 var t;
 var i;
@@ -711,8 +711,114 @@ function Sheets() {
 	}, "✕")), /* @__PURE__ */ k("div", { id: "modelPickerBody" }))));
 }
 // hub/web/src/App.tsx
+var HARNESS_SVG_SPRITE = `<svg id="dshHarnessSvgDefs" width="0" height="0" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="dsh-grad-ocean" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <linearGradient id="dsh-grad-codex" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8A9CFF"/>
+      <stop offset="50%" stop-color="#5562FF"/>
+      <stop offset="100%" stop-color="#3941FF"/>
+    </linearGradient>
+
+    <mask id="dsh-agy-mask" maskUnits="userSpaceOnUse" x="0" y="1" width="24" height="23">
+      <path d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z" fill="#fff"/>
+    </mask>
+    <filter id="dsh-agy-blur-sm" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="2.2"/>
+    </filter>
+    <filter id="dsh-agy-blur-md" x="-60%" y="-60%" width="220%" height="220%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="3.8"/>
+    </filter>
+
+    <mask id="dsh-wb-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24" style="mask-type:luminance">
+      <path d="M18.821 0H5.179A5.18 5.18 0 0 0 0 5.179v13.642A5.18 5.18 0 0 0 5.179 24h13.642A5.18 5.18 0 0 0 24 18.821V5.179A5.18 5.18 0 0 0 18.821 0" fill="#fff"/>
+    </mask>
+    <linearGradient id="dsh-wb-bg" gradientUnits="userSpaceOnUse" x1="12" y1="0" x2="12" y2="24">
+      <stop stop-color="#0ec8a9"/>
+      <stop offset="1" stop-color="#01c886"/>
+    </linearGradient>
+    <linearGradient id="dsh-wb-body" gradientUnits="userSpaceOnUse" x1="10.098" y1="6.802" x2="21.325" y2="26.248">
+      <stop stop-color="#fff" stop-opacity=".85"/>
+      <stop offset=".438" stop-color="#fff"/>
+    </linearGradient>
+    <filter id="dsh-wb-glow" x="-50%" y="-50%" width="220%" height="220%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="4.5"/>
+    </filter>
+
+    <!-- 1. Antigravity IDE -->
+    <symbol id="dsh-icon-ide" viewBox="0 0 24 24">
+      <rect x="0.4" y="0.4" width="23.2" height="23.2" rx="5.2" fill="#14161B" stroke="#334155" stroke-width="0.8"/>
+      <g stroke="#ffffff" stroke-opacity="0.07" stroke-width="0.6">
+        <line x1="6" y1="0" x2="6" y2="24"/><line x1="12" y1="0" x2="12" y2="24"/><line x1="18" y1="0" x2="18" y2="24"/>
+        <line x1="0" y1="6" x2="24" y2="6"/><line x1="0" y1="12" x2="24" y2="12"/><line x1="0" y1="18" x2="24" y2="18"/>
+      </g>
+      <g transform="translate(2.9, 2.7) scale(0.76)">
+        <g mask="url(#dsh-agy-mask)">
+          <rect x="-4" y="-4" width="32" height="32" fill="#3186FF"/>
+          <g filter="url(#dsh-agy-blur-md)">
+            <circle cx="3" cy="6" r="9" fill="#00B95C"/>
+            <circle cx="21" cy="5" r="9" fill="#FC413D"/>
+            <circle cx="11" cy="0" r="8" fill="#FBBC04"/>
+            <ellipse cx="12" cy="21" rx="13" ry="9" fill="#3186FF"/>
+          </g>
+          <g filter="url(#dsh-agy-blur-sm)">
+            <circle cx="4" cy="2" r="5" fill="#FFE432"/>
+            <circle cx="21" cy="4" r="6" fill="#FC413D"/>
+          </g>
+        </g>
+      </g>
+    </symbol>
+
+    <!-- 2. WorkBuddy -->
+    <symbol id="dsh-icon-workbuddy" viewBox="0 0 24 24">
+      <g mask="url(#dsh-wb-mask)">
+        <path d="M18.821 0H5.179A5.18 5.18 0 0 0 0 5.179v13.642A5.18 5.18 0 0 0 5.179 24h13.642A5.18 5.18 0 0 0 24 18.821V5.179A5.18 5.18 0 0 0 18.821 0" fill="url(#dsh-wb-bg)"/>
+        <circle cx="18.8" cy="25" r="7.7" fill="#ffe355" fill-opacity=".55" filter="url(#dsh-wb-glow)"/>
+        <path d="M18.456 2.031c.235-.21.25-.219.422-.23.28-.02.535.115.971.512 1.019.925 2.437 2.827 3.318 4.452l.34.63.482.24c.464.235 1.226.715 1.544.973.144.12.165.122.315.064.675-.263 1.642.086 2.495.904.768.736 1.504 1.994 1.786 3.044.041.17.096.533.116.803.064.95-.24 1.708-.827 2.052-.12.069-.128.088-.125.386.027 1.423-.356 2.842-1.126 4.227-.87 1.555-2.418 3.163-4.513 4.679-1.126.819-3.788 2.37-4.991 2.915-2.884 1.298-5.196 1.795-7.204 1.55-1.197-.146-2.553-.613-3.355-1.156-.211-.146-.245-.155-.406-.109-.859.247-1.983-.26-2.938-1.32-.381-.424-.996-1.465-1.196-2.022-.461-1.303-.37-2.48.245-3.182.159-.181.164-.189.129-.493a12 12 0 0 1-.057-1.71l.02-.445-.666-1.18c-1.033-1.838-1.69-3.381-1.943-4.56-.133-.647-.125-.934.039-1.146.1-.128.428-.261.823-.335.994-.174 3.162-.016 5.575.41l.25.044.551-.488c.914-.81 1.522-1.263 2.642-1.962 1.166-.73 2.483-1.33 3.967-1.806l.475-.152.262-.687c.937-2.473 1.896-4.295 2.58-4.902m-7.845 12.67c-1.059.61-1.588.916-1.977 1.259a5.21 5.21 0 0 0-1.494 5.57c.165.491.47 1.02 1.082 2.08.61 1.058.917 1.587 1.26 1.976a5.21 5.21 0 0 0 5.571 1.493c.491-.165 1.02-.471 2.079-1.082l6.09-3.516c1.058-.611 1.587-.916 1.976-1.259a5.21 5.21 0 0 0 1.492-5.572c-.165-.491-.47-1.02-1.082-2.079-.611-1.058-.916-1.588-1.259-1.976a5.21 5.21 0 0 0-5.571-1.493c-.491.165-1.02.47-2.08 1.082z" fill="url(#dsh-wb-body)"/>
+        <path d="M13.882 18.795a1.203 1.203 0 0 0-2.083 1.203l1.295 2.243a1.203 1.203 0 1 0 2.083-1.203zm6.49-3.747a1.203 1.203 0 1 0-2.083 1.203l1.295 2.243a1.203 1.203 0 0 0 2.083-1.203z" fill="#fff"/>
+      </g>
+    </symbol>
+
+    <!-- 3. OpenAI Codex: 官方蓝紫圆角底座 + 官方六瓣花云与 >_ 终端镂空标志 -->
+    <symbol id="dsh-icon-codex" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.4" fill="url(#dsh-grad-codex)"/>
+      <g transform="translate(2.7, 2.7) scale(0.775)">
+        <path fill="#FFFFFF" fill-rule="evenodd" clip-rule="evenodd" d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z"/>
+      </g>
+    </symbol>
+
+    <!-- 4. Claude Code -->
+    <symbol id="dsh-icon-claude" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.4" fill="#D97757"/>
+      <g stroke="#FFF7ED" stroke-width="2.0" stroke-linecap="round">
+        <line x1="12" y1="4.5" x2="12" y2="19.5"/>
+        <line x1="4.5" y1="12" x2="19.5" y2="12"/>
+        <line x1="6.7" y1="6.7" x2="17.3" y2="17.3"/>
+        <line x1="17.3" y1="6.7" x2="6.7" y2="17.3"/>
+        <line x1="9.1" y1="5.1" x2="14.9" y2="18.9" stroke-width="1.4"/>
+        <line x1="5.1" y1="14.9" x2="18.9" y2="9.1" stroke-width="1.4"/>
+      </g>
+      <circle cx="12" cy="12" r="2.2" fill="#FFF7ED"/>
+    </symbol>
+
+    <!-- 5. DeepSeek Harness -->
+    <symbol id="dsh-icon-dsh" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.4" fill="url(#dsh-grad-ocean)"/>
+      <path d="M5.2 13.6c0-3.5 3.1-6 7.1-6 3.2 0 5.3 1.8 6.1 3.9.5-1.1 1.6-2 3-2.1-.3 1.8-1.3 3.1-2.7 3.6.2 2.9-2.5 5.2-6.6 5.2-4.1 0-6.9-1.9-6.9-4.6z" fill="#FFFFFF"/>
+      <circle cx="9.2" cy="12.2" r="1.0" fill="#1D4ED8"/>
+      <path d="M10.5 5.2c.4-.9 1.3-1.4 2.1-1.2M8.8 5.8c-.3-.8-.9-1.2-1.7-1.1" stroke="#93C5FD" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+    </symbol>
+  </defs>
+</svg>`;
 function App() {
 	return /* @__PURE__ */ k(M, null, /* @__PURE__ */ k("div", {
+		style: "position:absolute;width:0;height:0;overflow:hidden;pointer-events:none;",
+		"aria-hidden": "true",
+		dangerouslySetInnerHTML: { __html: HARNESS_SVG_SPRITE }
+	}), /* @__PURE__ */ k("div", {
 		class: "install-hint",
 		id: "installHint"
 	}, /* @__PURE__ */ k("div", { class: "install-hint-text" }, "📲 想收锁屏通知？点底部分享 ", /* @__PURE__ */ k("strong", null, "→ 添加到主屏幕"), "，再从桌面图标打开"), /* @__PURE__ */ k("button", {
@@ -1662,6 +1768,7 @@ var EXACT_ZH_TO_EN = {
 	"点击查看对话详情": "Tap to view conversation",
 	"未命名会话": "Untitled Session",
 	"默认工作区": "Default Workspace",
+	"📁 默认工作区": "📁 Default Workspace",
 	"➕ 添加电脑": "➕ Add Computer",
 	"📋 复制命令": "📋 Copy Cmd",
 	"💻 本机未接入 · 3 步开启手机远控": "💻 Connect Your Computer in 3 Steps",
@@ -2817,6 +2924,76 @@ function initHubController() {
 		if (serverTotalCount > baseTotal && lastMatchIdx >= Math.max(0, wireTranscript.length - 3)) return true;
 		return false;
 	}
+	function renderHarnessBadgeHtml(harness = "dsh", variant = "row", titleText = "") {
+		const symId = harness === "antigravity-ide" ? "dsh-icon-ide" : harness === "workbuddy" ? "dsh-icon-workbuddy" : harness === "codex" ? "dsh-icon-codex" : harness === "claude" ? "dsh-icon-claude" : "dsh-icon-dsh";
+		const titleAttr = titleText ? ` title="${esc(titleText)}"` : "";
+		return `<span class="harness-icon-badge ${esc(variant)}"${titleAttr}><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${symId}"/></svg></span>`;
+	}
+	function formatCompactProjectLabel(rawProject, nowDate = /* @__PURE__ */ new Date()) {
+		const raw = String(rawProject || "").trim();
+		if (!raw) return "默认工作区";
+		const m = /^(\d{4})[-_](\d{1,2})[-_](\d{1,2})(?:[-_T](\d{1,2})[-_:](\d{2})(?:[-_:](\d{2}))?)?$/.exec(raw);
+		if (m) {
+			const y = Number(m[1]);
+			const mo = Number(m[2]);
+			const d = Number(m[3]);
+			if (y >= 2020 && y <= 2100 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+				if (nowDate.getFullYear() === y && nowDate.getMonth() + 1 === mo && nowDate.getDate() === d && m[4] != null && m[5] != null) return `${Number(m[4])}:${String(m[5]).padStart(2, "0")}`;
+				return `${y}/${String(mo).padStart(2, "0")}/${String(d).padStart(2, "0")}`;
+			}
+		}
+		return raw;
+	}
+	function normalizeDeviceModelShort(rawModel) {
+		const clean = String(rawModel || "").trim();
+		if (!clean) return "";
+		if (/^macbook\s*air\b/i.test(clean)) return "Air";
+		if (/^macbook\s*pro\b/i.test(clean)) return "MBP";
+		if (/^mac\s*mini\b/i.test(clean)) return "Mac mini";
+		if (/^mac\s*studio\b/i.test(clean)) return "Studio";
+		if (/^mac\s*pro\b/i.test(clean)) return "Mac Pro";
+		if (/^imac\b/i.test(clean)) return "iMac";
+		return clean;
+	}
+	function buildShortHostNameMap(hosts = []) {
+		const parsed = (hosts || []).map((h) => {
+			const raw = String(h?.hostName || h?.hostId || "").trim().replace(/\.(local|lan)$/i, "");
+			let owner = "";
+			let device = raw;
+			const zhSplit = /^(.+?)的\s*(.+)$/.exec(raw);
+			const enSplit = !zhSplit ? /^(.+?)(?:'s|’s)\s+(.+)$/i.exec(raw) : null;
+			if (zhSplit) {
+				owner = zhSplit[1].trim();
+				device = zhSplit[2].trim();
+			} else if (enSplit) {
+				owner = enSplit[1].trim();
+				device = enSplit[2].trim();
+			} else {
+				const dashMac = /^([a-z0-9_-]+)-(MacBook-Air|MacBook-Pro|Mac-mini|Mac-Studio|iMac|Mac-Pro)$/i.exec(raw);
+				if (dashMac) {
+					owner = dashMac[1].trim();
+					device = dashMac[2].replace(/-/g, " ").trim();
+				}
+			}
+			let shortBase = "";
+			if (/^(电脑|pc|computer|laptop|host)$/i.test(device) && owner) shortBase = owner;
+			else shortBase = normalizeDeviceModelShort(device) || raw;
+			return {
+				hostId: h?.hostId || raw,
+				raw,
+				owner,
+				shortBase
+			};
+		});
+		const baseCounts = {};
+		for (const item of parsed) baseCounts[item.shortBase] = (baseCounts[item.shortBase] || 0) + 1;
+		const map = {};
+		for (const item of parsed) if (baseCounts[item.shortBase] > 1 && item.owner) {
+			const shortOwner = item.owner.length > 6 ? `${item.owner.slice(0, 6)}…` : item.owner;
+			map[item.hostId] = `${shortOwner}·${item.shortBase}`;
+		} else map[item.hostId] = item.shortBase;
+		return map;
+	}
 	function getNormalizedSessions() {
 		const list = [];
 		const optMap = ensureOptimisticMsgsMap();
@@ -3199,26 +3376,29 @@ function initHubController() {
 		for (const s of sessions) counts[s.project] = (counts[s.project] || 0) + 1;
 		const projects = Object.keys(counts);
 		const strip = document.getElementById("projectStrip");
-		const stripKey = `${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${claudeCount}:${dshCount}:${projects.map((p) => `${p}:${counts[p]}`).join(",")}`;
+		const nowDate = /* @__PURE__ */ new Date();
+		const stripKey = `${`${nowDate.getFullYear()}-${nowDate.getMonth() + 1}-${nowDate.getDate()}`}:${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${claudeCount}:${dshCount}:${projects.map((p) => `${p}:${counts[p]}`).join(",")}`;
 		if (stripKey === lastRenderedStripKey && strip.children.length > 0) return;
 		lastRenderedStripKey = stripKey;
 		const prevScrollLeft = strip.scrollLeft;
 		const smartPills = [`<button class="filter-pill smart-pill ${currentProject === "SMART_ACTIVE" ? "active" : ""}" onclick="selectProject('SMART_ACTIVE')">🟢 运行中 <span class="count">${activeCount}</span></button>`, `<button class="filter-pill smart-pill ${currentProject === "SMART_UNREAD" ? "active" : ""}" onclick="selectProject('SMART_UNREAD')">🔵 已出结论 <span class="count">${unreadCount}</span></button>`];
-		if (agyCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_AGY_IDE" ? "active" : ""}" onclick="selectProject('HARNESS_AGY_IDE')">⚡ IDE <span class="count">${agyCount}</span></button>`);
-		if (codexCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_CODEX" ? "active" : ""}" onclick="selectProject('HARNESS_CODEX')">🧠 Codex <span class="count">${codexCount}</span></button>`);
-		if (workbuddyCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_WORKBUDDY" ? "active" : ""}" onclick="selectProject('HARNESS_WORKBUDDY')">🐼 WorkBuddy <span class="count">${workbuddyCount}</span></button>`);
-		if (claudeCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_CLAUDE" ? "active" : ""}" onclick="selectProject('HARNESS_CLAUDE')">✴️ Claude <span class="count">${claudeCount}</span></button>`);
-		if (dshCount > 0 && (agyCount > 0 || codexCount > 0 || workbuddyCount > 0 || claudeCount > 0)) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_DSH" ? "active" : ""}" onclick="selectProject('HARNESS_DSH')">🟣 DSH <span class="count">${dshCount}</span></button>`);
+		if (agyCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_AGY_IDE" ? "active" : ""}" onclick="selectProject('HARNESS_AGY_IDE')">${renderHarnessBadgeHtml("antigravity-ide", "pill")} IDE <span class="count">${agyCount}</span></button>`);
+		if (codexCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_CODEX" ? "active" : ""}" onclick="selectProject('HARNESS_CODEX')">${renderHarnessBadgeHtml("codex", "pill")} Codex <span class="count">${codexCount}</span></button>`);
+		if (workbuddyCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_WORKBUDDY" ? "active" : ""}" onclick="selectProject('HARNESS_WORKBUDDY')">${renderHarnessBadgeHtml("workbuddy", "pill")} WorkBuddy <span class="count">${workbuddyCount}</span></button>`);
+		if (claudeCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_CLAUDE" ? "active" : ""}" onclick="selectProject('HARNESS_CLAUDE')">${renderHarnessBadgeHtml("claude", "pill")} Claude <span class="count">${claudeCount}</span></button>`);
+		if (dshCount > 0 && (agyCount > 0 || codexCount > 0 || workbuddyCount > 0 || claudeCount > 0)) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_DSH" ? "active" : ""}" onclick="selectProject('HARNESS_DSH')">${renderHarnessBadgeHtml("dsh", "pill")} DSH <span class="count">${dshCount}</span></button>`);
 		strip.innerHTML = [
 			`<button class="filter-pill ${currentProject === "ALL" ? "active" : ""}" onclick="selectProject('ALL')">全部 <span class="count">${sessions.length}</span></button>`,
 			...smartPills,
-			...projects.map((p) => `<button class="filter-pill ${currentProject === p ? "active" : ""}" onclick="selectProject('${esc(p)}')">${esc(p)} <span class="count">${counts[p]}</span></button>`)
+			...projects.map((p) => `<button class="filter-pill ${currentProject === p ? "active" : ""}" title="${esc(p)}" onclick="selectProject('${esc(p)}')">${esc(formatCompactProjectLabel(p, nowDate))} <span class="count">${counts[p]}</span></button>`)
 		].join("");
 		strip.scrollLeft = prevScrollLeft;
 	}
 	function renderSessionList(sessionsArg) {
 		const viewport = document.getElementById("mainViewport");
 		const allSessions = Array.isArray(sessionsArg) ? sessionsArg : getNormalizedSessions();
+		const nowDate = /* @__PURE__ */ new Date();
+		const todayKey = `${nowDate.getFullYear()}-${nowDate.getMonth() + 1}-${nowDate.getDate()}`;
 		let pendingAppInfo = null;
 		const localSettling = window.__dshSettlingApprovals || {};
 		for (const h of hubState.hosts || []) {
@@ -3257,9 +3437,11 @@ function initHubController() {
 				"HARNESS_CLAUDE"
 			].includes(currentProject) && s.project !== currentProject) return false;
 			if (!q) return true;
-			return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || s.lastPreview.toLowerCase().includes(q);
+			const compactProj = formatCompactProjectLabel(s.project, nowDate).toLowerCase();
+			return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || compactProj.includes(q) || s.lastPreview.toLowerCase().includes(q);
 		});
 		const showHostTag = currentHostId === "ALL_HOSTS" && (hubState.hosts || []).length > 1;
+		const shortHostMap = showHostTag ? buildShortHostNameMap(hubState.hosts || []) : {};
 		const isPendingQuestion = Boolean(pendingAppInfo && (pendingAppInfo.app.kind === "question" || Array.isArray(pendingAppInfo.app.questions)));
 		let step6Dismissed = false;
 		try {
@@ -3267,9 +3449,10 @@ function initHubController() {
 		} catch {}
 		const showStep6Banner = (hubState.hosts || []).length > 0 && !step6Dismissed;
 		const bannerKey = pendingAppInfo ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.kind || ""}:${pendingAppInfo.app.promptTitle || ""}:${pendingAppInfo.app.settling ? 1 : 0}:${pendingAppInfo.app.lastError || ""}` : "";
-		const rowsSig = filtered.map((s) => `${s.id}:${s.status}:${s.approvalObj?.kind || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`).join("|");
+		const hostsSig = (hubState.hosts || []).map((h) => `${h.hostId}:${h.hostName || ""}`).join(",");
+		const rowsSig = filtered.map((s) => `${s.id}:${s.harness}:${s.status}:${s.approvalObj?.kind || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`).join("|");
 		const enrollSig = `${hubState.enrollment?.code || ""}:${hubState.enrollment?.joinedCount || 0}`;
-		const listKey = `${(hubState.hosts || []).length}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${showStep6Banner ? 1 : 0}:${enrollSig}:${bannerKey}#${rowsSig}`;
+		const listKey = `${todayKey}:${hostsSig}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${showStep6Banner ? 1 : 0}:${enrollSig}:${bannerKey}#${rowsSig}`;
 		if (listKey === lastRenderedListKey && viewport.querySelector(".session-list")) return;
 		lastRenderedListKey = listKey;
 		const prevScrollTop = viewport.scrollTop;
@@ -3287,7 +3470,7 @@ function initHubController() {
 		const liveBannerHtml = pendingAppInfo ? `
         <div class="live-activity-bar">
           <div class="live-activity-left" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">
-            <div class="live-activity-title">${isPendingQuestion ? "💬" : "⏳"} [${esc(pendingAppInfo.host.hostName)}] ${esc(pendingAppInfo.app.project ? `${pendingAppInfo.app.project} / ` : "")}${esc(pendingAppInfo.app.settling ? isPendingQuestion ? "正在同步你的选择到电脑端..." : "正在同步审批到电脑端..." : pendingAppInfo.app.title || (isPendingQuestion ? "等待你做出选择" : "等待你批准工具执行"))}</div>
+            <div class="live-activity-title">${isPendingQuestion ? "💬" : "⏳"} [${esc(pendingAppInfo.host.hostName)}] ${esc(pendingAppInfo.app.project ? `${formatCompactProjectLabel(pendingAppInfo.app.project, nowDate)} / ` : "")}${esc(pendingAppInfo.app.settling ? isPendingQuestion ? "正在同步你的选择到电脑端..." : "正在同步审批到电脑端..." : pendingAppInfo.app.title || (isPendingQuestion ? "等待你做出选择" : "等待你批准工具执行"))}</div>
             <div class="live-activity-desc" ${pendingAppInfo.app.lastError ? "style=\"color:#ef4444;font-weight:600;\"" : ""}>${esc(pendingAppInfo.app.lastError ? `⚠️ ${pendingAppInfo.app.lastError}` : pendingAppInfo.app.promptTitle || pendingAppInfo.app.reason || "")}</div>
           </div>
           <div class="live-activity-actions">
@@ -3322,10 +3505,14 @@ function initHubController() {
 				statusHtml = `<span class="badge-interrupted">⚠️ 中断待继续</span>`;
 			}
 			const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : "";
-			const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag">${esc(s.hostName)}</span>` : "";
-			const harnessTagHtml = s.harness === "antigravity-ide" ? `<span class="harness-mini-tag agy">⚡ IDE</span>` : s.harness === "codex" ? `<span class="harness-mini-tag agy">🧠 Codex</span>` : s.harness === "workbuddy" ? `<span class="harness-mini-tag agy">🐼 WorkBuddy</span>` : s.harness === "claude" ? `<span class="harness-mini-tag agy">✴️ Claude</span>` : "";
+			const shortHostLabel = shortHostMap[s.hostId] || s.hostName;
+			const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag" title="${esc(s.hostName)}">${esc(shortHostLabel)}</span>` : "";
+			const harnessBadgeHtml = renderHarnessBadgeHtml(s.harness, "row", s.harnessLabel);
+			const compactProject = formatCompactProjectLabel(s.project, nowDate);
 			const rolePrefix = s.status === "running" ? "" : s.lastRole === "user" ? "🧑 我: " : "🤖 ";
-			const displayTitle = s.harness !== "dsh" && s.project && !s.title.startsWith(s.project) ? `${s.project} / ${s.title}` : s.title;
+			const rawTitle = String(s.title || "").trim();
+			const projSlashPrefix = s.project ? `${s.project} / ` : "";
+			const displayTitle = projSlashPrefix && rawTitle.startsWith(projSlashPrefix) ? rawTitle.slice(projSlashPrefix.length).trim() || rawTitle : rawTitle;
 			return `
           <div class="session-row ${rowStateClass} ${s.pinned ? "pinned-row" : ""} ${s.id === activeSessionId ? "selected-desktop" : ""}" onclick="openChat('${esc(s.id)}')">
             <div class="session-main">
@@ -3337,9 +3524,9 @@ function initHubController() {
                 <div class="session-right-meta">${statusHtml}</div>
               </div>
               <div class="session-sub-line">
+                ${harnessBadgeHtml}
                 ${hostBadgeHtml}
-                ${harnessTagHtml}
-                <span class="project-mini-tag">📁 ${esc(s.project)}</span>
+                <span class="project-mini-tag" title="${esc(s.project)}">📁 ${esc(compactProject)}</span>
                 <span class="session-preview-text">${rolePrefix}${esc(s.lastPreview)}</span>
               </div>
             </div>
@@ -3477,12 +3664,15 @@ function initHubController() {
 		if (!found) return;
 		const { session: s } = found;
 		if (s._wireTruncated && !expandedTranscriptBySession.has(s.id)) hydrateColdSessionTranscript(s.hostId, s.id, s.sessionRev || "");
-		const chatHeaderTitle = s.harness !== "dsh" && s.project && !s.title.startsWith(s.project) ? `${s.project} / ${s.title}` : s.title;
+		const rawChatTitle = String(s.title || "").trim();
+		const chatProjSlash = s.project ? `${s.project} / ` : "";
+		const chatHeaderTitle = chatProjSlash && rawChatTitle.startsWith(chatProjSlash) ? rawChatTitle.slice(chatProjSlash.length).trim() || rawChatTitle : rawChatTitle;
 		document.getElementById("chatTitle").textContent = chatHeaderTitle;
-		const harnessPrefix = s.harness === "antigravity-ide" ? "⚡ Antigravity IDE · " : s.harness === "codex" ? "🧠 Codex · " : s.harness === "workbuddy" ? "🐼 WorkBuddy · " : s.harness === "claude" ? "✴️ Claude Code · " : "";
+		const harnessNameText = s.harness === "antigravity-ide" ? "Antigravity IDE" : s.harness === "codex" ? "Codex" : s.harness === "workbuddy" ? "WorkBuddy" : s.harness === "claude" ? "Claude Code" : "DSH";
 		const isObserveOnly = s.controlMode === "observe-only" && s.harness !== "dsh";
 		const modeTag = isObserveOnly ? " · 👀 仅观测" : s.controlMode === "idle-resumable" || s.controlMode === "observe-only" && s.harness === "dsh" ? " · 🔵 可续聊" : "";
-		document.getElementById("chatSub").textContent = `${harnessPrefix}📁 ${s.project} · 💻 ${s.hostName} (${s.msgCount} 条对话)${modeTag}`;
+		const compactChatProj = formatCompactProjectLabel(s.project);
+		document.getElementById("chatSub").innerHTML = `${renderHarnessBadgeHtml(s.harness, "inline")} ${esc(harnessNameText)} · 📁 ${esc(compactChatProj)} · 💻 ${esc(s.hostName)} (${s.msgCount} 条对话)${esc(modeTag)}`;
 		let otherApproval = null;
 		for (const h of hubState.hosts || []) {
 			const app = (h.bridgeState?.approvals || []).find((a) => a.agentId !== s.id);
@@ -5145,35 +5335,35 @@ function initHubController() {
 		if (harnessChips) harnessChips.innerHTML = [
 			{
 				id: "antigravity-ide",
-				label: "⚡ Antigravity IDE"
+				label: "Antigravity IDE"
 			},
 			{
 				id: "codex",
-				label: "🧠 OpenAI Codex"
+				label: "OpenAI Codex"
 			},
 			{
 				id: "workbuddy",
-				label: "🐼 WorkBuddy"
+				label: "WorkBuddy"
 			},
 			{
 				id: "claude",
-				label: "✴️ Claude Code"
+				label: "Claude Code"
 			},
 			{
 				id: "dsh",
-				label: "🟣 DeepSeek Harness"
+				label: "DeepSeek Harness"
 			}
 		].map((opt) => `
           <button class="choice-chip ${opt.id === newTaskHarness ? "selected" : ""}" onclick="selectNewTaskHarness('${opt.id}')">
-            ${opt.label}
+            ${renderHarnessBadgeHtml(opt.id, "chip")} ${esc(opt.label)}
           </button>
         `).join("");
 		const projects = getHostProjects(hosts.find((h) => h.hostId === newTaskHostId));
 		if (!projects.some((p) => p.cwd === newTaskCwd) && projects[0]) newTaskCwd = projects[0].cwd;
 		const projChips = document.getElementById("newTaskProjectChips");
 		projChips.innerHTML = projects.map((p) => `
-        <button class="choice-chip ${p.cwd === newTaskCwd ? "selected" : ""}" onclick="selectNewTaskProject('${esc(p.cwd)}')">
-          📁 ${esc(p.name)}
+        <button class="choice-chip ${p.cwd === newTaskCwd ? "selected" : ""}" title="${esc(p.name)}" onclick="selectNewTaskProject('${esc(p.cwd)}')">
+          📁 ${esc(formatCompactProjectLabel(p.name))}
         </button>
       `).join("");
 		updateNewTaskModelPill();

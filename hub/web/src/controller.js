@@ -603,6 +603,105 @@ export function initHubController() {
     return false;
   }
 
+  function renderHarnessBadgeHtml(harness = 'dsh', variant = 'row', titleText = '') {
+    const symId = harness === 'antigravity-ide'
+      ? 'dsh-icon-ide'
+      : harness === 'workbuddy'
+        ? 'dsh-icon-workbuddy'
+        : harness === 'codex'
+          ? 'dsh-icon-codex'
+          : harness === 'claude'
+            ? 'dsh-icon-claude'
+            : 'dsh-icon-dsh';
+    const titleAttr = titleText ? ` title="${esc(titleText)}"` : '';
+    return `<span class="harness-icon-badge ${esc(variant)}"${titleAttr}><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${symId}"/></svg></span>`;
+  }
+
+  function formatCompactProjectLabel(rawProject, nowDate = new Date()) {
+    const raw = String(rawProject || '').trim();
+    if (!raw) return '默认工作区';
+    const m = /^(\d{4})[-_](\d{1,2})[-_](\d{1,2})(?:[-_T](\d{1,2})[-_:](\d{2})(?:[-_:](\d{2}))?)?$/.exec(raw);
+    if (m) {
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      const d = Number(m[3]);
+      if (y >= 2020 && y <= 2100 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31) {
+        const isSameDay =
+          nowDate.getFullYear() === y &&
+          (nowDate.getMonth() + 1) === mo &&
+          nowDate.getDate() === d;
+        if (isSameDay && m[4] != null && m[5] != null) {
+          return `${Number(m[4])}:${String(m[5]).padStart(2, '0')}`;
+        }
+        return `${y}/${String(mo).padStart(2, '0')}/${String(d).padStart(2, '0')}`;
+      }
+    }
+    return raw;
+  }
+
+  function normalizeDeviceModelShort(rawModel) {
+    const clean = String(rawModel || '').trim();
+    if (!clean) return '';
+    if (/^macbook\s*air\b/i.test(clean)) return 'Air';
+    if (/^macbook\s*pro\b/i.test(clean)) return 'MBP';
+    if (/^mac\s*mini\b/i.test(clean)) return 'Mac mini';
+    if (/^mac\s*studio\b/i.test(clean)) return 'Studio';
+    if (/^mac\s*pro\b/i.test(clean)) return 'Mac Pro';
+    if (/^imac\b/i.test(clean)) return 'iMac';
+    return clean;
+  }
+
+  function buildShortHostNameMap(hosts = []) {
+    const parsed = (hosts || []).map(h => {
+      const raw = String(h?.hostName || h?.hostId || '').trim().replace(/\.(local|lan)$/i, '');
+      let owner = '';
+      let device = raw;
+      const zhSplit = /^(.+?)的\s*(.+)$/.exec(raw);
+      const enSplit = !zhSplit ? /^(.+?)(?:'s|’s)\s+(.+)$/i.exec(raw) : null;
+      if (zhSplit) {
+        owner = zhSplit[1].trim();
+        device = zhSplit[2].trim();
+      } else if (enSplit) {
+        owner = enSplit[1].trim();
+        device = enSplit[2].trim();
+      } else {
+        const dashMac = /^([a-z0-9_-]+)-(MacBook-Air|MacBook-Pro|Mac-mini|Mac-Studio|iMac|Mac-Pro)$/i.exec(raw);
+        if (dashMac) {
+          owner = dashMac[1].trim();
+          device = dashMac[2].replace(/-/g, ' ').trim();
+        }
+      }
+      let shortBase = '';
+      if (/^(电脑|pc|computer|laptop|host)$/i.test(device) && owner) {
+        shortBase = owner;
+      } else {
+        shortBase = normalizeDeviceModelShort(device) || raw;
+      }
+      return {
+        hostId: h?.hostId || raw,
+        raw,
+        owner,
+        shortBase,
+      };
+    });
+
+    const baseCounts = {};
+    for (const item of parsed) {
+      baseCounts[item.shortBase] = (baseCounts[item.shortBase] || 0) + 1;
+    }
+
+    const map = {};
+    for (const item of parsed) {
+      if (baseCounts[item.shortBase] > 1 && item.owner) {
+        const shortOwner = item.owner.length > 6 ? `${item.owner.slice(0, 6)}…` : item.owner;
+        map[item.hostId] = `${shortOwner}·${item.shortBase}`;
+      } else {
+        map[item.hostId] = item.shortBase;
+      }
+    }
+    return map;
+  }
+
   function getNormalizedSessions() {
     const list = [];
     const optMap = ensureOptimisticMsgsMap();
@@ -1124,7 +1223,9 @@ export function initHubController() {
     }
     const projects = Object.keys(counts);
     const strip = document.getElementById('projectStrip');
-    const stripKey = `${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${claudeCount}:${dshCount}:${projects.map(p => `${p}:${counts[p]}`).join(',')}`;
+    const nowDate = new Date();
+    const todayKey = `${nowDate.getFullYear()}-${nowDate.getMonth() + 1}-${nowDate.getDate()}`;
+    const stripKey = `${todayKey}:${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${claudeCount}:${dshCount}:${projects.map(p => `${p}:${counts[p]}`).join(',')}`;
     if (stripKey === lastRenderedStripKey && strip.children.length > 0) return;
     lastRenderedStripKey = stripKey;
     const prevScrollLeft = strip.scrollLeft;
@@ -1134,25 +1235,25 @@ export function initHubController() {
       `<button class="filter-pill smart-pill ${currentProject === 'SMART_UNREAD' ? 'active' : ''}" onclick="selectProject('SMART_UNREAD')">🔵 已出结论 <span class="count">${unreadCount}</span></button>`
     ];
     if (agyCount > 0) {
-      smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_AGY_IDE' ? 'active' : ''}" onclick="selectProject('HARNESS_AGY_IDE')">⚡ IDE <span class="count">${agyCount}</span></button>`);
+      smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_AGY_IDE' ? 'active' : ''}" onclick="selectProject('HARNESS_AGY_IDE')">${renderHarnessBadgeHtml('antigravity-ide', 'pill')} IDE <span class="count">${agyCount}</span></button>`);
     }
     if (codexCount > 0) {
-      smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_CODEX' ? 'active' : ''}" onclick="selectProject('HARNESS_CODEX')">🧠 Codex <span class="count">${codexCount}</span></button>`);
+      smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_CODEX' ? 'active' : ''}" onclick="selectProject('HARNESS_CODEX')">${renderHarnessBadgeHtml('codex', 'pill')} Codex <span class="count">${codexCount}</span></button>`);
     }
     if (workbuddyCount > 0) {
-      smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_WORKBUDDY' ? 'active' : ''}" onclick="selectProject('HARNESS_WORKBUDDY')">🐼 WorkBuddy <span class="count">${workbuddyCount}</span></button>`);
+      smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_WORKBUDDY' ? 'active' : ''}" onclick="selectProject('HARNESS_WORKBUDDY')">${renderHarnessBadgeHtml('workbuddy', 'pill')} WorkBuddy <span class="count">${workbuddyCount}</span></button>`);
     }
     if (claudeCount > 0) {
-      smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_CLAUDE' ? 'active' : ''}" onclick="selectProject('HARNESS_CLAUDE')">✴️ Claude <span class="count">${claudeCount}</span></button>`);
+      smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_CLAUDE' ? 'active' : ''}" onclick="selectProject('HARNESS_CLAUDE')">${renderHarnessBadgeHtml('claude', 'pill')} Claude <span class="count">${claudeCount}</span></button>`);
     }
     if (dshCount > 0 && (agyCount > 0 || codexCount > 0 || workbuddyCount > 0 || claudeCount > 0)) {
-      smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_DSH' ? 'active' : ''}" onclick="selectProject('HARNESS_DSH')">🟣 DSH <span class="count">${dshCount}</span></button>`);
+      smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_DSH' ? 'active' : ''}" onclick="selectProject('HARNESS_DSH')">${renderHarnessBadgeHtml('dsh', 'pill')} DSH <span class="count">${dshCount}</span></button>`);
     }
 
     strip.innerHTML = [
       `<button class="filter-pill ${currentProject === 'ALL' ? 'active' : ''}" onclick="selectProject('ALL')">全部 <span class="count">${sessions.length}</span></button>`,
       ...smartPills,
-      ...projects.map(p => `<button class="filter-pill ${currentProject === p ? 'active' : ''}" onclick="selectProject('${esc(p)}')">${esc(p)} <span class="count">${counts[p]}</span></button>`)
+      ...projects.map(p => `<button class="filter-pill ${currentProject === p ? 'active' : ''}" title="${esc(p)}" onclick="selectProject('${esc(p)}')">${esc(formatCompactProjectLabel(p, nowDate))} <span class="count">${counts[p]}</span></button>`)
     ].join('');
     strip.scrollLeft = prevScrollLeft;
   }
@@ -1160,6 +1261,8 @@ export function initHubController() {
   function renderSessionList(sessionsArg) {
     const viewport = document.getElementById('mainViewport');
     const allSessions = Array.isArray(sessionsArg) ? sessionsArg : getNormalizedSessions();
+    const nowDate = new Date();
+    const todayKey = `${nowDate.getFullYear()}-${nowDate.getMonth() + 1}-${nowDate.getDate()}`;
 
     // 仅当在线电脑存在真实待确认授权时显示顶部黄色授权横幅，无授权时顶部保持干净
     let pendingAppInfo = null;
@@ -1189,10 +1292,12 @@ export function initHubController() {
       if (currentProject === 'HARNESS_CLAUDE' && s.harness !== 'claude') return false;
       if (!['ALL', 'SMART_ACTIVE', 'SMART_UNREAD', 'HARNESS_DSH', 'HARNESS_AGY_IDE', 'HARNESS_CODEX', 'HARNESS_WORKBUDDY', 'HARNESS_CLAUDE'].includes(currentProject) && s.project !== currentProject) return false;
       if (!q) return true;
-      return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || s.lastPreview.toLowerCase().includes(q);
+      const compactProj = formatCompactProjectLabel(s.project, nowDate).toLowerCase();
+      return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || compactProj.includes(q) || s.lastPreview.toLowerCase().includes(q);
     });
 
     const showHostTag = currentHostId === 'ALL_HOSTS' && (hubState.hosts || []).length > 1;
+    const shortHostMap = showHostTag ? buildShortHostNameMap(hubState.hosts || []) : {};
     const isPendingQuestion = Boolean(
       pendingAppInfo &&
       (pendingAppInfo.app.kind === 'question' || Array.isArray(pendingAppInfo.app.questions))
@@ -1205,11 +1310,12 @@ export function initHubController() {
     const bannerKey = pendingAppInfo
       ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.kind || ''}:${pendingAppInfo.app.promptTitle || ''}:${pendingAppInfo.app.settling ? 1 : 0}:${pendingAppInfo.app.lastError || ''}`
       : '';
+    const hostsSig = (hubState.hosts || []).map(h => `${h.hostId}:${h.hostName || ''}`).join(',');
     const rowsSig = filtered
-      .map(s => `${s.id}:${s.status}:${s.approvalObj?.kind || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`)
+      .map(s => `${s.id}:${s.harness}:${s.status}:${s.approvalObj?.kind || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`)
       .join('|');
     const enrollSig = `${hubState.enrollment?.code || ''}:${hubState.enrollment?.joinedCount || 0}`;
-    const listKey = `${(hubState.hosts || []).length}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${showStep6Banner ? 1 : 0}:${enrollSig}:${bannerKey}#${rowsSig}`;
+    const listKey = `${todayKey}:${hostsSig}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${showStep6Banner ? 1 : 0}:${enrollSig}:${bannerKey}#${rowsSig}`;
     if (listKey === lastRenderedListKey && viewport.querySelector('.session-list')) return;
     lastRenderedListKey = listKey;
     const prevScrollTop = viewport.scrollTop;
@@ -1229,7 +1335,7 @@ export function initHubController() {
     const liveBannerHtml = pendingAppInfo ? `
         <div class="live-activity-bar">
           <div class="live-activity-left" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">
-            <div class="live-activity-title">${isPendingQuestion ? '💬' : '⏳'} [${esc(pendingAppInfo.host.hostName)}] ${esc(pendingAppInfo.app.project ? `${pendingAppInfo.app.project} / ` : '')}${esc(pendingAppInfo.app.settling ? (isPendingQuestion ? '正在同步你的选择到电脑端...' : '正在同步审批到电脑端...') : (pendingAppInfo.app.title || (isPendingQuestion ? '等待你做出选择' : '等待你批准工具执行')))}</div>
+            <div class="live-activity-title">${isPendingQuestion ? '💬' : '⏳'} [${esc(pendingAppInfo.host.hostName)}] ${esc(pendingAppInfo.app.project ? `${formatCompactProjectLabel(pendingAppInfo.app.project, nowDate)} / ` : '')}${esc(pendingAppInfo.app.settling ? (isPendingQuestion ? '正在同步你的选择到电脑端...' : '正在同步审批到电脑端...') : (pendingAppInfo.app.title || (isPendingQuestion ? '等待你做出选择' : '等待你批准工具执行')))}</div>
             <div class="live-activity-desc" ${pendingAppInfo.app.lastError ? 'style="color:#ef4444;font-weight:600;"' : ''}>${esc(pendingAppInfo.app.lastError ? `⚠️ ${pendingAppInfo.app.lastError}` : (pendingAppInfo.app.promptTitle || pendingAppInfo.app.reason || ''))}</div>
           </div>
           <div class="live-activity-actions">
@@ -1273,20 +1379,16 @@ export function initHubController() {
       }
 
       const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : '';
-      const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag">${esc(s.hostName)}</span>` : '';
-      const harnessTagHtml = s.harness === 'antigravity-ide'
-        ? `<span class="harness-mini-tag agy">⚡ IDE</span>`
-        : s.harness === 'codex'
-          ? `<span class="harness-mini-tag agy">🧠 Codex</span>`
-          : s.harness === 'workbuddy'
-            ? `<span class="harness-mini-tag agy">🐼 WorkBuddy</span>`
-            : s.harness === 'claude'
-              ? `<span class="harness-mini-tag agy">✴️ Claude</span>`
-              : '';
+      const shortHostLabel = shortHostMap[s.hostId] || s.hostName;
+      const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag" title="${esc(s.hostName)}">${esc(shortHostLabel)}</span>` : '';
+      const harnessBadgeHtml = renderHarnessBadgeHtml(s.harness, 'row', s.harnessLabel);
+      const compactProject = formatCompactProjectLabel(s.project, nowDate);
       const rolePrefix = s.status === 'running' ? '' : (s.lastRole === 'user' ? '🧑 我: ' : '🤖 ');
-      const displayTitle = s.harness !== 'dsh' && s.project && !s.title.startsWith(s.project)
-        ? `${s.project} / ${s.title}`
-        : s.title;
+      const rawTitle = String(s.title || '').trim();
+      const projSlashPrefix = s.project ? `${s.project} / ` : '';
+      const displayTitle = projSlashPrefix && rawTitle.startsWith(projSlashPrefix)
+        ? (rawTitle.slice(projSlashPrefix.length).trim() || rawTitle)
+        : rawTitle;
 
       return `
           <div class="session-row ${rowStateClass} ${s.pinned ? 'pinned-row' : ''} ${s.id === activeSessionId ? 'selected-desktop' : ''}" onclick="openChat('${esc(s.id)}')">
@@ -1299,9 +1401,9 @@ export function initHubController() {
                 <div class="session-right-meta">${statusHtml}</div>
               </div>
               <div class="session-sub-line">
+                ${harnessBadgeHtml}
                 ${hostBadgeHtml}
-                ${harnessTagHtml}
-                <span class="project-mini-tag">📁 ${esc(s.project)}</span>
+                <span class="project-mini-tag" title="${esc(s.project)}">📁 ${esc(compactProject)}</span>
                 <span class="session-preview-text">${rolePrefix}${esc(s.lastPreview)}</span>
               </div>
             </div>
@@ -1478,26 +1580,29 @@ export function initHubController() {
       void hydrateColdSessionTranscript(s.hostId, s.id, s.sessionRev || '');
     }
 
-    const chatHeaderTitle = s.harness !== 'dsh' && s.project && !s.title.startsWith(s.project)
-      ? `${s.project} / ${s.title}`
-      : s.title;
+    const rawChatTitle = String(s.title || '').trim();
+    const chatProjSlash = s.project ? `${s.project} / ` : '';
+    const chatHeaderTitle = chatProjSlash && rawChatTitle.startsWith(chatProjSlash)
+      ? (rawChatTitle.slice(chatProjSlash.length).trim() || rawChatTitle)
+      : rawChatTitle;
     document.getElementById('chatTitle').textContent = chatHeaderTitle;
-    const harnessPrefix = s.harness === 'antigravity-ide'
-      ? '⚡ Antigravity IDE · '
+    const harnessNameText = s.harness === 'antigravity-ide'
+      ? 'Antigravity IDE'
       : s.harness === 'codex'
-        ? '🧠 Codex · '
+        ? 'Codex'
         : s.harness === 'workbuddy'
-          ? '🐼 WorkBuddy · '
+          ? 'WorkBuddy'
           : s.harness === 'claude'
-            ? '✴️ Claude Code · '
-            : '';
+            ? 'Claude Code'
+            : 'DSH';
     const isObserveOnly = s.controlMode === 'observe-only' && s.harness !== 'dsh';
     const modeTag = isObserveOnly
       ? ' · 👀 仅观测'
       : s.controlMode === 'idle-resumable' || (s.controlMode === 'observe-only' && s.harness === 'dsh')
         ? ' · 🔵 可续聊'
         : '';
-    document.getElementById('chatSub').textContent = `${harnessPrefix}📁 ${s.project} · 💻 ${s.hostName} (${s.msgCount} 条对话)${modeTag}`;
+    const compactChatProj = formatCompactProjectLabel(s.project);
+    document.getElementById('chatSub').innerHTML = `${renderHarnessBadgeHtml(s.harness, 'inline')} ${esc(harnessNameText)} · 📁 ${esc(compactChatProj)} · 💻 ${esc(s.hostName)} (${s.msgCount} 条对话)${esc(modeTag)}`;
 
     // 检查其他会话是否有待确认审批
     let otherApproval = null;
@@ -3533,15 +3638,15 @@ export function initHubController() {
     const harnessChips = document.getElementById('newTaskHarnessChips');
     if (harnessChips) {
       const harnessOpts = [
-        { id: 'antigravity-ide', label: '⚡ Antigravity IDE' },
-        { id: 'codex', label: '🧠 OpenAI Codex' },
-        { id: 'workbuddy', label: '🐼 WorkBuddy' },
-        { id: 'claude', label: '✴️ Claude Code' },
-        { id: 'dsh', label: '🟣 DeepSeek Harness' },
+        { id: 'antigravity-ide', label: 'Antigravity IDE' },
+        { id: 'codex', label: 'OpenAI Codex' },
+        { id: 'workbuddy', label: 'WorkBuddy' },
+        { id: 'claude', label: 'Claude Code' },
+        { id: 'dsh', label: 'DeepSeek Harness' },
       ];
       harnessChips.innerHTML = harnessOpts.map(opt => `
           <button class="choice-chip ${opt.id === newTaskHarness ? 'selected' : ''}" onclick="selectNewTaskHarness('${opt.id}')">
-            ${opt.label}
+            ${renderHarnessBadgeHtml(opt.id, 'chip')} ${esc(opt.label)}
           </button>
         `).join('');
     }
@@ -3553,8 +3658,8 @@ export function initHubController() {
     }
     const projChips = document.getElementById('newTaskProjectChips');
     projChips.innerHTML = projects.map(p => `
-        <button class="choice-chip ${p.cwd === newTaskCwd ? 'selected' : ''}" onclick="selectNewTaskProject('${esc(p.cwd)}')">
-          📁 ${esc(p.name)}
+        <button class="choice-chip ${p.cwd === newTaskCwd ? 'selected' : ''}" title="${esc(p.name)}" onclick="selectNewTaskProject('${esc(p.cwd)}')">
+          📁 ${esc(formatCompactProjectLabel(p.name))}
         </button>
       `).join('');
     updateNewTaskModelPill();

@@ -764,13 +764,49 @@
     .session-sub-line {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       font-size: 13px;
       color: #64748b;
       min-width: 0;
     }
 
+    .harness-icon-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    .harness-icon-badge svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .harness-icon-badge.row {
+      width: 17px;
+      height: 17px;
+    }
+
+    .harness-icon-badge.pill {
+      width: 14px;
+      height: 14px;
+    }
+
+    .harness-icon-badge.chip {
+      width: 15px;
+      height: 15px;
+    }
+
+    .harness-icon-badge.inline {
+      width: 13px;
+      height: 13px;
+      vertical-align: -2px;
+    }
+
     .host-mini-tag {
+      display: inline-block;
       font-size: 11px;
       font-weight: 600;
       color: var(--primary);
@@ -778,12 +814,14 @@
       padding: 1px 6px;
       border-radius: 5px;
       flex-shrink: 0;
+      max-width: 88px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .project-mini-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 3px;
+      display: inline-block;
       font-size: 11.5px;
       font-weight: 500;
       color: var(--text-secondary);
@@ -791,10 +829,11 @@
       padding: 1.5px 6px;
       border-radius: 5px;
       flex-shrink: 0;
-      max-width: 132px;
+      max-width: 108px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      font-variant-numeric: tabular-nums;
     }
 
     .harness-mini-tag {
@@ -2126,6 +2165,9 @@
     }
 
     .choice-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
       border: 1px solid var(--border);
       background: var(--subtle);
       color: var(--text-secondary);
