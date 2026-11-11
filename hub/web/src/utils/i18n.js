@@ -298,6 +298,12 @@ const EXACT_ZH_TO_EN = {
     '🎙️ Listening… Speak now (tap ⏹ to stop)',
   '🔴 正在听写… 请直接说话（再点下方「⏹」结束）':
     '🔴 Listening… Speak now (tap ⏹ below to stop)',
+  '🔴 正在持续听写… 停顿不会断，说完点「⏹」或直接「发送」':
+    '🔴 Continuous dictation… Pauses will not stop; tap ⏹ or Send when done',
+  '🎙️ 正在持续听写，说完点「⏹」或直接发送':
+    '🎙️ Continuous dictation active; tap ⏹ or Send when done',
+  'ℹ️ 长时间未检测到新语音，已自动关闭麦克风':
+    'ℹ️ Mic auto-closed after 60s of silence',
   '⏳ 当前会话正在执行或为观察模式，暂不可语音输入':
     '⏳ Session is running or observe-only; voice input unavailable right now',
   '🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话':

@@ -1604,7 +1604,7 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
     'window',
     'document',
     'navigator',
-    `${cleanJs}\nreturn { toggleVoiceInput, stopVoiceInput, isVoiceRecording, hideVoiceHintBar };`,
+    `${cleanJs}\nreturn { toggleVoiceInput, stopVoiceInput, isVoiceRecording, hideVoiceHintBar, mergeSpeechResults };`,
   )
   const voice = factory(fakeWindow, fakeDocument, fakeNavigator)
   const deps = {
@@ -1612,10 +1612,27 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
     onComposerInput() { composerInputCalls += 1 },
   }
 
-  // 1) Mobile iPhone Safari: directly starts native webkitSpeechRecognition WITHOUT focusing input (no keyboard popup)
+  // 0) mergeSpeechResults handles both segmented and cumulative WebKit results without duplication
+  assert.equal(
+    voice.mergeSpeechResults([
+      { 0: { transcript: '我说了一句' } },
+      { 0: { transcript: '我说了一句还没结束' } },
+    ]),
+    '我说了一句还没结束',
+  )
+  assert.equal(
+    voice.mergeSpeechResults([
+      { 0: { transcript: '第一句，' } },
+      { 0: { transcript: '第二句' } },
+    ]),
+    '第一句，第二句',
+  )
+
+  // 1) Mobile iPhone Safari: directly starts continuous webkitSpeechRecognition WITHOUT focusing input (no keyboard popup)
   voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
   assert.equal(startCalled, 1)
   assert.equal(lastInstance.lang, 'zh-CN')
+  assert.equal(lastInstance.continuous, true)
   assert.equal(voice.isVoiceRecording(), true)
   assert.equal(fakeElements.globalPromptInput.focused, false)
   assert.equal(fakeElements.chatVoiceBtn.classList.contains('recording'), true)
@@ -1624,7 +1641,7 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
   assert.equal(fakeElements.chatVoiceHintBar.style.display, 'flex')
   assert.equal(fakeElements.chatVoiceHintBar.classList.contains('recording'), true)
 
-  // 2) Speech recognition emits interim + final result on iPhone without cumulative duplication
+  // 2) Speech recognition emits interim + final result on iPhone AND survives mid-thought pause (no-speech + onend auto-restart!)
   lastInstance.onresult({
     resultIndex: 0,
     results: [
@@ -1639,6 +1656,22 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
   })
   assert.equal(fakeElements.globalPromptInput.value, '已有前缀 帮我检查测试')
   assert.equal(composerInputCalls, 2)
+
+  // Simulate iOS Safari firing no-speech / onend during a 3s breathing pause -> stays recording & seamlessly restarts!
+  lastInstance.onerror({ error: 'no-speech' })
+  assert.equal(voice.isVoiceRecording(), true)
+  lastInstance.onend()
+  assert.equal(voice.isVoiceRecording(), true)
+  assert.equal(fakeElements.chatVoiceBtn.textContent, '⏹')
+  await new Promise(r => setTimeout(r, 220))
+  assert.equal(startCalled, 2, 'Should auto-spawn fresh SpeechRecognition chunk after pause onend')
+  lastInstance.onresult({
+    resultIndex: 0,
+    results: [
+      { isFinal: true, 0: { transcript: '顺便看下日志' } },
+    ],
+  })
+  assert.equal(fakeElements.globalPromptInput.value, '已有前缀 帮我检查测试，顺便看下日志')
 
   // 3) Second click immediately stops recording, calls abort() + stop(), detaches callbacks, resets UI & hint bar
   const savedOnResult = lastInstance.onresult
@@ -1659,7 +1692,7 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
   // 4) New task voice button switches '🎤 语音输入' <-> '⏹ 停止听写' and surfaces audio-capture conflict clearly
   fakeElements.newTaskInput = { value: '', focused: false, disabled: false, focus() { this.focused = true } }
   voice.toggleVoiceInput('newTaskInput', 'newTaskVoiceBtn', deps)
-  assert.equal(startCalled, 2)
+  assert.equal(startCalled, 3)
   assert.equal(fakeElements.newTaskVoiceBtn.textContent, '⏹ 停止听写')
   lastInstance.onerror({ error: 'audio-capture' })
   assert.equal(voice.isVoiceRecording(), false)
@@ -1669,13 +1702,13 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
   // 5) Disabled input (running non-steerable or observe-only session) shows immediate explanation toast
   fakeElements.globalPromptInput.disabled = true
   voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
-  assert.equal(startCalled, 2)
+  assert.equal(startCalled, 3)
   assert.ok(toasts.some(t => t.includes('暂不可语音输入')))
   fakeElements.globalPromptInput.disabled = false
 
   // 6) If iOS standalone container rejects with service-not-allowed, gracefully remembers block & focuses input once
   voice.toggleVoiceInput('globalPromptInput', 'chatVoiceBtn', deps)
-  assert.equal(startCalled, 3)
+  assert.equal(startCalled, 4)
   lastInstance.onerror({ error: 'service-not-allowed' })
   assert.equal(voice.isVoiceRecording(), false)
   assert.equal(fakeElements.globalPromptInput.focused, true)
@@ -1963,7 +1996,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.6.2')
+  assert.equal(healthRes.build.version, '0.6.3')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 

@@ -2,6 +2,12 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.6.3] - 2026-11-11
+
+### Fixed
+
+- 修复手机端语音识别在说话中途换气/短暂停顿时自动中断的问题：开启 `continuous = true` 持续听写模式，新增 iOS Safari 静默断流（`onend` / `no-speech`）180ms 无缝续接新实例机制与 `mergeSpeechResults` 累积叠字去重算法，并改为按每次说话动态顺延 60 秒空闲看门狗（直到用户主动点 `⏹` 或直接点「发送」才结束）
+
 ## [0.6.2] - 2026-11-11
 
 ### Fixed

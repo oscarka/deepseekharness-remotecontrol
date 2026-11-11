@@ -1194,9 +1194,31 @@ function shouldDismissVerticalSwipe({ dy = 0, dx = 0, height = 480, durationMs =
 var activeVoiceRecognition = null;
 var activeVoiceInputId = "";
 var activeVoiceBtnId = "";
+var voiceSessionActive = false;
 var voiceWatchdogTimer = null;
+var voiceRestartTimer = null;
 var voiceHintTimer = null;
 var webSpeechServiceBlocked = false;
+function mergeSpeechResults(results) {
+	const total = results ? results.length : 0;
+	let acc = "";
+	for (let i = 0; i < total; i += 1) {
+		const seg = String(results[i]?.[0]?.transcript || "");
+		if (!seg) continue;
+		if (!acc) acc = seg;
+		else if (seg.startsWith(acc)) acc = seg;
+		else if (acc.endsWith(seg) && seg.length >= 2) {} else {
+			let overlap = 0;
+			const maxK = Math.min(acc.length, seg.length);
+			for (let k = maxK; k >= 4; k -= 1) if (acc.slice(acc.length - k) === seg.slice(0, k)) {
+				overlap = k;
+				break;
+			}
+			acc += overlap > 0 ? seg.slice(overlap) : seg;
+		}
+	}
+	return acc;
+}
 function resolveHintBarId(targetInputId) {
 	return targetInputId === "newTaskInput" ? "newTaskVoiceHintBar" : "chatVoiceHintBar";
 }
@@ -1263,9 +1285,14 @@ function setVoiceBtnRecording(btnId, recording) {
 	else btn.textContent = recording ? "⏹" : "🎤";
 }
 function isVoiceRecording() {
-	return Boolean(activeVoiceRecognition || activeVoiceBtnId);
+	return Boolean(voiceSessionActive || activeVoiceRecognition || activeVoiceBtnId);
 }
 function stopVoiceInput() {
+	voiceSessionActive = false;
+	if (voiceRestartTimer) {
+		clearTimeout(voiceRestartTimer);
+		voiceRestartTimer = null;
+	}
 	if (voiceWatchdogTimer) {
 		clearTimeout(voiceWatchdogTimer);
 		voiceWatchdogTimer = null;
@@ -1299,12 +1326,12 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 	const showToast = deps?.showToast || (win.showToast ?? (() => {}));
 	const onComposerInput = deps?.onComposerInput || (win.onComposerInput ?? (() => {}));
 	const btn = document.getElementById(btnId);
-	if (activeVoiceRecognition && activeVoiceInputId === targetInputId || btn?.classList.contains("recording")) {
+	if ((voiceSessionActive || activeVoiceRecognition) && activeVoiceInputId === targetInputId || btn?.classList.contains("recording")) {
 		stopVoiceInput();
 		showToast("⏹ 已关闭语音输入");
 		return;
 	}
-	if (activeVoiceRecognition) stopVoiceInput();
+	if (voiceSessionActive || activeVoiceRecognition) stopVoiceInput();
 	const input = document.getElementById(targetInputId);
 	if (!input) return;
 	const inputEl = input;
@@ -1319,67 +1346,115 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 		focusInputWithVisualPulse(inputEl, targetInputId, webSpeechServiceBlocked ? "🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话" : "🎙️ 当前浏览器不支持直接语音识别，请点输入框用系统键盘「🎤」说话", showToast);
 		return;
 	}
+	const rawLang = String(nav?.language || "").toLowerCase();
+	let preferEn = false;
 	try {
-		const recognition = new SpeechRecognitionCtor();
-		const rawLang = String(nav?.language || "").toLowerCase();
-		let preferEn = false;
-		try {
-			preferEn = typeof localStorage !== "undefined" && localStorage.getItem("dsh_lang_pref") === "en" && rawLang.startsWith("en");
-		} catch {}
-		recognition.lang = preferEn ? String(nav.language) : rawLang.startsWith("zh-tw") || rawLang.startsWith("zh-hant") ? "zh-TW" : rawLang.startsWith("zh-hk") ? "zh-HK" : "zh-CN";
-		recognition.interimResults = true;
-		recognition.continuous = false;
-		recognition.maxAlternatives = 1;
-		const baseText = input.value || "";
-		activeVoiceRecognition = recognition;
-		activeVoiceInputId = targetInputId;
-		activeVoiceBtnId = btnId;
-		setVoiceBtnRecording(btnId, true);
-		showVoiceHintBar(targetInputId, "🔴 正在听写… 请直接说话（再点下方「⏹」结束）", "recording", 0);
-		if (!document.getElementById(resolveHintBarId(targetInputId))) showToast("🎙️ 正在听写，请直接说话（再点「⏹」立即关闭）");
+		preferEn = typeof localStorage !== "undefined" && localStorage.getItem("dsh_lang_pref") === "en" && rawLang.startsWith("en");
+	} catch {}
+	const resolvedLang = preferEn ? String(nav.language) : rawLang.startsWith("zh-tw") || rawLang.startsWith("zh-hant") ? "zh-TW" : rawLang.startsWith("zh-hk") ? "zh-HK" : "zh-CN";
+	let committedBaseText = input.value || "";
+	let rapidEmptyEnds = 0;
+	const resetIdleWatchdog = () => {
+		if (voiceWatchdogTimer) clearTimeout(voiceWatchdogTimer);
 		voiceWatchdogTimer = setTimeout(() => {
-			if (activeVoiceRecognition === recognition) stopVoiceInput();
-		}, 6e4);
-		recognition.onresult = (event) => {
-			if (activeVoiceRecognition !== recognition) return;
-			let utterance = "";
-			const total = event?.results ? event.results.length : 0;
-			for (let i = 0; i < total; i += 1) utterance += event.results[i]?.[0]?.transcript || "";
-			input.value = baseText + utterance;
-			if (targetInputId === "globalPromptInput") onComposerInput();
-			else try {
-				if (typeof Event === "function" && typeof inputEl.dispatchEvent === "function") inputEl.dispatchEvent(new Event("input", { bubbles: true }));
-			} catch {}
-		};
-		recognition.onerror = (event) => {
-			const errCode = event?.error || "";
-			stopVoiceInput();
-			if (errCode === "service-not-allowed") {
-				webSpeechServiceBlocked = true;
-				focusInputWithVisualPulse(inputEl, targetInputId, "🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话", showToast);
-			} else if (errCode === "not-allowed") {
-				showVoiceHintBar(targetInputId, "🎙️ 未开启麦克风权限：请在浏览器地址栏允许麦克风后重试", "fallback", 5500);
-				showToast("🎙️ 未开启麦克风权限：请在地址栏允许麦克风");
-			} else if (errCode === "audio-capture") {
-				showVoiceHintBar(targetInputId, "🎙️ 麦克风正被其他后台语音软件占用，请先关闭后台语音后再点「🎤」", "fallback", 5500);
-				showToast("🎙️ 麦克风被后台软件占用，请关闭后再试");
-			} else if (errCode === "no-speech") {
-				showVoiceHintBar(targetInputId, "ℹ️ 未检测到说话声，已自动结束听写（可再点「🎤」重试）", "fallback", 3500);
-				showToast("ℹ️ 未检测到说话声，可再点「🎤」重试");
-			} else if (errCode && errCode !== "aborted") {
-				showVoiceHintBar(targetInputId, "⚠️ 语音识别异常（" + errCode + "），可再点「🎤」重试", "fallback", 5e3);
-				showToast("⚠️ 语音识别已停止：" + errCode);
+			if (voiceSessionActive) {
+				stopVoiceInput();
+				showToast("ℹ️ 长时间未检测到新语音，已自动关闭麦克风");
 			}
-		};
-		recognition.onend = () => {
-			if (activeVoiceRecognition === recognition) stopVoiceInput();
-			if (targetInputId === "globalPromptInput") onComposerInput();
-		};
-		recognition.start();
-	} catch {
-		stopVoiceInput();
-		focusInputWithVisualPulse(inputEl, targetInputId, "🎙️ 当前无法直接启动语音识别，请点输入框用系统键盘「🎤」说话", showToast);
-	}
+		}, 6e4);
+	};
+	const notifyInputChanged = () => {
+		if (targetInputId === "globalPromptInput") onComposerInput();
+		else try {
+			if (typeof Event === "function" && typeof inputEl.dispatchEvent === "function") inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+		} catch {}
+	};
+	const startRecognitionChunk = (isAutoRestart) => {
+		if (!voiceSessionActive) return;
+		try {
+			const recognition = new SpeechRecognitionCtor();
+			recognition.lang = resolvedLang;
+			recognition.interimResults = true;
+			recognition.continuous = true;
+			recognition.maxAlternatives = 1;
+			const chunkStartAt = Date.now();
+			let chunkProducedText = false;
+			let chunkFatalError = false;
+			activeVoiceRecognition = recognition;
+			recognition.onresult = (event) => {
+				if (!voiceSessionActive || activeVoiceRecognition !== recognition) return;
+				const utterance = mergeSpeechResults(event?.results);
+				if (!utterance) return;
+				chunkProducedText = true;
+				rapidEmptyEnds = 0;
+				resetIdleWatchdog();
+				let prefix = committedBaseText;
+				if (isAutoRestart && prefix && !/[，。！？、；：,.!?;:\s]$/.test(prefix) && !/^[，。！？、；：,.!?;:\s]/.test(utterance)) prefix += /[\u4e00-\u9fa5]$/.test(prefix) ? "，" : " ";
+				input.value = prefix + utterance;
+				notifyInputChanged();
+			};
+			recognition.onerror = (event) => {
+				if (activeVoiceRecognition !== recognition) return;
+				const errCode = event?.error || "";
+				if (errCode === "no-speech") return;
+				chunkFatalError = true;
+				stopVoiceInput();
+				if (errCode === "service-not-allowed") {
+					webSpeechServiceBlocked = true;
+					focusInputWithVisualPulse(inputEl, targetInputId, "🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话", showToast);
+				} else if (errCode === "not-allowed") {
+					if (!isAutoRestart) {
+						showVoiceHintBar(targetInputId, "🎙️ 未开启麦克风权限：请在浏览器地址栏允许麦克风后重试", "fallback", 5500);
+						showToast("🎙️ 未开启麦克风权限：请在地址栏允许麦克风");
+					}
+				} else if (errCode === "audio-capture") {
+					showVoiceHintBar(targetInputId, "🎙️ 麦克风正被其他后台语音软件占用，请先关闭后台语音后再点「🎤」", "fallback", 5500);
+					showToast("🎙️ 麦克风被后台软件占用，请关闭后再试");
+				} else if (errCode && errCode !== "aborted") {
+					showVoiceHintBar(targetInputId, "⚠️ 语音识别异常（" + errCode + "），可再点「🎤」重试", "fallback", 5e3);
+					showToast("⚠️ 语音识别已停止：" + errCode);
+				}
+			};
+			recognition.onend = () => {
+				if (activeVoiceRecognition !== recognition) return;
+				activeVoiceRecognition = null;
+				notifyInputChanged();
+				if (!voiceSessionActive || chunkFatalError) return;
+				if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+					stopVoiceInput();
+					return;
+				}
+				committedBaseText = input.value || "";
+				const elapsed = Date.now() - chunkStartAt;
+				if (!chunkProducedText && elapsed < 600) {
+					rapidEmptyEnds += 1;
+					if (rapidEmptyEnds >= 3) {
+						stopVoiceInput();
+						return;
+					}
+				} else rapidEmptyEnds = 0;
+				voiceRestartTimer = setTimeout(() => {
+					voiceRestartTimer = null;
+					if (voiceSessionActive) startRecognitionChunk(true);
+				}, 180);
+			};
+			recognition.start();
+		} catch {
+			if (isAutoRestart) stopVoiceInput();
+			else {
+				stopVoiceInput();
+				focusInputWithVisualPulse(inputEl, targetInputId, "🎙️ 当前无法直接启动语音识别，请点输入框用系统键盘「🎤」说话", showToast);
+			}
+		}
+	};
+	voiceSessionActive = true;
+	activeVoiceInputId = targetInputId;
+	activeVoiceBtnId = btnId;
+	setVoiceBtnRecording(btnId, true);
+	showVoiceHintBar(targetInputId, "🔴 正在持续听写… 停顿不会断，说完点「⏹」或直接「发送」", "recording", 0);
+	if (!document.getElementById(resolveHintBarId(targetInputId))) showToast("🎙️ 正在持续听写，说完点「⏹」或直接发送");
+	resetIdleWatchdog();
+	startRecognitionChunk(false);
 }
 // hub/web/src/utils/qrcode.js
 var VERSION_SPECS = [
@@ -1873,6 +1948,9 @@ var EXACT_ZH_TO_EN = {
 	"⏹ 已关闭语音输入": "⏹ Voice input stopped",
 	"🎙️ 正在听写，请直接说话（再点「⏹」立即关闭）": "🎙️ Listening… Speak now (tap ⏹ to stop)",
 	"🔴 正在听写… 请直接说话（再点下方「⏹」结束）": "🔴 Listening… Speak now (tap ⏹ below to stop)",
+	"🔴 正在持续听写… 停顿不会断，说完点「⏹」或直接「发送」": "🔴 Continuous dictation… Pauses will not stop; tap ⏹ or Send when done",
+	"🎙️ 正在持续听写，说完点「⏹」或直接发送": "🎙️ Continuous dictation active; tap ⏹ or Send when done",
+	"ℹ️ 长时间未检测到新语音，已自动关闭麦克风": "ℹ️ Mic auto-closed after 60s of silence",
 	"⏳ 当前会话正在执行或为观察模式，暂不可语音输入": "⏳ Session is running or observe-only; voice input unavailable right now",
 	"🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话": "🎙️ Home Screen mode blocks direct speech API on iOS: open in Safari, or tap 🎤 on your keyboard",
 	"🎙️ 当前浏览器不支持直接语音识别，请点输入框用系统键盘「🎤」说话": "🎙️ Browser speech input unavailable; please tap 🎤 on your system keyboard",

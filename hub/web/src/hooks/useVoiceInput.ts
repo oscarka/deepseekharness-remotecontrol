@@ -7,9 +7,39 @@ export interface VoiceControllerDeps {
 let activeVoiceRecognition: any = null;
 let activeVoiceInputId = '';
 let activeVoiceBtnId = '';
+let voiceSessionActive = false;
 let voiceWatchdogTimer: any = null;
+let voiceRestartTimer: any = null;
 let voiceHintTimer: any = null;
 let webSpeechServiceBlocked = false;
+
+export function mergeSpeechResults(results: any): string {
+  const total = results ? results.length : 0;
+  let acc = '';
+  for (let i = 0; i < total; i += 1) {
+    const seg = String(results[i]?.[0]?.transcript || '');
+    if (!seg) continue;
+    if (!acc) {
+      acc = seg;
+    } else if (seg.startsWith(acc)) {
+      // 兼容移动端 WebKit / Android 在 continuous=true 下返回累积前缀片段，避免重复叠字
+      acc = seg;
+    } else if (acc.endsWith(seg) && seg.length >= 2) {
+      // 忽略完全相同的尾段回放
+    } else {
+      let overlap = 0;
+      const maxK = Math.min(acc.length, seg.length);
+      for (let k = maxK; k >= 4; k -= 1) {
+        if (acc.slice(acc.length - k) === seg.slice(0, k)) {
+          overlap = k;
+          break;
+        }
+      }
+      acc += overlap > 0 ? seg.slice(overlap) : seg;
+    }
+  }
+  return acc;
+}
 
 function resolveHintBarId(targetInputId: string): string {
   return targetInputId === 'newTaskInput' ? 'newTaskVoiceHintBar' : 'chatVoiceHintBar';
@@ -98,10 +128,15 @@ export function setVoiceBtnRecording(btnId: string, recording: boolean): void {
 }
 
 export function isVoiceRecording(): boolean {
-  return Boolean(activeVoiceRecognition || activeVoiceBtnId);
+  return Boolean(voiceSessionActive || activeVoiceRecognition || activeVoiceBtnId);
 }
 
 export function stopVoiceInput(): void {
+  voiceSessionActive = false;
+  if (voiceRestartTimer) {
+    clearTimeout(voiceRestartTimer);
+    voiceRestartTimer = null;
+  }
   if (voiceWatchdogTimer) {
     clearTimeout(voiceWatchdogTimer);
     voiceWatchdogTimer = null;
@@ -146,16 +181,16 @@ export function toggleVoiceInput(
   const onComposerInput = deps?.onComposerInput || (win.onComposerInput ?? (() => {}));
   const btn = document.getElementById(btnId);
 
-  // 如果当前正处于录音状态（无论是 activeVoiceRecognition 实例还在，还是按钮带有 .recording 类），点击立即强制关闭！
+  // 如果当前正处于录音状态（无论是 voiceSessionActive、activeVoiceRecognition 还在，还是按钮带有 .recording 类），点击立即强制关闭！
   if (
-    (activeVoiceRecognition && activeVoiceInputId === targetInputId) ||
+    ((voiceSessionActive || activeVoiceRecognition) && activeVoiceInputId === targetInputId) ||
     btn?.classList.contains('recording')
   ) {
     stopVoiceInput();
     showToast('⏹ 已关闭语音输入');
     return;
   }
-  if (activeVoiceRecognition) {
+  if (voiceSessionActive || activeVoiceRecognition) {
     stopVoiceInput();
   }
 
@@ -182,118 +217,183 @@ export function toggleVoiceInput(
     return;
   }
 
+  const rawLang = String(nav?.language || '').toLowerCase();
+  let preferEn = false;
   try {
-    const recognition = new SpeechRecognitionCtor();
-    const rawLang = String(nav?.language || '').toLowerCase();
-    let preferEn = false;
-    try {
-      preferEn =
-        typeof localStorage !== 'undefined' &&
-        localStorage.getItem('dsh_lang_pref') === 'en' &&
-        rawLang.startsWith('en');
-    } catch {}
-    recognition.lang = preferEn
-      ? String(nav.language)
-      : rawLang.startsWith('zh-tw') || rawLang.startsWith('zh-hant')
-        ? 'zh-TW'
-        : rawLang.startsWith('zh-hk')
-          ? 'zh-HK'
-          : 'zh-CN';
-    recognition.interimResults = true;
-    recognition.continuous = false;
-    recognition.maxAlternatives = 1;
+    preferEn =
+      typeof localStorage !== 'undefined' &&
+      localStorage.getItem('dsh_lang_pref') === 'en' &&
+      rawLang.startsWith('en');
+  } catch {}
+  const resolvedLang = preferEn
+    ? String(nav.language)
+    : rawLang.startsWith('zh-tw') || rawLang.startsWith('zh-hant')
+      ? 'zh-TW'
+      : rawLang.startsWith('zh-hk')
+        ? 'zh-HK'
+        : 'zh-CN';
 
-    const baseText = input.value || '';
+  let committedBaseText = input.value || '';
+  let rapidEmptyEnds = 0;
 
-    activeVoiceRecognition = recognition;
-    activeVoiceInputId = targetInputId;
-    activeVoiceBtnId = btnId;
-    setVoiceBtnRecording(btnId, true);
-    showVoiceHintBar(targetInputId, '🔴 正在听写… 请直接说话（再点下方「⏹」结束）', 'recording', 0);
-    if (!document.getElementById(resolveHintBarId(targetInputId))) {
-      showToast('🎙️ 正在听写，请直接说话（再点「⏹」立即关闭）');
+  const resetIdleWatchdog = (): void => {
+    if (voiceWatchdogTimer) {
+      clearTimeout(voiceWatchdogTimer);
     }
-
-    // 60 秒看门狗自动释放麦克风，防止系统挂起
+    // 60 秒无新语音自动释放麦克风；只要持续说话每次识别都会自动顺延，绝不中途切断长句
     voiceWatchdogTimer = setTimeout(() => {
-      if (activeVoiceRecognition === recognition) {
+      if (voiceSessionActive) {
         stopVoiceInput();
+        showToast('ℹ️ 长时间未检测到新语音，已自动关闭麦克风');
       }
     }, 60000);
+  };
 
-    recognition.onresult = (event: any) => {
-      if (activeVoiceRecognition !== recognition) return;
-      // continuous=false 下从 0 遍历全部片段，彻底避免 iOS Safari / Android Chrome 累积回调导致的重复叠字
-      let utterance = '';
-      const total = event?.results ? event.results.length : 0;
-      for (let i = 0; i < total; i += 1) {
-        utterance += event.results[i]?.[0]?.transcript || '';
-      }
-      input.value = baseText + utterance;
-      if (targetInputId === 'globalPromptInput') {
-        onComposerInput();
-      } else {
-        try {
-          if (typeof Event === 'function' && typeof inputEl.dispatchEvent === 'function') {
-            inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+  const notifyInputChanged = (): void => {
+    if (targetInputId === 'globalPromptInput') {
+      onComposerInput();
+    } else {
+      try {
+        if (typeof Event === 'function' && typeof inputEl.dispatchEvent === 'function') {
+          inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      } catch {}
+    }
+  };
+
+  const startRecognitionChunk = (isAutoRestart: boolean): void => {
+    if (!voiceSessionActive) return;
+    try {
+      const recognition = new SpeechRecognitionCtor();
+      recognition.lang = resolvedLang;
+      recognition.interimResults = true;
+      // 持续听写模式：说话中途停顿换气不会自动挂断，直到用户主动点击「⏹」或「发送」
+      recognition.continuous = true;
+      recognition.maxAlternatives = 1;
+
+      const chunkStartAt = Date.now();
+      let chunkProducedText = false;
+      let chunkFatalError = false;
+
+      activeVoiceRecognition = recognition;
+
+      recognition.onresult = (event: any) => {
+        if (!voiceSessionActive || activeVoiceRecognition !== recognition) return;
+        const utterance = mergeSpeechResults(event?.results);
+        if (!utterance) return;
+        chunkProducedText = true;
+        rapidEmptyEnds = 0;
+        resetIdleWatchdog();
+        let prefix = committedBaseText;
+        if (
+          isAutoRestart &&
+          prefix &&
+          !/[，。！？、；：,.!?;:\s]$/.test(prefix) &&
+          !/^[，。！？、；：,.!?;:\s]/.test(utterance)
+        ) {
+          prefix += /[\u4e00-\u9fa5]$/.test(prefix) ? '，' : ' ';
+        }
+        input.value = prefix + utterance;
+        notifyInputChanged();
+      };
+
+      recognition.onerror = (event: any) => {
+        if (activeVoiceRecognition !== recognition) return;
+        const errCode = event?.error || '';
+        // iOS Safari 停顿思考几秒可能触发 no-speech，不应关闭麦克风，交给 onend 无缝续接下一句
+        if (errCode === 'no-speech') {
+          return;
+        }
+        chunkFatalError = true;
+        stopVoiceInput();
+        if (errCode === 'service-not-allowed') {
+          webSpeechServiceBlocked = true;
+          focusInputWithVisualPulse(
+            inputEl,
+            targetInputId,
+            '🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话',
+            showToast
+          );
+        } else if (errCode === 'not-allowed') {
+          if (!isAutoRestart) {
+            showVoiceHintBar(
+              targetInputId,
+              '🎙️ 未开启麦克风权限：请在浏览器地址栏允许麦克风后重试',
+              'fallback',
+              5500
+            );
+            showToast('🎙️ 未开启麦克风权限：请在地址栏允许麦克风');
           }
-        } catch {}
-      }
-    };
+        } else if (errCode === 'audio-capture') {
+          showVoiceHintBar(
+            targetInputId,
+            '🎙️ 麦克风正被其他后台语音软件占用，请先关闭后台语音后再点「🎤」',
+            'fallback',
+            5500
+          );
+          showToast('🎙️ 麦克风被后台软件占用，请关闭后再试');
+        } else if (errCode && errCode !== 'aborted') {
+          showVoiceHintBar(targetInputId, '⚠️ 语音识别异常（' + errCode + '），可再点「🎤」重试', 'fallback', 5000);
+          showToast('⚠️ 语音识别已停止：' + errCode);
+        }
+      };
 
-    recognition.onerror = (event: any) => {
-      const errCode = event?.error || '';
-      stopVoiceInput();
-      if (errCode === 'service-not-allowed') {
-        webSpeechServiceBlocked = true;
+      recognition.onend = () => {
+        if (activeVoiceRecognition !== recognition) return;
+        activeVoiceRecognition = null;
+        notifyInputChanged();
+
+        if (!voiceSessionActive || chunkFatalError) {
+          return;
+        }
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+          stopVoiceInput();
+          return;
+        }
+        // 锁定本段已上屏文字，若 iOS Safari 因短暂停顿自动断流（onend），自动新建实例无缝续听下一句
+        committedBaseText = input.value || '';
+        const elapsed = Date.now() - chunkStartAt;
+        if (!chunkProducedText && elapsed < 600) {
+          rapidEmptyEnds += 1;
+          if (rapidEmptyEnds >= 3) {
+            stopVoiceInput();
+            return;
+          }
+        } else {
+          rapidEmptyEnds = 0;
+        }
+        voiceRestartTimer = setTimeout(() => {
+          voiceRestartTimer = null;
+          if (voiceSessionActive) {
+            startRecognitionChunk(true);
+          }
+        }, 180);
+      };
+
+      recognition.start();
+    } catch {
+      if (isAutoRestart) {
+        stopVoiceInput();
+      } else {
+        stopVoiceInput();
         focusInputWithVisualPulse(
           inputEl,
           targetInputId,
-          '🎙️ 桌面图标模式受苹果限制无法直接识别：请用 Safari 打开，或点输入框用键盘右下角「🎤」说话',
+          '🎙️ 当前无法直接启动语音识别，请点输入框用系统键盘「🎤」说话',
           showToast
         );
-      } else if (errCode === 'not-allowed') {
-        showVoiceHintBar(
-          targetInputId,
-          '🎙️ 未开启麦克风权限：请在浏览器地址栏允许麦克风后重试',
-          'fallback',
-          5500
-        );
-        showToast('🎙️ 未开启麦克风权限：请在地址栏允许麦克风');
-      } else if (errCode === 'audio-capture') {
-        showVoiceHintBar(
-          targetInputId,
-          '🎙️ 麦克风正被其他后台语音软件占用，请先关闭后台语音后再点「🎤」',
-          'fallback',
-          5500
-        );
-        showToast('🎙️ 麦克风被后台软件占用，请关闭后再试');
-      } else if (errCode === 'no-speech') {
-        showVoiceHintBar(targetInputId, 'ℹ️ 未检测到说话声，已自动结束听写（可再点「🎤」重试）', 'fallback', 3500);
-        showToast('ℹ️ 未检测到说话声，可再点「🎤」重试');
-      } else if (errCode && errCode !== 'aborted') {
-        showVoiceHintBar(targetInputId, '⚠️ 语音识别异常（' + errCode + '），可再点「🎤」重试', 'fallback', 5000);
-        showToast('⚠️ 语音识别已停止：' + errCode);
       }
-    };
+    }
+  };
 
-    recognition.onend = () => {
-      if (activeVoiceRecognition === recognition) {
-        stopVoiceInput();
-      }
-      if (targetInputId === 'globalPromptInput') {
-        onComposerInput();
-      }
-    };
-
-    recognition.start();
-  } catch {
-    stopVoiceInput();
-    focusInputWithVisualPulse(
-      inputEl,
-      targetInputId,
-      '🎙️ 当前无法直接启动语音识别，请点输入框用系统键盘「🎤」说话',
-      showToast
-    );
+  voiceSessionActive = true;
+  activeVoiceInputId = targetInputId;
+  activeVoiceBtnId = btnId;
+  setVoiceBtnRecording(btnId, true);
+  showVoiceHintBar(targetInputId, '🔴 正在持续听写… 停顿不会断，说完点「⏹」或直接「发送」', 'recording', 0);
+  if (!document.getElementById(resolveHintBarId(targetInputId))) {
+    showToast('🎙️ 正在持续听写，说完点「⏹」或直接发送');
   }
+  resetIdleWatchdog();
+  startRecognitionChunk(false);
 }
