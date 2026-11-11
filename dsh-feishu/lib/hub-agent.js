@@ -83,6 +83,12 @@ export class HubAgent {
       const enabledSet = Array.isArray(this.config?.enabledHarnesses)
         ? new Set(this.config.enabledHarnesses.map(s => String(s).toLowerCase()))
         : null
+      const isLegacyDefaultSet =
+        enabledSet &&
+        enabledSet.has('dsh') &&
+        enabledSet.has('antigravity-ide') &&
+        enabledSet.has('codex') &&
+        enabledSet.has('claude')
       if (!enabledSet || enabledSet.has('codex')) {
         this.harnessRouter.registerAdapter(
           new CodexAdapter({
@@ -92,12 +98,22 @@ export class HubAgent {
           }),
         )
       }
-      if (!enabledSet || enabledSet.has('workbuddy') || enabledSet.has('codebuddy')) {
+      if (
+        !enabledSet ||
+        isLegacyDefaultSet ||
+        enabledSet.has('workbuddy') ||
+        enabledSet.has('codebuddy') ||
+        Boolean(this.config?.workbuddyHome || this.config?.workbuddyAcpEndpoint)
+      ) {
         this.harnessRouter.registerAdapter(
           new WorkBuddyAdapter({
             workbuddyHome: this.config?.workbuddyHome || undefined,
             acpEndpoint: this.config?.workbuddyAcpEndpoint || undefined,
             fetchImpl: this.fetch,
+            logger: this.logger,
+            onStateChange: () => {
+              this.scheduleFollowUpTick(250)
+            },
           }),
         )
       }
@@ -172,6 +188,16 @@ export class HubAgent {
     return ''
   }
 
+  scheduleFollowUpTick(delayMs = 250) {
+    if (!this.timer || this.disposed) return
+    if (this.followUpTimer) return
+    this.followUpTimer = setTimeout(() => {
+      this.followUpTimer = null
+      void this.tick()
+    }, delayMs)
+    this.followUpTimer.unref?.()
+  }
+
   start() {
     if (this.timer || this.disposed || !this.config.hubUrl) return
     this.bridge?.setHubAgent?.(this)
@@ -211,6 +237,13 @@ export class HubAgent {
     if (this.timer) {
       clearInterval(this.timer)
       this.timer = null
+    }
+    for (const adapter of this.harnessRouter?.adapters?.values?.() || []) {
+      try {
+        adapter.shutdown?.()
+      } catch {
+        // ignore adapter shutdown errors
+      }
     }
   }
 
@@ -1559,9 +1592,16 @@ export class HubAgent {
               }
             }
             if (type === 'stop' && typeof extAdapter.stopSession === 'function') {
-              return await extAdapter.stopSession({ sessionId: targetId, cwd: extSess?.cwd || cmd.cwd })
+              const stopRes = await extAdapter.stopSession({ sessionId: targetId, cwd: extSess?.cwd || cmd.cwd })
+              this.logger?.log?.(
+                `[dsh-feishu] ⏹ ${extAdapter.label || extAdapter.id} stop (${targetId}) -> ok=${stopRes?.ok} msg=${stopRes?.message || stopRes?.error || ''}`,
+              )
+              return stopRes
             }
             if ((type === 'prompt' || type === 'steer') && typeof extAdapter.sendPrompt === 'function') {
+              this.logger?.log?.(
+                `[dsh-feishu] 📨 ${extAdapter.label || extAdapter.id} ${type} (${targetId}) -> "${effectiveText.slice(0, 60)}"`,
+              )
               const extRes = await extAdapter.sendPrompt({
                 sessionId: targetId,
                 text: effectiveText,
@@ -1571,6 +1611,9 @@ export class HubAgent {
                 mode: type,
                 execImpl: this.execImpl,
               })
+              this.logger?.log?.(
+                `[dsh-feishu] ${extRes?.ok ? '✅' : '⚠️'} ${extAdapter.label || extAdapter.id} ${type} result (${targetId}) -> ok=${extRes?.ok} msg=${extRes?.message || extRes?.error || ''}`,
+              )
               return {
                 ...extRes,
                 ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),
@@ -1661,6 +1704,9 @@ export class HubAgent {
           }
           const extAdapter = this.harnessRouter?.getAdapter(cmd.harness)
           if (extAdapter && typeof extAdapter.createSession === 'function') {
+            this.logger?.log?.(
+              `[dsh-feishu] 🚀 ${extAdapter.label || extAdapter.id} new_session -> "${effectivePrompt.slice(0, 60)}"`,
+            )
             const extNewRes = await extAdapter.createSession({
               title: cmd.title,
               prompt: effectivePrompt,
@@ -1669,6 +1715,12 @@ export class HubAgent {
               imagePaths,
               execImpl: this.execImpl,
             })
+            this.logger?.log?.(
+              `[dsh-feishu] ${extNewRes?.ok ? '✅' : '⚠️'} ${extAdapter.label || extAdapter.id} new_session result -> ok=${extNewRes?.ok} id=${extNewRes?.agentId || ''} msg=${extNewRes?.message || extNewRes?.error || ''}`,
+            )
+            if (extNewRes?.agentId && requestedNewModel) {
+              this.sessionModelOverrides.set(extNewRes.agentId, requestedNewModel)
+            }
             return {
               ...extNewRes,
               ...(savedFiles.length > 0 ? { savedAttachments: savedFiles.map(f => ({ name: f.name, path: f.preferredPath })) } : {}),

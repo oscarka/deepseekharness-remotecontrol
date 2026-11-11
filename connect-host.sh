@@ -141,6 +141,7 @@ fi
 HAS_DSH=0
 HAS_AGY=0
 HAS_CODEX=0
+HAS_WORKBUDDY=0
 HAS_CLAUDE=0
 
 if command -v dsh >/dev/null 2>&1 || [ -x "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" ] || [ -x "$HOME/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" ]; then
@@ -149,8 +150,11 @@ fi
 if [ -d "$HOME/.gemini/antigravity" ] || [ -d "/Applications/Antigravity IDE.app" ] || [ -d "$HOME/Applications/Antigravity IDE.app" ]; then
   HAS_AGY=1
 fi
-if command -v codex >/dev/null 2>&1 || [ -d "$HOME/.codex" ]; then
+if command -v codex >/dev/null 2>&1 || [ -d "$HOME/.codex" ] || [ -d "/Applications/Codex.app" ] || [ -d "$HOME/Applications/Codex.app" ]; then
   HAS_CODEX=1
+fi
+if command -v codebuddy >/dev/null 2>&1 || command -v workbuddy >/dev/null 2>&1 || [ -d "$HOME/.workbuddy" ] || [ -d "$HOME/.codebuddy" ] || [ -d "/Applications/WorkBuddy.app" ] || [ -d "$HOME/Applications/WorkBuddy.app" ]; then
+  HAS_WORKBUDDY=1
 fi
 if command -v claude >/dev/null 2>&1 || [ -d "$HOME/.claude" ]; then
   HAS_CLAUDE=1
@@ -160,7 +164,12 @@ DETECTED_LIST=()
 [ "$HAS_DSH" = "1" ] && DETECTED_LIST+=("DSH")
 [ "$HAS_AGY" = "1" ] && DETECTED_LIST+=("Antigravity IDE")
 [ "$HAS_CODEX" = "1" ] && DETECTED_LIST+=("Codex")
+[ "$HAS_WORKBUDDY" = "1" ] && DETECTED_LIST+=("WorkBuddy")
 [ "$HAS_CLAUDE" = "1" ] && DETECTED_LIST+=("Claude Code")
+
+if [ "$EXISTING_HARNESSES" = "dsh,antigravity-ide,codex,claude" ]; then
+  EXISTING_HARNESSES="dsh,antigravity-ide,codex,workbuddy,claude"
+fi
 
 install -m 600 /dev/null "$ENV_FILE"
 cat > "$ENV_FILE" <<EOF
@@ -171,16 +180,16 @@ FEISHU_HUB_TOKEN=${HUB_TOKEN}
 FEISHU_APP_ID=${FEISHU_APP_ID:-$EXISTING_APP_ID}
 FEISHU_APP_SECRET=${FEISHU_APP_SECRET:-$EXISTING_APP_SECRET}
 FEISHU_ALLOWED_OPEN_IDS=${FEISHU_ALLOWED_OPEN_IDS:-$EXISTING_OPEN_IDS}
-FEISHU_ENABLED_HARNESSES=${FEISHU_ENABLED_HARNESSES:-${EXISTING_HARNESSES:-dsh,antigravity-ide,codex,claude}}
+FEISHU_ENABLED_HARNESSES=${FEISHU_ENABLED_HARNESSES:-${EXISTING_HARNESSES:-dsh,antigravity-ide,codex,workbuddy,claude}}
 EOF
 chmod 600 "$ENV_FILE"
 
 echo "✅ 已安全写入本机私密配置 (0600): $ENV_FILE"
 echo "   - 电脑名称: $HOST_NAME ($HOST_ID)"
 echo "   - 总控中心: $HUB_URL"
-if [ "$HAS_DSH" = "1" ] || [ "$HAS_AGY" = "1" ]; then
+if [ "$HAS_DSH" = "1" ] || [ "$HAS_AGY" = "1" ] || [ "$HAS_CODEX" = "1" ] || [ "$HAS_WORKBUDDY" = "1" ]; then
   echo "   - 检测工具: ${DETECTED_LIST[*]} ➔ 已启用完整模式（看会话 / 发指令 / 停止 / 手机审批 / 实时插话）"
-elif [ "$HAS_CODEX" = "1" ] || [ "$HAS_CLAUDE" = "1" ]; then
+elif [ "$HAS_CLAUDE" = "1" ]; then
   echo "   - 检测工具: ${DETECTED_LIST[*]} ➔ 当前为观察模式，审批功能需要 DSH（支持看会话、发指令、停止）"
 else
   echo "   - 检测工具: 未检测到 DSH ➔ 当前为观察模式，审批功能需要 DSH"

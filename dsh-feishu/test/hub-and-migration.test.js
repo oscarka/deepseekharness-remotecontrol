@@ -15,6 +15,7 @@ import { CodexAdapter, CodexAppServerClient, discoverCodexModels } from '../lib/
 import {
   discoverWorkBuddyModels,
   parseWorkBuddyReplayEvents,
+  queryWorkBuddySidecar,
   WorkBuddyAcpClient,
   WorkBuddyAdapter,
 } from '../lib/harnesses/workbuddy-adapter.js'
@@ -3493,15 +3494,797 @@ test('In-flight prompt tracking: sent messages never vanish between command pull
   assert.equal(syncedHost.inflightCommands.length, 0)
 })
 
+test('WorkBuddy real local SQLite + Unix sidecar socket + HTTP/SSE stream + HubAgent command routing', async () => {
+  const { execFileSync } = await import('node:child_process')
+  const net = await import('node:net')
+  const http = await import('node:http')
 
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-wb-e2e-'))
+  const wbHome = join(tmpDir, 'workbuddy')
+  const dshHome = join(tmpDir, 'dsh')
+  await mkdir(join(wbHome, 'sessions'), { recursive: true })
+  await mkdir(dshHome, { recursive: true })
 
+  let sidecarServer = null
+  let acpHttpServer = null
+  const activeSseResponses = new Set()
 
+  try {
+    // 1. Create a real SQLite workbuddy.db (deliberately omitting optional `model` column to verify schema resilience)
+    const dbPath = join(wbHome, 'workbuddy.db')
+    const t0 = Date.now() - 20_000
+    execFileSync('sqlite3', [
+      dbPath,
+      `
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        cwd TEXT,
+        title TEXT,
+        custom_title TEXT,
+        status TEXT,
+        created_at INTEGER,
+        updated_at INTEGER,
+        deleted_at INTEGER
+      );
+      INSERT INTO sessions (id, cwd, title, custom_title, status, created_at, updated_at, deleted_at)
+      VALUES ('wb-sqlite-01', '/Users/dev/wechat-pay', '初始标题', '微信支付V3重构', 'idle', ${t0}, ${t0 + 1000}, NULL);
+      `,
+    ])
 
+    let replayEvents = [
+      {
+        timestamp: t0,
+        update: { sessionUpdate: 'user_message', content: '帮我梳理微信支付回调逻辑' },
+      },
+      {
+        timestamp: t0 + 1000,
+        update: { sessionUpdate: 'agent_message', content: '第一轮：已梳理证书加载与验签流程。' },
+      },
+    ]
 
+    // 2. Start a real local HTTP + SSE ACP server
+    const rpcReceived = []
+    const rpcResponded = []
+    acpHttpServer = http.createServer((req, res) => {
+      const url = new URL(req.url, 'http://127.0.0.1')
+      if (req.method === 'GET' && url.pathname.includes('/replay')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ data: { events: replayEvents } }))
+        return
+      }
+      if (req.method === 'POST' && url.pathname.endsWith('/connect')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ data: { connectionId: 'conn-real-1', sessionToken: 'tok-real-1' } }))
+        return
+      }
+      if (req.method === 'GET' && url.pathname === '/api/v1/acp') {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+        })
+        res.write(': connected\n\n')
+        activeSseResponses.add(res)
+        req.on('close', () => activeSseResponses.delete(res))
+        return
+      }
+      if (req.method === 'POST' && url.pathname === '/api/v1/acp') {
+        let body = ''
+        req.on('data', chunk => { body += chunk })
+        req.on('end', () => {
+          const parsed = JSON.parse(body || '{}')
+          if (parsed.method) {
+            rpcReceived.push(parsed)
+            if (parsed.method === 'initialize') {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { protocolVersion: 1 } }))
+              return
+            }
+            if (parsed.method === 'session/new') {
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { sessionId: 'wb-live-02' } }))
+              return
+            }
+            if (parsed.method === 'session/prompt') {
+              // Hold prompt slightly so SSE chunks & permission can be tested, or return when resolved
+              setTimeout(() => {
+                for (const sse of activeSseResponses) {
+                  sse.write(
+                    `data: ${JSON.stringify({
+                      jsonrpc: '2.0',
+                      method: 'session/update',
+                      params: {
+                        sessionId: parsed.params.sessionId,
+                        update: { sessionUpdate: 'agent_message_chunk', content: '正在通过真实 SSE 推送回复...' },
+                      },
+                    })}\n\n`,
+                  )
+                  sse.write(
+                    `data: ${JSON.stringify({
+                      jsonrpc: '2.0',
+                      id: 901,
+                      method: 'session/request_permission',
+                      params: {
+                        sessionId: parsed.params.sessionId,
+                        toolCall: {
+                          toolCallId: 'tc-real-1',
+                          title: 'Bash: git status',
+                          kind: 'execute',
+                          rawInput: { command: 'git status' },
+                        },
+                        options: [
+                          { optionId: 'allow_once', name: '批准一次', kind: 'allow_once' },
+                          { optionId: 'reject_once', name: '拒绝', kind: 'reject_once' },
+                        ],
+                      },
+                    })}\n\n`,
+                  )
+                }
+              }, 20)
+              setTimeout(() => {
+                if (!res.writableEnded) {
+                  res.writeHead(200, { 'Content-Type': 'application/json' })
+                  res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { content: '最终执行完毕' } }))
+                }
+              }, 250)
+              return
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: {} }))
+            return
+          }
+          if (parsed.id !== undefined && parsed.result !== undefined) {
+            rpcResponded.push(parsed)
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true }))
+            return
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end('{}')
+        })
+      }
+    })
 
+    await new Promise(resolve => acpHttpServer.listen(0, '127.0.0.1', resolve))
+    const acpPort = acpHttpServer.address().port
+    const acpEndpoint = `http://127.0.0.1:${acpPort}/api/v1/acp`
 
+    // 3. Start a real Unix domain socket sidecar server
+    const sockPath = join(tmpDir, 'sidecar.sock')
+    sidecarServer = net.createServer(socket => {
+      let buf = ''
+      socket.on('data', chunk => {
+        buf += chunk.toString('utf8')
+        const lines = buf.split('\n')
+        buf = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          const req = JSON.parse(line)
+          if (req.method === 'session.list') {
+            socket.write(
+              `${JSON.stringify({
+                jsonrpc: '2.0',
+                id: req.id,
+                result: {
+                  acpEndpoint,
+                  sessions: [{ sessionId: 'wb-sqlite-01', cwd: '/Users/dev/wechat-pay', acpEndpoint }],
+                },
+              })}\n`,
+            )
+          }
+        }
+      })
+    })
+    await new Promise(resolve => sidecarServer.listen(sockPath, resolve))
 
+    // 4. Verify HubAgent with legacy default `enabledHarnesses: ['dsh', 'antigravity-ide', 'codex', 'claude']`
+    //    still registers WorkBuddyAdapter and routes commands end-to-end!
+    const bridge = new FeishuBridge({
+      config: resolveConfig({ dshHome }),
+      agents: { list: () => [], get: () => undefined },
+      sendText: async () => ({ messageId: 'm1' }),
+      sendCard: async () => ({ messageId: 'c1' }),
+    })
 
+    const hubAgent = new HubAgent({
+      config: {
+        ...resolveConfig({ dshHome }),
+        hostId: 'mac-wb-test',
+        hostName: 'MacBook-WB',
+        hubUrl: 'http://hub.local',
+        hubToken: 'tok',
+        enableAntigravityIde: false,
+        enabledHarnesses: ['dsh', 'antigravity-ide', 'codex', 'claude'],
+        workbuddyHome: wbHome,
+      },
+      bridge,
+      execImpl: async () => ({ stdout: '', stderr: '' }),
+      fetchImpl: (url, init) => {
+        const u = String(url)
+        if (u.startsWith('http://127.0.0.1:')) return globalThis.fetch(url, init)
+        return Promise.resolve(new Response(JSON.stringify({ ok: true, commands: [] }), { status: 200 }))
+      },
+    })
 
+    const wbAdapter = hubAgent.harnessRouter.getAdapter('workbuddy')
+    assert.ok(wbAdapter, 'WorkBuddyAdapter should be registered even on legacy 4-harness config')
+    wbAdapter.sidecarSocketPath = sockPath
 
+    await hubAgent.refreshDshStats(true)
+    let wbSess = hubAgent.cachedExternalSessions.find(s => s.id === 'workbuddy:wb-sqlite-01')
+    assert.ok(wbSess, 'Should discover session from real SQLite workbuddy.db')
+    assert.equal(wbSess.title, '微信支付V3重构')
+    assert.equal(wbSess.transcript.length, 2)
+    assert.match(wbSess.transcript[1].text, /第一轮：已梳理证书加载/)
 
+    // 5. Simulate user chatting in WorkBuddy Desktop (SQLite updated_at advances + new replay event)
+    const t1 = Date.now()
+    replayEvents.push({
+      timestamp: t1,
+      update: { sessionUpdate: 'agent_message', content: '第二轮：桌面端新增了退款接口实现。' },
+    })
+    execFileSync('sqlite3', [
+      dbPath,
+      `UPDATE sessions SET updated_at = ${t1} WHERE id = 'wb-sqlite-01';`,
+    ])
+
+    await hubAgent.refreshDshStats(true)
+    wbSess = hubAgent.cachedExternalSessions.find(s => s.id === 'workbuddy:wb-sqlite-01')
+    assert.match(wbSess.transcript.at(-1).text, /第二轮：桌面端新增了退款接口实现/)
+
+    // 6. Test creating a new WorkBuddy session via HubAgent command and receiving real SSE chunks + permission approval
+    const createRes = await hubAgent.handleHubCommand({
+      type: 'new_session',
+      harness: 'workbuddy',
+      title: '测试真实SSE与审批',
+      prompt: '请检查 git 状态',
+      cwd: '/Users/dev/wechat-pay',
+      model: 'claude-sonnet-4-6',
+    })
+    assert.equal(createRes.ok, true)
+    assert.equal(createRes.agentId, 'workbuddy:wb-live-02')
+    assert.equal(hubAgent.sessionModelOverrides.get('workbuddy:wb-live-02'), 'claude-sonnet-4-6')
+
+    // Wait for real SSE chunk and permission request to arrive over TCP
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 25))
+      await hubAgent.refreshDshStats(true)
+      const live = hubAgent.cachedExternalSessions.find(s => s.id === 'workbuddy:wb-live-02')
+      if (live?.pendingApproval?.code) break
+    }
+
+    await hubAgent.tick()
+    const liveSess = hubAgent.cachedExternalSessions.find(s => s.id === 'workbuddy:wb-live-02')
+    assert.ok(liveSess)
+    assert.equal(liveSess.status, 'approval')
+    assert.ok(liveSess.pendingApproval?.code.startsWith('WB-'))
+    assert.match(liveSess.transcript.at(-1)?.text || '', /正在通过真实 SSE 推送回复/)
+
+    const approveRes = await hubAgent.handleHubCommand({
+      type: 'approve',
+      code: liveSess.pendingApproval.code,
+      agentId: 'workbuddy:wb-live-02',
+      optionIndex: 1,
+    })
+    assert.equal(approveRes.ok, true)
+    assert.equal(rpcResponded.at(-1)?.id, 901)
+    assert.equal(rpcResponded.at(-1)?.result?.outcome?.optionId, 'allow_once')
+
+    wbAdapter.shutdown()
+  } finally {
+    for (const sse of activeSseResponses) {
+      try { sse.end() } catch {}
+    }
+    if (sidecarServer) await new Promise(resolve => sidecarServer.close(resolve))
+    if (acpHttpServer) {
+      acpHttpServer.closeAllConnections?.()
+      await new Promise(resolve => acpHttpServer.close(resolve))
+    }
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
+test('WorkBuddy v5.9.3 projects JSONL transcript parsing & wbipc/endpoint.json discovery', async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-wb-v593-'))
+  try {
+    const wbHome = join(tmpDir, '.workbuddy')
+    const wbipcDir = join(wbHome, 'wbipc')
+    const projSlugDir = join(wbHome, 'projects', 'Users-digtalhealthlink-WorkBuddy-2026-11-10-15-09-31')
+    await mkdir(wbipcDir, { recursive: true })
+    await mkdir(projSlugDir, { recursive: true })
+
+    const fakeSockPath = join(tmpDir, 'b-b7602d5aabc793dd.sock')
+    await writeFile(fakeSockPath, '', 'utf8')
+    await writeFile(
+      join(wbipcDir, 'endpoint.json'),
+      JSON.stringify({ endpoint: fakeSockPath, ticket: 'test-ticket' }),
+      'utf8',
+    )
+
+    const sessionId = '869a441a-5fd3-4862-8bf8-deb63bbfea5a'
+    const jsonlLines = [
+      JSON.stringify({
+        type: 'session-meta',
+        id: 'meta-1',
+        sessionId,
+        timestamp: 1794294571000,
+        meta: { 'codebuddy.ai/hostKind': 'unopted' },
+      }),
+      JSON.stringify({
+        id: 'msg-user-1',
+        timestamp: 1794294571675,
+        type: 'message',
+        role: 'user',
+        content: [
+          {
+            type: 'input_text',
+            text: '<system-reminder data-role="user-context">\nSOUL.md context...\n</system-reminder>\n<user_query>你好</user_query>',
+          },
+        ],
+        sessionId,
+        cwd: '/Users/digtalhealthlink/WorkBuddy/2026-11-10-15-09-31',
+      }),
+      JSON.stringify({
+        id: 'title-1',
+        timestamp: 1794294573000,
+        type: 'ai-title',
+        aiTitle: '你好',
+        sessionId,
+        cwd: '/Users/digtalhealthlink/WorkBuddy/2026-11-10-15-09-31',
+      }),
+      JSON.stringify({
+        id: 'msg-asst-1',
+        timestamp: 1794294574445,
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [
+          {
+            type: 'output_text',
+            text: '你好！👋 很高兴见到你。\n\n我是 WorkBuddy，你的智能助手。',
+          },
+        ],
+        sessionId,
+        cwd: '/Users/digtalhealthlink/WorkBuddy/2026-11-10-15-09-31',
+      }),
+    ]
+    await writeFile(join(projSlugDir, `${sessionId}.jsonl`), jsonlLines.join('\n') + '\n', 'utf8')
+
+    const wb = new WorkBuddyAdapter({
+      workbuddyHome: wbHome,
+      querySidecarImpl: async () => null,
+      queryDbImpl: async () => [
+        {
+          id: sessionId,
+          title: '你好',
+          cwd: '/Users/digtalhealthlink/WorkBuddy/2026-11-10-15-09-31',
+          status: 'completed',
+          model: 'fast-model',
+          deleted_at: null,
+          created_at: 1794294571675,
+          updated_at: 1794294574445,
+        },
+      ],
+    })
+
+    const health = await wb.detectHealth()
+    assert.equal(health.installed, true)
+    assert.equal(health.attachedDesktop, true)
+    assert.equal(wb.sidecarSocketPath, fakeSockPath)
+
+    const sessions = await wb.listSessions()
+    assert.equal(sessions.length, 1)
+    assert.equal(sessions[0].id, `workbuddy:${sessionId}`)
+    assert.equal(sessions[0].title, '你好')
+    assert.equal(sessions[0].transcript.length, 2)
+    assert.equal(sessions[0].transcript[0].role, 'user')
+    assert.equal(sessions[0].transcript[0].text, '你好')
+    assert.equal(sessions[0].transcript[1].role, 'assistant')
+    assert.match(sessions[0].transcript[1].text, /我是 WorkBuddy，你的智能助手/)
+    wb.shutdown()
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
+test('WorkBuddy v5.9.3 Streamable HTTP POST SSE frames, takeWriter session/load, auth error surfacing, and wbipc fast-skip', async () => {
+  const http = await import('node:http')
+  const net = await import('node:net')
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-wb-sse-post-'))
+  let acpServer = null
+  let wbipcDummyServer = null
+
+  try {
+    // 1. Verify wbipc socket (b-*.sock) is skipped immediately instead of hanging 1.5s
+    const wbipcDir = join(tmpDir, 'wbipc')
+    await mkdir(wbipcDir, { recursive: true })
+    const wbipcSock = join(wbipcDir, 'b-b7602d5aabc793dd.sock')
+    wbipcDummyServer = net.createServer(() => {
+      // Intentionally never replies to sidecar JSON-RPC (simulates real wbipc socket)
+    })
+    await new Promise(resolve => wbipcDummyServer.listen(wbipcSock, resolve))
+    const tStart = Date.now()
+    const sidecarRes = await queryWorkBuddySidecar(wbipcSock, 'session.list', {}, 1500)
+    assert.equal(sidecarRes, null)
+    assert.ok(Date.now() - tStart < 150, 'wbipc socket should fast-skip without waiting 1500ms timeout')
+
+    // 2. Start a real HTTP server speaking WorkBuddy v5.9.3 Streamable HTTP (`text/event-stream` on POST /api/v1/acp)
+    let isLoggedIn = false
+    let authCalledMethods = []
+    let resolvePendingAuth = null
+    let pendingPromptSseRes = null
+    let pendingPromptReqId = null
+
+    acpServer = http.createServer((req, res) => {
+      const url = new URL(req.url, 'http://127.0.0.1')
+      if (req.method === 'POST' && url.pathname.endsWith('/connect')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ data: { connectionId: 'conn-v593', sessionToken: '' } }))
+        return
+      }
+      if (req.method === 'GET' && url.pathname === '/api/v1/acp') {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', Connection: 'keep-alive' })
+        res.write(':ok\n\n')
+        return
+      }
+      if (req.method === 'POST' && url.pathname === '/api/v1/acp') {
+        let raw = ''
+        req.on('data', c => { raw += c })
+        req.on('end', () => {
+          const msg = JSON.parse(raw || '{}')
+          if (msg.method === 'initialize') {
+            res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+            res.end(
+              `:ok\n\nevent: message\ndata: ${JSON.stringify({
+                jsonrpc: '2.0',
+                id: msg.id,
+                result: {
+                  protocolVersion: 1,
+                  authMethods: [{ id: 'external', name: 'WorkBuddy Account' }],
+                },
+              })}\n\n`,
+            )
+            return
+          }
+          if (msg.method === 'authenticate') {
+            authCalledMethods.push(msg.params?.methodId)
+            res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+            res.write(':ok\n\n')
+            resolvePendingAuth = () => {
+              isLoggedIn = true
+              res.end(
+                `event: message\ndata: ${JSON.stringify({
+                  jsonrpc: '2.0',
+                  id: msg.id,
+                  result: {
+                    _meta: {
+                      'codebuddy.ai/userinfo': {
+                        userId: 'u-1001',
+                        userName: 'digtalhealthlink',
+                      },
+                    },
+                  },
+                })}\n\n`,
+              )
+            }
+            return
+          }
+          if (msg.method === 'session/load') {
+            res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+            if (!msg.params?.takeWriter || !msg.params?._meta?.['codebuddy.ai/takeWriter']) {
+              res.end(
+                `:ok\n\nevent: message\ndata: ${JSON.stringify({
+                  jsonrpc: '2.0',
+                  id: msg.id,
+                  error: {
+                    code: -32000,
+                    message: 'Persistent Session already has an external writer',
+                    data: { reason: 'writer_occupied' },
+                  },
+                })}\n\n`,
+              )
+              return
+            }
+            if (!isLoggedIn) {
+              res.end(
+                `:ok\n\nevent: message\ndata: ${JSON.stringify({
+                  jsonrpc: '2.0',
+                  id: msg.id,
+                  error: {
+                    code: -32000,
+                    message: 'Authentication required. Please use /login command to sign in to your account',
+                    data: { category: 'auth' },
+                  },
+                })}\n\n`,
+              )
+              return
+            }
+            // Replay historical chunk BEFORE id result (must be ignored by entry.isLoadingSession!)
+            res.write(
+              `:ok\n\nevent: message\ndata: ${JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'session/update',
+                params: {
+                  sessionId: msg.params.sessionId,
+                  update: { sessionUpdate: 'agent_message_chunk', content: 'OLD_HISTORY_REPLAY_SHOULD_IGNORE' },
+                },
+              })}\n\n`,
+            )
+            res.end(
+              `event: message\ndata: ${JSON.stringify({
+                jsonrpc: '2.0',
+                id: msg.id,
+                result: { models: { currentModelId: 'auto' } },
+              })}\n\n`,
+            )
+            return
+          }
+          if (msg.method === 'session/prompt') {
+            res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+            res.write(':ok\n\n')
+            // Stream chunk 1 + in-band serverRequest (session/request_permission) on the POST SSE stream!
+            res.write(
+              `event: message\ndata: ${JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'session/update',
+                params: {
+                  sessionId: msg.params.sessionId,
+                  update: { sessionUpdate: 'agent_message_chunk', content: '第一段流式回复，' },
+                },
+              })}\n\n`,
+            )
+            res.write(
+              `event: message\ndata: ${JSON.stringify({
+                jsonrpc: '2.0',
+                id: 888,
+                method: 'session/request_permission',
+                params: {
+                  sessionId: msg.params.sessionId,
+                  toolCall: { toolCallId: 'tc-post-1', title: 'Bash: ls -la', kind: 'execute' },
+                  options: [{ optionId: 'allow_once', name: '允许', kind: 'allow_once' }],
+                },
+              })}\n\n`,
+            )
+            pendingPromptSseRes = res
+            pendingPromptReqId = msg.id
+            return
+          }
+          if (msg.id === 888 && msg.result) {
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true }))
+            if (pendingPromptSseRes && !pendingPromptSseRes.writableEnded) {
+              pendingPromptSseRes.write(
+                `event: message\ndata: ${JSON.stringify({
+                  jsonrpc: '2.0',
+                  method: 'session/update',
+                  params: {
+                    sessionId: '869a441a-5fd3-4862-8bf8-deb63bbfea5a',
+                    update: { sessionUpdate: 'agent_message_chunk', content: '授权通过后完成第二段回复！' },
+                  },
+                })}\n\n`,
+              )
+              pendingPromptSseRes.end(
+                `event: message\ndata: ${JSON.stringify({
+                  jsonrpc: '2.0',
+                  id: pendingPromptReqId,
+                  result: { stopReason: 'end_turn' },
+                })}\n\n`,
+              )
+            }
+            return
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end('{}')
+        })
+      }
+    })
+
+    await new Promise(resolve => acpServer.listen(0, '127.0.0.1', resolve))
+    const port = acpServer.address().port
+    const endpoint = `http://127.0.0.1:${port}/api/v1/acp`
+
+    const wbHome = join(tmpDir, '.workbuddy')
+    const projDir = join(wbHome, 'projects', 'Users-test-proj')
+    await mkdir(projDir, { recursive: true })
+    const sessId = '869a441a-5fd3-4862-8bf8-deb63bbfea5a'
+    await writeFile(
+      join(projDir, `${sessId}.jsonl`),
+      [
+        JSON.stringify({ type: 'message', role: 'user', content: [{ type: 'input_text', text: '<user_query>你好</user_query>' }], cwd: '/Users/test/proj', timestamp: 1000 }),
+        JSON.stringify({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '你好！我是 WorkBuddy。' }], cwd: '/Users/test/proj', timestamp: 2000 }),
+      ].join('\n') + '\n',
+      'utf8',
+    )
+
+    const logs = []
+    const wb = new WorkBuddyAdapter({
+      workbuddyHome: wbHome,
+      acpEndpoint: endpoint,
+      logger: {
+        log: m => logs.push(m),
+        warn: m => logs.push(m),
+      },
+    })
+
+    await wb.listSessions()
+
+    // 3. Before CLI login -> sendPrompt fails fast, surfaces browser OAuth notice, and automatically triggers ACP authenticate({ methodId: 'external' })!
+    const unauthRes = await wb.sendPrompt({
+      sessionId: `workbuddy:${sessId}`,
+      text: '帮我看看目录结构',
+    })
+    assert.equal(unauthRes.ok, false)
+    assert.match(unauthRes.error, /WorkBuddy CLI 需首次授权登录/)
+    assert.match(unauthRes.error, /--workbuddy-login/)
+
+    for (let i = 0; i < 20 && !resolvePendingAuth; i++) {
+      await new Promise(r => setTimeout(r, 20))
+    }
+    assert.deepEqual(authCalledMethods, ['external'])
+    assert.equal(typeof resolvePendingAuth, 'function')
+
+    // Simulate user clicking "确认授权" in browser -> ACP authenticate resolves!
+    resolvePendingAuth()
+    for (let i = 0; i < 20; i++) {
+      const s = await wb.getSession(`workbuddy:${sessId}`)
+      if (s?.lastProgress?.includes('已完成登录授权')) break
+      await new Promise(r => setTimeout(r, 20))
+    }
+    const authedSess = await wb.getSession(`workbuddy:${sessId}`)
+    assert.match(authedSess.lastProgress, /digtalhealthlink/)
+
+    // 4. Next sendPrompt succeeds immediately without restarting adapter,
+    //    passes takeWriter:true, ignores historical replay, streams POST SSE chunks, and handles in-stream permission!
+    const okRes = await wb.sendPrompt({
+      sessionId: `workbuddy:${sessId}`,
+      text: '帮我看看目录结构',
+    })
+    assert.equal(okRes.ok, true)
+
+    // Wait briefly for in-stream permission frame on POST SSE stream
+    for (let i = 0; i < 20; i++) {
+      const s = await wb.getSession(`workbuddy:${sessId}`)
+      if (s?.pendingApproval?.code) break
+      await new Promise(r => setTimeout(r, 20))
+    }
+
+    let sess = await wb.getSession(`workbuddy:${sessId}`)
+    assert.equal(sess.status, 'approval')
+    assert.ok(sess.pendingApproval?.code.startsWith('WB-'))
+    assert.ok(!sess.transcript.some(m => m.text.includes('OLD_HISTORY_REPLAY_SHOULD_IGNORE')))
+    assert.match(sess.transcript.at(-1).text, /第一段流式回复/)
+
+    const approveOut = await wb.resolveApproval({
+      sessionId: `workbuddy:${sessId}`,
+      code: sess.pendingApproval.code,
+      allow: true,
+      optionIndex: 1,
+    })
+    assert.equal(approveOut.ok, true)
+
+    // Wait for POST SSE stream to finish after approval
+    for (let i = 0; i < 20; i++) {
+      sess = await wb.getSession(`workbuddy:${sessId}`)
+      if (sess.status === 'idle') break
+      await new Promise(r => setTimeout(r, 20))
+    }
+
+    assert.equal(sess.status, 'idle')
+    assert.equal(sess.transcript.at(-1).text, '第一段流式回复，授权通过后完成第二段回复！')
+    wb.shutdown()
+  } finally {
+    if (wbipcDummyServer) await new Promise(resolve => wbipcDummyServer.close(resolve))
+    if (acpServer) {
+      acpServer.closeAllConnections?.()
+      await new Promise(resolve => acpServer.close(resolve))
+    }
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
+test('WorkBuddy bundled CLI spawns with isolated ACC_PRODUCT_CONFIG_PATH (workbuddy-cli) to avoid Desktop auth file collision', async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-wb-product-cfg-'))
+  const prevAccPath = process.env.ACC_PRODUCT_CONFIG_PATH
+  delete process.env.ACC_PRODUCT_CONFIG_PATH
+  try {
+    const cliRoot = join(tmpDir, 'WorkBuddy.app', 'Contents', 'Resources', 'app.asar.unpacked', 'cli')
+    const binDir = join(cliRoot, 'bin')
+    const binPath = join(binDir, 'codebuddy')
+    const wbHome = join(tmpDir, '.workbuddy')
+    await mkdir(binDir, { recursive: true })
+    await writeFile(binPath, '#!/usr/bin/env node\n', 'utf8')
+    await writeFile(
+      join(cliRoot, 'product.json'),
+      JSON.stringify({
+        productName: 'WorkBuddy',
+        productConfigPathEnv: 'ACC_PRODUCT_CONFIG_PATH',
+        endpoint: 'https://www.workbuddy.cn',
+        stagingEndpoint: 'https://staging.workbuddy.cn',
+        authentication: {
+          id: 'workbuddy-desktop',
+          type: 'account-scoped-external-link',
+          label: 'TencentCloud',
+          attributes: {
+            platform: 'workbuddy',
+            prefixPath: '/plugin',
+          },
+        },
+      }),
+      'utf8',
+    )
+
+    let capturedSpawn = null
+    const wb = new WorkBuddyAdapter({
+      workbuddyHome: wbHome,
+      binaryPath: binPath,
+      querySidecarImpl: async () => null,
+      spawnImpl: (cmd, args, opts) => {
+        capturedSpawn = { cmd, args, opts }
+        const fakeProc = new EventEmitter()
+        fakeProc.unref = () => {}
+        fakeProc.kill = () => {}
+        return fakeProc
+      },
+      fetchImpl: async url => {
+        if (String(url).endsWith('/connect')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ data: { connectionId: 'conn-iso-1', sessionToken: 'tok-1' } }),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/json' },
+          text: async () => JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }),
+        }
+      },
+      openSseImpl: () => ({ destroy() {} }),
+    })
+
+    const resolvedEndpoint = await wb._resolveDefaultAcpEndpoint()
+    assert.match(resolvedEndpoint, /^http:\/\/127\.0\.0\.1:\d+\/api\/v1\/acp$/)
+    assert.ok(capturedSpawn, 'spawnImpl should be invoked')
+    assert.equal(capturedSpawn.cmd, binPath)
+    assert.equal(capturedSpawn.opts.env.CODEBUDDY_FORCE_LITE_WB_BUNDLE, '1')
+    assert.equal(capturedSpawn.opts.env.CODEBUDDY_CONFIG_DIR, wbHome)
+    assert.equal(capturedSpawn.opts.env.WORKBUDDY_CONFIG_DIR, wbHome)
+
+    const expectedProductCfgPath = join(wbHome, 'dsh-cli-product.json')
+    assert.equal(capturedSpawn.opts.env.ACC_PRODUCT_CONFIG_PATH, expectedProductCfgPath)
+
+    const writtenProductCfg = JSON.parse(await readFile(expectedProductCfgPath, 'utf8'))
+    assert.equal(writtenProductCfg.endpoint, 'https://www.workbuddy.cn')
+    assert.equal(writtenProductCfg.authentication.id, 'workbuddy-cli')
+    assert.equal(writtenProductCfg.authentication.type, 'account-scoped-external-link')
+    assert.equal(writtenProductCfg.authentication.attributes.platform, 'workbuddy')
+
+    // Also verify WorkBuddyAcpClient.authenticate defaults to 'internal' when authMethods is empty
+    let sentMethodId = ''
+    const client = new WorkBuddyAcpClient({
+      acpEndpoint: resolvedEndpoint,
+      fetchImpl: async (_url, init) => {
+        const parsed = JSON.parse(init.body)
+        if (parsed.method === 'authenticate') {
+          sentMethodId = parsed.params?.methodId || ''
+        }
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/json' },
+          text: async () => JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: { ok: true } }),
+        }
+      },
+      openSseImpl: () => ({ destroy() {} }),
+    })
+    await client.authenticate()
+    assert.equal(sentMethodId, 'internal')
+
+    wb.shutdown()
+  } finally {
+    if (prevAccPath === undefined) delete process.env.ACC_PRODUCT_CONFIG_PATH
+    else process.env.ACC_PRODUCT_CONFIG_PATH = prevAccPath
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})

@@ -40,10 +40,30 @@ export function getWorkBuddyHome(overrideDir = '') {
   if (overrideDir) return path.resolve(overrideDir)
   if (process.env.WORKBUDDY_CONFIG_DIR) return path.resolve(process.env.WORKBUDDY_CONFIG_DIR)
   if (process.env.CODEBUDDY_CONFIG_DIR) return path.resolve(process.env.CODEBUDDY_CONFIG_DIR)
-  return path.join(os.homedir(), '.workbuddy')
+  const wbDir = path.join(os.homedir(), '.workbuddy')
+  const cbDir = path.join(os.homedir(), '.codebuddy')
+  try {
+    if (!fs.existsSync(wbDir) && fs.existsSync(cbDir)) return cbDir
+  } catch {
+    // ignore
+  }
+  return wbDir
 }
 
 export function getWorkBuddySidecarSocketPath(workbuddyHome = getWorkBuddyHome()) {
+  try {
+    const endpointFile = path.join(workbuddyHome, 'wbipc', 'endpoint.json')
+    if (fs.existsSync(endpointFile)) {
+      const parsed = safeJsonParse(fs.readFileSync(endpointFile, 'utf8'))
+      const ep = typeof parsed?.endpoint === 'string' ? parsed.endpoint.trim() : ''
+      if (ep && (ep.startsWith('\\\\.\\pipe\\') || fs.existsSync(ep))) {
+        return ep
+      }
+    }
+  } catch {
+    // ignore wbipc/endpoint.json read errors
+  }
+
   if (process.platform === 'win32') {
     const hash = crypto
       .createHash('sha1')
@@ -55,17 +75,58 @@ export function getWorkBuddySidecarSocketPath(workbuddyHome = getWorkBuddyHome()
   const uid = typeof process.getuid === 'function' ? String(process.getuid()) : (process.env.USER || 'default')
   const userHash = crypto.createHash('sha1').update(uid).digest('hex').slice(0, 6)
   const dirHash = crypto.createHash('sha1').update(path.resolve(workbuddyHome)).digest('hex').slice(0, 12)
-  return path.join(os.tmpdir(), `wb-${userHash}`, dirHash, 'sidecar.sock')
+  const exactPath = path.join(os.tmpdir(), `wb-${userHash}`, dirHash, 'sidecar.sock')
+  try {
+    if (fs.existsSync(exactPath)) return exactPath
+    for (const rootTmp of new Set([os.tmpdir(), '/tmp'])) {
+      if (!fs.existsSync(rootTmp)) continue
+      const wbDirs = fs.readdirSync(rootTmp).filter(name => name.startsWith(`wb-${userHash}`) || name.startsWith('wb-'))
+      for (const wbDir of wbDirs) {
+        const wbFull = path.join(rootTmp, wbDir)
+        const subDirs = fs.readdirSync(wbFull)
+        for (const sub of subDirs) {
+          const subFull = path.join(wbFull, sub)
+          const candidate = path.join(subFull, 'sidecar.sock')
+          if (fs.existsSync(candidate)) return candidate
+          try {
+            const sidecarSocks = fs
+              .readdirSync(subFull)
+              .filter(f => /^sidecar(-[a-z0-9]+)?\.sock$/i.test(f))
+            if (sidecarSocks.length > 0) return path.join(subFull, sidecarSocks[0])
+          } catch {
+            // ignore non-directory entries
+          }
+          const wbipcDir = path.join(subFull, 'wbipc')
+          if (fs.existsSync(wbipcDir)) {
+            const socks = fs.readdirSync(wbipcDir).filter(f => f.endsWith('.sock'))
+            if (socks.length > 0) return path.join(wbipcDir, socks[0])
+          }
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return exactPath
 }
 
 export function findWorkBuddyBinary() {
+  const home = os.homedir()
   const candidates = [
     process.env.WORKBUDDY_BIN,
     process.env.CODEBUDDY_BIN,
+    '/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy',
+    path.join(home, 'Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy'),
+    '/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy-lowmem',
+    path.join(home, 'Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy-lowmem'),
     '/Applications/WorkBuddy.app/Contents/Resources/app/node_modules/@tencent/codebuddy-cli/bin/codebuddy',
+    '/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/node_modules/@tencent/codebuddy-cli/bin/codebuddy',
+    path.join(home, 'Applications/WorkBuddy.app/Contents/Resources/app/node_modules/@tencent/codebuddy-cli/bin/codebuddy'),
+    path.join(home, 'Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/node_modules/@tencent/codebuddy-cli/bin/codebuddy'),
     '/Applications/WorkBuddy.app/Contents/MacOS/WorkBuddy',
-    path.join(os.homedir(), '.workbuddy', 'bin', 'codebuddy'),
-    path.join(os.homedir(), '.codebuddy', 'bin', 'codebuddy'),
+    path.join(home, 'Applications/WorkBuddy.app/Contents/MacOS/WorkBuddy'),
+    path.join(home, '.workbuddy', 'bin', 'codebuddy'),
+    path.join(home, '.codebuddy', 'bin', 'codebuddy'),
     '/opt/homebrew/bin/codebuddy',
     '/usr/local/bin/codebuddy',
     '/usr/bin/codebuddy',
@@ -95,7 +156,17 @@ export function findWorkBuddyBinary() {
 }
 
 const DEFAULT_WORKBUDDY_MODELS = [
-  { value: 'deepseek-v3.1', label: 'DeepSeek V3.1 (WorkBuddy)', default: true },
+  { value: 'auto', label: 'Auto (WorkBuddy 智能路由)', default: true },
+  { value: 'deepseek-v3-2-volc', label: 'DeepSeek V3.2 (Volc)' },
+  { value: 'kimi-k2.5', label: 'Kimi K2.5' },
+  { value: 'glm-5.1', label: 'GLM-5.1' },
+  { value: 'glm-5.0', label: 'GLM-5.0' },
+  { value: 'glm-5.0-turbo', label: 'GLM-5.0 Turbo' },
+  { value: 'glm-5v-turbo', label: 'GLM-5V Turbo' },
+  { value: 'glm-4.7', label: 'GLM-4.7' },
+  { value: 'minimax-m2.7', label: 'MiniMax M2.7' },
+  { value: 'fast-model', label: 'Fast Model (WorkBuddy 极速)' },
+  { value: 'deepseek-v3.1', label: 'DeepSeek V3.1 (WorkBuddy)' },
   { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
   { value: 'gpt-5.4', label: 'GPT-5.4' },
   { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
@@ -123,26 +194,28 @@ export function discoverWorkBuddyModels(workbuddyHome = getWorkBuddyHome()) {
     const configCandidates = [
       path.join(workbuddyHome, 'config.json'),
       path.join(workbuddyHome, 'settings.json'),
+      path.join(workbuddyHome, 'models.json'),
       path.join(os.homedir(), '.codebuddy', 'config.json'),
     ]
     for (const cfgPath of configCandidates) {
       if (!fs.existsSync(cfgPath)) continue
       const parsed = safeJsonParse(fs.readFileSync(cfgPath, 'utf8'))
       if (!parsed || typeof parsed !== 'object') continue
-      if (typeof parsed.model === 'string' && parsed.model.trim()) {
+      if (!Array.isArray(parsed) && typeof parsed.model === 'string' && parsed.model.trim()) {
         defaultModel = parsed.model.trim()
         addModel(defaultModel, `${defaultModel}`, true)
       }
-      if (Array.isArray(parsed.models)) {
-        for (const entry of parsed.models) {
-          if (typeof entry === 'string') addModel(entry, entry)
-          else if (entry && typeof entry === 'object') {
-            addModel(
-              entry.id || entry.value || entry.model || entry.slug,
-              entry.label || entry.displayName || entry.name,
-              Boolean(entry.default),
-            )
-          }
+      const modelEntries = Array.isArray(parsed)
+        ? parsed
+        : (Array.isArray(parsed.models) ? parsed.models : [])
+      for (const entry of modelEntries) {
+        if (typeof entry === 'string') addModel(entry, entry)
+        else if (entry && typeof entry === 'object') {
+          addModel(
+            entry.id || entry.value || entry.model || entry.slug,
+            entry.label || entry.displayName || entry.name,
+            Boolean(entry.default),
+          )
         }
       }
     }
@@ -160,15 +233,34 @@ export function discoverWorkBuddyModels(workbuddyHome = getWorkBuddyHome()) {
   }
   const matched = models.find(m => m.value === defaultModel) || models[0]
   return {
-    defaultModel: defaultModel || 'deepseek-v3.1',
-    defaultLabel: matched ? `${matched.label} (默认)` : 'DeepSeek V3.1 (默认)',
+    defaultModel: defaultModel || 'auto',
+    defaultLabel: matched ? `${matched.label} (默认)` : 'Auto (WorkBuddy 智能路由) (默认)',
     models,
   }
+}
+
+export function isWorkBuddyAuthError(err) {
+  const msg = String(err?.message || err || '')
+  if (err?.data?.category === 'auth') return true
+  return /authentication required|\/login\b|not logged in|please sign in|unauthorized/i.test(msg)
+}
+
+export function formatWorkBuddyAuthError(_binaryPath = '', _workbuddyHome = getWorkBuddyHome(), { autoOpenedBrowser = false } = {}) {
+  if (autoOpenedBrowser) {
+    return 'WorkBuddy CLI 需首次授权登录（桌面端加密凭证不与独立 CLI 共享）：已在电脑浏览器自动打开 WorkBuddy 官方登录页，请点击确认授权后直接在手机重发消息（也可在电脑终端运行 node dsh-feishu/daemon.mjs --replace --workbuddy-login）。'
+  }
+  return 'WorkBuddy CLI 尚未登录账号（桌面端加密凭证不与独立 CLI 共享）：请在电脑浏览器完成弹出的 WorkBuddy 官方登录确认，或在终端运行 node dsh-feishu/daemon.mjs --replace --workbuddy-login 完成授权。'
 }
 
 export function queryWorkBuddySidecar(socketPath, method, params = {}, timeoutMs = 1500) {
   return new Promise(resolve => {
     if (!socketPath || (!socketPath.startsWith('\\\\.\\pipe\\') && !fs.existsSync(socketPath))) {
+      resolve(null)
+      return
+    }
+    const baseName = path.basename(socketPath)
+    if (socketPath.includes(`${path.sep}wbipc${path.sep}`) || /^b-[a-f0-9]+\.sock$/i.test(baseName)) {
+      // wbipc sockets speak Electron renderer wbipc protocol, not sidecar JSON-RPC
       resolve(null)
       return
     }
@@ -221,11 +313,30 @@ export function queryWorkBuddySidecar(socketPath, method, params = {}, timeoutMs
   })
 }
 
+export function cleanWorkBuddyUserText(rawText = '') {
+  const raw = String(rawText || '')
+  if (!raw) return ''
+  const withoutReminder = raw.replace(/<system-reminder[\s\S]*?<\/system-reminder>/gi, '').trim()
+  const queryMatch = withoutReminder.match(/<user_query>([\s\S]*?)<\/user_query>/i)
+  if (queryMatch) return queryMatch[1].trim()
+  return withoutReminder.replace(/<\/?user_query>/gi, '').trim()
+}
+
 function extractTextFromAcpContent(content) {
   if (!content) return ''
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
-    return content.map(part => extractTextFromAcpContent(part)).filter(Boolean).join('\n')
+    return content
+      .map(part => {
+        if (!part) return ''
+        if (typeof part === 'string') return part
+        if (part.type === 'thinking' || part.type === 'reasoning' || part.type === 'tool_use' || part.type === 'tool_call' || part.type === 'function_call') {
+          return ''
+        }
+        return extractTextFromAcpContent(part)
+      })
+      .filter(Boolean)
+      .join('\n')
   }
   if (typeof content === 'object') {
     if (typeof content.text === 'string') return content.text
@@ -238,6 +349,8 @@ export function parseWorkBuddyReplayEvents(events = []) {
   const transcript = []
   const recentActivity = []
   let lastProgress = ''
+  let aiTitle = ''
+  let cwd = ''
 
   const ensureAssistantMsg = timeMs => {
     const last = transcript.at(-1)
@@ -257,13 +370,23 @@ export function parseWorkBuddyReplayEvents(events = []) {
 
   for (const item of events) {
     if (!item || typeof item !== 'object') continue
+    if (typeof item.cwd === 'string' && item.cwd.trim() && !cwd) {
+      cwd = item.cwd.trim()
+    }
+    if (item.type === 'ai-title' && typeof item.aiTitle === 'string' && item.aiTitle.trim()) {
+      aiTitle = item.aiTitle.trim()
+      continue
+    }
     const update = item.update || item.params?.update || item
     const tag = update.sessionUpdate || update.type || item.type || ''
-    const ts = item.timestamp ? Number(new Date(item.timestamp)) || Date.now() : Date.now()
+    const ts = item.timestamp
+      ? (typeof item.timestamp === 'number' ? item.timestamp : (Number(new Date(item.timestamp)) || Date.now()))
+      : Date.now()
     const iso = new Date(ts).toISOString()
 
     if (tag === 'user_message_chunk' || tag === 'user_message' || item.role === 'user') {
-      const text = extractTextFromAcpContent(update.content ?? update.text ?? item.text).trim()
+      const rawText = extractTextFromAcpContent(update.content ?? update.text ?? item.content ?? item.text)
+      const text = cleanWorkBuddyUserText(rawText)
       if (!text) continue
       const prev = transcript.at(-1)
       if (prev && prev.role === 'user' && tag === 'user_message_chunk') {
@@ -281,10 +404,39 @@ export function parseWorkBuddyReplayEvents(events = []) {
       }
       recentActivity.push({ role: 'user', text: truncateText(text, 1600), at: iso })
     } else if (tag === 'agent_message_chunk' || tag === 'agent_message' || item.role === 'assistant') {
-      const text = extractTextFromAcpContent(update.content ?? update.text ?? item.text)
+      const rawContent = update.content ?? update.text ?? item.content ?? item.text
+      if (Array.isArray(rawContent)) {
+        for (const part of rawContent) {
+          if (!part || typeof part !== 'object') continue
+          if (part.type === 'thinking' || part.type === 'reasoning') {
+            const thoughtText = String(part.thinking || part.text || '').trim()
+            if (thoughtText) {
+              const msg = ensureAssistantMsg(ts)
+              msg.thinking = msg.thinking ? `${msg.thinking}\n${thoughtText}` : thoughtText
+              msg.time = ts
+              recentActivity.push({ role: 'thought', text: truncateText(msg.thinking, 1600), at: iso })
+            }
+          } else if (part.type === 'tool_use' || part.type === 'tool_call' || part.type === 'function_call') {
+            const title = part.name || part.title || part.toolName || 'Tool Call'
+            const msg = ensureAssistantMsg(ts)
+            if (!msg.tools.includes(title)) msg.tools.push(title)
+            msg.toolCalls.push({
+              name: title,
+              argsSummary: String(part.input?.command || part.arguments || part.title || '').slice(0, 120),
+            })
+            recentActivity.push({ role: 'tool', text: `Running ${title}`, at: iso })
+            lastProgress = `Running ${title}`
+          }
+        }
+      }
+      const text = extractTextFromAcpContent(rawContent)
       if (!text) continue
       const msg = ensureAssistantMsg(ts)
-      msg.text = `${msg.text || ''}${text}`
+      if (tag === 'agent_message_chunk') {
+        msg.text = `${msg.text || ''}${text}`
+      } else {
+        msg.text = msg.text ? `${msg.text}\n\n${text}` : text
+      }
       msg.time = ts
       lastProgress = truncateText(msg.text, 260)
       const prevAct = recentActivity.at(-1)
@@ -295,7 +447,7 @@ export function parseWorkBuddyReplayEvents(events = []) {
         recentActivity.push({ role: 'assistant', text: truncateText(msg.text, 1600), at: iso })
       }
     } else if (tag === 'agent_thought_chunk' || tag === 'agent_thought' || item.role === 'thought') {
-      const text = extractTextFromAcpContent(update.content ?? update.text ?? item.text)
+      const text = extractTextFromAcpContent(update.content ?? update.text ?? item.content ?? item.text)
       if (!text) continue
       const msg = ensureAssistantMsg(ts)
       msg.thinking = `${msg.thinking || ''}${text}`
@@ -333,6 +485,8 @@ export function parseWorkBuddyReplayEvents(events = []) {
     transcript: transcript.slice(-MAX_TRANSCRIPT_MESSAGES).map((m, idx) => ({ ...m, index: idx })),
     recentActivity: recentActivity.slice(-MAX_TRANSCRIPT_MESSAGES),
     lastProgress,
+    aiTitle,
+    cwd,
   }
 }
 
@@ -347,6 +501,7 @@ export class WorkBuddyAcpClient extends EventEmitter {
     this.openSseImpl = options.openSseImpl || null
     this.connectionId = ''
     this.sessionToken = ''
+    this.authMethods = []
     this.connected = false
     this.nextId = 1
     this.sseReq = null
@@ -376,7 +531,7 @@ export class WorkBuddyAcpClient extends EventEmitter {
 
     this._startSseStream()
 
-    await this.request('initialize', {
+    const initRes = await this.request('initialize', {
       protocolVersion: 1,
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },
@@ -388,6 +543,17 @@ export class WorkBuddyAcpClient extends EventEmitter {
         version: '0.5.1',
       },
     })
+    if (Array.isArray(initRes?.authMethods)) {
+      this.authMethods = initRes.authMethods
+    }
+  }
+
+  async authenticate(methodId = '') {
+    const resolvedMethodId =
+      String(methodId || '').trim() ||
+      this.authMethods?.[0]?.id ||
+      'internal'
+    return this.request('authenticate', { methodId: resolvedMethodId })
   }
 
   _startSseStream() {
@@ -423,33 +589,44 @@ export class WorkBuddyAcpClient extends EventEmitter {
           let buffer = ''
           res.on('data', chunk => {
             buffer += chunk
-            const blocks = buffer.split(/\r?\n\r?\n/)
-            buffer = blocks.pop() || ''
-            for (const block of blocks) {
-              const dataLines = block
-                .split(/\r?\n/)
-                .filter(line => line.startsWith('data:'))
-                .map(line => line.slice(5).trim())
-              if (!dataLines.length) continue
-              const rawData = dataLines.join('\n')
-              const parsed = safeJsonParse(rawData)
-              if (parsed) this._handleSsePayload(parsed)
-            }
+            buffer = this._parseSseBlocksFromBuffer(buffer, parsed => this._handleSsePayload(parsed))
           })
           res.on('end', () => {
             this.connected = false
             this.emit('close')
           })
+          res.on('error', err => {
+            this.connected = false
+            if (this.listenerCount('error') > 0) this.emit('error', err)
+          })
         },
       )
       req.on('error', err => {
-        this.emit('error', err)
+        this.connected = false
+        if (this.listenerCount('error') > 0) this.emit('error', err)
       })
       req.end()
       this.sseReq = req
     } catch {
       // ignore SSE stream startup errors in headless test environments
     }
+  }
+
+  _parseSseBlocksFromBuffer(buffer, onMessage) {
+    const blocks = buffer.split(/\r?\n\r?\n/)
+    const rest = blocks.pop() || ''
+    for (const block of blocks) {
+      const dataLines = block
+        .split(/\r?\n/)
+        .filter(line => line.startsWith('data:'))
+        .map(line => line.slice(5).trimStart())
+      if (!dataLines.length) continue
+      const rawData = dataLines.join('\n').trim()
+      if (!rawData) continue
+      const parsed = safeJsonParse(rawData)
+      if (parsed) onMessage(parsed)
+    }
+    return rest
   }
 
   _handleSsePayload(msg) {
@@ -483,25 +660,89 @@ export class WorkBuddyAcpClient extends EventEmitter {
       body: JSON.stringify(body),
     })
     if (!res.ok) {
-      throw new Error(`WorkBuddy RPC ${method} failed with HTTP ${res.status}`)
+      let detail = ''
+      try {
+        detail = (await res.text()).trim().slice(0, 240)
+      } catch {
+        // ignore
+      }
+      throw new Error(`WorkBuddy RPC ${method} failed with HTTP ${res.status}${detail ? `: ${detail}` : ''}`)
     }
+
+    let gotRpcResponse = false
+    let rpcResult = undefined
+    let rpcError = null
+
+    const handleMessage = msg => {
+      if (!msg || typeof msg !== 'object') return
+      if (msg.id === id && !msg.method) {
+        gotRpcResponse = true
+        if (msg.error) {
+          const err = new Error(msg.error.message || JSON.stringify(msg.error))
+          err.code = msg.error.code
+          err.data = msg.error.data
+          rpcError = err
+        } else {
+          rpcResult = msg.result !== undefined ? msg.result : msg
+        }
+        return
+      }
+      this._handleSsePayload(msg)
+    }
+
+    const contentType = String(res.headers?.get?.('content-type') || '').toLowerCase()
+    if (contentType.includes('text/event-stream') && res.body && typeof res.body.getReader === 'function') {
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder('utf-8')
+      let buffer = ''
+      try {
+        while (true) {
+          const { value, done } = await reader.read()
+          if (done) {
+            buffer += decoder.decode()
+            if (buffer.trim()) {
+              this._parseSseBlocksFromBuffer(`${buffer}\n\n`, handleMessage)
+            }
+            break
+          }
+          buffer += decoder.decode(value, { stream: true })
+          buffer = this._parseSseBlocksFromBuffer(buffer, handleMessage)
+          if (gotRpcResponse) {
+            try {
+              await reader.cancel()
+            } catch {
+              // ignore reader cancel errors
+            }
+            break
+          }
+        }
+      } finally {
+        try {
+          reader.releaseLock?.()
+        } catch {
+          // ignore
+        }
+      }
+      if (rpcError) throw rpcError
+      return rpcResult ?? {}
+    }
+
     const text = await res.text()
     if (!text.trim()) return {}
     const parsed = safeJsonParse(text)
     if (parsed) {
       if (parsed.error) {
-        throw new Error(parsed.error.message || JSON.stringify(parsed.error))
+        const err = new Error(parsed.error.message || JSON.stringify(parsed.error))
+        err.code = parsed.error.code
+        err.data = parsed.error.data
+        throw err
       }
       return parsed.result !== undefined ? parsed.result : parsed
     }
-    const dataLine = text
-      .split(/\r?\n/)
-      .find(l => l.startsWith('data:'))
-    if (dataLine) {
-      const sseMsg = safeJsonParse(dataLine.slice(5).trim())
-      if (sseMsg?.error) throw new Error(sseMsg.error.message || 'ACP SSE error')
-      return sseMsg?.result ?? sseMsg ?? {}
-    }
+
+    this._parseSseBlocksFromBuffer(`${text}\n\n`, handleMessage)
+    if (rpcError) throw rpcError
+    if (gotRpcResponse) return rpcResult ?? {}
     return {}
   }
 
@@ -545,17 +786,103 @@ export class WorkBuddyAdapter {
     this.workbuddyHome = getWorkBuddyHome(options.workbuddyHome)
     this.binaryPath = options.binaryPath !== undefined ? options.binaryPath : findWorkBuddyBinary()
     this.sidecarSocketPath = options.sidecarSocketPath || getWorkBuddySidecarSocketPath(this.workbuddyHome)
+    this.hasExplicitEndpoint = Boolean(options.acpEndpoint || process.env.WORKBUDDY_ACP_ENDPOINT)
     this.defaultEndpoint = options.acpEndpoint || process.env.WORKBUDDY_ACP_ENDPOINT || ''
     this.fetchImpl = options.fetchImpl || globalThis.fetch
     this.openSseImpl = options.openSseImpl || null
     this.querySidecarImpl = options.querySidecarImpl || queryWorkBuddySidecar
     this.queryDbImpl = options.queryDbImpl || null
     this.spawnImpl = options.spawnImpl || cpSpawn
+    this.logger = options.logger || null
+    this.onStateChange = typeof options.onStateChange === 'function' ? options.onStateChange : null
     this.runtimeSessions = new Map()
     this.clientsByEndpoint = new Map()
     this.pendingApprovalsByCode = new Map()
     this.deletedIds = new Set()
     this.spawnedServeProc = null
+    this.spawnedEndpoint = ''
+    this.pendingAuthPromise = null
+  }
+
+  _formatError(err, opts = {}) {
+    if (isWorkBuddyAuthError(err)) {
+      return formatWorkBuddyAuthError(this.binaryPath, this.workbuddyHome, opts)
+    }
+    return String(err?.message || err || 'Unknown WorkBuddy error')
+  }
+
+  async authenticate({ methodId = '' } = {}) {
+    if (this.pendingAuthPromise) {
+      return this.pendingAuthPromise
+    }
+    this.pendingAuthPromise = Promise.resolve()
+      .then(async () => {
+        const client = await this._getClientForEndpoint(this.defaultEndpoint)
+        this.logger?.log?.('[dsh-feishu] 🔐 正在通过官方 ACP authenticate 拉起 WorkBuddy 浏览器授权登录...')
+        const res = await client.authenticate(methodId)
+        const userInfo = res?._meta?.['codebuddy.ai/userinfo'] || null
+        const who = userInfo?.userName || userInfo?.userId || 'WorkBuddy User'
+        this.logger?.log?.(`[dsh-feishu] ✅ WorkBuddy CLI 授权登录成功 (${who})！`)
+        this.onStateChange?.()
+        return { ok: true, userInfo, raw: res }
+      })
+      .catch(err => {
+        const msg = String(err?.message || err || 'WorkBuddy ACP authenticate failed')
+        this.logger?.warn?.(`[dsh-feishu] ⚠️ WorkBuddy ACP authenticate 未完成: ${msg}`)
+        return { ok: false, error: msg }
+      })
+      .finally(() => {
+        this.pendingAuthPromise = null
+      })
+    return this.pendingAuthPromise
+  }
+
+  _triggerBackgroundAuth(entry = null) {
+    this.authenticate()
+      .then(res => {
+        if (res?.ok && entry) {
+          const who = res.userInfo?.userName || res.userInfo?.userId || ''
+          const suffix = who ? ` (${who})` : ''
+          entry.lastProgress = `✅ WorkBuddy 已完成登录授权${suffix}，请重发消息`
+          entry.recentActivity.push({
+            role: 'system',
+            text: `✅ WorkBuddy CLI 授权登录成功${suffix}！现在可以直接在手机发送消息。`,
+            at: new Date().toISOString(),
+          })
+          entry.updatedAt = Date.now()
+          this.onStateChange?.()
+        }
+      })
+      .catch(() => {
+        // handled inside authenticate()
+      })
+  }
+
+  _resetSpawnedServe() {
+    const deadEndpoint = this.spawnedEndpoint
+    for (const client of this.clientsByEndpoint.values()) {
+      client.close()
+    }
+    this.clientsByEndpoint.clear()
+    if (!this.hasExplicitEndpoint) {
+      this.defaultEndpoint = ''
+    }
+    if (deadEndpoint) {
+      for (const entry of this.runtimeSessions.values()) {
+        if (entry.acpEndpoint === deadEndpoint) {
+          entry.acpEndpoint = ''
+        }
+      }
+    }
+    this.spawnedEndpoint = ''
+    if (this.spawnedServeProc && typeof this.spawnedServeProc.kill === 'function') {
+      try {
+        this.spawnedServeProc.kill()
+      } catch {
+        // ignore
+      }
+      this.spawnedServeProc = null
+    }
   }
 
   isAvailable() {
@@ -638,6 +965,7 @@ export class WorkBuddyAdapter {
         runningSummary: defaults.runningSummary || '',
         createdAt: defaults.createdAt || now,
         updatedAt: defaults.updatedAt || now,
+        lastReplayUpdatedAt: 0,
         lastProgress: defaults.lastProgress || 'Ready in WorkBuddy',
         transcript: Array.isArray(defaults.transcript) ? [...defaults.transcript] : [],
         recentActivity: Array.isArray(defaults.recentActivity) ? [...defaults.recentActivity] : [],
@@ -645,13 +973,20 @@ export class WorkBuddyAdapter {
         acpEndpoint: defaults.acpEndpoint || this.defaultEndpoint || '',
         assistantBuffer: '',
         thoughtBuffer: '',
+        isLoadingSession: false,
+        onFirstProgress: null,
       }
       this.runtimeSessions.set(rawId, entry)
     } else {
-      if (defaults.title && (!entry.title || entry.title.startsWith('WorkBuddy ('))) entry.title = defaults.title
+      if (defaults.title && (!entry.title || entry.title.startsWith('WorkBuddy (') || !defaults.title.startsWith('WorkBuddy ('))) {
+        entry.title = defaults.title
+      }
       if (defaults.cwd && !entry.cwd) entry.cwd = defaults.cwd
       if (defaults.model && !entry.model) entry.model = defaults.model
       if (defaults.acpEndpoint && !entry.acpEndpoint) entry.acpEndpoint = defaults.acpEndpoint
+      if (defaults.updatedAt && defaults.updatedAt > (entry.updatedAt || 0)) {
+        entry.updatedAt = defaults.updatedAt
+      }
     }
     return entry
   }
@@ -742,9 +1077,97 @@ export class WorkBuddyAdapter {
       openSseImpl: this.openSseImpl,
     })
     this._bindClientEvents(client)
-    await client.connect()
-    this.clientsByEndpoint.set(targetEndpoint, client)
-    return client
+    try {
+      await client.connect()
+      this.clientsByEndpoint.set(targetEndpoint, client)
+      return client
+    } catch (err) {
+      client.close()
+      this.clientsByEndpoint.delete(targetEndpoint)
+      throw err
+    }
+  }
+
+  _ensureCliProductConfigPath() {
+    if (process.env.ACC_PRODUCT_CONFIG_PATH) {
+      return process.env.ACC_PRODUCT_CONFIG_PATH
+    }
+    if (!this.binaryPath) return ''
+
+    const productCandidates = [path.resolve(path.dirname(this.binaryPath), '..', 'product.json')]
+    try {
+      if (fs.existsSync(this.binaryPath)) {
+        const realBin = fs.realpathSync(this.binaryPath)
+        const realCandidate = path.resolve(path.dirname(realBin), '..', 'product.json')
+        if (!productCandidates.includes(realCandidate)) {
+          productCandidates.push(realCandidate)
+        }
+      }
+    } catch {
+      // ignore realpath errors
+    }
+    if (/workbuddy\.app/i.test(String(this.binaryPath))) {
+      productCandidates.push(
+        '/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/product.json',
+        path.join(os.homedir(), 'Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/product.json'),
+      )
+    }
+
+    let baseProduct = null
+    for (const candidate of productCandidates) {
+      try {
+        if (!candidate || !fs.existsSync(candidate)) continue
+        const parsed = safeJsonParse(fs.readFileSync(candidate, 'utf8'))
+        if (parsed && typeof parsed === 'object') {
+          baseProduct = parsed
+          break
+        }
+      } catch {
+        // ignore read errors
+      }
+    }
+
+    const isWorkBuddyDesktopAuth = baseProduct?.authentication?.id === 'workbuddy-desktop'
+    const isWorkBuddyAppBin = /workbuddy\.app/i.test(String(this.binaryPath))
+    if (!isWorkBuddyDesktopAuth && !isWorkBuddyAppBin) {
+      return ''
+    }
+
+    const baseAuth =
+      baseProduct?.authentication && typeof baseProduct.authentication === 'object'
+        ? baseProduct.authentication
+        : {
+            type: 'account-scoped-external-link',
+            label: 'TencentCloud',
+            attributes: {
+              usernameHeader: 'X-User-Id',
+              usernameEncode: 'URLEncode',
+              tokenHeader: 'Authorization',
+              tokenType: 'bearerToken',
+              startChatAfterCompleted: true,
+              prefixPath: '/plugin',
+              platform: 'workbuddy',
+            },
+          }
+
+    const cliProductOverride = {
+      ...(baseProduct?.productName ? { productName: baseProduct.productName } : { productName: 'WorkBuddy' }),
+      endpoint: baseProduct?.endpoint || 'https://www.workbuddy.cn',
+      ...(baseProduct?.stagingEndpoint ? { stagingEndpoint: baseProduct.stagingEndpoint } : {}),
+      authentication: {
+        ...baseAuth,
+        id: 'workbuddy-cli',
+      },
+    }
+
+    try {
+      fs.mkdirSync(this.workbuddyHome, { recursive: true })
+      const outPath = path.join(this.workbuddyHome, 'dsh-cli-product.json')
+      fs.writeFileSync(outPath, `${JSON.stringify(cliProductOverride, null, 2)}\n`, 'utf8')
+      return outPath
+    } catch {
+      return ''
+    }
   }
 
   async _resolveDefaultAcpEndpoint() {
@@ -752,6 +1175,10 @@ export class WorkBuddyAdapter {
 
     try {
       const sidecarList = await this.querySidecarImpl(this.sidecarSocketPath, 'session.list', {})
+      if (sidecarList?.acpEndpoint && typeof sidecarList.acpEndpoint === 'string') {
+        this.defaultEndpoint = sidecarList.acpEndpoint
+        return sidecarList.acpEndpoint
+      }
       const sessions = Array.isArray(sidecarList) ? sidecarList : (sidecarList?.sessions || [])
       for (const s of sessions) {
         if (s?.acpEndpoint) {
@@ -766,15 +1193,47 @@ export class WorkBuddyAdapter {
     if (this.binaryPath && typeof this.spawnImpl === 'function') {
       const port = 43820 + Math.floor(Math.random() * 1000)
       const endpoint = `http://127.0.0.1:${port}/api/v1/acp`
+      const cliProductConfigPath = this._ensureCliProductConfigPath()
       try {
-        const proc = this.spawnImpl(this.binaryPath, ['--serve', '--port', String(port)], {
-          cwd: process.cwd(),
-          env: { ...process.env },
-          stdio: 'ignore',
-          detached: true,
-        })
+        this.logger?.log?.(`[dsh-feishu] 🐼 Spawning WorkBuddy ACP server on 127.0.0.1:${port}...`)
+        const proc = this.spawnImpl(
+          this.binaryPath,
+          ['--serve', '--port', String(port), '--auth', 'none'],
+          {
+            cwd: process.cwd(),
+            env: {
+              ...process.env,
+              CODEBUDDY_FORCE_LITE_WB_BUNDLE: '1',
+              CODEBUDDY_CONFIG_DIR: this.workbuddyHome,
+              WORKBUDDY_CONFIG_DIR: this.workbuddyHome,
+              ...(cliProductConfigPath ? { ACC_PRODUCT_CONFIG_PATH: cliProductConfigPath } : {}),
+            },
+            stdio: 'ignore',
+            detached: true,
+          },
+        )
+        proc?.on?.('error', () => {})
         if (proc && typeof proc.unref === 'function') proc.unref()
         this.spawnedServeProc = proc
+        this.spawnedEndpoint = endpoint
+        if (this.spawnImpl === cpSpawn && this.fetchImpl === globalThis.fetch) {
+          await new Promise(resolve => {
+            let attempts = 0
+            const tryConnect = () => {
+              attempts++
+              const sock = net.createConnection({ host: '127.0.0.1', port }, () => {
+                sock.destroy()
+                resolve()
+              })
+              sock.on('error', () => {
+                sock.destroy()
+                if (attempts >= 60) resolve()
+                else setTimeout(tryConnect, 150)
+              })
+            }
+            tryConnect()
+          })
+        }
         this.defaultEndpoint = endpoint
         return endpoint
       } catch {
@@ -786,6 +1245,12 @@ export class WorkBuddyAdapter {
   }
 
   _bindClientEvents(client) {
+    client.on('error', () => {
+      client.connected = false
+    })
+    client.on('close', () => {
+      client.connected = false
+    })
     client.on('notification', msg => {
       const { method, params = {} } = msg
       if (method !== 'session/update') return
@@ -794,6 +1259,18 @@ export class WorkBuddyAdapter {
       const entry = this._ensureRuntimeEntry(rawId, { acpEndpoint: client.acpEndpoint })
       const update = params.update || {}
       const tag = update.sessionUpdate || update.type || ''
+
+      if (tag === 'session_info_update' && update.title) {
+        entry.title = String(update.title).trim()
+        entry.updatedAt = Date.now()
+        this.onStateChange?.()
+        return
+      }
+
+      if (entry.isLoadingSession) {
+        // Ignore historical replay chunks emitted during session/load; transcript is already loaded from JSONL/replay
+        return
+      }
 
       if (tag === 'agent_message_chunk') {
         const delta = extractTextFromAcpContent(update.content ?? update.text)
@@ -809,6 +1286,8 @@ export class WorkBuddyAdapter {
             entry.turnState = 'thinking'
           }
           this._upsertStreamingActivity(entry, 'assistant', entry.assistantBuffer)
+          entry.onFirstProgress?.()
+          this.onStateChange?.()
         }
       } else if (tag === 'agent_thought_chunk') {
         const delta = extractTextFromAcpContent(update.content ?? update.text)
@@ -824,6 +1303,8 @@ export class WorkBuddyAdapter {
             entry.turnState = 'thinking'
           }
           this._upsertStreamingActivity(entry, 'thought', entry.thoughtBuffer)
+          entry.onFirstProgress?.()
+          this.onStateChange?.()
         }
       } else if (tag === 'tool_call') {
         const title = update.title || update.toolName || update.kind || 'Tool Call'
@@ -845,6 +1326,8 @@ export class WorkBuddyAdapter {
           at: new Date().toISOString(),
         })
         entry.updatedAt = Date.now()
+        entry.onFirstProgress?.()
+        this.onStateChange?.()
       } else if (tag === 'tool_call_update') {
         if (update.status === 'completed' || update.status === 'failed') {
           const title = update.title || update.toolName || update.kind || 'tool'
@@ -854,10 +1337,8 @@ export class WorkBuddyAdapter {
             at: new Date().toISOString(),
           })
           entry.updatedAt = Date.now()
+          this.onStateChange?.()
         }
-      } else if (tag === 'session_info_update' && update.title) {
-        entry.title = String(update.title).trim()
-        entry.updatedAt = Date.now()
       }
     })
 
@@ -909,6 +1390,9 @@ export class WorkBuddyAdapter {
           client,
           approval,
         })
+        this.logger?.log?.(`[dsh-feishu] ⏳ WorkBuddy permission requested (${code}): ${approval.toolName}`)
+        entry.onFirstProgress?.()
+        this.onStateChange?.()
         return
       }
 
@@ -960,8 +1444,34 @@ export class WorkBuddyAdapter {
           client,
           approval,
         })
+        this.logger?.log?.(`[dsh-feishu] ⏳ WorkBuddy question requested (${code}): ${firstQ.question}`)
+        entry.onFirstProgress?.()
+        this.onStateChange?.()
       }
     })
+  }
+
+  _findProjectJsonlPath(rawId, cwd = '') {
+    const projectsRoot = path.join(this.workbuddyHome, 'projects')
+    try {
+      if (!fs.existsSync(projectsRoot)) return ''
+      if (cwd) {
+        const slug = String(cwd).replace(/^[\\/]+/, '').replace(/[^a-zA-Z0-9]/g, '-')
+        if (slug) {
+          const directCandidate = path.join(projectsRoot, slug, `${rawId}.jsonl`)
+          if (fs.existsSync(directCandidate)) return directCandidate
+        }
+      }
+      const subDirs = fs.readdirSync(projectsRoot, { withFileTypes: true })
+      for (const dirent of subDirs) {
+        if (!dirent.isDirectory()) continue
+        const candidate = path.join(projectsRoot, dirent.name, `${rawId}.jsonl`)
+        if (fs.existsSync(candidate)) return candidate
+      }
+    } catch {
+      // ignore
+    }
+    return ''
   }
 
   async _readDbSessions() {
@@ -983,8 +1493,13 @@ export class WorkBuddyAdapter {
       // ignore
     }
 
-    const dbPath = path.join(this.workbuddyHome, 'workbuddy.db')
-    if (fs.existsSync(dbPath)) {
+    const dbCandidates = [
+      path.join(this.workbuddyHome, 'workbuddy.db'),
+      path.join(this.workbuddyHome, 'data', 'workbuddy.db'),
+      path.join(this.workbuddyHome, 'storage', 'workbuddy.db'),
+    ]
+    for (const dbPath of dbCandidates) {
+      if (!fs.existsSync(dbPath)) continue
       try {
         const rows = await new Promise(resolve => {
           execFile(
@@ -992,7 +1507,7 @@ export class WorkBuddyAdapter {
             [
               '-json',
               dbPath,
-              'SELECT id, cwd, title, custom_title, status, created_at, updated_at, model FROM sessions WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 50;',
+              'SELECT * FROM sessions ORDER BY updated_at DESC LIMIT 50;',
             ],
             { timeout: 1500 },
             (err, stdout) => {
@@ -1005,24 +1520,142 @@ export class WorkBuddyAdapter {
           )
         })
         for (const row of rows) {
-          if (row && row.id && !results.some(existing => existing.id === row.id)) {
-            results.push(row)
+          const rowId = row?.id || row?.session_id
+          const isDeleted = typeof row?.deleted_at === 'number'
+            ? row.deleted_at > 0
+            : (
+                row?.deleted_at !== null &&
+                row?.deleted_at !== undefined &&
+                String(row.deleted_at).trim() !== '' &&
+                Number(row.deleted_at) !== 0 &&
+                Number(row.deleted_at) !== -1
+              )
+          if (!rowId || isDeleted) continue
+          const rawIdStr = String(rowId)
+          const cwdVal = row.cwd || row.workspace_path || row.project_path || ''
+          let updatedAtVal = row.updated_at
+          const jsonlPath = this._findProjectJsonlPath(rawIdStr, cwdVal)
+          if (jsonlPath) {
+            try {
+              const st = fs.statSync(jsonlPath)
+              const dbUpdMs = Number(new Date(Number(updatedAtVal) || updatedAtVal)) || 0
+              if (st.mtimeMs > dbUpdMs) {
+                updatedAtVal = Math.floor(st.mtimeMs)
+              }
+            } catch {
+              // ignore stat errors
+            }
+          }
+          const normalizedRow = {
+            ...row,
+            id: rawIdStr,
+            cwd: cwdVal,
+            title: row.custom_title || row.title || row.name || '',
+            updated_at: updatedAtVal,
+          }
+          if (!results.some(existing => existing.id === normalizedRow.id)) {
+            results.push(normalizedRow)
           }
         }
       } catch {
         // ignore sqlite3 errors
       }
     }
+
+    const sessionsDir = path.join(this.workbuddyHome, 'sessions')
+    try {
+      if (fs.existsSync(sessionsDir)) {
+        const files = fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json'))
+        for (const f of files) {
+          const rawId = path.basename(f, '.json')
+          if (!rawId || results.some(existing => existing.id === rawId)) continue
+          const fullPath = path.join(sessionsDir, f)
+          const st = fs.statSync(fullPath)
+          const parsed = safeJsonParse(fs.readFileSync(fullPath, 'utf8'))
+          const events = Array.isArray(parsed) ? parsed : (parsed?.events || parsed?.data?.events || [])
+          results.push({
+            id: rawId,
+            title: parsed?.title || parsed?.custom_title || '',
+            cwd: parsed?.cwd || '',
+            model: parsed?.model || '',
+            status: parsed?.status || 'idle',
+            created_at: parsed?.created_at || st.birthtimeMs || st.mtimeMs,
+            updated_at: parsed?.updated_at || st.mtimeMs,
+            ...(Array.isArray(events) && events.length > 0 ? { events } : {}),
+          })
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    const projectsDir = path.join(this.workbuddyHome, 'projects')
+    try {
+      if (fs.existsSync(projectsDir)) {
+        const projectFolders = fs.readdirSync(projectsDir, { withFileTypes: true })
+        for (const folder of projectFolders) {
+          if (!folder.isDirectory()) continue
+          const folderPath = path.join(projectsDir, folder.name)
+          const files = fs.readdirSync(folderPath).filter(f => f.endsWith('.jsonl'))
+          for (const f of files) {
+            const rawId = path.basename(f, '.jsonl')
+            if (!rawId || results.some(existing => existing.id === rawId)) continue
+            const fullPath = path.join(folderPath, f)
+            const st = fs.statSync(fullPath)
+            const lines = fs
+              .readFileSync(fullPath, 'utf8')
+              .split(/\r?\n/)
+              .map(l => safeJsonParse(l.trim()))
+              .filter(Boolean)
+            const parsed = parseWorkBuddyReplayEvents(lines)
+            if (parsed.transcript.length === 0) continue
+            const firstUserText = parsed.transcript.find(m => m.role === 'user')?.text || ''
+            results.push({
+              id: rawId,
+              title: parsed.aiTitle || truncateText(firstUserText, 60) || '',
+              cwd: parsed.cwd || '',
+              model: '',
+              status: 'idle',
+              created_at: st.birthtimeMs || st.mtimeMs,
+              updated_at: st.mtimeMs,
+              events: lines,
+            })
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     return results
   }
 
-  async _fetchReplayForSession(rawId, acpEndpoint = '') {
+  async _fetchReplayForSession(rawId, acpEndpoint = '', cwd = '') {
     try {
       const localReplayPath = path.join(this.workbuddyHome, 'sessions', `${rawId}.json`)
       if (fs.existsSync(localReplayPath)) {
         const parsed = safeJsonParse(fs.readFileSync(localReplayPath, 'utf8'))
         const events = Array.isArray(parsed) ? parsed : (parsed?.events || parsed?.data?.events || [])
         if (events.length > 0) return parseWorkBuddyReplayEvents(events)
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      const jsonlPath = this._findProjectJsonlPath(rawId, cwd)
+      if (jsonlPath && fs.existsSync(jsonlPath)) {
+        const lines = fs
+          .readFileSync(jsonlPath, 'utf8')
+          .split(/\r?\n/)
+          .map(l => safeJsonParse(l.trim()))
+          .filter(Boolean)
+        if (lines.length > 0) {
+          const parsed = parseWorkBuddyReplayEvents(lines)
+          if (parsed.transcript.length > 0 || parsed.recentActivity.length > 0) {
+            return parsed
+          }
+        }
       }
     } catch {
       // ignore
@@ -1090,7 +1723,7 @@ export class WorkBuddyAdapter {
       cwd: entry.cwd || process.cwd(),
       directory: entry.cwd || process.cwd(),
       projectDir: entry.cwd || process.cwd(),
-      model: entry.model || 'deepseek-v3.1',
+      model: entry.model || 'auto',
       lastActivity: updatedAtMs,
       updatedAt: updatedAtMs,
       lastStepIndex: Math.max(0, transcript.length - 1),
@@ -1148,18 +1781,31 @@ export class WorkBuddyAdapter {
         updatedAt,
       })
 
-      if (entry.transcript.length === 0) {
+      const needsReplayRefresh =
+        entry.transcript.length === 0 ||
+        (entry.status !== 'running' && entry.status !== 'approval' && updatedAt > (entry.lastReplayUpdatedAt || 0))
+      if (needsReplayRefresh) {
         if (Array.isArray(row.events) && row.events.length > 0) {
           const parsed = parseWorkBuddyReplayEvents(row.events)
           entry.transcript = parsed.transcript
           entry.recentActivity = parsed.recentActivity
           if (parsed.lastProgress) entry.lastProgress = parsed.lastProgress
+          if (parsed.aiTitle && (!entry.title || entry.title.startsWith('WorkBuddy ('))) {
+            entry.title = parsed.aiTitle
+          }
+          if (parsed.cwd && !entry.cwd) entry.cwd = parsed.cwd
+          entry.lastReplayUpdatedAt = updatedAt
         } else {
-          const replayed = await this._fetchReplayForSession(rawId, entry.acpEndpoint)
+          const replayed = await this._fetchReplayForSession(rawId, entry.acpEndpoint, entry.cwd)
           if (replayed && (replayed.transcript.length > 0 || replayed.recentActivity.length > 0)) {
             entry.transcript = replayed.transcript
             entry.recentActivity = replayed.recentActivity
             if (replayed.lastProgress) entry.lastProgress = replayed.lastProgress
+            if (replayed.aiTitle && (!entry.title || entry.title.startsWith('WorkBuddy ('))) {
+              entry.title = replayed.aiTitle
+            }
+            if (replayed.cwd && !entry.cwd) entry.cwd = replayed.cwd
+            entry.lastReplayUpdatedAt = updatedAt
           }
         }
       }
@@ -1181,14 +1827,38 @@ export class WorkBuddyAdapter {
     const entry = this.runtimeSessions.get(rawId)
     if (!entry) return null
     if (entry.transcript.length === 0) {
-      const replayed = await this._fetchReplayForSession(rawId, entry.acpEndpoint)
+      const replayed = await this._fetchReplayForSession(rawId, entry.acpEndpoint, entry.cwd)
       if (replayed && (replayed.transcript.length > 0 || replayed.recentActivity.length > 0)) {
         entry.transcript = replayed.transcript
         entry.recentActivity = replayed.recentActivity
         if (replayed.lastProgress) entry.lastProgress = replayed.lastProgress
+        if (replayed.aiTitle && (!entry.title || entry.title.startsWith('WorkBuddy ('))) {
+          entry.title = replayed.aiTitle
+        }
+        if (replayed.cwd && !entry.cwd) entry.cwd = replayed.cwd
       }
     }
     return this._formatSessionRecord(entry)
+  }
+
+  async _awaitEarlyPromptOutcome(entry, promptPromise, windowMs = 180) {
+    let timer = null
+    const firstProgressPromise = new Promise(resolve => {
+      entry.onFirstProgress = () => {
+        entry.onFirstProgress = null
+        resolve({ ok: true, streaming: true })
+      }
+    })
+    const timeoutPromise = new Promise(resolve => {
+      timer = setTimeout(() => resolve({ ok: true, pending: true }), windowMs)
+      timer.unref?.()
+    })
+    try {
+      return await Promise.race([promptPromise, firstProgressPromise, timeoutPromise])
+    } finally {
+      entry.onFirstProgress = null
+      if (timer) clearTimeout(timer)
+    }
   }
 
   async startSession({ title = '', prompt = '', text = '', cwd = process.cwd(), model = '' } = {}) {
@@ -1197,43 +1867,55 @@ export class WorkBuddyAdapter {
       return { ok: false, error: 'Prompt is required to start a WorkBuddy session.' }
     }
     const resolvedCwd = cwd ? path.resolve(cwd) : process.cwd()
+    const explicitModel = model && model !== 'auto' && model !== 'fast-model' ? model : ''
 
     try {
       const client = await this._getClientForEndpoint(this.defaultEndpoint)
       const newRes = await client.request('session/new', {
         cwd: resolvedCwd,
         mcpServers: [],
-        ...(model ? { model } : {}),
+        ...(explicitModel ? { model: explicitModel } : {}),
       })
       const rawId = toRawWorkBuddyId(newRes?.sessionId || newRes?.id || `wb-${Date.now()}`)
       const resolvedTitle = truncateText(title || cleanPrompt, 90)
       const entry = this._ensureRuntimeEntry(rawId, {
         title: resolvedTitle,
         cwd: resolvedCwd,
-        model: model || newRes?.models?.currentModelId || 'deepseek-v3.1',
+        model: model || newRes?.models?.currentModelId || 'auto',
         status: 'running',
         turnState: 'thinking',
         runningSummary: '💭 WorkBuddy 正在思考与执行...',
         acpEndpoint: client.acpEndpoint,
       })
 
-      if (model) {
+      if (explicitModel) {
         try {
           await client.request('session/set_model', {
             sessionId: rawId,
-            modelId: model,
+            modelId: explicitModel,
           })
         } catch {
           // ignore set_model failure if already set in session/new
         }
       }
 
+      entry.assistantBuffer = ''
+      entry.thoughtBuffer = ''
       this._appendUserMessage(entry, cleanPrompt)
       entry.lastProgress = `Prompt: ${truncateText(cleanPrompt, 160)}`
       entry.status = 'running'
       entry.turnState = 'thinking'
 
-      this._dispatchPromptAsync(client, entry, cleanPrompt)
+      const promptPromise = this._dispatchPromptAsync(client, entry, cleanPrompt)
+      const earlyOutcome = await this._awaitEarlyPromptOutcome(entry, promptPromise)
+      if (earlyOutcome && earlyOutcome.ok === false) {
+        return {
+          ok: false,
+          agentId: entry.id,
+          sessionId: entry.id,
+          error: earlyOutcome.error,
+        }
+      }
 
       return {
         ok: true,
@@ -1246,9 +1928,15 @@ export class WorkBuddyAdapter {
         message: `🚀 已在电脑端启动 WorkBuddy 会话「${resolvedTitle.slice(0, 28)}」`,
       }
     } catch (err) {
+      const authFailed = isWorkBuddyAuthError(err)
+      if (authFailed) {
+        this._triggerBackgroundAuth()
+      }
+      const friendly = this._formatError(err, { autoOpenedBrowser: authFailed })
+      this.logger?.warn?.(`[dsh-feishu] ⚠️ WorkBuddy startSession failed: ${friendly}`)
       return {
         ok: false,
-        error: `WorkBuddy startSession failed: ${err.message}`,
+        error: authFailed ? friendly : `WorkBuddy startSession failed: ${friendly}`,
       }
     }
   }
@@ -1258,14 +1946,24 @@ export class WorkBuddyAdapter {
   }
 
   _dispatchPromptAsync(client, entry, text) {
-    Promise.resolve()
+    return Promise.resolve()
       .then(async () => {
         const res = await client.request('session/prompt', {
           sessionId: entry.rawId,
           prompt: [{ type: 'text', text }],
         })
+        const streamedText = entry.assistantBuffer || ''
         this._finalizeStreamingActivities(entry)
         const replyText = extractTextFromAcpContent(res?.content || res?.text || '')
+        if (
+          isWorkBuddyAuthError(res?.error) ||
+          isWorkBuddyAuthError(replyText) ||
+          isWorkBuddyAuthError(streamedText)
+        ) {
+          throw new Error(
+            replyText || streamedText || 'Authentication required. Please use /login command to sign in to your account',
+          )
+        }
         if (replyText) {
           const msgObj = this._ensureAssistantMessage(entry)
           if (!msgObj.text.includes(replyText)) {
@@ -1287,19 +1985,33 @@ export class WorkBuddyAdapter {
           entry.runningSummary = ''
         }
         entry.updatedAt = Date.now()
+        this.logger?.log?.(`[dsh-feishu] ✅ WorkBuddy turn completed (${entry.rawId.slice(0, 8)})`)
+        this.onStateChange?.()
+        return { ok: true }
       })
       .catch(err => {
+        const authFailed = isWorkBuddyAuthError(err)
+        const friendlyMsg = this._formatError(err, { autoOpenedBrowser: authFailed })
         this._finalizeStreamingActivities(entry)
         entry.status = 'idle'
         entry.turnState = 'interrupted'
         entry.runningSummary = ''
-        entry.lastProgress = `Error: ${truncateText(err.message, 220)}`
+        entry.lastProgress = `Error: ${truncateText(friendlyMsg, 220)}`
+        const errMsgObj = this._ensureAssistantMessage(entry)
+        errMsgObj.text = `⚠️ ${friendlyMsg}`
+        errMsgObj.time = Date.now()
         entry.recentActivity.push({
           role: 'system',
-          text: `WorkBuddy error: ${err.message}`,
+          text: `WorkBuddy error: ${friendlyMsg}`,
           at: new Date().toISOString(),
         })
         entry.updatedAt = Date.now()
+        if (authFailed) {
+          this._triggerBackgroundAuth(entry)
+        }
+        this.logger?.warn?.(`[dsh-feishu] ⚠️ WorkBuddy prompt error (${entry.rawId.slice(0, 8)}): ${friendlyMsg}`)
+        this.onStateChange?.()
+        return { ok: false, error: friendlyMsg, isAuthError: authFailed }
       })
   }
 
@@ -1315,29 +2027,41 @@ export class WorkBuddyAdapter {
       return this.steer({ sessionId, prompt: cleanPrompt, cwd, model })
     }
 
+    const explicitModel = model && model !== 'auto' && model !== 'fast-model' ? model : ''
+    let entry = null
+
     try {
-      const entry = this._ensureRuntimeEntry(rawId, {
+      entry = this._ensureRuntimeEntry(rawId, {
         cwd: cwd || process.cwd(),
         model: model || '',
       })
       if (model) entry.model = model
       const client = await this._getClientForEndpoint(entry.acpEndpoint)
 
+      entry.isLoadingSession = true
       try {
         await client.request('session/load', {
           sessionId: rawId,
           cwd: entry.cwd || process.cwd(),
           mcpServers: [],
+          takeWriter: true,
+          _meta: { 'codebuddy.ai/takeWriter': true },
         })
-      } catch {
-        // session may already be loaded in memory
+      } catch (loadErr) {
+        if (!/already loaded/i.test(String(loadErr?.message || ''))) {
+          throw loadErr
+        }
+      } finally {
+        entry.isLoadingSession = false
+        entry.assistantBuffer = ''
+        entry.thoughtBuffer = ''
       }
 
-      if (model) {
+      if (explicitModel) {
         try {
           await client.request('session/set_model', {
             sessionId: rawId,
-            modelId: model,
+            modelId: explicitModel,
           })
         } catch {
           // ignore
@@ -1349,8 +2073,18 @@ export class WorkBuddyAdapter {
       entry.turnState = 'thinking'
       entry.runningSummary = '💭 WorkBuddy 正在思考与执行...'
       entry.lastProgress = `Prompt: ${truncateText(cleanPrompt, 160)}`
+      this.onStateChange?.()
 
-      this._dispatchPromptAsync(client, entry, cleanPrompt)
+      const promptPromise = this._dispatchPromptAsync(client, entry, cleanPrompt)
+      const earlyOutcome = await this._awaitEarlyPromptOutcome(entry, promptPromise)
+      if (earlyOutcome && earlyOutcome.ok === false) {
+        return {
+          ok: false,
+          agentId: entry.id,
+          sessionId: entry.id,
+          error: earlyOutcome.error,
+        }
+      }
 
       return {
         ok: true,
@@ -1360,9 +2094,25 @@ export class WorkBuddyAdapter {
         message: `🚀 已在 WorkBuddy 会话 (${rawId.slice(0, 8)}) 中继续执行`,
       }
     } catch (err) {
+      const authFailed = isWorkBuddyAuthError(err)
+      const friendly = this._formatError(err, { autoOpenedBrowser: authFailed })
+      if (entry) {
+        entry.lastProgress = `Error: ${truncateText(friendly, 220)}`
+        entry.recentActivity.push({
+          role: 'system',
+          text: `⚠️ ${friendly}`,
+          at: new Date().toISOString(),
+        })
+        entry.updatedAt = Date.now()
+        this.onStateChange?.()
+      }
+      if (authFailed) {
+        this._triggerBackgroundAuth(entry)
+      }
+      this.logger?.warn?.(`[dsh-feishu] ⚠️ WorkBuddy sendPrompt failed (${rawId.slice(0, 8)}): ${friendly}`)
       return {
         ok: false,
-        error: `WorkBuddy sendPrompt failed: ${err.message}`,
+        error: authFailed ? friendly : `WorkBuddy sendPrompt failed: ${friendly}`,
       }
     }
   }
@@ -1585,17 +2335,6 @@ export class WorkBuddyAdapter {
   }
 
   shutdown() {
-    for (const client of this.clientsByEndpoint.values()) {
-      client.close()
-    }
-    this.clientsByEndpoint.clear()
-    if (this.spawnedServeProc && typeof this.spawnedServeProc.kill === 'function') {
-      try {
-        this.spawnedServeProc.kill()
-      } catch {
-        // ignore
-      }
-      this.spawnedServeProc = null
-    }
+    this._resetSpawnedServe()
   }
 }

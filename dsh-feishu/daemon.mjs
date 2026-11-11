@@ -21,6 +21,7 @@ import { listWorkspaceFiles, readWorkspaceFile } from './lib/workspace-ops.js'
 
 const once = process.argv.includes('--once')
 const replace = process.argv.includes('--replace')
+const workbuddyLogin = process.argv.includes('--workbuddy-login')
 const config = await loadSettings(resolveConfig())
 
 if (!config.hubUrl) {
@@ -29,6 +30,7 @@ if (!config.hubUrl) {
 }
 
 let daemonLock = null
+let hubAgent = null
 if (!once) {
   daemonLock = await acquireDaemonLock({
     dshHome: config.dshHome,
@@ -42,6 +44,9 @@ if (!once) {
     process.exit(0)
   }
   const cleanupLock = () => {
+    try {
+      hubAgent?.stop?.()
+    } catch {}
     try {
       daemonLock?.release?.()
     } catch {}
@@ -67,7 +72,7 @@ const bridge = new FeishuBridge({
   sendCard: async () => ({ messageId: 'noop' }),
 })
 
-const hubAgent = new HubAgent({
+hubAgent = new HubAgent({
   config,
   bridge,
   transport: null,
@@ -76,6 +81,22 @@ const hubAgent = new HubAgent({
   bootId: daemonLock?.bootId,
   bootEpochMs: daemonLock?.startedAt,
 })
+
+if (workbuddyLogin) {
+  const wbAdapter = hubAgent.harnessRouter?.getAdapter?.('workbuddy')
+  if (wbAdapter && typeof wbAdapter.authenticate === 'function') {
+    console.log('🔐 正在拉起 WorkBuddy CLI 浏览器授权登录，请在电脑弹出的浏览器页面点击确认授权...')
+    const authRes = await wbAdapter.authenticate()
+    if (authRes?.ok) {
+      const who = authRes.userInfo?.userName || authRes.userInfo?.userId || '已授权账号'
+      console.log(`✅ WorkBuddy CLI 浏览器授权成功 (${who})！`)
+    } else {
+      console.warn(`⚠️ WorkBuddy CLI 浏览器授权未完成: ${authRes?.error || 'unknown error'}`)
+    }
+  } else {
+    console.warn('⚠️ 未检测到可用的 WorkBuddy 适配器，跳过 --workbuddy-login')
+  }
+}
 
 // Pre-populate default workspace file tree so Web UI file browser is ready immediately
 try {
@@ -107,12 +128,19 @@ try {
 
 await hubAgent.tick()
 
+const extSessions = Array.isArray(hubAgent.cachedExternalSessions) ? hubAgent.cachedExternalSessions : []
+const wbSessionsCount = extSessions.filter(s => s?.harness === 'workbuddy').length
+const codexSessionsCount = extSessions.filter(s => s?.harness === 'codex').length
 console.log(`✅ 已连接总控中心: ${config.hubUrl}`)
 console.log(`💻 当前电脑名称: ${config.hostName} (${config.hostId})`)
-console.log(`📂 已同步本机 DSH 会话数: ${hubAgent.cachedDiskSessions?.length || 0} 条 | ⚡ Antigravity IDE 会话数: ${hubAgent.cachedAgySessions?.length || 0} 条`)
+console.log(
+  `📂 已同步本机 DSH 会话数: ${hubAgent.cachedDiskSessions?.length || 0} 条 | ⚡ Antigravity IDE 会话数: ${hubAgent.cachedAgySessions?.length || 0} 条 | 🐼 WorkBuddy 会话数: ${wbSessionsCount} 条 | 🧠 Codex 会话数: ${codexSessionsCount} 条`,
+)
 
 if (!once) {
   hubAgent.start()
   console.log('🟢 后台常驻心跳已启动（每 2.5 秒同步一次状态与远程指令）...')
   setInterval(() => {}, 60_000)
+} else {
+  hubAgent.stop()
 }
