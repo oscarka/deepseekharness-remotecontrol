@@ -4288,3 +4288,100 @@ test('WorkBuddy bundled CLI spawns with isolated ACC_PRODUCT_CONFIG_PATH (workbu
     await rm(tmpDir, { recursive: true, force: true })
   }
 })
+
+test('hub graceful SSE rotation (<300s Cloud Run limit) & idempotent command retry deduplication', async () => {
+  const hub = new HubCore({ now: () => 1_710_000_000_000 })
+  hub.handleHeartbeat({
+    hostId: 'mac-sse-test',
+    hostName: 'Mac SSE Test',
+    bridgeState: {
+      tasks: [{ id: 'agy-ide:conv-sse', title: 'SSE Test', status: 'approval', transcript: [] }],
+      approvals: [{ code: 'AGY-CONVSSE-1', agentId: 'agy-ide:conv-sse', promptTitle: 'Allow read_file?' }],
+      workspaces: [],
+    },
+  })
+
+  // 1. Verify explicit command id deduplication across queued -> inflight -> completed (safe client retry on Load failed)
+  const firstPrompt = hub.queueCommand('mac-sse-test', {
+    id: 'cmd-idem-prompt-1',
+    type: 'prompt',
+    agentId: 'agy-ide:conv-sse',
+    text: '重试幂等验证',
+  })
+  assert.equal(firstPrompt.ok, true)
+  assert.equal(Boolean(firstPrompt.deduplicated), false)
+
+  const retryWhileQueued = hub.queueCommand('mac-sse-test', {
+    id: 'cmd-idem-prompt-1',
+    type: 'prompt',
+    agentId: 'agy-ide:conv-sse',
+    text: '重试幂等验证',
+  })
+  assert.equal(retryWhileQueued.ok, true)
+  assert.equal(retryWhileQueued.deduplicated, true)
+  assert.equal(hub.hosts.get('mac-sse-test').commands.length, 1)
+
+  // Host pulls command -> moves to inflightCommands
+  const pulled = hub.handleHeartbeat({ hostId: 'mac-sse-test', hostName: 'Mac SSE Test', liteHeartbeat: true })
+  assert.equal(pulled.commands.length, 1)
+  const retryWhileInflight = hub.queueCommand('mac-sse-test', {
+    id: 'cmd-idem-prompt-1',
+    type: 'prompt',
+    agentId: 'agy-ide:conv-sse',
+    text: '重试幂等验证',
+  })
+  assert.equal(retryWhileInflight.ok, true)
+  assert.equal(retryWhileInflight.deduplicated, true)
+  assert.equal(hub.hosts.get('mac-sse-test').commands.length, 0)
+
+  // Approval retry with same code + id also deduplicates cleanly
+  const firstApp = hub.queueCommand('mac-sse-test', {
+    id: 'cmd-idem-app-1',
+    type: 'approval',
+    code: 'AGY-CONVSSE-1',
+    allow: true,
+    optionIndex: 1,
+  })
+  const secondApp = hub.queueCommand('mac-sse-test', {
+    id: 'cmd-idem-app-1',
+    type: 'approval',
+    code: 'AGY-CONVSSE-1',
+    allow: true,
+    optionIndex: 1,
+  })
+  assert.equal(firstApp.ok, true)
+  assert.equal(secondApp.ok, true)
+  assert.equal(secondApp.deduplicated, true)
+  assert.equal(hub.hosts.get('mac-sse-test').commands.length, 1)
+
+  // 2. Verify real HTTP /api/events rotates gracefully with `event: rotate` and clean EOF before hard proxy timeout
+  const { server } = createHubServer({
+    hub,
+    token: 'test-sse-rotate-secret-token-1234',
+    requireToken: true,
+    sseMaxLifetimeMs: 70,
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const { port } = server.address()
+    const clientResp = await fetch(
+      `http://127.0.0.1:${port}/api/events?initial=0&token=test-sse-rotate-secret-token-1234`,
+      { headers: { 'accept-encoding': 'gzip' } },
+    )
+    assert.equal(clientResp.status, 200)
+    const clientBody = await clientResp.text()
+    assert.match(clientBody, /retry: 1000/)
+    assert.match(clientBody, /event: rotate/)
+    assert.match(clientBody, /"reason":"max_lifetime"/)
+
+    const hostResp = await fetch(
+      `http://127.0.0.1:${port}/api/events?mode=host&hostId=mac-sse-test&token=test-sse-rotate-secret-token-1234`,
+    )
+    assert.equal(hostResp.status, 200)
+    const hostBody = await hostResp.text()
+    assert.match(hostBody, /retry: 1000/)
+    assert.match(hostBody, /event: rotate/)
+  } finally {
+    await new Promise(resolve => server.close(resolve))
+  }
+})

@@ -179,6 +179,7 @@ export function createHubServer({
   requireToken = false,
   trustProxy,
   logger = console,
+  sseMaxLifetimeMs = Number(process.env.HUB_SSE_MAX_LIFETIME_MS) || 240_000,
 } = {}) {
   let expectedToken = String(token ?? '').trim()
   if (requireToken) {
@@ -1005,11 +1006,19 @@ export function createHubServer({
             connection: 'keep-alive',
             'access-control-allow-origin': '*',
           })
+          let closed = false
+          const safeWrite = chunk => {
+            if (closed || res.writableEnded || res.destroyed) return
+            try {
+              res.write(chunk)
+            } catch {}
+          }
+          safeWrite('retry: 1000\n\n')
           const sendHostWake = (targetHostId = '') => {
             const hostsLite = [...hub.hosts.values()]
               .filter(h => !targetHostId || h.hostId === targetHostId)
               .map(h => ({ hostId: h.hostId, pendingCommandsCount: (h.commands || []).length }))
-            res.write(`event: state\ndata: ${JSON.stringify({ ok: true, mode: 'host', hosts: hostsLite })}\n\n`)
+            safeWrite(`event: state\ndata: ${JSON.stringify({ ok: true, mode: 'host', hosts: hostsLite })}\n\n`)
           }
           sendHostWake(watchHostId)
           const unsubscribe = hub.onHostCommand(cmdHostId => {
@@ -1019,18 +1028,33 @@ export function createHubServer({
           })
           const unsubFs = hub.onHostFsRequest((fsHostId, fsReq) => {
             if (!watchHostId || fsHostId === watchHostId) {
-              res.write(`event: fs_req\ndata: ${JSON.stringify(fsReq)}\n\n`)
+              safeWrite(`event: fs_req\ndata: ${JSON.stringify(fsReq)}\n\n`)
             }
           })
           const keepAlive = setInterval(() => {
-            res.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
+            safeWrite(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
           }, 20_000)
           keepAlive.unref?.()
-          req.on('close', () => {
+          const cleanupHostSse = () => {
+            if (closed) return
+            closed = true
             clearInterval(keepAlive)
+            if (rotateTimer) clearTimeout(rotateTimer)
             unsubscribe()
             unsubFs()
-          })
+          }
+          const rotateTimer =
+            sseMaxLifetimeMs > 0
+              ? setTimeout(() => {
+                  safeWrite(`event: rotate\ndata: {"reason":"max_lifetime","ts":${Date.now()}}\n\n`)
+                  cleanupHostSse()
+                  try {
+                    res.end()
+                  } catch {}
+                }, sseMaxLifetimeMs)
+              : null
+          rotateTimer?.unref?.()
+          req.on('close', cleanupHostSse)
           return
         }
 
@@ -1055,11 +1079,19 @@ export function createHubServer({
             'access-control-allow-origin': '*',
           })
         }
+        let closed = false
+        const safeWrite = chunk => {
+          if (closed || res.writableEnded || res.destroyed) return
+          try {
+            outStream.write(chunk)
+          } catch {}
+        }
+        safeWrite('retry: 1000\n\n')
         const sendEvent = stateData => {
-          outStream.write(`event: state\ndata: ${JSON.stringify({ ok: true, ...stateData })}\n\n`)
+          safeWrite(`event: state\ndata: ${JSON.stringify({ ok: true, ...stateData })}\n\n`)
         }
         if (urlObj.searchParams.get('initial') === '0') {
-          outStream.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
+          safeWrite(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
         } else {
           sendEvent(hub.getFullState())
         }
@@ -1067,16 +1099,33 @@ export function createHubServer({
           sendEvent(stateData)
         })
         const keepAlive = setInterval(() => {
-          outStream.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
+          safeWrite(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
         }, 15_000)
         keepAlive.unref?.()
-        req.on('close', () => {
+        const cleanupClientSse = () => {
+          if (closed) return
+          closed = true
           clearInterval(keepAlive)
+          if (rotateTimer) clearTimeout(rotateTimer)
           unsubscribe()
           if (outStream !== res) {
             try { outStream.end() } catch {}
           }
-        })
+        }
+        const rotateTimer =
+          sseMaxLifetimeMs > 0
+            ? setTimeout(() => {
+                safeWrite(`event: rotate\ndata: {"reason":"max_lifetime","ts":${Date.now()}}\n\n`)
+                clearInterval(keepAlive)
+                unsubscribe()
+                closed = true
+                try {
+                  outStream.end()
+                } catch {}
+              }, sseMaxLifetimeMs)
+            : null
+        rotateTimer?.unref?.()
+        req.on('close', cleanupClientSse)
         return
       }
 

@@ -319,10 +319,11 @@ export class TurboController {
           throw new Error(`SSE HTTP ${res.status}`)
         }
         this.sseConnected = true
+        let rotatedGracefully = false
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
         let buf = ''
-        while (!this.disposed) {
+        while (!this.disposed && !rotatedGracefully) {
           const { done, value } = await reader.read()
           if (done) break
           buf += decoder.decode(value, { stream: true })
@@ -333,6 +334,10 @@ export class TurboController {
             const lines = chunk.split('\n')
             const eventLine = lines.find(l => l.startsWith('event:'))
             const eventName = eventLine ? eventLine.slice(6).trim() : 'message'
+            if (eventName === 'rotate') {
+              rotatedGracefully = true
+              break
+            }
             const dataLine = lines.find(l => l.startsWith('data:'))
             if (!dataLine) continue
             try {
@@ -350,12 +355,16 @@ export class TurboController {
             } catch {}
           }
         }
+        this._lastSseRotated = rotatedGracefully
       } catch {
         // Reconnect on disconnect
+        this._lastSseRotated = false
       } finally {
         this.sseConnected = false
         if (!this.disposed) {
-          this.sseReconnectTimer = setTimeout(() => this.connectHubSse(), 3000)
+          const delayMs = this._lastSseRotated ? 150 : 3000
+          this._lastSseRotated = false
+          this.sseReconnectTimer = setTimeout(() => this.connectHubSse(), delayMs)
           this.sseReconnectTimer.unref?.()
         }
       }

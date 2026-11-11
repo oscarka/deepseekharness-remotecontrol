@@ -1282,6 +1282,8 @@ export async function loadAntigravityIdeSessions({
   settledApprovals = new Set(),
   excludeConversationIds = new Set(),
   now = Date.now(),
+  execImpl = execFileAsync,
+  fetchImpl = globalThis.fetch,
 } = {}) {
   let customTitles = {}
   if (dshHome) {
@@ -1361,7 +1363,7 @@ export async function loadAntigravityIdeSessions({
   const latestCandidateMtimeMs = topCandidates[0]?.mtimeMs || 0
   const [nativeMetaMap, liveSummariesMap] = await Promise.all([
     loadAntigravityMetadataForCandidates(brainDirs, topCandidates),
-    loadLiveTrajectorySummaries({ minFreshAt: latestCandidateMtimeMs }),
+    loadLiveTrajectorySummaries({ minFreshAt: latestCandidateMtimeMs, execImpl, fetchImpl }),
   ])
 
   const settledKey = settledApprovals ? [...settledApprovals].join(',') : ''
@@ -1533,24 +1535,31 @@ let cachedLiveSummaries = new Map()
 let cachedLiveSummariesAt = 0
 const liveTrajectoryModelCache = new Map()
 
-async function loadLiveTrajectorySummaries({ minFreshAt = 0 } = {}) {
+async function loadLiveTrajectorySummaries({
+  minFreshAt = 0,
+  execImpl = execFileAsync,
+  fetchImpl = globalThis.fetch,
+} = {}) {
+  const isDefaultRuntime = execImpl === execFileAsync && fetchImpl === globalThis.fetch
   const now = Date.now()
   const ttlMs = cachedLiveSummariesAt >= minFreshAt ? 2500 : 150
-  if (now - cachedLiveSummariesAt < ttlMs) {
+  if (isDefaultRuntime && now - cachedLiveSummariesAt < ttlMs) {
     return cachedLiveSummaries
   }
-  cachedLiveSummariesAt = now
+  if (isDefaultRuntime) {
+    cachedLiveSummariesAt = now
+  }
   const map = new Map()
-  if (typeof globalThis.fetch !== 'function') return map
+  if (typeof fetchImpl !== 'function') return map
   try {
-    const hubs = await discoverAntigravityHubInstances()
+    const hubs = await discoverAntigravityHubInstances({ execImpl })
     await Promise.all(
       hubs.map(async hub => {
         const controller = new AbortController()
         const timer = setTimeout(() => controller.abort(), 900)
         timer.unref?.()
         try {
-          const resp = await globalThis.fetch(
+          const resp = await fetchImpl(
             `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetAllCascadeTrajectories`,
             {
               method: 'POST',
@@ -1574,7 +1583,7 @@ async function loadLiveTrajectorySummaries({ minFreshAt = 0 } = {}) {
                 sum.planModel = cachedModelEntry.planModel
               } else if (sum.lastUserInputStepIndex !== undefined) {
                 try {
-                  const stepResp = await globalThis.fetch(
+                  const stepResp = await fetchImpl(
                     `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetCascadeTrajectorySteps`,
                     {
                       method: 'POST',
@@ -1623,7 +1632,9 @@ async function loadLiveTrajectorySummaries({ minFreshAt = 0 } = {}) {
   } catch {
     // ignore discovery error
   }
-  cachedLiveSummaries = map
+  if (isDefaultRuntime) {
+    cachedLiveSummaries = map
+  }
   return map
 }
 

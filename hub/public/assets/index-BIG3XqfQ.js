@@ -3585,10 +3585,22 @@ function initHubController() {
 		}, { passive: true });
 	}
 	async function dispatchHostCommand(hostId, payload) {
-		return (await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+		const cmdPayload = payload && typeof payload === "object" && !payload.id ? {
+			...payload,
+			id: `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+		} : payload;
+		const reqInit = {
 			method: "POST",
-			body: JSON.stringify(payload)
-		})).json();
+			body: JSON.stringify(cmdPayload)
+		};
+		const url = `/api/hosts/${encodeURIComponent(hostId)}/command`;
+		try {
+			return await (await apiFetch(url, reqInit)).json();
+		} catch (err) {
+			if (err && err.message === "Unauthorized") throw err;
+			await new Promise((r) => setTimeout(r, 250));
+			return await (await apiFetch(url, reqInit)).json();
+		}
 	}
 	let composerSessionId = "";
 	let composerDraftTimer = null;
@@ -6792,6 +6804,9 @@ function initHubController() {
 				sseConnected = true;
 				lastSseEventAt = Date.now();
 				setConnectionBanner(false);
+			});
+			sseSource.addEventListener("rotate", () => {
+				connectSSE();
 			});
 			sseSource.addEventListener("state", (evt) => {
 				try {

@@ -187,9 +187,9 @@ docker run -d --name dsh-hub \
 
 ## 📅 最近版本更新记录
 
-- **`2026-11-11 · v0.5.5` — 独立反向流式文件隧道、手机 `206 Range` 视频秒播与发送气泡零闪烁**
+- **`2026-11-11 · v0.5.6` — 独立反向流式文件隧道、手机 `206 Range` 视频秒播、气泡零闪烁与 Cloud Run 连接防断加固**
   - **反向 HTTP 流式文件直连隧道 & 手机原生视频播放**：新增 `/fs/list|read|stream` 与 `/api/fs-tunnel` 二进制直连通道，配合 Host SSE `event: fs_req` `0ms` 唤醒本地读取，彻底消除 `/api/state` 轮询风暴；全面支持手机 `<video playsinline>` 拖动进度条分片秒播（`206 Partial Content`）、一键 H.264 转码兼容播放（`ffmpeg` / macOS `avconvert`）、保长截图清晰度的 `sips` 智能省流缩略图（可一键切换无损原图）、`walkthrough.md` 热缓存预热，以及不暴露 `HUB_TOKEN` 的短效只读 `mediaTicket` 票据。
-  - **手机发送消息零空窗防闪烁**：修复跨公网/Cloud Run 下「Host 拉走指令 ~ 会话日志落盘回传」空窗期导致已发送气泡先消失再重现的竞态，新增服务端 `inflightCommands` 追踪与客户端基线计数校验（完美兼容连续发送 `"继续"` 等重复短句及附带截图消息）。
+  - **手机发送消息零闪烁 & Cloud Run 审批无感防断**：新增服务端 `inflightCommands` 追踪消除已发送气泡消失重现空窗；新增 `/api/events` 240 秒优雅轮转（`event: rotate`，彻底避开 Cloud Run 300 秒强制截断）与客户端幂等 `id` + 网络闪断（`Load failed`）自动静默重试。
   - **OpenAI Codex (`app-server`) 与腾讯 WorkBuddy (`ACP`) 深度接入**：完整支持 JSON-RPC / ACP 实时流式输出、运行中实时插话、手机命令/权限审批、多选题卡片与模型自动发现，并叠加 `v0.5.3–v0.5.4` 极速轻量心跳（稳态流量降低 99.9%）与 Antigravity `walkthrough` 产物卡片渲染。
 
 - **`2026-11-09 · v0.5.0` — 中英双语控制台、聊天内嵌本地图片/文件速览胶囊与极速文件读取**

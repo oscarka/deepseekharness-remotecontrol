@@ -1974,6 +1974,27 @@ export class HubCore {
       }
     }
 
+    const explicitCmdId = String(commandPayload.id ?? '').trim()
+    if (explicitCmdId) {
+      const existingQueued = (host.commands ?? []).find(c => c && c.id === explicitCmdId)
+      const existingInflight = (host.inflightCommands ?? []).find(c => c && c.id === explicitCmdId)
+      const existingResult = this.commandResultsById.get(explicitCmdId)
+      const matched =
+        existingQueued ||
+        existingInflight ||
+        (existingResult && existingResult.hostId === cleanHostId ? existingResult : null)
+      if (matched) {
+        return {
+          ok: true,
+          deduplicated: true,
+          queued: !isActivelyOnline,
+          hostOnline: isActivelyOnline,
+          hostLastSeenAgeMs: Number.isFinite(ageMs) ? ageMs : null,
+          command: matched,
+        }
+      }
+    }
+
     if (Array.isArray(commandPayload.attachments) && commandPayload.attachments.length > 0) {
       if (commandPayload.attachments.length > 4) {
         return { ok: false, statusCode: 413, error: '单次最多上传 4 张图片附件' }

@@ -187,9 +187,9 @@ The background daemon automatically discovers local sessions across all 5 suppor
 
 ## 📅 What's New (Recent Releases)
 
-- **`2026-11-11 · v0.5.5` — Streaming Reverse File Tunnel, Mobile `206 Range` Video Player & Zero-Flicker Chat Delivery**
+- **`2026-11-11 · v0.5.6` — Streaming Reverse File Tunnel, Mobile `206 Range` Video Player, Zero-Flicker Chat & Cloud Run SSE Resilience**
   - **Reverse HTTP Streaming File Tunnel & Mobile Video Player**: Added a dedicated `/fs/list|read|stream` + `/api/fs-tunnel` binary channel with `0ms` Host SSE wakeup (`event: fs_req`), eliminating `/api/state` polling storms. Supports `HTTP 206 Partial Content` video scrubbing (`<video playsinline>`), 1-tap H.264 compatibility transcoding (`ffmpeg` / macOS `avconvert`), smart `sips` thumbnails that preserve tall-screenshot text sharpness with a 1-tap lossless toggle, `walkthrough.md` hot-cache pre-warming, and short-lived read-only HMAC `mediaTicket` URLs.
-  - **Zero-Flicker Mobile Message Delivery**: Fixed optimistic chat bubble lifecycle and added Hub `inflightCommands` tracking so prompts sent over mobile/Cloud Run never vanish and reappear between command pull and disk transcript sync (including repeated replies like `"continue"` and screenshot attachments).
+  - **Zero-Flicker Mobile Message Delivery & Cloud Run HTTP/2 Resilience**: Fixed optimistic chat bubble lifecycle and added Hub `inflightCommands` tracking so prompts sent over mobile/Cloud Run never vanish and reappear; added 240s graceful SSE rotation (`event: rotate`, avoiding Cloud Run's 300s hard connection reset) plus idempotent client command IDs with automatic silent retry on iOS `Load failed` blips.
   - **Deep Codex (`app-server`) & Tencent WorkBuddy (`ACP`) Integration**: Full managed JSON-RPC / ACP streaming, mid-run steering, mobile command approvals, interactive question popups, and dynamic model discovery, plus 99.9% lower steady-state traffic via lite heartbeats & Gzip (`v0.5.3–v0.5.4`).
 
 - **`2026-11-09 · v0.5.0` — Bilingual Console (`EN` / `中文`), Inline Chat Images/File Chips & Fast-Flush File Preview**

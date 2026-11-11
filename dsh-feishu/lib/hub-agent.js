@@ -324,6 +324,8 @@ export class HubAgent {
           settledApprovals: this.settledAgyApprovals,
           excludeConversationIds: this.deletedAgyIds,
           now,
+          execImpl: this.execImpl,
+          fetchImpl: this.fetch,
         })
         for (const sess of this.cachedAgySessions) {
           const pending = this.pendingUserPrompts.get(sess.id)

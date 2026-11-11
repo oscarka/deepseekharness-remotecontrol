@@ -2,6 +2,13 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.5.6] - 2026-11-11
+
+### Fixed
+
+- 修复 `/api/events` SSE 长连接满 300 秒被 Google Cloud Run 强制截断（`Truncated response body`）导致复用同一 HTTP/2 连接的 iOS 移动端 `POST /command` 偶发抛出 `Load failed` 审批异常报错的问题（新增 240 秒服务端优雅轮转 `event: rotate` + 浏览器与 Host 端平滑换流）
+- 为 `dispatchHostCommand` 与 `HubCore.queueCommand` 增加客户端幂等 `id` 去重及网络闪断自动静默重试，消除手机唤醒/切网瞬间的偶发红字报错
+
 ## [0.5.5] - 2026-11-11
 
 ### Added

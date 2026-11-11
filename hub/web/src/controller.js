@@ -2039,11 +2039,26 @@ export function initHubController() {
 
   // ==================== 6. 发送指令 / 实时插话 / 停止 / 审批 ====================
   async function dispatchHostCommand(hostId, payload) {
-    const res = await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/command`, {
+    const cmdPayload =
+      payload && typeof payload === 'object' && !payload.id
+        ? { ...payload, id: `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}` }
+        : payload;
+    const reqInit = {
       method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    return res.json();
+      body: JSON.stringify(cmdPayload),
+    };
+    const url = `/api/hosts/${encodeURIComponent(hostId)}/command`;
+    try {
+      const res = await apiFetch(url, reqInit);
+      return await res.json();
+    } catch (err) {
+      if (err && err.message === 'Unauthorized') throw err;
+      // iOS Safari / PWA 从后台唤醒或遇长连接轮转时，复用的旧 HTTP/2 连接对 POST 可能抛出 Load failed；
+      // 携带相同幂等 id 短暂退避后自动使用新连接静默重试一次，服务端按 id + approvalLedger 双重去重。
+      await new Promise(r => setTimeout(r, 250));
+      const retryRes = await apiFetch(url, reqInit);
+      return await retryRes.json();
+    }
   }
 
   // ---- 输入框：多行、自动增高、按会话存草稿 ----
@@ -5727,6 +5742,10 @@ export function initHubController() {
         sseConnected = true;
         lastSseEventAt = Date.now();
         setConnectionBanner(false);
+      });
+      sseSource.addEventListener('rotate', () => {
+        // 服务端在 Cloud Run 300s 超时前（240s）主动优雅轮转 SSE，前端立即平滑换新流，零报错零断档
+        connectSSE();
       });
       sseSource.addEventListener('state', evt => {
         try {
