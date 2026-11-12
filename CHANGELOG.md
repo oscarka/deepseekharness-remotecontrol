@@ -2,6 +2,14 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.6.5] - 2026-11-12
+
+### Fixed
+
+- 修复 iOS Safari 网页语音识别（`webkitSpeechRecognition`）转文字缺少标点符号的问题（`useVoiceInput.ts`）：
+  - 新增 `650ms` 说话停顿实时断句检测器（停顿换气时在绿色气泡内实时补上逗号 `，` 或问号 `？`，且兼容苹果对断点前同音字的动态修正）
+  - 新增多分段衔接标点（`mergeSpeechResults`）、中文连读疑问分句自动加问号（如 `…吗？…`）与松手收尾句末标点补全（`？` / `。`，自动剥离悬空尾逗号，同时开启标准 `unspokenPunctuation = true`）
+
 ## [0.6.4] - 2026-11-11
 
 ### Added

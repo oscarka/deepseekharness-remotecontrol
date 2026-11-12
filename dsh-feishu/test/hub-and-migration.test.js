@@ -1799,7 +1799,7 @@ test('v0.6.4: WeChat-style Hold-to-Talk voice interaction (release to send, slid
     'window',
     'document',
     'navigator',
-    `${cleanJs}\nreturn { computeHoldZone, initWechatVoiceMode, isWechatVoiceMode, toggleWechatVoiceMode, startHoldVoice, moveHoldVoice, endHoldVoice, consumeReturnToVoiceAfterSend };`,
+    `${cleanJs}\nreturn { computeHoldZone, punctuateSpeechText, mergeSpeechResults, initWechatVoiceMode, isWechatVoiceMode, toggleWechatVoiceMode, startHoldVoice, moveHoldVoice, endHoldVoice, consumeReturnToVoiceAfterSend };`,
   )
   const wv = factory(fakeWin, fakeDoc, fakeNav)
   const deps = {
@@ -1835,7 +1835,7 @@ test('v0.6.4: WeChat-style Hold-to-Talk voice interaction (release to send, slid
   lastRec.onend()
   assert.equal(abortCount >= 1, true)
   assert.equal(els.wechatVoiceOverlay.style.display, 'none')
-  assert.deepStrictEqual(sentPrompts, ['帮我跑一下单元测试并汇报结果'])
+  assert.deepStrictEqual(sentPrompts, ['帮我跑一下单元测试并汇报结果。'])
 
   // 4) Hold -> speak -> slide left-up ('cancel') -> release -> discards speech, sends nothing
   els.globalPromptInput.value = ''
@@ -1859,9 +1859,46 @@ test('v0.6.4: WeChat-style Hold-to-Talk voice interaction (release to send, slid
   lastRec.onend()
   assert.equal(sentPrompts.length, 1, 'Edit mode must NOT auto-send')
   assert.equal(wv.isWechatVoiceMode(), false, 'Should reveal text input for editing')
-  assert.equal(els.globalPromptInput.value, '先放入输入框让我改两个字')
+  assert.equal(els.globalPromptInput.value, '先放入输入框让我改两个字。')
   assert.equal(els.globalPromptInput.focused, true)
   assert.equal(wv.consumeReturnToVoiceAfterSend(), true)
+
+  // 6) v0.6.5 Smart Chinese Speech Punctuation: unpunctuated iOS Safari stream, 650ms pause breakpoints & multi-segment results
+  assert.equal(
+    wv.punctuateSpeechText('你这个转文字中间不会有标点符号吗帮我查一下呗', null, { finalizeSentence: true }),
+    '你这个转文字中间不会有标点符号吗？帮我查一下呗。',
+  )
+  assert.equal(
+    wv.punctuateSpeechText('交互能不能做的类似微信交互一样', null, { finalizeSentence: true }),
+    '交互能不能做的类似微信交互一样？',
+  )
+  assert.equal(
+    wv.punctuateSpeechText(
+      '我说了一句还没结束就自动结束了',
+      [{ len: 5, head: '我说了一' }],
+      { finalizeSentence: true },
+    ),
+    '我说了一句，还没结束就自动结束了。',
+  )
+  assert.equal(
+    wv.mergeSpeechResults([
+      { 0: { transcript: '先看下日志' } },
+      { 0: { transcript: '再跑一下测试' } },
+    ]),
+    '先看下日志，再跑一下测试',
+  )
+  // Live 650ms pause while holding shows comma/question mark in green bubble, then sends full punctuated sentence on release
+  els.globalPromptInput.value = ''
+  wv.startHoldVoice(195, 800, deps)
+  assert.equal(lastRec.unspokenPunctuation, true)
+  lastRec.onresult({ results: [{ 0: { transcript: '为什么之前没标点' } }] })
+  await new Promise(r => setTimeout(r, 700))
+  assert.equal(els.wechatOverlayTranscript.textContent, '为什么之前没标点？')
+  lastRec.onresult({ results: [{ 0: { transcript: '为什么之前没标点现在帮我加上吧' } }] })
+  assert.equal(els.wechatOverlayTranscript.textContent, '为什么之前没标点？现在帮我加上吧')
+  wv.endHoldVoice(deps)
+  lastRec.onend()
+  assert.equal(sentPrompts.at(-1), '为什么之前没标点？现在帮我加上吧。')
 })
 
 test('antigravity-ide approval sync & RPC: suppresses false-positive pendingApproval when computer auto-approved, annotates sandbox retry, and approves via HandleCascadeUserInteraction RPC', async () => {
@@ -2145,7 +2182,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.6.4')
+  assert.equal(healthRes.build.version, '0.6.5')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 

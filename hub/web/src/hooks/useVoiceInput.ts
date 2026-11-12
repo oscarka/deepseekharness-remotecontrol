@@ -25,11 +25,132 @@ let holdStartY: any = 0;
 let holdStartAt: any = 0;
 let holdBaseDraft = '';
 let holdCommittedText = '';
+let holdRawChunkText = '';
+let holdPauseBreakpoints: any = [];
 let holdSpokenText = '';
 let holdHadFatalError = false;
 let holdFinalizeTimer: any = null;
+let voicePauseTimer: any = null;
 let holdListenersBound = false;
 let activeHoldDeps: any = null;
+
+const CJK_CHAR_RE = /[\u4e00-\u9fa5]/;
+const PUNCT_OR_SPACE_RE = /[，。！？、；：,.!?;:\s…~～—\-()（）[\]【】"'“”‘’]/;
+const LEADING_PARTICLE_RE = /^[的了着过吗呢吧啊呀呗嘛嘞啦]/;
+
+export function isChineseQuestionClause(clause: string): boolean {
+  const s = String(clause || '').trim();
+  if (!s || !CJK_CHAR_RE.test(s[s.length - 1])) return false;
+  if (/[吗么]$/.test(s)) return true;
+  if (/^(不管|无论|不论)/.test(s)) return false;
+  if (/^(请|麻烦|你先|先)?(帮我|看看|看下|查查|查一下|查下|检查|排查|确认|统计|分析|测试)/.test(s)) {
+    return /(好不好|行不行|对不对|可不可以|能不能)$/.test(s);
+  }
+  return /(为什么|怎么|怎樣|怎样|是不是|能不能|可不可以|行不行|好不好|对不对|有没有|要不要|会不会|算不算|哪里|哪儿|哪个|哪些|多少|几[个条次天秒分点]|什么|谁|咋)/.test(
+    s
+  );
+}
+
+function smartSeparatorBetween(leftText: string, rightText: string): string {
+  const prevChar = leftText ? leftText[leftText.length - 1] : '';
+  const nextChar = rightText ? rightText[0] : '';
+  if (!prevChar || !nextChar) return '';
+  if (
+    PUNCT_OR_SPACE_RE.test(prevChar) ||
+    PUNCT_OR_SPACE_RE.test(nextChar) ||
+    LEADING_PARTICLE_RE.test(rightText)
+  ) {
+    return '';
+  }
+  if (CJK_CHAR_RE.test(prevChar) && CJK_CHAR_RE.test(nextChar)) {
+    const lastClause = leftText.split(/[，。！？；,.!?;]/).pop() || leftText;
+    return isChineseQuestionClause(lastClause) ? '？' : '，';
+  }
+  if (/[A-Za-z0-9]/.test(prevChar) && /[A-Za-z0-9]/.test(nextChar)) {
+    return ' ';
+  }
+  if (
+    (CJK_CHAR_RE.test(prevChar) && /[A-Za-z0-9]/.test(nextChar)) ||
+    (/[A-Za-z0-9]/.test(prevChar) && CJK_CHAR_RE.test(nextChar))
+  ) {
+    return ' ';
+  }
+  return '';
+}
+
+export function punctuateSpeechText(
+  rawText: string,
+  pauseBreakpoints: any = null,
+  options: any = null
+): string {
+  const raw = String(rawText || '');
+  if (!raw) return '';
+  const showTrailingPause = Boolean(options?.showTrailingPause);
+  const finalizeSentence = Boolean(options?.finalizeSentence);
+
+  // 1. 根据用户说话时的真实停顿（>=650ms）补齐分句标点（兼容苹果语音对断点前 1~2 个同音字的修正）
+  const validCuts: any = [];
+  if (Array.isArray(pauseBreakpoints)) {
+    for (let i = 0; i < pauseBreakpoints.length; i += 1) {
+      const bp = pauseBreakpoints[i];
+      const len = Number(bp?.len) || 0;
+      const head = String(bp?.head || '');
+      if (len < 2 || len > raw.length) continue;
+      if (head && raw.slice(0, head.length) !== head) continue;
+      if (len < raw.length) {
+        validCuts.push(len);
+      } else if (len === raw.length && showTrailingPause && !finalizeSentence) {
+        validCuts.push(len);
+      }
+    }
+  }
+  validCuts.sort((a: any, b: any) => a - b);
+
+  let stitched = '';
+  let lastIdx = 0;
+  for (let i = 0; i < validCuts.length; i += 1) {
+    const cut = validCuts[i];
+    if (cut <= lastIdx) continue;
+    stitched += raw.slice(lastIdx, cut);
+    const nextRest = raw.slice(cut);
+    if (nextRest) {
+      stitched += smartSeparatorBetween(stitched, nextRest);
+    } else if (showTrailingPause && !finalizeSentence) {
+      const prevChar = stitched[stitched.length - 1] || '';
+      if (CJK_CHAR_RE.test(prevChar) && !PUNCT_OR_SPACE_RE.test(prevChar)) {
+        const lastClause = stitched.split(/[，。！？；,.!?;]/).pop() || stitched;
+        stitched += isChineseQuestionClause(lastClause) ? '？' : '，';
+      }
+    }
+    lastIdx = cut;
+  }
+  if (lastIdx < raw.length) {
+    stitched += raw.slice(lastIdx);
+  }
+
+  // 2. 连读未停顿的中文疑问分句自动断句（如「不会有标点符号吗帮我查一下呗」→「不会有标点符号吗？帮我查一下呗」）
+  stitched = stitched.replace(
+    /([\u4e00-\u9fa5]{3,}吗)(?![啡丁了呢啊呀吧呗嘛的，。！？、；：,.!?;:\s])(?=[\u4e00-\u9fa5]{2,})/g,
+    '$1？'
+  );
+
+  // 3. 松手收尾时：去掉悬空尾逗号，并为疑问句或多分句/长句补齐句末问号/句号
+  if (finalizeSentence) {
+    stitched = stitched.replace(/[，、]+$/, '');
+    const trimmed = stitched.trim();
+    const tailChar = trimmed[trimmed.length - 1] || '';
+    if (trimmed && CJK_CHAR_RE.test(tailChar) && !PUNCT_OR_SPACE_RE.test(tailChar)) {
+      const lastClause = trimmed.split(/[，。！？；,.!?;]/).pop() || trimmed;
+      if (isChineseQuestionClause(lastClause)) {
+        stitched = trimmed + '？';
+      } else if (/[，。！？；]/.test(trimmed) || trimmed.length >= 10) {
+        stitched = trimmed + '。';
+      }
+    }
+  }
+
+  return stitched;
+}
 
 export function mergeSpeechResults(results: any): string {
   const total = results ? results.length : 0;
@@ -53,7 +174,11 @@ export function mergeSpeechResults(results: any): string {
           break;
         }
       }
-      acc += overlap > 0 ? seg.slice(overlap) : seg;
+      if (overlap > 0) {
+        acc += seg.slice(overlap);
+      } else {
+        acc += smartSeparatorBetween(acc, seg) + seg;
+      }
     }
   }
   return acc;
@@ -64,10 +189,7 @@ export function joinDraftAndSpeech(draft: string, speech: string): string {
   const s = String(speech || '').trim();
   if (!d) return s;
   if (!s) return d;
-  if (/[，。！？、；：,.!?;:\s]$/.test(d) || /^[，。！？、；：,.!?;:\s]/.test(s)) {
-    return d + s;
-  }
-  return d + (/[\u4e00-\u9fa5]$/.test(d) ? '，' : ' ') + s;
+  return d + smartSeparatorBetween(d, s) + s;
 }
 
 export function computeHoldZone(
@@ -492,6 +614,10 @@ export function stopVoiceInput(): void {
   holdStopping = false;
   holdFinalized = true;
   detachHoldWindowListeners();
+  if (voicePauseTimer) {
+    clearTimeout(voicePauseTimer);
+    voicePauseTimer = null;
+  }
   if (holdFinalizeTimer) {
     clearTimeout(holdFinalizeTimer);
     holdFinalizeTimer = null;
@@ -522,6 +648,10 @@ export function stopVoiceInput(): void {
 function finalizeHoldSession(): void {
   if (holdFinalized) return;
   holdFinalized = true;
+  if (voicePauseTimer) {
+    clearTimeout(voicePauseTimer);
+    voicePauseTimer = null;
+  }
   if (holdFinalizeTimer) {
     clearTimeout(holdFinalizeTimer);
     holdFinalizeTimer = null;
@@ -536,7 +666,17 @@ function finalizeHoldSession(): void {
   }
 
   const finalZone = holdZone;
-  const spoken = String(holdSpokenText || '').trim();
+  const finalizedChunk = holdRawChunkText
+    ? punctuateSpeechText(holdRawChunkText, holdPauseBreakpoints, { finalizeSentence: false })
+    : '';
+  const combinedRaw = finalizedChunk
+    ? holdCommittedText
+      ? joinDraftAndSpeech(holdCommittedText, finalizedChunk)
+      : finalizedChunk
+    : holdSpokenText;
+  const spoken = String(
+    punctuateSpeechText(combinedRaw, null, { finalizeSentence: true })
+  ).trim();
   const baseDraft = holdBaseDraft;
   const durationMs = Date.now() - holdStartAt;
   const hadFatal = holdHadFatalError;
@@ -629,6 +769,8 @@ export function startHoldVoice(startX: any, startY: any, deps?: VoiceControllerD
   holdStartAt = Date.now();
   holdBaseDraft = String(input.value || '').trim();
   holdCommittedText = '';
+  holdRawChunkText = '';
+  holdPauseBreakpoints = [];
   holdSpokenText = '';
   holdHadFatalError = false;
   activeHoldDeps = deps || null;
@@ -661,15 +803,20 @@ export function startHoldVoice(startX: any, startY: any, deps?: VoiceControllerD
   const startHoldRecognitionChunk = (isAutoRestart: boolean): void => {
     if (!voiceSessionActive || !holdActive) return;
     try {
-      const recognition = new SpeechRecognitionCtor();
+      const recognition: any = new SpeechRecognitionCtor();
       recognition.lang = resolvedLang;
       recognition.interimResults = true;
       recognition.continuous = true;
       recognition.maxAlternatives = 1;
+      try {
+        recognition.unspokenPunctuation = true;
+      } catch {}
 
       const chunkStartAt = Date.now();
       let chunkProducedText = false;
       let chunkFatalError = false;
+      holdRawChunkText = '';
+      holdPauseBreakpoints = [];
       activeVoiceRecognition = recognition;
 
       recognition.onresult = (event: any) => {
@@ -679,10 +826,43 @@ export function startHoldVoice(startX: any, startY: any, deps?: VoiceControllerD
         chunkProducedText = true;
         rapidEmptyEnds = 0;
         resetHoldWatchdog();
+        holdRawChunkText = utterance;
+        const liveChunk = punctuateSpeechText(holdRawChunkText, holdPauseBreakpoints, {
+          showTrailingPause: false,
+          finalizeSentence: holdStopping,
+        });
         holdSpokenText = isAutoRestart
-          ? joinDraftAndSpeech(holdCommittedText, utterance)
-          : utterance;
+          ? joinDraftAndSpeech(holdCommittedText, liveChunk)
+          : liveChunk;
         updateWechatOverlayUI();
+
+        if (voicePauseTimer) {
+          clearTimeout(voicePauseTimer);
+          voicePauseTimer = null;
+        }
+        if (holdActive && !holdStopping && utterance.length >= 2) {
+          const snapText = utterance;
+          voicePauseTimer = setTimeout(() => {
+            voicePauseTimer = null;
+            if (!holdActive || holdStopping || holdRawChunkText !== snapText) return;
+            const len = snapText.length;
+            const exists = holdPauseBreakpoints.some((bp: any) => bp.len === len);
+            if (!exists) {
+              holdPauseBreakpoints.push({
+                len,
+                head: snapText.slice(0, Math.max(2, len - 2)),
+              });
+              const pausedChunk = punctuateSpeechText(holdRawChunkText, holdPauseBreakpoints, {
+                showTrailingPause: true,
+                finalizeSentence: false,
+              });
+              holdSpokenText = isAutoRestart
+                ? joinDraftAndSpeech(holdCommittedText, pausedChunk)
+                : pausedChunk;
+              updateWechatOverlayUI();
+            }
+          }, 650);
+        }
       };
 
       recognition.onerror = (event: any) => {
@@ -944,16 +1124,21 @@ export function toggleVoiceInput(
   const startRecognitionChunk = (isAutoRestart: boolean): void => {
     if (!voiceSessionActive) return;
     try {
-      const recognition = new SpeechRecognitionCtor();
+      const recognition: any = new SpeechRecognitionCtor();
       recognition.lang = resolvedLang;
       recognition.interimResults = true;
       // 持续听写模式：说话中途停顿换气不会自动挂断，直到用户主动点击「⏹」或「发送」
       recognition.continuous = true;
       recognition.maxAlternatives = 1;
+      try {
+        recognition.unspokenPunctuation = true;
+      } catch {}
 
       const chunkStartAt = Date.now();
       let chunkProducedText = false;
       let chunkFatalError = false;
+      let chunkRawText = '';
+      const chunkPauseBreakpoints: any = [];
 
       activeVoiceRecognition = recognition;
 
@@ -964,17 +1149,44 @@ export function toggleVoiceInput(
         chunkProducedText = true;
         rapidEmptyEnds = 0;
         resetIdleWatchdog();
-        let prefix = committedBaseText;
-        if (
-          isAutoRestart &&
-          prefix &&
-          !/[，。！？、；：,.!?;:\s]$/.test(prefix) &&
-          !/^[，。！？、；：,.!?;:\s]/.test(utterance)
-        ) {
-          prefix += /[\u4e00-\u9fa5]$/.test(prefix) ? '，' : ' ';
-        }
-        input.value = prefix + utterance;
+        chunkRawText = utterance;
+        const punctuated = punctuateSpeechText(chunkRawText, chunkPauseBreakpoints, {
+          showTrailingPause: false,
+          finalizeSentence: false,
+        });
+        input.value = isAutoRestart
+          ? joinDraftAndSpeech(committedBaseText, punctuated)
+          : committedBaseText + punctuated;
         notifyInputChanged();
+
+        if (voicePauseTimer) {
+          clearTimeout(voicePauseTimer);
+          voicePauseTimer = null;
+        }
+        if (voiceSessionActive && utterance.length >= 2) {
+          const snapText = utterance;
+          voicePauseTimer = setTimeout(() => {
+            voicePauseTimer = null;
+            if (!voiceSessionActive || activeVoiceRecognition !== recognition || chunkRawText !== snapText) {
+              return;
+            }
+            const len = snapText.length;
+            if (!chunkPauseBreakpoints.some((bp: any) => bp.len === len)) {
+              chunkPauseBreakpoints.push({
+                len,
+                head: snapText.slice(0, Math.max(2, len - 2)),
+              });
+              const pausedPunct = punctuateSpeechText(chunkRawText, chunkPauseBreakpoints, {
+                showTrailingPause: true,
+                finalizeSentence: false,
+              });
+              input.value = isAutoRestart
+                ? joinDraftAndSpeech(committedBaseText, pausedPunct)
+                : committedBaseText + pausedPunct;
+              notifyInputChanged();
+            }
+          }, 650);
+        }
       };
 
       recognition.onerror = (event: any) => {
