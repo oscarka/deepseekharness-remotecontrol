@@ -15,11 +15,11 @@ export function renderInlineMarkdown(rawLine: string): string {
     const trimmedSrc = String(rawSrc || '').trim();
     const cleanPath = trimmedSrc.replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim();
     const pathNoQuery = cleanPath.split('?')[0] || cleanPath;
-    const isVideoMedia = /\.(mp4|m4v|mov|webm|ogv)$/i.test(pathNoQuery) || /^data:video\//i.test(trimmedSrc);
+    const isVideoMedia = /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i.test(pathNoQuery) || /^data:video\//i.test(trimmedSrc);
     if (/^(https?:\/\/|data:(?:image|video)\/)/i.test(trimmedSrc)) {
       if (isVideoMedia) {
         return stash(
-          `<span class="md-inline-video-card"><video class="md-inline-video" src="${trimmedSrc}" controls playsinline webkit-playsinline preload="metadata"></video>${
+          `<span class="md-inline-video-card"><video class="md-inline-video" src="${trimmedSrc}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video>${
             cleanAlt ? `<span class="md-inline-img-cap">🎬 ${cleanAlt}</span>` : ''
           }</span>`
         );
@@ -39,7 +39,7 @@ export function renderInlineMarkdown(rawLine: string): string {
           : '';
       if (cachedVideoSrc) {
         return stash(
-          `<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="metadata"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${
+          `<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${
             cleanAlt || esc(baseName)
           } · 点此打开大屏预览</span></span>`
         );
@@ -80,7 +80,7 @@ export function renderInlineMarkdown(rawLine: string): string {
       const isWalkthrough = /walkthrough\.md$/i.test(cleanPath) || /^walkthrough$/i.test(cleanLabel);
       const isPlan = /implementation_plan\.md$/i.test(cleanPath);
       const isHtml = /\.(html?|xhtml)$/i.test(cleanPath);
-      const isVideo = /\.(mp4|m4v|mov|webm|ogv)$/i.test(cleanPath);
+      const isVideo = /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i.test(cleanPath);
       const isImg = /\.(png|jpe?g|webp|gif|svg|bmp|ico|avif|heic|heif)$/i.test(cleanPath);
       const icon = isWalkthrough
         ? '📋'

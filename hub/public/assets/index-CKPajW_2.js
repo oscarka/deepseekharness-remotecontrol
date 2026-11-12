@@ -1036,16 +1036,16 @@ function renderInlineMarkdown(rawLine) {
 		const trimmedSrc = String(rawSrc || "").trim();
 		const cleanPath = trimmedSrc.replace(/^file:\/\//i, "").replace(/#L\d+(?:-L?\d+)?$/i, "").trim();
 		const pathNoQuery = cleanPath.split("?")[0] || cleanPath;
-		const isVideoMedia = /\.(mp4|m4v|mov|webm|ogv)$/i.test(pathNoQuery) || /^data:video\//i.test(trimmedSrc);
+		const isVideoMedia = /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i.test(pathNoQuery) || /^data:video\//i.test(trimmedSrc);
 		if (/^(https?:\/\/|data:(?:image|video)\/)/i.test(trimmedSrc)) {
-			if (isVideoMedia) return stash(`<span class="md-inline-video-card"><video class="md-inline-video" src="${trimmedSrc}" controls playsinline webkit-playsinline preload="metadata"></video>${cleanAlt ? `<span class="md-inline-img-cap">🎬 ${cleanAlt}</span>` : ""}</span>`);
+			if (isVideoMedia) return stash(`<span class="md-inline-video-card"><video class="md-inline-video" src="${trimmedSrc}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video>${cleanAlt ? `<span class="md-inline-img-cap">🎬 ${cleanAlt}</span>` : ""}</span>`);
 			return stash(`<span class="md-inline-img-card"><img class="md-inline-img" src="${trimmedSrc}" alt="${cleanAlt}" loading="lazy" />${cleanAlt ? `<span class="md-inline-img-cap">${cleanAlt}</span>` : ""}</span>`);
 		}
 		const baseName = cleanPath.split("/").filter(Boolean).pop() || cleanPath || (isVideoMedia ? "video" : "image");
 		const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, "%27");
 		if (isVideoMedia) {
 			const cachedVideoSrc = typeof window !== "undefined" && window.__dshInlineVideoCache ? window.__dshInlineVideoCache[cleanPath] : "";
-			if (cachedVideoSrc) return stash(`<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="metadata"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${cleanAlt || esc(baseName)} · 点此打开大屏预览</span></span>`);
+			if (cachedVideoSrc) return stash(`<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${cleanAlt || esc(baseName)} · 点此打开大屏预览</span></span>`);
 			return stash(`<span class="md-inline-video-card md-local-video-pending" data-local-video-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🎬 ${cleanAlt || esc(baseName)} · 正在连接视频流…（点此打开播放器）</span></span>`);
 		}
 		const cachedSrc = typeof window !== "undefined" && window.__dshInlineImgCache ? window.__dshInlineImgCache[cleanPath] : "";
@@ -1061,7 +1061,7 @@ function renderInlineMarkdown(rawLine) {
 		const isWalkthrough = /walkthrough\.md$/i.test(cleanPath) || /^walkthrough$/i.test(cleanLabel);
 		const isPlan = /implementation_plan\.md$/i.test(cleanPath);
 		const isHtml = /\.(html?|xhtml)$/i.test(cleanPath);
-		const isVideo = /\.(mp4|m4v|mov|webm|ogv)$/i.test(cleanPath);
+		const isVideo = /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i.test(cleanPath);
 		const isImg = /\.(png|jpe?g|webp|gif|svg|bmp|ico|avif|heic|heif)$/i.test(cleanPath);
 		const icon = isWalkthrough ? "📋" : isPlan ? "🗺️" : isHtml ? "🌐" : isVideo ? "🎬" : isImg ? "🖼️" : /\.blend$/i.test(cleanPath) ? "🧊" : "📄";
 		return stash(`<button type="button" class="md-file-chip${isWalkthrough || isPlan || isHtml ? " md-artifact-chip" : ""}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">${icon} ${cleanLabel}${lineSuffix}</button>`);
@@ -1286,11 +1286,12 @@ function buildFastStreamUrl(hostId, relPath, opts = {}) {
 	if (opts.thumb) qp.set("thumb", "1");
 	if (opts.transcode) qp.set("transcode", "1");
 	if (opts.download) qp.set("download", "1");
+	if (opts.raw) qp.set("raw", "1");
 	return appendMediaAuth(`/api/hosts/${encodeURIComponent(hostId)}/fs/stream?${qp.toString()}`, opts.mediaTicket || "");
 }
 function previewKind(preview) {
 	if (!preview) return "none";
-	if (preview.kind === "video" || /\.(mp4|m4v|mov|webm|ogv)$/i.test(preview.name || preview.relPath || "")) return "video";
+	if (preview.kind === "video" || /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i.test(preview.name || preview.relPath || "")) return "video";
 	if (preview.kind === "image" && (preview.dataBase64 || preview.streamUrl || preview.previewUrl || preview.hasBlob)) return "image";
 	if (preview.kind === "binary") return "binary";
 	return "text";
@@ -1311,7 +1312,7 @@ function videoPreviewSrc(preview, mediaTicket = "") {
 	const raw = preview.streamUrl || preview.previewUrl || "";
 	if (!raw) return "";
 	const sep = raw.includes("?") ? "&" : "?";
-	return appendMediaAuth(preview._transcodeVideo ? `${raw}${sep}transcode=1` : raw, mediaTicket);
+	return appendMediaAuth(preview._rawVideo ? `${raw}${sep}raw=1` : preview._transcodeVideo ? `${raw}${sep}transcode=1` : raw, mediaTicket);
 }
 function buildBreadcrumbSegments(subDir) {
 	const clean = String(subDir || "").replace(/^\/+|\/+$/g, "");
@@ -2842,12 +2843,21 @@ var EXACT_ZH_TO_EN = {
 	"HTML 网页": "HTML Page",
 	"体验网页 ›": "Live Preview ›",
 	"📲 已缓存 · 再点存入相册/文件": "📲 Ready · Tap to Save",
-	"⏳ 准备中…": "⏳ Preparing…"
+	"⏳ 准备中…": "⏳ Preparing…",
+	"✨ 切回智能兼容秒播": "✨ Back to Smart Stream",
+	"🎞️ 尝试原片直出": "🎞️ Raw Original Stream",
+	"🔄 强制重编码兼容流": "🔄 Force Compat Transcode",
+	"🔄 播不出？转码兼容播放": "🔄 Compat Transcode",
+	"⬇️ 保存原视频到本地播放": "⬇️ Save Original Video"
 };
 var REGEX_ZH_TO_EN = [
 	[/^🌐 (.+)$/, (_, title) => `🌐 ${title === "对话内 HTML 交互预览" ? "Inline HTML Live Preview" : title}`],
 	[/^⏳ 拉取中 (\d+)%…$/, "⏳ Downloading $1%…"],
 	[/^⏳ 已拉取 (.+)…$/, "⏳ Downloaded $1…"],
+	[/^🎬 (.+) · 智能 H\.264 兼容流 · 拖动秒播$/, "🎬 $1 · Smart H.264 Compat Stream"],
+	[/^🎬 (.+) · 无损快启重封装 · 拖动秒播$/, "🎬 $1 · Fast-Start Lossless Remux"],
+	[/^🎬 (.+) · 原始视频字节直出流$/, "🎬 $1 · Raw Original Stream"],
+	[/^🎬 (.+) · 支持拖动进度条分片秒播$/, "🎬 $1 · HTTP 206 Byte-Range Stream"],
 	[/^🤖 选择模型 · (.+)$/, "🤖 Select Model · $1"],
 	[/^✨ 跟随电脑端当前默认 \((.+)\)$/, "✨ Computer Default ($1)"],
 	[/^🤖 默认 \((.+)\)$/, "🤖 Default ($1)"],
@@ -5904,7 +5914,7 @@ function initHubController() {
 				window.__dshInlineVideoCache[vPath] = vSrc;
 				vNode.classList.remove("md-local-video-pending");
 				vNode.removeAttribute("onclick");
-				vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="metadata"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc(baseName)} · 点此打开大屏预览</span>`;
+				vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc(baseName)} · 点此打开大屏预览</span>`;
 			}
 		}
 		const pendingNodes = Array.from(containerEl.querySelectorAll(".md-local-img-pending[data-local-img-path]"));
@@ -6003,12 +6013,13 @@ function initHubController() {
 			const isHtml = kind === "text" && isHtmlFileName(preview.name || preview.relPath || "");
 			const rawMdMode = Boolean(window.__dshRawMdPreview);
 			const rawHtmlMode = Boolean(window.__dshRawHtmlPreview);
-			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${preview._origImage ? 1 : 0}:${preview._transcodeVideo ? 1 : 0}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${isHtml ? rawHtmlMode ? "raw-html" : "html" : ""}:${(preview.content || "").length}`;
+			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${preview._origImage ? 1 : 0}:${preview._transcodeVideo ? 1 : 0}:${preview._rawVideo ? 1 : 0}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${isHtml ? rawHtmlMode ? "raw-html" : "html" : ""}:${(preview.content || "").length}`;
 			if (body.dataset.dshPreviewKey === previewKey && body.querySelector(".file-preview-body")) return;
 			body.dataset.dshPreviewKey = previewKey;
 			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
 			const canToggleOrigImg = kind === "image" && Boolean(preview.streamUrl) && !/\.(svg|gif)$/i.test(preview.name || "") && (!preview.size || preview.size > 307200);
 			const dlUrl = preview.streamUrl ? appendMediaAuth(`${preview.streamUrl}${preview.streamUrl.includes("?") ? "&" : "?"}download=1`, mt) : "";
+			const videoMetaUi = kind === "video" ? describeVideoPreviewStatus(preview) : null;
 			const htmlSrcdocAttr = isHtml && !rawHtmlMode ? escapeSrcdocAttr(buildSandboxedHtmlSrcdoc(preview.content || "", {
 				hostId: host.hostId,
 				relPath: preview.relPath || preview.name || "",
@@ -6018,10 +6029,10 @@ function initHubController() {
 				origin: typeof location !== "undefined" ? location.origin : ""
 			})) : "";
 			const previewBodyHtml = kind === "video" ? `<div class="file-preview-body" style="padding:16px 12px;background:#0f172a;min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
-               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" controls playsinline webkit-playsinline preload="metadata"></video>
+               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
-                 <span style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · 支持拖动进度条分片秒播</span>
-                 <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', true)">${preview._transcodeVideo ? "✨ 切回原画直出" : "🔄 播不出？转码兼容播放"}</button>
+                 <span style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
+                 <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', true)">${esc(videoMetaUi.toggleLabel)}</button>
                  ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl)}', '${esc(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
                </div>
              </div>` : kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
@@ -6132,11 +6143,107 @@ function initHubController() {
 	function fileEntryIcon(entry) {
 		if (entry?.isDirectory) return "📁";
 		const name = String(entry?.name || entry?.relPath || "").toLowerCase();
-		if (/\.(mp4|m4v|mov|webm|ogv)$/.test(name)) return "🎬";
+		if (/\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/.test(name)) return "🎬";
 		if (/\.(png|jpe?g|webp|gif|svg|bmp|ico|avif|heic|heif)$/.test(name)) return "🖼️";
 		if (/\.(html?|xhtml)$/.test(name)) return "🌐";
 		if (/\.(md|markdown|mdx)$/.test(name)) return "📋";
 		return "📄";
+	}
+	function describeVideoPreviewStatus(preview) {
+		const strategy = preview?.videoProbe?.strategy || "";
+		if (preview?._rawVideo) return {
+			badge: "原始视频字节直出流",
+			toggleLabel: "✨ 切回智能兼容秒播"
+		};
+		if (preview?._transcodeVideo || strategy === "transcode") return {
+			badge: "智能 H.264 兼容流 · 拖动秒播",
+			toggleLabel: "🎞️ 尝试原片直出"
+		};
+		if (strategy === "remux") return {
+			badge: "无损快启重封装 · 拖动秒播",
+			toggleLabel: "🔄 强制重编码兼容流"
+		};
+		return {
+			badge: "支持拖动进度条分片秒播",
+			toggleLabel: "🔄 播不出？转码兼容播放"
+		};
+	}
+	function buildTranscodeFallbackSrc(rawSrc) {
+		if (!rawSrc || !rawSrc.includes("/fs/stream")) return "";
+		try {
+			const u = new URL(rawSrc, typeof location !== "undefined" ? location.origin : "http://localhost");
+			u.searchParams.delete("raw");
+			u.searchParams.set("transcode", "1");
+			const freshMt = hubState.mediaTicket || "";
+			if (freshMt) u.searchParams.set("mt", freshMt);
+			return `${u.pathname}?${u.searchParams.toString()}`;
+		} catch {
+			return "";
+		}
+	}
+	function onSmartVideoLoadedMeta(videoEl) {
+		if (!videoEl || videoEl.dataset?.dshFallbackTried === "1") return;
+		if (videoEl.videoWidth === 0 && Number(videoEl.duration) > 0) {
+			const nextSrc = buildTranscodeFallbackSrc(videoEl.getAttribute("src") || videoEl.currentSrc || "");
+			if (!nextSrc) return;
+			videoEl.dataset.dshFallbackTried = "1";
+			showToast("🔄 检测到特殊视频编码，已自动切换电脑端 H.264 兼容流…");
+			videoEl.src = nextSrc;
+			try {
+				videoEl.load();
+			} catch {}
+		}
+	}
+	function onSmartVideoError(videoEl) {
+		if (!videoEl) return;
+		const currentSrc = videoEl.getAttribute("src") || videoEl.currentSrc || "";
+		if (videoEl.dataset?.dshFallbackTried !== "1") {
+			const nextSrc = buildTranscodeFallbackSrc(currentSrc);
+			if (nextSrc && nextSrc !== currentSrc) {
+				videoEl.dataset.dshFallbackTried = "1";
+				showToast("🔄 正在自动切换兼容转码流重试播放…");
+				videoEl.src = nextSrc;
+				try {
+					videoEl.load();
+				} catch {}
+				return;
+			}
+		}
+		if (videoEl.dataset?.dshErrorBannerShown === "1") return;
+		videoEl.dataset.dshErrorBannerShown = "1";
+		const parent = videoEl.parentElement;
+		if (!parent) return;
+		let dlHref = "";
+		let dlName = "video.mp4";
+		try {
+			const u = new URL(currentSrc, typeof location !== "undefined" ? location.origin : "http://localhost");
+			if (u.pathname.includes("/fs/stream")) {
+				const base = (u.searchParams.get("path") || "").split("/").filter(Boolean).pop();
+				if (base) dlName = base;
+				u.searchParams.delete("transcode");
+				u.searchParams.delete("raw");
+				u.searchParams.set("download", "1");
+				const freshMt = hubState.mediaTicket || "";
+				if (freshMt) u.searchParams.set("mt", freshMt);
+				dlHref = `${u.pathname}?${u.searchParams.toString()}`;
+			}
+		} catch {}
+		const tip = document.createElement("div");
+		tip.style.cssText = "font-size:12px;color:#fca5a5;text-align:center;padding:6px 10px;line-height:1.5;";
+		tip.textContent = "⚠️ 当前无法直接在线解码此视频（若该电脑端版本较旧，可在设置页点一键升级守护进程），可点下方保存原片观看";
+		parent.appendChild(tip);
+		if (dlHref && !parent.querySelector("[data-dsh-fallback-dl]")) {
+			const btn = document.createElement("button");
+			btn.type = "button";
+			btn.className = "media-toolbar-pill";
+			btn.dataset.dshFallbackDl = "1";
+			btn.textContent = "⬇️ 保存原视频到本地播放";
+			btn.onclick = (ev) => {
+				ev.stopPropagation();
+				downloadPreviewMedia(dlHref, dlName, btn);
+			};
+			parent.appendChild(btn);
+		}
 	}
 	function toggleOriginalPreviewImage(hostId, inDrawer = false) {
 		const target = inDrawer ? pinnedDrawerPreviewByHost[hostId] : pinnedMainPreviewByHost[hostId];
@@ -6153,8 +6260,15 @@ function initHubController() {
 		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
 		const preview = target || host?.lastFilePreview;
 		if (!preview) return;
-		preview._transcodeVideo = !preview._transcodeVideo;
-		showToast(preview._transcodeVideo ? "🔄 正在用电脑端 H.264 兼容转码流加载（首次可能需数秒）…" : "✨ 已切回原视频 HTTP 206 分片直出流");
+		if (preview?.videoProbe?.strategy === "transcode") {
+			preview._rawVideo = !preview._rawVideo;
+			preview._transcodeVideo = false;
+			showToast(preview._rawVideo ? "🎞️ 已切换为原始视频字节直出（部分手机不支持 4:4:4 等专业编码）" : "⚡ 已切回电脑端智能 H.264 兼容流");
+		} else {
+			preview._rawVideo = false;
+			preview._transcodeVideo = !preview._transcodeVideo;
+			showToast(preview._transcodeVideo ? "🔄 正在用电脑端 H.264 兼容转码流加载（首次可能需数秒）…" : "✨ 已切回智能秒播模式");
+		}
 		renderAll();
 		renderFilePanes();
 	}
@@ -6454,29 +6568,66 @@ function initHubController() {
 		}
 		try {
 			const token = getToken();
-			const res = await fetch(dlUrl, { headers: token ? { authorization: `Bearer ${token}` } : {} });
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const totalBytes = Number(res.headers.get("content-length") || 0);
-			const mimeType = (res.headers.get("content-type") || "").split(";")[0].trim() || (/\.mp4$/i.test(safeName) ? "video/mp4" : /\.mov$/i.test(safeName) ? "video/quicktime" : /\.webm$/i.test(safeName) ? "video/webm" : "application/octet-stream");
-			let blob;
-			if (res.body && typeof res.body.getReader === "function") {
-				const reader = res.body.getReader();
-				const chunks = [];
-				let received = 0;
-				while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-					if (value) {
-						chunks.push(value);
-						received += value.byteLength;
-						if (btnEl) {
-							if (totalBytes > 0) btnEl.textContent = `⏳ 拉取中 ${Math.min(99, Math.round(received / totalBytes * 100))}%…`;
-							else btnEl.textContent = `⏳ 已拉取 ${formatBytes(received)}…`;
+			const baseAuthHeaders = token ? { authorization: `Bearer ${token}` } : {};
+			const parseContentRangeInfo = (headerVal) => {
+				const m = /bytes\s+(\d+)-(\d+)\/(\d+)/i.exec(String(headerVal || "").trim());
+				if (!m) return null;
+				return {
+					start: Number(m[1]),
+					end: Number(m[2]),
+					total: Number(m[3])
+				};
+			};
+			const readSliceIntoChunks = async (resp, outChunks, progState) => {
+				if (resp.body && typeof resp.body.getReader === "function") {
+					const reader = resp.body.getReader();
+					while (true) {
+						const { done, value } = await reader.read();
+						if (done) break;
+						if (value) {
+							outChunks.push(value);
+							progState.received += value.byteLength;
+							if (btnEl) {
+								if (progState.totalBytes > 0) btnEl.textContent = `⏳ 拉取中 ${Math.min(99, Math.round(progState.received / progState.totalBytes * 100))}%…`;
+								else btnEl.textContent = `⏳ 已拉取 ${formatBytes(progState.received)}…`;
+							}
 						}
 					}
+				} else {
+					const ab = await resp.arrayBuffer();
+					const u8 = new Uint8Array(ab);
+					outChunks.push(u8);
+					progState.received += u8.byteLength;
 				}
-				blob = new Blob(chunks, { type: mimeType });
-			} else blob = await res.blob();
+			};
+			const res = await fetch(dlUrl, { headers: baseAuthHeaders });
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const firstCr = res.status === 206 ? parseContentRangeInfo(res.headers.get("content-range")) : null;
+			const totalBytes = firstCr?.total || Number(res.headers.get("content-length") || 0);
+			const mimeType = (res.headers.get("content-type") || "").split(";")[0].trim() || (/\.mp4$/i.test(safeName) ? "video/mp4" : /\.mov$/i.test(safeName) ? "video/quicktime" : /\.webm$/i.test(safeName) ? "video/webm" : "application/octet-stream");
+			const allChunks = [];
+			const progState = {
+				received: 0,
+				totalBytes
+			};
+			await readSliceIntoChunks(res, allChunks, progState);
+			if (firstCr && firstCr.end + 1 < firstCr.total) {
+				let nextStart = firstCr.end + 1;
+				for (let partIdx = 0; partIdx < 64 && nextStart < firstCr.total; partIdx += 1) {
+					const partRes = await fetch(dlUrl, { headers: {
+						...baseAuthHeaders,
+						Range: `bytes=${nextStart}-`
+					} });
+					if (!partRes.ok) throw new Error(`HTTP ${partRes.status}`);
+					const partCr = parseContentRangeInfo(partRes.headers.get("content-range"));
+					const prevReceived = progState.received;
+					await readSliceIntoChunks(partRes, allChunks, progState);
+					const gotBytes = progState.received - prevReceived;
+					if (gotBytes <= 0) break;
+					nextStart = partCr ? partCr.end + 1 : nextStart + gotBytes;
+				}
+			}
+			const blob = new Blob(allChunks, { type: mimeType });
 			const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
 			if ((isIosDevice() || isStandaloneApp() || /Android|iPhone|iPad|iPod|Mobile/i.test(ua)) && typeof File === "function" && typeof navigator !== "undefined" && typeof navigator.canShare === "function" && typeof navigator.share === "function") {
 				const shareFile = new File([blob], safeName, { type: mimeType });
@@ -6581,12 +6732,13 @@ function initHubController() {
 			const isHtml = kind === "text" && isHtmlFileName(preview.name || preview.relPath || "");
 			const rawMdMode = Boolean(window.__dshRawMdPreview);
 			const rawHtmlMode = Boolean(window.__dshRawHtmlPreview);
-			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${preview._origImage ? 1 : 0}:${preview._transcodeVideo ? 1 : 0}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${isHtml ? rawHtmlMode ? "raw-html" : "html" : ""}:${(preview.content || "").length}`;
+			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${preview._origImage ? 1 : 0}:${preview._transcodeVideo ? 1 : 0}:${preview._rawVideo ? 1 : 0}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${isHtml ? rawHtmlMode ? "raw-html" : "html" : ""}:${(preview.content || "").length}`;
 			if (container.dataset.dshPreviewKey === previewKey && container.querySelector(".file-preview-body")) return;
 			container.dataset.dshPreviewKey = previewKey;
 			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
 			const canToggleOrigImg = kind === "image" && Boolean(preview.streamUrl) && !/\.(svg|gif)$/i.test(preview.name || "") && (!preview.size || preview.size > 307200);
 			const dlUrl = preview.streamUrl ? appendMediaAuth(`${preview.streamUrl}${preview.streamUrl.includes("?") ? "&" : "?"}download=1`, mt) : "";
+			const videoMetaUi = kind === "video" ? describeVideoPreviewStatus(preview) : null;
 			const htmlSrcdocAttr = isHtml && !rawHtmlMode ? escapeSrcdocAttr(buildSandboxedHtmlSrcdoc(preview.content || "", {
 				hostId: host.hostId,
 				relPath: preview.relPath || preview.name || "",
@@ -6596,10 +6748,10 @@ function initHubController() {
 				origin: typeof location !== "undefined" ? location.origin : ""
 			})) : "";
 			const previewBodyHtml = kind === "video" ? `<div class="file-preview-body" style="padding:18px 14px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
-               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" controls playsinline webkit-playsinline preload="metadata"></video>
+               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
-                 <span style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · 支持拖动进度条分片秒播</span>
-                 <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', false)">${preview._transcodeVideo ? "✨ 切回原画直出" : "🔄 播不出？转码兼容播放"}</button>
+                 <span style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
+                 <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', false)">${esc(videoMetaUi.toggleLabel)}</button>
                  ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl)}', '${esc(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
                </div>
              </div>` : kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
@@ -8567,6 +8719,8 @@ function initHubController() {
 				next._showInDrawer = Boolean(prev._showInDrawer);
 				next._origImage = Boolean(prev._origImage);
 				next._transcodeVideo = Boolean(prev._transcodeVideo);
+				next._rawVideo = Boolean(prev._rawVideo);
+				if (!next.videoProbe && prev.videoProbe) next.videoProbe = prev.videoProbe;
 				if (!next.streamUrl && prev.streamUrl) next.streamUrl = prev.streamUrl;
 				if ((next.content === void 0 || prev._fullHtmlFetched) && prev.content !== void 0) {
 					next.content = prev.content;
@@ -8588,8 +8742,10 @@ function initHubController() {
 					}
 				}
 				if (!next.streamUrl && pinnedDrawer.streamUrl) next.streamUrl = pinnedDrawer.streamUrl;
+				if (!next.videoProbe && pinnedDrawer.videoProbe) next.videoProbe = pinnedDrawer.videoProbe;
 				next._origImage = Boolean(pinnedDrawer._origImage);
 				next._transcodeVideo = Boolean(pinnedDrawer._transcodeVideo);
+				next._rawVideo = Boolean(pinnedDrawer._rawVideo);
 				next._showInDrawer = true;
 				pinnedDrawerPreviewByHost[host.hostId] = next;
 			}
@@ -8604,8 +8760,10 @@ function initHubController() {
 					}
 				}
 				if (!next.streamUrl && pinnedMain.streamUrl) next.streamUrl = pinnedMain.streamUrl;
+				if (!next.videoProbe && pinnedMain.videoProbe) next.videoProbe = pinnedMain.videoProbe;
 				next._origImage = Boolean(pinnedMain._origImage);
 				next._transcodeVideo = Boolean(pinnedMain._transcodeVideo);
+				next._rawVideo = Boolean(pinnedMain._rawVideo);
 				next._showInMain = true;
 				pinnedMainPreviewByHost[host.hostId] = next;
 			}
@@ -9182,6 +9340,8 @@ function initHubController() {
 		downloadPreviewMedia,
 		toggleOriginalPreviewImage,
 		switchVideoTranscodeMode,
+		onSmartVideoLoadedMeta,
+		onSmartVideoError,
 		dismissOverlay,
 		shouldDismissHorizontalSwipe,
 		shouldDismissVerticalSwipe,

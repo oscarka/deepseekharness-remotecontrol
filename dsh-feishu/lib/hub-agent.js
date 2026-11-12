@@ -3,6 +3,7 @@ import { createCipheriv, randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { gzipSync } from 'node:zlib'
@@ -46,10 +47,10 @@ import {
   listWorkspaceFiles,
   loadDiskSessionsFromDshHome,
   loadOrCreateHostIdentity,
+  openWorkspaceFileStream,
   persistCommandAttachments,
   readPendingDshInteractions,
   readWorkspaceFileFastMeta,
-  readWorkspaceFileStreamChunk,
   removePendingDshInteraction,
   renameDiskSession,
   writePendingDshInteractionResponse,
@@ -596,16 +597,18 @@ export class HubAgent {
         return
       }
 
-      const chunkRes = await readWorkspaceFileStreamChunk(rootCwd, String(fsReq.path || ''), {
+      const streamRes = await openWorkspaceFileStream(rootCwd, String(fsReq.path || ''), {
         rangeHeader: String(fsReq.rangeHeader || ''),
         ifNoneMatch: String(fsReq.ifNoneMatch || ''),
         thumb: Boolean(fsReq.thumb),
         transcode: Boolean(fsReq.transcode),
+        download: Boolean(fsReq.download),
+        raw: Boolean(fsReq.raw),
         dshHome: this.config?.dshHome || '',
         extraRoots: this.resolveExtraArtifactRoots(),
         execImpl: this.execImpl,
       })
-      const { buffer, ...metaRest } = chunkRes
+      const { buffer, createBodyStream, ...metaRest } = streamRes
       const metaHeader = Buffer.from(
         JSON.stringify({
           ...metaRest,
@@ -614,13 +617,33 @@ export class HubAgent {
         }),
         'utf8',
       ).toString('base64url')
+      if (typeof createBodyStream === 'function' && Number(metaRest.byteLength) > 0) {
+        const nodeStream = createBodyStream()
+        try {
+          await this.fetch(targetUrl, {
+            method: 'POST',
+            headers: this.headers({
+              'content-type': 'application/octet-stream',
+              'content-length': String(metaRest.byteLength),
+              'x-fs-meta': metaHeader,
+            }),
+            body: Readable.toWeb(nodeStream),
+            duplex: 'half',
+          })
+        } catch {
+          nodeStream.destroy?.()
+        }
+        return
+      }
+      const fallbackBuf = Buffer.isBuffer(buffer) ? buffer : Buffer.alloc(0)
       await this.fetch(targetUrl, {
         method: 'POST',
         headers: this.headers({
           'content-type': 'application/octet-stream',
+          'content-length': String(fallbackBuf.length),
           'x-fs-meta': metaHeader,
         }),
-        body: Buffer.isBuffer(buffer) ? buffer : Buffer.alloc(0),
+        body: fallbackBuf,
       })
     } catch (error) {
       try {

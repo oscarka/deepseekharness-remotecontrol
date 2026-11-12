@@ -431,12 +431,21 @@ const EXACT_ZH_TO_EN = {
   '体验网页 ›': 'Live Preview ›',
   '📲 已缓存 · 再点存入相册/文件': '📲 Ready · Tap to Save',
   '⏳ 准备中…': '⏳ Preparing…',
+  '✨ 切回智能兼容秒播': '✨ Back to Smart Stream',
+  '🎞️ 尝试原片直出': '🎞️ Raw Original Stream',
+  '🔄 强制重编码兼容流': '🔄 Force Compat Transcode',
+  '🔄 播不出？转码兼容播放': '🔄 Compat Transcode',
+  '⬇️ 保存原视频到本地播放': '⬇️ Save Original Video',
 };
 
 const REGEX_ZH_TO_EN = [
   [/^🌐 (.+)$/, (_, title) => `🌐 ${title === '对话内 HTML 交互预览' ? 'Inline HTML Live Preview' : title}`],
   [/^⏳ 拉取中 (\d+)%…$/, '⏳ Downloading $1%…'],
   [/^⏳ 已拉取 (.+)…$/, '⏳ Downloaded $1…'],
+  [/^🎬 (.+) · 智能 H\.264 兼容流 · 拖动秒播$/, '🎬 $1 · Smart H.264 Compat Stream'],
+  [/^🎬 (.+) · 无损快启重封装 · 拖动秒播$/, '🎬 $1 · Fast-Start Lossless Remux'],
+  [/^🎬 (.+) · 原始视频字节直出流$/, '🎬 $1 · Raw Original Stream'],
+  [/^🎬 (.+) · 支持拖动进度条分片秒播$/, '🎬 $1 · HTTP 206 Byte-Range Stream'],
   [/^🤖 选择模型 · (.+)$/, '🤖 Select Model · $1'],
   [/^✨ 跟随电脑端当前默认 \((.+)\)$/, '✨ Computer Default ($1)'],
   [/^🤖 默认 \((.+)\)$/, '🤖 Default ($1)'],

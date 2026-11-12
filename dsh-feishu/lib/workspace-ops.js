@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
+import { createReadStream } from 'node:fs'
 import { chmod, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, networkInterfaces } from 'node:os'
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from 'node:path'
@@ -22,7 +23,7 @@ function isSystemInjectedUserText(text) {
 
 const MAX_PREVIEW_BYTES = 256 * 1024 // 256 KiB max text/code file preview
 const MAX_IMAGE_PREVIEW_BYTES = 5 * 1024 * 1024 // 5 MiB max inline legacy image preview
-const DEFAULT_STREAM_CHUNK_BYTES = 2 * 1024 * 1024 // 2 MiB per HTTP 206 Range slice
+const DEFAULT_STREAM_CHUNK_BYTES = 8 * 1024 * 1024 // 8 MiB open-ended Range slice (16 MiB closed-range cap, safe below Serverless 32 MiB ingress limits)
 const THUMB_MIN_BYTES = 300 * 1024 // Keep small images (<300 KiB) untouched
 const MAX_MEDIA_CACHE_FILES = 100
 const IGNORED_DIRS = new Set(['.git', 'node_modules', '.pnpm-store', '.cache', '.DS_Store', 'dist', 'build'])
@@ -47,6 +48,8 @@ const VIDEO_MIME = {
   '.mov': 'video/quicktime',
   '.webm': 'video/webm',
   '.ogv': 'video/ogg',
+  '.mkv': 'video/x-matroska',
+  '.avi': 'video/x-msvideo',
 }
 
 /**
@@ -2192,63 +2195,454 @@ async function getOrCreateSmartThumbnail(
   }
 }
 
-async function getOrCreateCompatibleMp4(
+const inflightMediaJobs = new Map()
+const videoProbeCache = new Map()
+
+function withSingleFlightMediaJob(jobKey, fn) {
+  if (inflightMediaJobs.has(jobKey)) {
+    return inflightMediaJobs.get(jobKey)
+  }
+  const p = Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      inflightMediaJobs.delete(jobKey)
+    })
+  inflightMediaJobs.set(jobKey, p)
+  return p
+}
+
+function iterIsoBoxes(buf, startOffset = 0, endOffset = buf.length) {
+  const boxes = []
+  let off = startOffset
+  const limit = Math.min(endOffset, buf.length)
+  while (off + 8 <= limit && boxes.length < 256) {
+    let sz = buf.readUInt32BE(off)
+    const type = buf.subarray(off + 4, off + 8).toString('ascii')
+    let hdr = 8
+    if (sz === 1) {
+      if (off + 16 > limit) break
+      sz = Number(buf.readBigUInt64BE(off + 8))
+      hdr = 16
+    } else if (sz === 0) {
+      sz = limit - off
+    }
+    if (!Number.isFinite(sz) || sz < hdr || off + sz > limit) break
+    boxes.push({
+      type,
+      boxOffset: off,
+      boxEnd: off + sz,
+      payloadOffset: off + hdr,
+      payloadEnd: off + sz,
+    })
+    off += sz
+  }
+  return boxes
+}
+
+export function parseMoovVideoInfo(moovBuf) {
+  if (!Buffer.isBuffer(moovBuf) || moovBuf.length < 8) {
+    return { codec: null, avcProfile: null, avcLevel: null, width: 0, height: 0, audioCodec: null }
+  }
+  let payloadStart = 0
+  let payloadEnd = moovBuf.length
+  if (moovBuf.length >= 8 && moovBuf.subarray(4, 8).toString('ascii') === 'moov') {
+    const outer = iterIsoBoxes(moovBuf, 0, moovBuf.length)[0]
+    if (outer) {
+      payloadStart = outer.payloadOffset
+      payloadEnd = outer.payloadEnd
+    }
+  }
+
+  let codec = null
+  let avcProfile = null
+  let avcLevel = null
+  let width = 0
+  let height = 0
+  let audioCodec = null
+
+  const topChildren = iterIsoBoxes(moovBuf, payloadStart, payloadEnd)
+  for (const trak of topChildren) {
+    if (trak.type !== 'trak') continue
+    const trakChildren = iterIsoBoxes(moovBuf, trak.payloadOffset, trak.payloadEnd)
+    const mdia = trakChildren.find(b => b.type === 'mdia')
+    if (!mdia) continue
+    const mdiaChildren = iterIsoBoxes(moovBuf, mdia.payloadOffset, mdia.payloadEnd)
+    const hdlr = mdiaChildren.find(b => b.type === 'hdlr')
+    if (!hdlr || hdlr.payloadEnd - hdlr.payloadOffset < 12) continue
+    const handlerType = moovBuf.subarray(hdlr.payloadOffset + 8, hdlr.payloadOffset + 12).toString('ascii')
+    const minf = mdiaChildren.find(b => b.type === 'minf')
+    if (!minf) continue
+    const stbl = iterIsoBoxes(moovBuf, minf.payloadOffset, minf.payloadEnd).find(b => b.type === 'stbl')
+    if (!stbl) continue
+    const stsd = iterIsoBoxes(moovBuf, stbl.payloadOffset, stbl.payloadEnd).find(b => b.type === 'stsd')
+    if (!stsd || stsd.payloadEnd - stsd.payloadOffset < 16) continue
+    const sampleEntries = iterIsoBoxes(moovBuf, stsd.payloadOffset + 8, stsd.payloadEnd)
+    if (sampleEntries.length === 0) continue
+
+    const entry = sampleEntries[0]
+    const entryCodec = entry.type.trim().toLowerCase()
+    if (handlerType === 'vide' && !codec) {
+      codec = entryCodec
+      if (entry.payloadEnd - entry.payloadOffset >= 28) {
+        width = moovBuf.readUInt16BE(entry.payloadOffset + 24)
+        height = moovBuf.readUInt16BE(entry.payloadOffset + 26)
+      }
+      if ((codec === 'avc1' || codec === 'avc3') && entry.payloadEnd - entry.payloadOffset >= 86) {
+        const visualChildren = iterIsoBoxes(moovBuf, entry.payloadOffset + 78, entry.payloadEnd)
+        const avcC = visualChildren.find(b => b.type === 'avcC')
+        if (avcC && avcC.payloadEnd - avcC.payloadOffset >= 4) {
+          avcProfile = moovBuf[avcC.payloadOffset + 1]
+          avcLevel = moovBuf[avcC.payloadOffset + 3]
+        }
+      }
+    } else if (handlerType === 'soun' && !audioCodec) {
+      audioCodec = entryCodec
+    }
+  }
+
+  return { codec, avcProfile, avcLevel, width, height, audioCodec }
+}
+
+const COMPAT_AVC_PROFILES = new Set([66, 77, 88, 100])
+
+export async function probeVideoCompatibility(realFile, info, ext = '') {
+  const cleanExt = String(ext || extname(realFile)).toLowerCase()
+  const cacheKey = `${realFile}:${info.size}:${Math.round(info.mtimeMs)}`
+  const cached = videoProbeCache.get(cacheKey)
+  if (cached) return cached
+
+  const store = val => {
+    videoProbeCache.set(cacheKey, val)
+    while (videoProbeCache.size > 200) {
+      const oldest = videoProbeCache.keys().next().value
+      videoProbeCache.delete(oldest)
+    }
+    return val
+  }
+
+  if (cleanExt !== '.mp4' && cleanExt !== '.m4v' && cleanExt !== '.mov') {
+    const containerName = cleanExt.replace(/^\./, '') || 'unknown'
+    return store({
+      hasMoov: false,
+      container: containerName,
+      codec: cleanExt === '.webm' ? 'vp9/webm' : containerName,
+      avcProfile: null,
+      width: 0,
+      height: 0,
+      faststart: false,
+      universalDirectPlay: false,
+      strategy: 'transcode',
+      reason: 'non_mp4_container',
+    })
+  }
+
+  const containerName = cleanExt.slice(1)
+  let firstMdatOffset = -1
+  let moovBox = null
+  let moovBuf = null
+
+  const fh = await open(realFile, 'r')
+  try {
+    const hdrBuf = Buffer.allocUnsafe(16)
+    let offset = 0
+    for (let i = 0; i < 64 && offset + 8 <= info.size; i += 1) {
+      const readLen = Math.min(16, info.size - offset)
+      const { bytesRead } = await fh.read(hdrBuf, 0, readLen, offset)
+      if (bytesRead < 8) break
+      let sz = hdrBuf.readUInt32BE(0)
+      const type = hdrBuf.subarray(4, 8).toString('ascii')
+      let hdrLen = 8
+      if (sz === 1) {
+        if (bytesRead < 16) break
+        sz = Number(hdrBuf.readBigUInt64BE(8))
+        hdrLen = 16
+      } else if (sz === 0) {
+        sz = info.size - offset
+      }
+      if (!Number.isFinite(sz) || sz < hdrLen || offset + sz > info.size) break
+      if (type === 'mdat' && sz > hdrLen && firstMdatOffset === -1) {
+        firstMdatOffset = offset
+      } else if (type === 'moov') {
+        moovBox = {
+          offset,
+          payloadOffset: offset + hdrLen,
+          payloadSize: sz - hdrLen,
+        }
+        break
+      }
+      offset += sz
+    }
+
+    if (moovBox && moovBox.payloadSize > 0) {
+      const maxMoovRead = Math.min(moovBox.payloadSize, 4 * 1024 * 1024)
+      const rawMoov = Buffer.allocUnsafe(maxMoovRead)
+      const { bytesRead } = await fh.read(rawMoov, 0, maxMoovRead, moovBox.payloadOffset)
+      moovBuf = rawMoov.subarray(0, bytesRead)
+    }
+  } finally {
+    await fh.close()
+  }
+
+  if (!moovBox || !moovBuf) {
+    return store({
+      hasMoov: false,
+      container: containerName,
+      codec: 'unknown',
+      avcProfile: null,
+      width: 0,
+      height: 0,
+      faststart: true,
+      universalDirectPlay: cleanExt !== '.mov',
+      strategy: cleanExt === '.mov' ? 'transcode' : 'direct',
+      reason: 'no_moov',
+    })
+  }
+
+  const faststart = firstMdatOffset === -1 || moovBox.offset < firstMdatOffset
+  const parsed = parseMoovVideoInfo(moovBuf)
+  const codec = parsed.codec || 'unknown'
+  const avcProfile = parsed.avcProfile
+  const isCompatAvc =
+    (codec === 'avc1' || codec === 'avc3') &&
+    (avcProfile === null || COMPAT_AVC_PROFILES.has(avcProfile))
+
+  if (isCompatAvc) {
+    if ((cleanExt === '.mp4' || cleanExt === '.m4v') && (faststart || info.size <= 512 * 1024)) {
+      return store({
+        hasMoov: true,
+        container: containerName,
+        codec,
+        avcProfile,
+        width: parsed.width,
+        height: parsed.height,
+        faststart,
+        universalDirectPlay: true,
+        strategy: 'direct',
+        reason: 'h264_yuv420p_faststart',
+      })
+    }
+    return store({
+      hasMoov: true,
+      container: containerName,
+      codec,
+      avcProfile,
+      width: parsed.width,
+      height: parsed.height,
+      faststart,
+      universalDirectPlay: false,
+      strategy: 'remux',
+      reason: cleanExt === '.mov' ? 'mov_h264_remux' : 'moov_at_tail',
+    })
+  }
+
+  if (codec === 'hvc1' && (cleanExt === '.mp4' || cleanExt === '.m4v') && (faststart || info.size <= 512 * 1024)) {
+    return store({
+      hasMoov: true,
+      container: containerName,
+      codec,
+      avcProfile: null,
+      width: parsed.width,
+      height: parsed.height,
+      faststart,
+      universalDirectPlay: false,
+      strategy: 'direct',
+      reason: 'hevc_hvc1',
+    })
+  }
+
+  const reason =
+    avcProfile === 244
+      ? 'h264_yuv444p'
+      : avcProfile !== null
+        ? `h264_profile_${avcProfile}`
+        : `codec_${codec}`
+
+  return store({
+    hasMoov: true,
+    container: containerName,
+    codec,
+    avcProfile,
+    width: parsed.width,
+    height: parsed.height,
+    faststart,
+    universalDirectPlay: false,
+    strategy: 'transcode',
+    reason,
+  })
+}
+
+async function getOrCreateFastRemuxMp4(
   realFile,
   info,
   { dshHome = '', execImpl = execFileAsync } = {},
 ) {
   const cacheDir = join(resolve(dshHome || '/tmp'), 'cache', 'thumbs')
   const key = createHash('sha1')
-    .update(`${realFile}:${info.size}:${Math.round(info.mtimeMs)}:h264`)
+    .update(`${realFile}:${info.size}:${Math.round(info.mtimeMs)}:remux1`)
     .digest('hex')
     .slice(0, 24)
-  const outPath = join(cacheDir, `${key}-h264.mp4`)
-  try {
-    const cachedInfo = await stat(outPath)
-    if (cachedInfo.isFile() && cachedInfo.size > 0) {
-      return { filePath: outPath, size: cachedInfo.size, mime: 'video/mp4' }
-    }
-  } catch {}
+  const outPath = join(cacheDir, `${key}-remux.mp4`)
 
-  await mkdir(cacheDir, { recursive: true })
-  const tmpOut = join(cacheDir, `${key}.tmp-${randomBytes(3).toString('hex')}.mp4`)
-  let converted = false
-  try {
-    await execImpl(
-      'ffmpeg',
-      ['-y', '-i', realFile, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'veryfast', '-crf', '25', '-movflags', '+faststart', '-c:a', 'aac', '-b:a', '128k', tmpOut],
-      { timeout: 45000 },
-    )
-    converted = true
-  } catch {
-    if (process.platform === 'darwin') {
-      try {
-        await execImpl(
-          '/usr/bin/avconvert',
-          ['--source', realFile, '--output', tmpOut, '--preset', 'PresetMediumQuality', '--replace'],
-          { timeout: 45000 },
-        )
-        converted = true
-      } catch {}
-    }
-  }
-  if (!converted) {
-    await rm(tmpOut, { force: true }).catch(() => {})
-    return null
-  }
-  try {
-    const outInfo = await stat(tmpOut)
-    if (!outInfo.isFile() || outInfo.size === 0) {
+  return withSingleFlightMediaJob(outPath, async () => {
+    try {
+      const cachedInfo = await stat(outPath)
+      if (cachedInfo.isFile() && cachedInfo.size > 0) {
+        return { filePath: outPath, size: cachedInfo.size, mime: 'video/mp4' }
+      }
+    } catch {}
+
+    await mkdir(cacheDir, { recursive: true })
+    const tmpOut = join(cacheDir, `${key}.tmp-${randomBytes(3).toString('hex')}.mp4`)
+    try {
+      await execImpl(
+        'ffmpeg',
+        ['-y', '-i', realFile, '-map', '0:v:0', '-map', '0:a?', '-c', 'copy', '-movflags', '+faststart', tmpOut],
+        { timeout: 25_000 },
+      )
+      const outInfo = await stat(tmpOut)
+      if (!outInfo.isFile() || outInfo.size === 0) {
+        await rm(tmpOut, { force: true }).catch(() => {})
+        return null
+      }
+      await rename(tmpOut, outPath)
+      void pruneMediaCacheDir(cacheDir)
+      return { filePath: outPath, size: outInfo.size, mime: 'video/mp4' }
+    } catch {
       await rm(tmpOut, { force: true }).catch(() => {})
       return null
     }
-    await rename(tmpOut, outPath)
-    void pruneMediaCacheDir(cacheDir)
-    return { filePath: outPath, size: outInfo.size, mime: 'video/mp4' }
-  } catch {
-    await rm(tmpOut, { force: true }).catch(() => {})
-    return null
-  }
+  })
+}
+
+async function getOrCreateCompatibleMp4(
+  realFile,
+  info,
+  { dshHome = '', execImpl = execFileAsync, platform = process.platform } = {},
+) {
+  const cacheDir = join(resolve(dshHome || '/tmp'), 'cache', 'thumbs')
+  const key = createHash('sha1')
+    .update(`${realFile}:${info.size}:${Math.round(info.mtimeMs)}:h264v2`)
+    .digest('hex')
+    .slice(0, 24)
+  const outPath = join(cacheDir, `${key}-h264.mp4`)
+
+  return withSingleFlightMediaJob(outPath, async () => {
+    try {
+      const cachedInfo = await stat(outPath)
+      if (cachedInfo.isFile() && cachedInfo.size > 0) {
+        return { filePath: outPath, size: cachedInfo.size, mime: 'video/mp4' }
+      }
+    } catch {}
+
+    await mkdir(cacheDir, { recursive: true })
+    const tmpOut = join(cacheDir, `${key}.tmp-${randomBytes(3).toString('hex')}.mp4`)
+    const evenScaleFilter = "scale='min(1920,trunc(iw/2)*2)':-2,format=yuv420p"
+    let converted = false
+
+    // 1. macOS Apple Silicon / Intel VideoToolbox hardware H.264 encoder (5-10x faster, ~0% CPU contention)
+    if (platform === 'darwin') {
+      try {
+        await execImpl(
+          'ffmpeg',
+          [
+            '-y',
+            '-i',
+            realFile,
+            '-vf',
+            evenScaleFilter,
+            '-c:v',
+            'h264_videotoolbox',
+            '-profile:v',
+            'high',
+            '-b:v',
+            '4M',
+            '-allow_sw',
+            '1',
+            '-movflags',
+            '+faststart',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '128k',
+            tmpOut,
+          ],
+          { timeout: 55_000 },
+        )
+        converted = true
+      } catch {
+        await rm(tmpOut, { force: true }).catch(() => {})
+      }
+    }
+
+    // 2. Cross-platform FFmpeg libx264 (Linux / Windows / macOS software fallback)
+    if (!converted) {
+      try {
+        await execImpl(
+          'ffmpeg',
+          [
+            '-y',
+            '-i',
+            realFile,
+            '-vf',
+            evenScaleFilter,
+            '-c:v',
+            'libx264',
+            '-profile:v',
+            'high',
+            '-pix_fmt',
+            'yuv420p',
+            '-preset',
+            'veryfast',
+            '-crf',
+            '24',
+            '-movflags',
+            '+faststart',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '128k',
+            tmpOut,
+          ],
+          { timeout: 55_000 },
+        )
+        converted = true
+      } catch {
+        await rm(tmpOut, { force: true }).catch(() => {})
+      }
+    }
+
+    // 3. Zero-dependency macOS built-in avconvert fallback (ships on every Mac even without Homebrew/FFmpeg)
+    if (!converted && platform === 'darwin') {
+      try {
+        await execImpl(
+          '/usr/bin/avconvert',
+          ['--source', realFile, '--output', tmpOut, '--preset', 'Preset1920x1080', '--replace'],
+          { timeout: 55_000 },
+        )
+        converted = true
+      } catch {
+        await rm(tmpOut, { force: true }).catch(() => {})
+      }
+    }
+
+    if (!converted) {
+      await rm(tmpOut, { force: true }).catch(() => {})
+      return null
+    }
+    try {
+      const outInfo = await stat(tmpOut)
+      if (!outInfo.isFile() || outInfo.size === 0) {
+        await rm(tmpOut, { force: true }).catch(() => {})
+        return null
+      }
+      await rename(tmpOut, outPath)
+      void pruneMediaCacheDir(cacheDir)
+      return { filePath: outPath, size: outInfo.size, mime: 'video/mp4' }
+    } catch {
+      await rm(tmpOut, { force: true }).catch(() => {})
+      return null
+    }
+  })
 }
 
 export function parseHttpByteRange(rangeHeader, totalSize, maxChunkBytes = DEFAULT_STREAM_CHUNK_BYTES) {
@@ -2294,6 +2688,7 @@ export async function readWorkspaceFileFastMeta(workspaceRoot, relPath = '', { e
     const etag = `W/"${info.size.toString(16)}-${mtimeMs.toString(16)}"`
 
     if (VIDEO_MIME[ext]) {
+      const videoProbe = await probeVideoCompatibility(realFile, info, ext).catch(() => null)
       return {
         ok: true,
         relPath: returnRelPath,
@@ -2304,6 +2699,7 @@ export async function readWorkspaceFileFastMeta(workspaceRoot, relPath = '', { e
         size: info.size,
         mtimeMs,
         etag,
+        ...(videoProbe ? { videoProbe } : {}),
       }
     }
 
@@ -2367,7 +2763,7 @@ export async function readWorkspaceFileFastMeta(workspaceRoot, relPath = '', { e
   }
 }
 
-export async function readWorkspaceFileStreamChunk(
+async function prepareWorkspaceFileStream(
   workspaceRoot,
   relPath = '',
   {
@@ -2375,158 +2771,198 @@ export async function readWorkspaceFileStreamChunk(
     ifNoneMatch = '',
     thumb = false,
     transcode = false,
+    download = false,
+    raw = false,
     dshHome = '',
     extraRoots = [],
     maxChunkBytes = DEFAULT_STREAM_CHUNK_BYTES,
     execImpl = execFileAsync,
+    platform = process.platform,
   } = {},
 ) {
-  try {
-    const resolved = await resolveWorkspaceOrArtifactFile(workspaceRoot, relPath, { extraRoots })
-    if (!resolved.ok) return { ok: false, status: 404, error: resolved.error }
-    const { realFile, info, ext, name } = resolved
+  const resolved = await resolveWorkspaceOrArtifactFile(workspaceRoot, relPath, { extraRoots })
+  if (!resolved.ok) return { ok: false, status: 404, error: resolved.error }
+  const { realFile, info, ext, name } = resolved
 
-    let streamFile = realFile
-    let streamSize = info.size
-    let streamMime = VIDEO_MIME[ext] || IMAGE_MIME[ext] || 'application/octet-stream'
-    let variant = 'orig'
+  let streamFile = realFile
+  let streamSize = info.size
+  let streamMime = VIDEO_MIME[ext] || IMAGE_MIME[ext] || 'application/octet-stream'
+  let variant = 'orig'
+  let transcodeUnavailable = false
 
-    if (thumb && IMAGE_MIME[ext]) {
-      const th = await getOrCreateSmartThumbnail(realFile, info, ext, { dshHome, execImpl })
-      if (th) {
-        streamFile = th.filePath
-        streamSize = th.size
-        streamMime = th.mime
-        variant = 'th'
-      }
-    } else if (transcode && VIDEO_MIME[ext]) {
-      const tc = await getOrCreateCompatibleMp4(realFile, info, { dshHome, execImpl })
+  if (thumb && IMAGE_MIME[ext] && !download && !raw) {
+    const th = await getOrCreateSmartThumbnail(realFile, info, ext, { dshHome, execImpl })
+    if (th) {
+      streamFile = th.filePath
+      streamSize = th.size
+      streamMime = th.mime
+      variant = 'th'
+    }
+  } else if (VIDEO_MIME[ext] && !download && !raw) {
+    if (transcode) {
+      const tc = await getOrCreateCompatibleMp4(realFile, info, { dshHome, execImpl, platform })
       if (tc) {
         streamFile = tc.filePath
         streamSize = tc.size
         streamMime = tc.mime
         variant = 'tc'
+      } else {
+        transcodeUnavailable = true
       }
-    }
-
-    const isThumb = variant === 'th'
-    const transcoded = variant === 'tc'
-    const mtimeMs = Math.round(info.mtimeMs)
-    const etag = `W/"${info.size.toString(16)}-${mtimeMs.toString(16)}-${variant}"`
-
-    if (!rangeHeader && ifNoneMatch && String(ifNoneMatch).trim() === etag) {
-      return {
-        ok: true,
-        status: 304,
-        name,
-        mime: streamMime,
-        etag,
-        isThumb,
-        transcoded,
-        headers: {
-          etag,
-          'cache-control': 'private, max-age=86400',
-        },
-        buffer: Buffer.alloc(0),
-      }
-    }
-
-    const baseHeaders = {
-      'content-type': streamMime,
-      'accept-ranges': 'bytes',
-      etag,
-      'cache-control': 'private, max-age=86400',
-    }
-
-    if (streamSize === 0) {
-      return {
-        ok: true,
-        status: 200,
-        name,
-        mime: streamMime,
-        etag,
-        isThumb,
-        transcoded,
-        headers: { ...baseHeaders, 'content-length': '0' },
-        buffer: Buffer.alloc(0),
-      }
-    }
-
-    const parsedRange = parseHttpByteRange(rangeHeader, streamSize, maxChunkBytes)
-    if (parsedRange) {
-      if (!parsedRange.ok) {
-        const contentRange = `bytes */${streamSize}`
-        return {
-          ok: false,
-          status: 416,
-          contentRange,
-          headers: { 'content-range': contentRange },
-          error: 'Requested Range Not Satisfiable',
+    } else {
+      const probe = await probeVideoCompatibility(realFile, info, ext).catch(() => null)
+      if (probe?.strategy === 'remux') {
+        const remuxed = await getOrCreateFastRemuxMp4(realFile, info, { dshHome, execImpl })
+        if (remuxed) {
+          streamFile = remuxed.filePath
+          streamSize = remuxed.size
+          streamMime = remuxed.mime
+          variant = 'remux'
+        } else if (ext === '.mov') {
+          const tc = await getOrCreateCompatibleMp4(realFile, info, { dshHome, execImpl, platform })
+          if (tc) {
+            streamFile = tc.filePath
+            streamSize = tc.size
+            streamMime = tc.mime
+            variant = 'tc'
+          } else {
+            transcodeUnavailable = true
+          }
+        }
+      } else if (probe?.strategy === 'transcode') {
+        const tc = await getOrCreateCompatibleMp4(realFile, info, { dshHome, execImpl, platform })
+        if (tc) {
+          streamFile = tc.filePath
+          streamSize = tc.size
+          streamMime = tc.mime
+          variant = 'tc'
+        } else {
+          transcodeUnavailable = true
         }
       }
-      const { start, end } = parsedRange
-      const chunkLen = end - start + 1
-      const fh = await open(streamFile, 'r')
-      let buf
-      try {
-        const rawBuf = Buffer.allocUnsafe(chunkLen)
-        const { bytesRead } = await fh.read(rawBuf, 0, chunkLen, start)
-        buf = rawBuf.subarray(0, bytesRead)
-      } finally {
-        await fh.close()
-      }
-      const contentRange = `bytes ${start}-${start + buf.length - 1}/${streamSize}`
-      return {
-        ok: true,
-        status: 206,
-        name,
-        mime: streamMime,
+    }
+  }
+
+  const isThumb = variant === 'th'
+  const transcoded = variant === 'tc'
+  const remuxed = variant === 'remux'
+  const mtimeMs = Math.round(info.mtimeMs)
+  const etag = `W/"${info.size.toString(16)}-${mtimeMs.toString(16)}-${variant}"`
+
+  if (!rangeHeader && ifNoneMatch && String(ifNoneMatch).trim() === etag) {
+    return {
+      ok: true,
+      status: 304,
+      name,
+      mime: streamMime,
+      etag,
+      variant,
+      isThumb,
+      transcoded,
+      remuxed,
+      transcodeUnavailable,
+      byteLength: 0,
+      headers: {
         etag,
-        isThumb,
-        transcoded,
+        'cache-control': 'private, max-age=86400',
+      },
+      buffer: Buffer.alloc(0),
+    }
+  }
+
+  const baseHeaders = {
+    'content-type': streamMime,
+    'accept-ranges': 'bytes',
+    etag,
+    'cache-control': 'private, max-age=86400',
+  }
+
+  if (streamSize === 0) {
+    return {
+      ok: true,
+      status: 200,
+      name,
+      mime: streamMime,
+      etag,
+      variant,
+      isThumb,
+      transcoded,
+      remuxed,
+      transcodeUnavailable,
+      byteLength: 0,
+      headers: { ...baseHeaders, 'content-length': '0' },
+      buffer: Buffer.alloc(0),
+    }
+  }
+
+  const parsedRange = parseHttpByteRange(rangeHeader, streamSize, maxChunkBytes)
+  if (parsedRange) {
+    if (!parsedRange.ok) {
+      const contentRange = `bytes */${streamSize}`
+      return {
+        ok: false,
+        status: 416,
         contentRange,
-        headers: {
-          ...baseHeaders,
-          'content-range': contentRange,
-          'content-length': String(buf.length),
-        },
-        buffer: buf,
+        headers: { 'content-range': contentRange },
+        error: 'Requested Range Not Satisfiable',
       }
     }
-
-    // Non-Range GET: cap single non-range read at 16 MiB to protect memory
-    const maxNonRange = 16 * 1024 * 1024
-    let fullBuf
-    if (streamSize > maxNonRange) {
-      const fh = await open(streamFile, 'r')
-      try {
-        const rawBuf = Buffer.allocUnsafe(maxNonRange)
-        const { bytesRead } = await fh.read(rawBuf, 0, maxNonRange, 0)
-        fullBuf = rawBuf.subarray(0, bytesRead)
-      } finally {
-        await fh.close()
-      }
-      const contentRange = `bytes 0-${fullBuf.length - 1}/${streamSize}`
-      return {
-        ok: true,
-        status: 206,
-        name,
-        mime: streamMime,
-        etag,
-        isThumb,
-        transcoded,
-        contentRange,
-        headers: {
-          ...baseHeaders,
-          'content-range': contentRange,
-          'content-length': String(fullBuf.length),
-        },
-        buffer: fullBuf,
-      }
+    const { start, end } = parsedRange
+    const chunkLen = end - start + 1
+    const contentRange = `bytes ${start}-${end}/${streamSize}`
+    return {
+      ok: true,
+      status: 206,
+      name,
+      mime: streamMime,
+      etag,
+      variant,
+      isThumb,
+      transcoded,
+      remuxed,
+      transcodeUnavailable,
+      contentRange,
+      byteLength: chunkLen,
+      headers: {
+        ...baseHeaders,
+        'content-range': contentRange,
+        'content-length': String(chunkLen),
+      },
+      streamSpec: { filePath: streamFile, start, end },
     }
+  }
 
-    fullBuf = await readFile(streamFile)
-    if (!IMAGE_MIME[ext] && !VIDEO_MIME[ext] && !fullBuf.includes(0)) {
+  // Non-Range GET: cap single HTTP/1.1 tunnel slice at 16 MiB (safe below Cloud Run / Cloudflare 32 MiB gateway ceiling)
+  const maxNonRange = 16 * 1024 * 1024
+  if (streamSize > maxNonRange) {
+    const end = maxNonRange - 1
+    const contentRange = `bytes 0-${end}/${streamSize}`
+    return {
+      ok: true,
+      status: 206,
+      name,
+      mime: streamMime,
+      etag,
+      variant,
+      isThumb,
+      transcoded,
+      remuxed,
+      transcodeUnavailable,
+      contentRange,
+      byteLength: maxNonRange,
+      headers: {
+        ...baseHeaders,
+        'content-range': contentRange,
+        'content-length': String(maxNonRange),
+      },
+      streamSpec: { filePath: streamFile, start: 0, end },
+    }
+  }
+
+  // Small text files (non-image, non-video) still undergo secret redaction
+  if (!IMAGE_MIME[ext] && !VIDEO_MIME[ext]) {
+    const fullBuf = await readFile(streamFile)
+    if (!fullBuf.includes(0)) {
       const redacted = Buffer.from(redactText(fullBuf.toString('utf8')), 'utf8')
       return {
         ok: true,
@@ -2534,8 +2970,12 @@ export async function readWorkspaceFileStreamChunk(
         name,
         mime: 'text/plain; charset=utf-8',
         etag,
+        variant,
         isThumb,
         transcoded,
+        remuxed,
+        transcodeUnavailable,
+        byteLength: redacted.length,
         headers: {
           ...baseHeaders,
           'content-type': 'text/plain; charset=utf-8',
@@ -2544,21 +2984,87 @@ export async function readWorkspaceFileStreamChunk(
         buffer: redacted,
       }
     }
-
     return {
       ok: true,
       status: 200,
       name,
       mime: streamMime,
       etag,
+      variant,
       isThumb,
       transcoded,
+      remuxed,
+      transcodeUnavailable,
+      byteLength: fullBuf.length,
       headers: {
         ...baseHeaders,
         'content-length': String(fullBuf.length),
         'content-disposition': `inline; filename="${encodeURIComponent(name)}"`,
       },
       buffer: fullBuf,
+    }
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    name,
+    mime: streamMime,
+    etag,
+    variant,
+    isThumb,
+    transcoded,
+    remuxed,
+    transcodeUnavailable,
+    byteLength: streamSize,
+    headers: {
+      ...baseHeaders,
+      'content-length': String(streamSize),
+      'content-disposition': `inline; filename="${encodeURIComponent(name)}"`,
+    },
+    streamSpec: { filePath: streamFile, start: 0, end: streamSize - 1 },
+  }
+}
+
+export async function openWorkspaceFileStream(workspaceRoot, relPath = '', options = {}) {
+  try {
+    const prep = await prepareWorkspaceFileStream(workspaceRoot, relPath, options)
+    if (!prep.ok || prep.buffer !== undefined || !prep.streamSpec) {
+      return prep
+    }
+    const { filePath, start, end } = prep.streamSpec
+    const { streamSpec: _ignored, ...rest } = prep
+    return {
+      ...rest,
+      createBodyStream: () => createReadStream(filePath, { start, end }),
+    }
+  } catch (error) {
+    return { ok: false, status: 404, error: error?.message || '读取文件流失败' }
+  }
+}
+
+export async function readWorkspaceFileStreamChunk(workspaceRoot, relPath = '', options = {}) {
+  try {
+    const prep = await prepareWorkspaceFileStream(workspaceRoot, relPath, options)
+    if (!prep.ok || prep.buffer !== undefined || !prep.streamSpec) {
+      return prep
+    }
+    const { filePath, start, end } = prep.streamSpec
+    const { streamSpec: _ignored, ...rest } = prep
+    const chunkLen = end - start + 1
+    const fh = await open(filePath, 'r')
+    let buf
+    try {
+      const rawBuf = Buffer.allocUnsafe(chunkLen)
+      const { bytesRead } = await fh.read(rawBuf, 0, chunkLen, start)
+      buf = rawBuf.subarray(0, bytesRead)
+    } finally {
+      await fh.close()
+    }
+    return {
+      ...rest,
+      byteLength: buf.length,
+      buffer: buf,
     }
   } catch (error) {
     return { ok: false, status: 404, error: error?.message || '读取文件流失败' }

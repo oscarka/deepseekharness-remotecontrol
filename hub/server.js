@@ -4,6 +4,8 @@ import { accessSync, constants, existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { createGzip, gunzipSync, gzip, constants as zlibConstants } from 'node:zlib'
@@ -194,6 +196,7 @@ export function createHubServer({
   }
   const buildInfo = resolveBuildInfo(hub.now ? hub.now() : Date.now())
   hub.buildInfo = buildInfo
+  hub.setTokenSecret?.(expectedToken)
 
   function extractCandidateToken(headers = {}, urlObj) {
     const authHeader = String(headers.authorization ?? headers.Authorization ?? '').trim()
@@ -241,6 +244,7 @@ export function createHubServer({
     headers = {},
     body = {},
     rawBuffer = null,
+    rawStream = null,
     remoteAddress = '',
   }) {
     const protoHeader = String(headers['x-forwarded-proto'] ?? headers['X-Forwarded-Proto'] ?? '')
@@ -514,6 +518,7 @@ export function createHubServer({
           try {
             meta = JSON.parse(Buffer.from(rawMetaHeader, 'base64url').toString('utf8'))
           } catch {
+            rawStream?.resume?.()
             return { status: 400, json: { ok: false, error: 'Invalid x-fs-meta header' } }
           }
         } else if (body && typeof body === 'object') {
@@ -521,6 +526,7 @@ export function createHubServer({
         }
         const targetHostId = String(meta?.hostId ?? '').trim()
         if (!checkHostOrAdminAuth(headers, urlObj, targetHostId)) {
+          rawStream?.resume?.()
           return {
             status: 401,
             json: {
@@ -530,8 +536,24 @@ export function createHubServer({
             },
           }
         }
-        const outcome = hub.fulfillFastFsRequest(reqId, meta, rawBuffer)
-        return { status: outcome.ok ? 200 : outcome.status || 404, json: outcome }
+        const isZeroBody = meta?.ok === false || Number(meta?.status) === 304
+        if (isZeroBody && rawStream) {
+          rawStream.resume?.()
+        }
+        const outcome = hub.fulfillFastFsRequest(
+          reqId,
+          meta,
+          isZeroBody ? Buffer.alloc(0) : rawBuffer,
+          isZeroBody ? null : rawStream,
+        )
+        if (!outcome.ok) {
+          rawStream?.resume?.()
+          return { status: outcome.status || 404, json: outcome }
+        }
+        if (outcome.streamDone) {
+          await outcome.streamDone
+        }
+        return { status: 200, json: { ok: true, reqId: outcome.reqId, hostId: outcome.hostId } }
       }
 
       const isSharedHostEndpoint =
@@ -597,6 +619,7 @@ export function createHubServer({
           return { status: 400, json: { ok: false, error: '新密码长度不能少于 6 位' } }
         }
         expectedToken = nextToken
+        hub.setTokenSecret?.(expectedToken, { rotateSeed: true })
         return { status: 200, json: { ok: true } }
       }
 
@@ -754,8 +777,10 @@ export function createHubServer({
         const thumb = urlObj.searchParams.get('thumb') === '1'
         const transcode = urlObj.searchParams.get('transcode') === '1'
         const download = urlObj.searchParams.get('download') === '1'
+        const raw = urlObj.searchParams.get('raw') === '1'
         const rangeHeader = String(headers.range ?? headers.Range ?? '').trim()
         const ifNoneMatch = String(headers['if-none-match'] ?? headers['If-None-Match'] ?? '').trim()
+        const isVideoPath = /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i.test(reqPath)
         const out = await hub.dispatchFastFsRequest(
           hostId,
           {
@@ -767,12 +792,16 @@ export function createHubServer({
             ifNoneMatch,
             thumb,
             transcode,
+            download,
+            raw,
           },
-          { timeoutMs: transcode ? 45_000 : 15_000 },
+          { timeoutMs: transcode || download || isVideoPath ? 60_000 : 30_000 },
         )
         const mtParam = String(urlObj.searchParams.get('mt') ?? '').trim()
         const hasMediaTicket = Boolean(mtParam && hub.verifyMediaTicket(mtParam))
         if (out.status === 304) {
+          out.stream?.resume?.()
+          out.onStreamDone?.()
           return {
             status: 304,
             headers: {
@@ -785,6 +814,8 @@ export function createHubServer({
           }
         }
         if (!out.ok) {
+          out.stream?.resume?.()
+          out.onStreamDone?.()
           return {
             status: out.status || 404,
             headers: {
@@ -795,24 +826,46 @@ export function createHubServer({
             json: out.meta || { ok: false, error: 'File stream failed' },
           }
         }
-        const buf = out.buffer ?? Buffer.from(out.meta?.content ?? '', 'utf8')
-        const respHeaders = {
+        const exposeHeaders =
+          'content-range, content-length, accept-ranges, etag, x-dsh-media-variant, x-dsh-remuxed, x-dsh-transcoded, x-dsh-transcode-unavailable'
+        const commonMediaHeaders = {
           'content-type': out.meta?.mime || 'application/octet-stream',
-          'content-length': String(buf.length),
           'accept-ranges': 'bytes',
           'cache-control': 'private, max-age=300',
+          'access-control-expose-headers': exposeHeaders,
           ...(hasMediaTicket && !download ? { 'access-control-allow-origin': '*' } : {}),
           ...(out.meta?.etag ? { etag: out.meta.etag } : {}),
           ...(out.meta?.contentRange ? { 'content-range': out.meta.contentRange } : {}),
+          ...(out.meta?.variant ? { 'x-dsh-media-variant': String(out.meta.variant) } : {}),
           ...(out.meta?.isThumb ? { 'x-dsh-thumb': '1' } : {}),
+          ...(out.meta?.remuxed ? { 'x-dsh-remuxed': '1' } : {}),
           ...(out.meta?.transcoded ? { 'x-dsh-transcoded': '1' } : {}),
+          ...(out.meta?.transcodeUnavailable ? { 'x-dsh-transcode-unavailable': '1' } : {}),
           ...(download && out.meta?.name
             ? { 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(out.meta.name)}` }
             : {}),
         }
+        if (out.stream) {
+          const declaredByteLen = Number(out.meta?.byteLength)
+          return {
+            status: out.status || 200,
+            headers: {
+              ...commonMediaHeaders,
+              ...(Number.isFinite(declaredByteLen) && declaredByteLen >= 0
+                ? { 'content-length': String(declaredByteLen) }
+                : {}),
+            },
+            stream: out.stream,
+            onStreamDone: out.onStreamDone,
+          }
+        }
+        const buf = out.buffer ?? Buffer.from(out.meta?.content ?? '', 'utf8')
         return {
           status: out.status || 200,
-          headers: respHeaders,
+          headers: {
+            ...commonMediaHeaders,
+            'content-length': String(buf.length),
+          },
           buffer: buf,
         }
       }
@@ -1208,22 +1261,95 @@ export function createHubServer({
       }
 
       const contentType = String(req.headers['content-type'] ?? '').toLowerCase()
+      const fsTunnelPathMatch =
+        req.method === 'POST' ? /^\/api\/fs-tunnel\/([^/]+)$/.exec(urlObj.pathname) : null
       const isBinaryFsTunnel =
-        req.method === 'POST' &&
-        urlObj.pathname.startsWith('/api/fs-tunnel/') &&
+        Boolean(fsTunnelPathMatch) &&
         (contentType.includes('application/octet-stream') || Boolean(req.headers['x-fs-meta']))
-      const rawBuffer = isBinaryFsTunnel ? await readRawBodyBuffer(req, 16 * 1024 * 1024) : null
-      const body = req.method === 'POST' && !isBinaryFsTunnel ? await readJsonBody(req) : {}
+      if (isBinaryFsTunnel) {
+        const reqId = decodeURIComponent(fsTunnelPathMatch[1])
+        const rawMetaHeader = String(req.headers['x-fs-meta'] ?? '').trim()
+        let meta = {}
+        if (rawMetaHeader) {
+          try {
+            meta = JSON.parse(Buffer.from(rawMetaHeader, 'base64url').toString('utf8'))
+          } catch {
+            req.resume()
+            await sendJson(res, 400, { ok: false, error: 'Invalid x-fs-meta header' }, req.headers)
+            return
+          }
+        }
+        const targetHostId = String(meta?.hostId ?? '').trim()
+        if (!checkHostOrAdminAuth(req.headers, urlObj, targetHostId)) {
+          req.resume()
+          await sendJson(
+            res,
+            401,
+            {
+              ok: false,
+              error: 'Unauthorized: valid HUB_TOKEN or active Host Token required',
+              authRequired: true,
+            },
+            req.headers,
+          )
+          return
+        }
+        const contentLenHeader = req.headers['content-length']
+        const isZeroBody =
+          meta?.ok === false ||
+          Number(meta?.status) === 304 ||
+          (contentLenHeader !== undefined && Number(contentLenHeader) === 0)
+        if (isZeroBody) {
+          req.resume()
+          const outcome = hub.fulfillFastFsRequest(reqId, meta, Buffer.alloc(0))
+          await sendJson(res, outcome.ok ? 200 : outcome.status || 404, outcome, req.headers)
+          return
+        }
+        const outcome = hub.fulfillFastFsRequest(reqId, meta, null, req)
+        if (!outcome.ok) {
+          req.resume()
+          await sendJson(res, outcome.status || 404, outcome, req.headers)
+          return
+        }
+        await outcome.streamDone
+        if (!res.destroyed && !res.writableEnded) {
+          await sendJson(
+            res,
+            200,
+            { ok: true, reqId: outcome.reqId, hostId: outcome.hostId },
+            req.headers,
+          )
+        }
+        return
+      }
+      const body = req.method === 'POST' ? await readJsonBody(req) : {}
       const result = await dispatchRequest({
         method: req.method,
         url: req.url,
         headers: req.headers,
         body,
-        rawBuffer,
+        rawBuffer: null,
         remoteAddress: req.socket?.remoteAddress || '',
       })
       if (result.json !== undefined) {
         await sendJson(res, result.status, result.json, req.headers)
+      } else if (result.stream) {
+        if (res.destroyed || res.writableEnded) {
+          result.stream.destroy?.()
+          result.onStreamDone?.()
+          return
+        }
+        res.writeHead(result.status, result.headers || {})
+        try {
+          await pipeline(result.stream, res)
+        } catch {
+          result.stream.destroy?.()
+          try {
+            res.end()
+          } catch {}
+        } finally {
+          result.onStreamDone?.()
+        }
       } else if (result.buffer !== undefined) {
         res.writeHead(result.status, result.headers || {})
         res.end(result.buffer)
@@ -1270,8 +1396,13 @@ export function createHubServer({
         (contentType.includes('application/octet-stream') || Boolean(headers['x-fs-meta'] ?? headers['X-Fs-Meta']))
       let parsedBody = {}
       let rawBuffer = null
+      let rawStream = null
       if (isBinaryTunnel) {
-        if (Buffer.isBuffer(init.body) || init.body instanceof Uint8Array) {
+        if (init.body && typeof init.body.getReader === 'function') {
+          rawStream = Readable.fromWeb(init.body)
+        } else if (init.body && typeof init.body.pipe === 'function') {
+          rawStream = init.body
+        } else if (Buffer.isBuffer(init.body) || init.body instanceof Uint8Array) {
           rawBuffer = Buffer.from(init.body)
         } else if (typeof init.body === 'string') {
           rawBuffer = Buffer.from(init.body, 'utf8')
@@ -1295,8 +1426,20 @@ export function createHubServer({
         headers,
         body: parsedBody,
         rawBuffer,
+        rawStream,
         remoteAddress: init.remoteAddress || '',
       })
+      if (out.stream) {
+        const chunks = []
+        try {
+          for await (const chunk of out.stream) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+          }
+        } finally {
+          out.onStreamDone?.()
+        }
+        out.buffer = Buffer.concat(chunks)
+      }
       return {
         status: out.status,
         ok: out.status >= 200 && out.status < 300,

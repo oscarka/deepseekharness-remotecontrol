@@ -17,11 +17,19 @@ const APPROVAL_SETTLING_TTL_MS = 45_000
 const APPROVAL_SETTLED_COOL_MS = 15_000
 
 export class HubCore {
-  constructor({ stateFile = '', now = () => Date.now(), pushFetch = globalThis.fetch, buildInfo = null } = {}) {
+  constructor({
+    stateFile = '',
+    now = () => Date.now(),
+    pushFetch = globalThis.fetch,
+    buildInfo = null,
+    tokenSecret = '',
+  } = {}) {
     this.stateFile = stateFile
     this.now = now
     this.pushFetch = pushFetch
     this.buildInfo = buildInfo
+    this.tokenSecret = String(tokenSecret ?? '').trim()
+    this.mediaSeed = randomBytes(32).toString('hex')
     this.activeHostId = ''
     this.hosts = new Map()
     this.snapshots = new Map()
@@ -48,10 +56,24 @@ export class HubCore {
     this.hostCommandListeners = new Set()
     this.hostFsListeners = new Set()
     this.fullTranscriptCache = new Map()
-    this.mediaTicketSecret = randomBytes(32)
     this.pendingFsRequests = new Map()
     this.fsHotCache = new Map()
     this.stateSeq = 1
+  }
+
+  setTokenSecret(secret = '', { rotateSeed = false } = {}) {
+    this.tokenSecret = String(secret ?? '').trim()
+    if (rotateSeed) {
+      this.mediaSeed = randomBytes(32).toString('hex')
+      void this.persist()
+    }
+  }
+
+  getPrimaryMediaTicketKey() {
+    if (this.tokenSecret) {
+      return createHmac('sha256', this.tokenSecret).update('dsh-media-ticket-v1').digest()
+    }
+    return Buffer.from(this.mediaSeed, 'hex')
   }
 
   onStateChange(listener) {
@@ -110,6 +132,9 @@ export class HubCore {
       const text = await readFile(this.stateFile, 'utf8')
       const data = JSON.parse(text)
       if (typeof data.activeHostId === 'string') this.activeHostId = data.activeHostId
+      if (typeof data.mediaSeed === 'string' && /^[0-9a-f]{64}$/i.test(data.mediaSeed)) {
+        this.mediaSeed = data.mediaSeed.toLowerCase()
+      }
       if (data.vapidKeys?.publicKey && data.vapidKeys?.privateJwk) {
         this.vapidKeys = generateOrLoadVapidKeys(data.vapidKeys)
       }
@@ -424,6 +449,7 @@ export class HubCore {
       const now = this.now()
       const payload = {
         activeHostId: this.activeHostId,
+        mediaSeed: this.mediaSeed,
         vapidKeys: this.vapidKeys,
         pushSubscriptions: [...this.pushSubscriptions.values()],
         hosts: [...this.hosts.values()].map(h => ({
@@ -2399,8 +2425,8 @@ export class HubCore {
 
   issueMediaTicket(now = this.now()) {
     const bucketMs = 30 * 60_000
-    const exp = Math.ceil((now + 60 * 60_000) / bucketMs) * bucketMs
-    const sig = createHmac('sha256', this.mediaTicketSecret)
+    const exp = Math.ceil((now + 2 * 60 * 60_000) / bucketMs) * bucketMs
+    const sig = createHmac('sha256', this.getPrimaryMediaTicketKey())
       .update(`mt1.${exp}`)
       .digest('base64url')
     return `mt1.${exp}.${sig}`
@@ -2414,13 +2440,21 @@ export class HubCore {
     const exp = Number(parts[1])
     const sig = parts[2]
     if (!Number.isFinite(exp) || exp <= now || !sig) return false
-    const expected = createHmac('sha256', this.mediaTicketSecret)
-      .update(`mt1.${exp}`)
-      .digest('base64url')
+    const candidateKeys = [this.getPrimaryMediaTicketKey()]
+    if (this.tokenSecret && this.mediaSeed) {
+      candidateKeys.push(Buffer.from(this.mediaSeed, 'hex'))
+    }
     const a = Buffer.from(sig, 'utf8')
-    const b = Buffer.from(expected, 'utf8')
-    if (a.length !== b.length) return false
-    return timingSafeEqual(a, b)
+    for (const key of candidateKeys) {
+      const expected = createHmac('sha256', key)
+        .update(`mt1.${exp}`)
+        .digest('base64url')
+      const b = Buffer.from(expected, 'utf8')
+      if (a.length === b.length && timingSafeEqual(a, b)) {
+        return true
+      }
+    }
+    return false
   }
 
   storeFsHotCache(hostId, relPath, value, ttlMs = 10 * 60_000) {
@@ -2507,6 +2541,8 @@ export class HubCore {
       ifNoneMatch: String(reqSpec.ifNoneMatch || ''),
       thumb: Boolean(reqSpec.thumb),
       transcode: Boolean(reqSpec.transcode),
+      download: Boolean(reqSpec.download),
+      raw: Boolean(reqSpec.raw),
       createdAt: now,
     }
     return new Promise(resolve => {
@@ -2515,7 +2551,7 @@ export class HubCore {
         resolve({
           ok: false,
           status: 504,
-          meta: { ok: false, status: 504, error: '等待电脑端响应文件流超时（12s）' },
+          meta: { ok: false, status: 504, error: `等待电脑端响应文件流超时（${Math.round(timeoutMs / 1000)}s）` },
           buffer: null,
         })
       }, timeoutMs)
@@ -2534,7 +2570,7 @@ export class HubCore {
     })
   }
 
-  fulfillFastFsRequest(reqId, meta = {}, buffer = null) {
+  fulfillFastFsRequest(reqId, meta = {}, buffer = null, stream = null) {
     const cleanId = String(reqId ?? '').trim()
     const entry = this.pendingFsRequests.get(cleanId)
     if (!entry) {
@@ -2542,12 +2578,27 @@ export class HubCore {
     }
     clearTimeout(entry.timer)
     this.pendingFsRequests.delete(cleanId)
+    let onStreamDone = null
+    let streamDone = null
+    const hasStream = Boolean(stream && (typeof stream.pipe === 'function' || Symbol.asyncIterator in stream))
+    if (hasStream) {
+      streamDone = new Promise(resolveDone => {
+        let settled = false
+        onStreamDone = () => {
+          if (settled) return
+          settled = true
+          resolveDone()
+        }
+      })
+    }
     entry.resolve({
       ok: meta?.ok !== false,
       status: Number(meta?.status) || (meta?.ok === false ? 400 : 200),
       meta: meta || {},
       buffer: Buffer.isBuffer(buffer) ? buffer : null,
+      stream: hasStream ? stream : null,
+      onStreamDone,
     })
-    return { ok: true, reqId: cleanId, hostId: entry.hostId }
+    return { ok: true, reqId: cleanId, hostId: entry.hostId, streamDone }
   }
 }

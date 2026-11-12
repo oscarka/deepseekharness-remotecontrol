@@ -2,6 +2,20 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.6.9] - 2026-11-12
+
+### Added
+
+- **零依赖智能媒体探测与三档自适应兼容流引擎（`workspace-ops.js` / `controller.js` / `filePreview.ts`）**：
+  - 纯 Node.js 零外部依赖解析 ISO BMFF（`.mp4` / `.m4v` / `.mov`）盒子结构与 `avcC` 编码档位（`< 2ms`），自动分流 **L1 原画直出**（`H.264 yuv420p + faststart`）、**L2 无损毫秒级重封装**（`ffmpeg -c copy -movflags +faststart`，解决 `moov` 索引在文件尾或 `.mov` 容器）与 **L3 硬件优先兼容转码**（macOS `h264_videotoolbox` 硬件加速 → 跨平台 `libx264` 偶像素缩放保底 → macOS 原生 `/usr/bin/avconvert Preset1920x1080` 免依赖兜底，彻底解决 Blender / OpenCV 默认导出 `H.264 High 4:4:4 yuv444p`、`mp4v`、`hev1`、`.webm`、`.mkv`、`.avi` 在 iOS Safari 无法播放的问题），并内置并发请求单航道锁（Single-Flight Lock）与前端 `<video>` 错误 + 黑屏双保险自动降级。
+
+### Changed
+
+- **全链路真流式穿透隧道（True Stream Piping）与大文件多段无损拼接下载（`server.js` / `hub-core.js` / `hub-agent.js` / `controller.js`）**：
+  - 移除 `/api/fs-tunnel/:reqId` 原先整块缓存在云端内存的 `readRawBodyBuffer` 存储转发，改为 `createReadStream` → `Readable.toWeb` → `stream.pipeline` 零缓冲直通转发，首字节响应（TTFB）降至 `< 100ms`，彻底消除跨国大视频上传引发的 `15s 504` 超时与云端内存峰值；`download=1` 遇到 `> 16 MiB` 文件返回 `HTTP 206` 时，前端自动循环拉取后续 `Range` 分片并无损拼装原始字节（规避 Cloud Run HTTP/1.1 `32 MiB` 网关单请求上限与 `16 MiB` 截断）。
+- **无状态确定性媒体票据（Stateless Deterministic `mediaTicket`）**：
+  - `HubCore` 基于 `HUB_TOKEN` 通过 HMAC-SHA256 确定性派生 `mediaTicket` 签名密钥（无密码本地模式持久化 `mediaSeed`，修改管理员密码时立即轮转失效），Cloud Run 缩容冷启动、Railway 重部署或多实例负载均衡下手机已打开页面的图片/视频流不再出现偶发 `401`。
+
 ## [0.6.8] - 2026-11-12
 
 ### Added

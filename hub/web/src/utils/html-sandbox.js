@@ -74,3 +74,4 @@ export function buildSandboxedHtmlSrcdoc(rawHtml, opts = {}) {
 
   return html;
 }
+

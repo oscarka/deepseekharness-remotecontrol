@@ -13,8 +13,17 @@ export interface FilePreviewData {
   hasBlob?: boolean;
   previewUrl?: string;
   streamUrl?: string;
+  videoProbe?: {
+    strategy?: string;
+    codec?: string;
+    avcProfile?: number | null;
+    faststart?: boolean;
+    universalDirectPlay?: boolean;
+    reason?: string;
+  } | null;
   _origImage?: boolean;
   _transcodeVideo?: boolean;
+  _rawVideo?: boolean;
   _showInDrawer?: boolean;
   _showInMain?: boolean;
 }
@@ -47,6 +56,7 @@ export function buildFastStreamUrl(
     thumb?: boolean;
     transcode?: boolean;
     download?: boolean;
+    raw?: boolean;
     mediaTicket?: string;
   } = {}
 ): string {
@@ -56,6 +66,7 @@ export function buildFastStreamUrl(
   if (opts.thumb) qp.set('thumb', '1');
   if (opts.transcode) qp.set('transcode', '1');
   if (opts.download) qp.set('download', '1');
+  if (opts.raw) qp.set('raw', '1');
   const raw = `/api/hosts/${encodeURIComponent(hostId)}/fs/stream?${qp.toString()}`;
   return appendMediaAuth(raw, opts.mediaTicket || '');
 }
@@ -67,7 +78,7 @@ export function previewKind(
   if (!preview) return 'none';
   if (
     preview.kind === 'video' ||
-    /\.(mp4|m4v|mov|webm|ogv)$/i.test(preview.name || preview.relPath || '')
+    /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i.test(preview.name || preview.relPath || '')
   ) {
     return 'video';
   }
@@ -106,7 +117,11 @@ export function videoPreviewSrc(preview: FilePreviewData, mediaTicket = ''): str
   const raw = preview.streamUrl || preview.previewUrl || '';
   if (!raw) return '';
   const sep = raw.includes('?') ? '&' : '?';
-  const withMode = preview._transcodeVideo ? `${raw}${sep}transcode=1` : raw;
+  const withMode = preview._rawVideo
+    ? `${raw}${sep}raw=1`
+    : preview._transcodeVideo
+      ? `${raw}${sep}transcode=1`
+      : raw;
   return appendMediaAuth(withMode, mediaTicket);
 }
 

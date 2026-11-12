@@ -26,8 +26,11 @@ import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHom
 import { createHubServer } from '../../hub/server.js'
 import { HubCore } from '../../hub/hub-core.js'
 import {
+  openWorkspaceFileStream,
   parseHttpByteRange,
   parseImageDimensions,
+  parseMoovVideoInfo,
+  probeVideoCompatibility,
   readWorkspaceFileFastMeta,
   readWorkspaceFileStreamChunk,
 } from '../lib/workspace-ops.js'
@@ -5843,4 +5846,408 @@ test('v0.6.8: sandboxed mobile HTML live preview, relative mt asset rewriting, C
   assert.equal(translateZhStringToEn('⬇️ 保存/分享视频'), '⬇️ Save / Share Video')
   assert.equal(translateZhStringToEn('🌐 交互预览'), '🌐 Live Preview')
   assert.equal(translateZhStringToEn('‹ 返回对话'), '‹ Back to Chat')
+})
+
+test('v0.6.9: 3-tier ISO BMFF video probe, single-flight remux/transcode, stream-piped tunnel, multi-Range >16MiB lossless download & stateless mediaTicket', async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-v069-media-'))
+  try {
+    const wsDir = join(tmpDir, 'workspace')
+    const dshHome = join(tmpDir, 'dsh-home')
+    await mkdir(wsDir, { recursive: true })
+    await mkdir(dshHome, { recursive: true })
+
+    const makeIsoBox = (type, payload) => {
+      const buf = Buffer.allocUnsafe(8 + payload.length)
+      buf.writeUInt32BE(8 + payload.length, 0)
+      buf.write(type, 4, 4, 'ascii')
+      payload.copy(buf, 8)
+      return buf
+    }
+    const buildSyntheticMp4 = ({ codec = 'avc1', avcProfile = 100, avcLevel = 40, width = 1920, height = 1080, faststart = true, mdatBytes = 600 * 1024 }) => {
+      const ftyp = makeIsoBox('ftyp', Buffer.from('isom\x00\x00\x02\x00isomiso2avc1mp41', 'binary'))
+      const hdlrPayload = Buffer.alloc(24)
+      hdlrPayload.write('vide', 8, 4, 'ascii')
+      const hdlr = makeIsoBox('hdlr', hdlrPayload)
+
+      const avcCPayload = Buffer.from([1, avcProfile, 0, avcLevel, 0xff, 0xe1, 0x00, 0x00])
+      const avcC = makeIsoBox('avcC', avcCPayload)
+      const visualHeader = Buffer.alloc(78)
+      visualHeader.writeUInt16BE(width, 24)
+      visualHeader.writeUInt16BE(height, 26)
+      const sampleEntry = makeIsoBox(codec, Buffer.concat([visualHeader, avcC]))
+
+      const stsdHdr = Buffer.alloc(8)
+      stsdHdr.writeUInt32BE(1, 4)
+      const stsd = makeIsoBox('stsd', Buffer.concat([stsdHdr, sampleEntry]))
+      const stbl = makeIsoBox('stbl', stsd)
+      const minf = makeIsoBox('minf', stbl)
+      const mdia = makeIsoBox('mdia', Buffer.concat([hdlr, minf]))
+      const trak = makeIsoBox('trak', mdia)
+      const moov = makeIsoBox('moov', trak)
+
+      const mdatPayload = Buffer.alloc(mdatBytes, 0x5a)
+      const mdat = makeIsoBox('mdat', mdatPayload)
+      return faststart ? Buffer.concat([ftyp, moov, mdat]) : Buffer.concat([ftyp, mdat, moov])
+    }
+
+    const directMp4Buf = buildSyntheticMp4({ avcProfile: 100, faststart: true, mdatBytes: 64 * 1024 })
+    const tailMoovMp4Buf = buildSyntheticMp4({ avcProfile: 100, faststart: false, mdatBytes: 600 * 1024 })
+    const yuv444Mp4Buf = buildSyntheticMp4({ avcProfile: 244, faststart: false, mdatBytes: 96 * 1024 })
+
+    const directPath = join(wsDir, 'direct_420p.mp4')
+    const remuxPath = join(wsDir, 'tail_moov_420p.mp4')
+    const yuv444Path = join(wsDir, 'blender_444p.mp4')
+    const mkvPath = join(wsDir, 'capture.mkv')
+    await writeFile(directPath, directMp4Buf)
+    await writeFile(remuxPath, tailMoovMp4Buf)
+    await writeFile(yuv444Path, yuv444Mp4Buf)
+    await writeFile(mkvPath, Buffer.from('matroska-raw-bytes-123456'))
+
+    // 1. Verify ISO BMFF zero-dependency probe classifies L1 direct, L2 remux, L3 transcode accurately
+    const pDirect = await probeVideoCompatibility(directPath, await stat(directPath), '.mp4')
+    assert.equal(pDirect.codec, 'avc1')
+    assert.equal(pDirect.avcProfile, 100)
+    assert.equal(pDirect.width, 1920)
+    assert.equal(pDirect.height, 1080)
+    assert.equal(pDirect.faststart, true)
+    assert.equal(pDirect.universalDirectPlay, true)
+    assert.equal(pDirect.strategy, 'direct')
+
+    const pRemux = await probeVideoCompatibility(remuxPath, await stat(remuxPath), '.mp4')
+    assert.equal(pRemux.avcProfile, 100)
+    assert.equal(pRemux.faststart, false)
+    assert.equal(pRemux.strategy, 'remux')
+    assert.equal(pRemux.reason, 'moov_at_tail')
+
+    const p444 = await probeVideoCompatibility(yuv444Path, await stat(yuv444Path), '.mp4')
+    assert.equal(p444.avcProfile, 244)
+    assert.equal(p444.faststart, false)
+    assert.equal(p444.universalDirectPlay, false)
+    assert.equal(p444.strategy, 'transcode')
+    assert.equal(p444.reason, 'h264_yuv444p')
+
+    const pMkv = await probeVideoCompatibility(mkvPath, await stat(mkvPath), '.mkv')
+    assert.equal(pMkv.strategy, 'transcode')
+    assert.equal(pMkv.reason, 'non_mp4_container')
+
+    // Fast read meta includes videoProbe for UI badge rendering
+    const fastMeta444 = await readWorkspaceFileFastMeta(wsDir, 'blender_444p.mp4')
+    assert.equal(fastMeta444.ok, true)
+    assert.equal(fastMeta444.kind, 'video')
+    assert.equal(fastMeta444.videoProbe?.strategy, 'transcode')
+
+    // 2. End-to-end HubServer + HubAgent stream piping, L1/L2/L3 routing, Single-Flight lock & raw/download preservation
+    let remuxCalls = 0
+    let transcodeCalls = 0
+    const compatOutBytes = buildSyntheticMp4({ avcProfile: 100, faststart: true, mdatBytes: 32 * 1024 })
+    const remuxOutBytes = buildSyntheticMp4({ avcProfile: 100, faststart: true, mdatBytes: 48 * 1024 })
+
+    const mockExecImpl = async (cmd, args = []) => {
+      if (cmd !== 'ffmpeg' && cmd !== '/usr/bin/avconvert') {
+        return { stdout: '', stderr: '' }
+      }
+      await new Promise(r => setTimeout(r, 25))
+      const outPath = args[args.length - 1]
+      if (args.includes('copy')) {
+        remuxCalls += 1
+        await writeFile(outPath, remuxOutBytes)
+        return { stdout: '', stderr: '' }
+      }
+      transcodeCalls += 1
+      await writeFile(outPath, compatOutBytes)
+      return { stdout: '', stderr: '' }
+    }
+
+    const hub = new HubCore({ tokenSecret: 'hub-prod-token-v069' })
+    const { fetchAdapter } = createHubServer({
+      hub,
+      token: 'hub-prod-token-v069',
+      requireToken: true,
+    })
+
+    const cfg = resolveConfig({
+      appId: APP_ID,
+      allowedOpenIds: [USER],
+      hubUrl: 'http://hub.local',
+      hubToken: 'hub-prod-token-v069',
+      hostId: 'mac-mini-media',
+      hostName: 'Mac Mini Media',
+      dshHome,
+      defaultCwd: wsDir,
+      antigravityBrainDirs: [join(tmpDir, 'brain')],
+      enableAntigravityIde: false,
+      enableExternalHarnesses: false,
+    })
+    const liveTask = makeAgent('sess-v069-media', 'Media Stream Test')
+    liveTask.session.header.cwd = wsDir
+    const bridge = new FeishuBridge({
+      config: cfg,
+      agents: {
+        list: () => [liveTask],
+        get: id => (id === liveTask.id ? liveTask : undefined),
+      },
+      sender: { sendText: async () => ({}), sendCard: async () => ({}), updateCard: async () => ({}) },
+      audit: { write: async () => {} },
+      logger: { info() {}, warn() {}, error() {} },
+    })
+    const agent = new HubAgent({
+      config: cfg,
+      bridge,
+      fetchImpl: fetchAdapter,
+      execImpl: mockExecImpl,
+      logger: { info() {}, warn() {}, error() {} },
+    })
+    await agent.tick()
+    const unsubFs = hub.onHostFsRequest((targetHostId, fsReq) => {
+      if (targetHostId === 'mac-mini-media') {
+        void agent.handleFastFsRequest(fsReq)
+      }
+    })
+
+    try {
+      const mt = hub.getFullState().mediaTicket
+
+      // L1 Direct Play: 0 ffmpeg calls, streams original bytes
+      const resL1 = await fetchAdapter(
+        `http://hub.local/api/hosts/mac-mini-media/fs/stream?path=direct_420p.mp4&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+        { headers: { Range: 'bytes=0-1023' } },
+      )
+      assert.equal(resL1.status, 206)
+      assert.equal(resL1.headers.get('x-dsh-media-variant'), 'orig')
+      assert.equal(remuxCalls, 0)
+      assert.equal(transcodeCalls, 0)
+      const bufL1 = Buffer.from(await resL1.arrayBuffer())
+      assert.deepEqual(bufL1, directMp4Buf.subarray(0, 1024))
+
+      // L2 Lossless Fast Remux: invokes ffmpeg -c copy -movflags +faststart
+      const resL2 = await fetchAdapter(
+        `http://hub.local/api/hosts/mac-mini-media/fs/stream?path=tail_moov_420p.mp4&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+        { headers: { Range: 'bytes=0-2047' } },
+      )
+      assert.equal(resL2.status, 206)
+      assert.equal(resL2.headers.get('x-dsh-media-variant'), 'remux')
+      assert.equal(resL2.headers.get('x-dsh-remuxed'), '1')
+      assert.equal(remuxCalls, 1)
+      assert.equal(transcodeCalls, 0)
+      assert.deepEqual(Buffer.from(await resL2.arrayBuffer()), remuxOutBytes.subarray(0, 2048))
+
+      // L3 Hardware-First Transcode + Single-Flight Lock: 4 parallel Safari Range requests trigger only 1 encode!
+      const parallelUrls = [0, 512, 1024, 2048].map(off =>
+        fetchAdapter(
+          `http://hub.local/api/hosts/mac-mini-media/fs/stream?path=blender_444p.mp4&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+          { headers: { Range: `bytes=${off}-${off + 511}` } },
+        ),
+      )
+      const parallelRes = await Promise.all(parallelUrls)
+      assert.equal(transcodeCalls, 1, 'Single-Flight lock must coalesce concurrent video Range probes into 1 job')
+      for (let idx = 0; idx < parallelRes.length; idx += 1) {
+        const r = parallelRes[idx]
+        const off = [0, 512, 1024, 2048][idx]
+        assert.equal(r.status, 206)
+        assert.equal(r.headers.get('x-dsh-media-variant'), 'tc')
+        assert.equal(r.headers.get('x-dsh-transcoded'), '1')
+        assert.deepEqual(Buffer.from(await r.arrayBuffer()), compatOutBytes.subarray(off, off + 512))
+      }
+
+      // Raw & Download always bypass transcode and return untouched 4:4:4 original bytes
+      const resRaw = await fetchAdapter(
+        `http://hub.local/api/hosts/mac-mini-media/fs/stream?path=blender_444p.mp4&raw=1&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+      )
+      assert.equal(resRaw.status, 200)
+      assert.equal(resRaw.headers.get('x-dsh-media-variant'), 'orig')
+      assert.equal(resRaw.headers.get('x-dsh-transcoded'), null)
+      assert.deepEqual(Buffer.from(await resRaw.arrayBuffer()), yuv444Mp4Buf)
+
+      const resDl = await fetchAdapter(
+        `http://hub.local/api/hosts/mac-mini-media/fs/stream?path=blender_444p.mp4&download=1&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+      )
+      assert.equal(resDl.status, 200)
+      assert.equal(resDl.headers.get('x-dsh-media-variant'), 'orig')
+      assert.match(resDl.headers.get('content-disposition') || '', /attachment/)
+      assert.deepEqual(Buffer.from(await resDl.arrayBuffer()), yuv444Mp4Buf)
+
+      // Multi-Range > 16 MiB Lossless Download Verification (18 MiB file -> 16 MiB + 2 MiB exact reassembly)
+      const largeSize = 18 * 1024 * 1024
+      const largeBuf = Buffer.allocUnsafe(largeSize)
+      for (let i = 0; i < largeSize; i += 4096) {
+        largeBuf.writeUInt32BE(i, i)
+      }
+      const largePath = join(wsDir, 'showcase_4k_master.bin')
+      await writeFile(largePath, largeBuf)
+
+      const dlSlice1 = await fetchAdapter(
+        `http://hub.local/api/hosts/mac-mini-media/fs/stream?path=showcase_4k_master.bin&download=1&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+      )
+      assert.equal(dlSlice1.status, 206)
+      assert.equal(dlSlice1.headers.get('content-range'), `bytes 0-${16 * 1024 * 1024 - 1}/${largeSize}`)
+      assert.match(dlSlice1.headers.get('access-control-expose-headers') || '', /content-range/)
+      const part1 = Buffer.from(await dlSlice1.arrayBuffer())
+      assert.equal(part1.length, 16 * 1024 * 1024)
+
+      const dlSlice2 = await fetchAdapter(
+        `http://hub.local/api/hosts/mac-mini-media/fs/stream?path=showcase_4k_master.bin&download=1&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+        { headers: { Range: `bytes=${16 * 1024 * 1024}-` } },
+      )
+      assert.equal(dlSlice2.status, 206)
+      assert.equal(dlSlice2.headers.get('content-range'), `bytes ${16 * 1024 * 1024}-${largeSize - 1}/${largeSize}`)
+      const part2 = Buffer.from(await dlSlice2.arrayBuffer())
+      assert.equal(part2.length, 2 * 1024 * 1024)
+      assert.equal(Buffer.compare(Buffer.concat([part1, part2]), largeBuf), 0)
+
+      // 3. Stateless deterministic mediaTicket across Cloud Run cold starts / multi-replica instances
+      const coldRestartHub = new HubCore({ tokenSecret: 'hub-prod-token-v069' })
+      assert.equal(
+        coldRestartHub.verifyMediaTicket(mt),
+        true,
+        'Stateless mediaTicket derived from HUB_TOKEN must survive Cloud Run scale-to-zero / replica restarts',
+      )
+      const wrongSecretHub = new HubCore({ tokenSecret: 'different-token-secret' })
+      assert.equal(wrongSecretHub.verifyMediaTicket(mt), false)
+
+      // Rotating HUB_TOKEN via /api/auth/change-token invalidates old mediaTicket immediately
+      const rotRes = await fetchAdapter('http://hub.local/api/auth/change-token', {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer hub-prod-token-v069',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ newToken: 'rotated-prod-token-999' }),
+      })
+      assert.equal(rotRes.status, 200)
+      assert.equal(hub.verifyMediaTicket(mt), false)
+    } finally {
+      unsubFs()
+    }
+
+    // 4. Verify frontend bundle & bilingual i18n strings for smart media streaming
+    const assetDir = new URL('../../hub/public/assets/', import.meta.url)
+    const assetFiles = await readdir(assetDir)
+    const jsAsset = assetFiles.find(f => f.endsWith('.js'))
+    const jsCode = await readFile(new URL(`../../hub/public/assets/${jsAsset}`, import.meta.url), 'utf8')
+    assert.match(jsCode, /onSmartVideoLoadedMeta/)
+    assert.match(jsCode, /onSmartVideoError/)
+    assert.match(jsCode, /describeVideoPreviewStatus/)
+
+    const { translateZhStringToEn } = await import('../../hub/web/src/utils/i18n.js')
+    assert.equal(translateZhStringToEn('✨ 切回智能兼容秒播'), '✨ Back to Smart Stream')
+    assert.equal(translateZhStringToEn('🎞️ 尝试原片直出'), '🎞️ Raw Original Stream')
+    assert.equal(
+      translateZhStringToEn('🎬 22.4 MB · 智能 H.264 兼容流 · 拖动秒播'),
+      '🎬 22.4 MB · Smart H.264 Compat Stream',
+    )
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
+test('v0.6.9 Real HTTP/1.1 Socket Stream Piping: zero-buffering /api/fs-tunnel -> pipeline(req, res) & client mid-stream abort safety', async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-v069-socket-'))
+  const hub = new HubCore({ tokenSecret: 'sock-secret-v069' })
+  const { server } = createHubServer({
+    hub,
+    token: 'sock-secret-v069',
+    requireToken: true,
+    logger: { info() {}, warn() {}, error() {} },
+  })
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  const port = server.address().port
+  const baseUrl = `http://127.0.0.1:${port}`
+
+  try {
+    const wsDir = join(tmpDir, 'ws')
+    const dshHome = join(tmpDir, 'dsh')
+    await mkdir(wsDir, { recursive: true })
+    await mkdir(dshHome, { recursive: true })
+
+    // 5 MiB binary payload streamed over real TCP HTTP/1.1
+    const fileBytes = Buffer.allocUnsafe(5 * 1024 * 1024)
+    for (let i = 0; i < fileBytes.length; i += 1024) {
+      fileBytes.writeUInt32BE((0xa5a50000 ^ i) >>> 0, i)
+    }
+    await writeFile(join(wsDir, 'stream_test.mp4'), fileBytes)
+
+    const liveTask = makeAgent('sess-sock-v069', 'Socket Stream Test')
+    liveTask.session.header.cwd = wsDir
+    const cfg = resolveConfig({
+      appId: APP_ID,
+      allowedOpenIds: [USER],
+      hubUrl: baseUrl,
+      hubToken: 'sock-secret-v069',
+      hostId: 'mac-sock',
+      hostName: 'Mac Socket',
+      dshHome,
+      defaultCwd: wsDir,
+      antigravityBrainDirs: [join(tmpDir, 'brain')],
+      enableAntigravityIde: false,
+      enableExternalHarnesses: false,
+    })
+    const bridge = new FeishuBridge({
+      config: cfg,
+      agents: {
+        list: () => [liveTask],
+        get: id => (id === liveTask.id ? liveTask : undefined),
+      },
+      sender: { sendText: async () => ({}), sendCard: async () => ({}), updateCard: async () => ({}) },
+      audit: { write: async () => {} },
+      logger: { info() {}, warn() {}, error() {} },
+    })
+    const agent = new HubAgent({
+      config: cfg,
+      bridge,
+      execImpl: async () => ({ stdout: '', stderr: '' }),
+      logger: { info() {}, warn() {}, error() {} },
+    })
+    await agent.tick()
+    const unsub = hub.onHostFsRequest((targetHostId, fsReq) => {
+      if (targetHostId === 'mac-sock') {
+        void agent.handleFastFsRequest(fsReq)
+      }
+    })
+
+    try {
+      const mt = hub.getFullState().mediaTicket
+      // 1. Full 2 MiB closed-range stream over real TCP socket
+      const rangeRes = await fetch(
+        `${baseUrl}/api/hosts/mac-sock/fs/stream?path=stream_test.mp4&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+        { headers: { Range: 'bytes=1048576-3145727' } },
+      )
+      assert.equal(rangeRes.status, 206)
+      assert.equal(rangeRes.headers.get('content-range'), `bytes 1048576-3145727/${fileBytes.length}`)
+      const gotBuf = Buffer.from(await rangeRes.arrayBuffer())
+      assert.equal(gotBuf.length, 2 * 1024 * 1024)
+      assert.equal(Buffer.compare(gotBuf, fileBytes.subarray(1048576, 3145728)), 0)
+
+      // 2. Simulate iOS Safari mid-stream Range abort (AbortController after first chunk) — must settle cleanly without hanging next request
+      const ac = new AbortController()
+      const abortRes = await fetch(
+        `${baseUrl}/api/hosts/mac-sock/fs/stream?path=stream_test.mp4&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+        { headers: { Range: 'bytes=0-' }, signal: ac.signal },
+      )
+      assert.equal(abortRes.status, 206)
+      const reader = abortRes.body.getReader()
+      const firstChunk = await reader.read()
+      assert.equal(firstChunk.done, false)
+      ac.abort()
+      await reader.cancel().catch(() => {})
+      await new Promise(r => setTimeout(r, 30))
+
+      // 3. Subsequent Range request immediately succeeds
+      const followRes = await fetch(
+        `${baseUrl}/api/hosts/mac-sock/fs/stream?path=stream_test.mp4&cwd=${encodeURIComponent(wsDir)}&mt=${encodeURIComponent(mt)}`,
+        { headers: { Range: 'bytes=0-4095' } },
+      )
+      assert.equal(followRes.status, 206)
+      const followBuf = Buffer.from(await followRes.arrayBuffer())
+      assert.equal(Buffer.compare(followBuf, fileBytes.subarray(0, 4096)), 0)
+    } finally {
+      unsub()
+    }
+  } finally {
+    server.closeAllConnections?.()
+    await new Promise(r => server.close(r))
+    await rm(tmpDir, { recursive: true, force: true })
+  }
 })
