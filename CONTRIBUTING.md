@@ -37,7 +37,7 @@ HUB_TOKEN=dev-token PORT=8080 npm start
 | 路径 | 职责 |
 | --- | --- |
 | `dsh-feishu/` | 跑在 DSH 进程内的插件：飞书长连接、审批、命令、迁移 |
-| `dsh-feishu/lib/harnesses/` | 各后端（DSH / Codex / Claude / Antigravity）适配器 |
+| `dsh-feishu/lib/harnesses/` | 各后端（DSH / Antigravity / Codex / WorkBuddy / Claude）适配器 |
 | `hub/` | 自托管总控台：HTTP/REST、E2EE 分享、配对、Web Push、信令 |
 | `hub/web/` | Preact + Vite 前端源码 |
 | `hub/public/` | 构建产物（**不要手改**，改 `hub/web/`） |

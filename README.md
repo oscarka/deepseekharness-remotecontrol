@@ -33,7 +33,7 @@
   <tr>
     <td align="center" width="33%">
       <img src="docs/assets/screen-sessions-en.png" width="250" alt="Unified Multi-Tool Session List" /><br/>
-      <sub><strong>① Unified Session List</strong><br/>Live tasks across DSH, Antigravity IDE, Claude &amp; Codex with top approval bar &amp; unread dot</sub>
+      <sub><strong>① Unified 5-Tool Session List</strong><br/>Live tasks across DSH, Antigravity IDE, Codex, WorkBuddy &amp; Claude with approval bar &amp; unread dot</sub>
     </td>
     <td align="center" width="33%">
       <img src="docs/assets/screen-approve-en.png" width="250" alt="Mobile Command Approval & Multiple-Choice Popups" /><br/>
@@ -50,13 +50,13 @@
 
 ## Why DSH Remote Control?
 
-When you kick off a long refactoring, test suite, or deployment in **DeepSeek Harness (DSH)**, **Antigravity IDE**, **Claude Code**, or **Codex**, stepping away from your desk usually means flying blind:
+When you kick off a long refactoring, test suite, or deployment in **DeepSeek Harness (DSH)**, **Antigravity IDE**, **OpenAI Codex**, **Tencent WorkBuddy**, or **Claude Code**, stepping away from your desk usually means flying blind:
 
 - **Stuck on a popup**: The agent asks *"Allow `npm run test:integration`?"* or pops up an architecture multiple-choice question — and waits for hours until you return to your keyboard.
-- **No visibility on the go**: You want to check whether the task finished, send a quick follow-up instruction, attach a phone screenshot, or hit emergency stop while away from your desk.
-- **Multiple computers**: You have both an office Mac and a home workstation running tasks and want one unified mobile view.
+- **No visibility on the go**: You want to check whether the task finished, hold-to-talk a quick voice instruction, attach a phone screenshot, or hit emergency stop while away from your desk.
+- **Multiple computers**: You have both an office Mac and home workstations running tasks and want one unified mobile view.
 
-**DSH Remote Control** puts all of your computers' AI coding sessions into a clean mobile web app (with iOS 16.4+ Home Screen lock-screen push notifications and automatic English/Chinese UI detection).
+**DSH Remote Control** puts all of your computers' AI coding sessions into a clean mobile web app (with **WeChat-style Hold-to-Talk voice input + smart punctuation**, iOS 16.4+ Home Screen lock-screen push notifications, and automatic English/Chinese UI detection).
 
 ---
 
@@ -185,9 +185,15 @@ The background daemon automatically discovers local sessions across all 5 suppor
 
 ---
 
+<a id="whats-new"></a>
 ## 📅 What's New (Recent Releases)
 
-- **`2026-11-11 · v0.5.8` — Tencent WorkBuddy Production Hardening, Dead-ACP Auto-Recovery & iOS PWA Native Keyboard Voice Wakeup**
+- **`2026-11-12 · v0.6.6` — WeChat-Style Hold-to-Talk Voice UX, Smart Speech Punctuation, Redesigned New Task Sheet & Incremental SSE Delta Sync**
+  - **WeChat-Style Hold-to-Talk Voice & Smart Chinese Punctuation (`v0.6.3–v0.6.5`)**: Toggle between a full-width **`🎙️ Hold to Talk`** bar and **`⌨️ Type`** keyboard mode on mobile; holding opens a live green transcript & waveform bubble (continuous recognition across breathing pauses, **release to send immediately**, **slide left to cancel**, **slide right to edit text before sending**), complete with `650ms` live pause commas/question marks and automatic clause/sentence punctuation (`，` / `？` / `。`).
+  - **Redesigned New Task Sheet & WorkBuddy Heartbeat Filter (`v0.6.6`)**: Compact Computer + Engine context card, single-row horizontally scrollable project pills + searchable `All (N) ▾` folder sheet, spacious prompt card with built-in Model / Screenshot / keyboard-free Native Voice toolbar, and automatic filtering of WorkBuddy's `sessions/<pid>.json` 30s live process heartbeat lockfiles so ghost entries never float to the top of your session list.
+  - **Incremental SSE Delta Sync (`state_delta`), Zero Conclusion Truncation & 5 Official Vector Brand Badges (`v0.6.0–v0.6.1`)**: `/api/events?delta=1` broadcasts only changed host metadata & single changed sessions (`~1–3 KB` compressed, cutting realtime mobile SSE bandwidth by **98%+**), preserves full `48,000`-char hot conclusions with seamless on-demand cold transcript hydration, guards iOS Safari Canvas memory on tall screenshots, and adds crisp `24×24` SVG brand badges + smart multi-Mac-mini host disambiguation.
+
+- **`2026-11-11 · v0.5.8` — Tencent WorkBuddy Production Hardening, Dead-ACP Auto-Recovery & Direct Mobile Speech Recognition**
   - **WorkBuddy v5.9.3 Production Loop & Auto-Recovery**: Isolated `workbuddy-cli` OAuth credentials via `ACC_PRODUCT_CONFIG_PATH` (never logging out WorkBuddy Desktop, with standalone `node dsh-feishu/daemon.mjs --workbuddy-login` pre-auth), per-`cwd` `codebuddy --serve` ACP process pool with automatic dead-server eviction/respawn across new sessions, follow-up prompts, and live `steer()`, automatic `~/WorkBuddy/<timestamp>` Playground folder routing for mobile new tasks, and bidirectional `workbuddy.db` + `.jsonl` sync.
   - **Direct Mobile Native Speech Recognition (`v0.6.2`)**: Tapping `🎤` directly invokes the phone's built-in speech recognition without popping up the soft keyboard, with clear `audio-capture` conflict feedback and automatic fallback when restricted in iOS Home Screen containers.
   - **Sub-Second Desktop-to-Mobile Approval Dismissal & Zero-Keystroke Idempotency (`v0.5.7`)**: Shortened live trajectory summary cache TTL to `350ms` while approvals are pending and hardened `executeAntigravityIdeAction` so late mobile taps on desktop-settled approvals immediately return `connect-rpc-noop` (`alreadySettled: true`) instead of matching historical `requestedInteraction` fields or injecting fallback keystrokes.

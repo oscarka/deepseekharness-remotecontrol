@@ -4,16 +4,17 @@ Condensed version of the [Chinese FAQ](FAQ.md). Answers are deliberately blunt, 
 
 ## Do I need DSH installed?
 
-No — but your capabilities differ.
+No — you can use any one (or any mix) of the 5 supported AI coding tools:
 
-| | watch | prompt | stop | approve | steer |
+| | watch | prompt | stop | approve & questions | steer |
 |---|:---:|:---:|:---:|:---:|:---:|
 | DSH | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Antigravity IDE | ✅ | ✅ | ✅ | ✅ | ✅ |
+| OpenAI Codex | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Tencent WorkBuddy | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Claude Code | ✅ | ✅ | ✅ | planned | ❌ |
-| Codex | ✅ | ✅ | ✅ | planned | ❌ |
 
-Without DSH you get observe mode: watch sessions, send prompts, stop tasks. **No phone approvals.** Controls that a backend can't support are not rendered at all.
+DSH, Antigravity IDE, OpenAI Codex, and Tencent WorkBuddy all support **full interactive remote control** (live transcripts, prompts, emergency stop, mobile approvals/question popups, and live mid-run steering). Claude Code currently runs per-turn via `--resume` (watch, prompt, and stop work; mobile approvals are planned). Controls that a backend can't support are automatically hidden.
 
 ## Does the phone need an app?
 
@@ -37,6 +38,7 @@ No. Where the hub lives decides where your phone can reach it:
 |---|---|---|
 | Your laptop | same Wi-Fi only | 0 |
 | Home NAS / server | same Wi-Fi only | hardware |
+| Google Cloud Run | anywhere (4G/5G/Wi-Fi) | scales to zero when idle (~$0 in free tier) |
 | Cloud / Railway | anywhere | server or platform fee |
 | Laptop + tunnel | anywhere | 0 |
 
@@ -72,13 +74,12 @@ Tunnel choice matters:
 
 No. Feishu is an optional notification and approval channel. The web console works without it.
 
-## Why are approvals limited to DSH and Antigravity?
+## Why doesn't Claude Code have mobile approvals yet?
 
-Approvals need the tool to expose a "ask before executing" hook.
+Approvals require a persistent "ask before executing" protocol hook:
 
-- **DSH / Antigravity**: native, working
-- **Claude Code**: `PreToolUse` hook and a permission-prompt tool exist, so this is planned
-- **Codex**: needs app-server mode, still exploring
+- **DSH / Antigravity IDE / OpenAI Codex (`app-server`) / Tencent WorkBuddy (`ACP`)**: native interactive protocols — all working with mobile approvals, question cards, and live mid-run steering
+- **Claude Code**: currently invoked per-turn via `claude --resume`; `PreToolUse` permission hook integration is planned
 
 ## Found a vulnerability?
 

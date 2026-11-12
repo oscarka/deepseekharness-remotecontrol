@@ -1,11 +1,25 @@
-# 自托管部署指南（六条路，同一个终点）
+# 自托管部署指南（七条路，同一个终点）
 
 无论你选择哪种方式部署控制台，最终都会得到两样东西：**一个网址 + 一个密码（`HUB_TOKEN`）**。
-拿到之后，统一回到主 README 的**七步流程**（电脑打开网址 ➔ 复制一行安装命令与配对码 ➔ 终端执行 ➔ 手机扫码登录）。
+拿到之后，统一回到主 README 的**[三步快速上手](../README.zh-CN.md#三步快速上手)**（电脑打开网址 ➔ 复制一行安装命令与配对码 ➔ 终端执行 ➔ 手机扫码登录）。
 
 ---
 
-## 方案 1：Railway 一键部署（最省心）
+## 方案 0：Google Cloud Run 一键部署（出门 4G/5G 推荐 · 闲置缩容到 0）
+
+自带 HTTPS 域名（支持 iPhone 添加到主屏幕开启锁屏通知），无人访问时自动缩容到 0 几乎不产生费用：
+
+```bash
+GCP_PROJECT_ID="你的-gcp-project-id" \
+HUB_TOKEN="你的管理员强密码" \
+./deploy-cloudrun.sh
+```
+
+脚本执行完毕会直接输出你的 `https://dsh-remotecontrol-hub-xxx.run.app` 网址。后续升级执行 `./deploy-cloudrun.sh` 会自动保留线上已有密码与配对状态。
+
+---
+
+## 方案 1：Railway 一键部署（免装命令行）
 
 1. 点击主 README 的 **Deploy on Railway** 按钮。
 2. 在环境变量（Variables）中填写必填项：
