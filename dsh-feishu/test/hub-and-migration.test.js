@@ -2185,9 +2185,10 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   }
 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
+  const expectedPkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'))
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.6.7')
+  assert.equal(healthRes.build.version, expectedPkg.version)
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 
@@ -5708,4 +5709,138 @@ test('v0.6.7: pinned & unread concluded sessions sort above running tasks, and S
   const { translateZhStringToEn } = await import('../../hub/web/src/utils/i18n.js')
   assert.equal(translateZhStringToEn('豆包电脑版'), 'Doubao Desktop')
   assert.equal(translateZhStringToEn('👀 仅观测'), '👀 Observe-only')
+})
+
+test('v0.6.8: sandboxed mobile HTML live preview, relative mt asset rewriting, CORS stream headers, and iOS-safe media download', async () => {
+  const {
+    isHtmlFileName,
+    escapeSrcdocAttr,
+    resolveRelativeAssetPath,
+    buildSandboxedHtmlSrcdoc,
+  } = await import('../../hub/web/src/utils/html-sandbox.js')
+  const { translateZhStringToEn } = await import('../../hub/web/src/utils/i18n.js')
+
+  // 1. HTML filename detection & strict srcdoc attribute breakout prevention
+  assert.equal(isHtmlFileName('demo.html'), true)
+  assert.equal(isHtmlFileName('/Users/cc/app/index.htm?v=2#top'), true)
+  assert.equal(isHtmlFileName('page.xhtml'), true)
+  assert.equal(isHtmlFileName('README.md'), false)
+  assert.equal(isHtmlFileName('video.mp4'), false)
+
+  const breakoutPayload = '"><iframe onload="alert(1)"></iframe><script>const a = 1 < 2 && 3 > 1;</script>'
+  const escapedAttr = escapeSrcdocAttr(breakoutPayload)
+  assert.doesNotMatch(escapedAttr, /["<>]/)
+  assert.match(escapedAttr, /&quot;&gt;&lt;iframe/)
+
+  // 2. Relative path resolution & sandboxed srcdoc generation (viewport injection + read-only mt asset rewrite)
+  assert.equal(resolveRelativeAssetPath('web/pages/index.html', './styles/app.css'), 'web/pages/styles/app.css')
+  assert.equal(resolveRelativeAssetPath('/Users/cc/proj/sub/demo.html', '../assets/logo.png'), '/Users/cc/proj/assets/logo.png')
+
+  const srcdoc = buildSandboxedHtmlSrcdoc(
+    '<div id="app">Hello</div><link rel="stylesheet" href="./style.css"><script src="main.js"></script><img src="https://example.com/a.png"><a href="#sec">Jump</a>',
+    {
+      hostId: 'mac-pro',
+      relPath: 'demos/card.html',
+      cwd: '/Users/cc/proj',
+      agentId: 'dsh:123',
+      mediaTicket: 'mt_readonly_ticket_xyz',
+      origin: 'https://hub.example.run.app',
+    },
+  )
+  assert.match(srcdoc, /<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">/)
+  assert.match(srcdoc, /href="https:\/\/hub\.example\.run\.app\/api\/hosts\/mac-pro\/fs\/stream\?path=demos%2Fstyle\.css&cwd=%2FUsers%2Fcc%2Fproj&agentId=dsh%3A123&mt=mt_readonly_ticket_xyz"/)
+  assert.match(srcdoc, /src="https:\/\/hub\.example\.run\.app\/api\/hosts\/mac-pro\/fs\/stream\?path=demos%2Fmain\.js&cwd=%2FUsers%2Fcc%2Fproj&agentId=dsh%3A123&mt=mt_readonly_ticket_xyz"/)
+  assert.match(srcdoc, /src="https:\/\/example\.com\/a\.png"/)
+  assert.match(srcdoc, /href="#sec"/)
+  assert.doesNotMatch(srcdoc, /token=/i)
+
+  // 3. Markdown renderer generates interactive HTML preview button for ```html blocks & file chips for .html paths
+  const mdSource = await readFile(new URL('../../hub/web/src/utils/markdown.ts', import.meta.url), 'utf8')
+  const cleanMdJs = mdSource
+    .replace(/^import\s+.*$/gm, '')
+    .replace(/export function /g, 'function ')
+    .replace(/\(window as any\)/g, 'window')
+    .replace(/: \{ type: 'ul' \| 'ol'; start\?: number; items: string\[\] \} \| null/g, '')
+    .replace(/: RegExpExecArray \| null/g, '')
+    .replace(/: string\[\]\[\]/g, '')
+    .replace(/: string\[\]/g, '')
+    .replace(/: 'th' \| 'td'/g, '')
+    .replace(/: number/g, '')
+    .replace(/: string/g, '')
+    .replace(/olItem!\[2\]/g, 'olItem[2]')
+  const escFn = s =>
+    String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  const renderMarkdown = new Function('esc', `${cleanMdJs}\nreturn renderMarkdown;`)(escFn)
+
+  const fencedHtmlOut = renderMarkdown('这是生成的网页：\n```html\n<!doctype html><html><body><h1>Hi</h1></body></html>\n```')
+  assert.match(fencedHtmlOut, /openInlineHtmlPreview\(this\)/)
+  assert.match(fencedHtmlOut, /🌐 交互预览/)
+
+  const nonHtmlFenceOut = renderMarkdown('```python\nprint("hello")\n```')
+  assert.doesNotMatch(nonHtmlFenceOut, /openInlineHtmlPreview/)
+
+  const htmlChipOut = renderMarkdown('请点击查看 `dist/landing.html` 或 [首页预览](file:///Users/cc/demo/index.html)')
+  assert.equal((htmlChipOut.match(/openChatFileLink\(/g) || []).length, 2)
+  assert.match(htmlChipOut, /🌐/)
+
+  // 4. Hub server /fs/stream emits Access-Control-Allow-Origin: * ONLY for valid read-only mt (never for download=1 or bare admin token)
+  const hub = new HubCore()
+  hub.handleHeartbeat({
+    hostId: 'mac-html',
+    hostName: 'Mac HTML',
+    bridgeState: { tasks: [], approvals: [], workspaces: [] },
+  })
+  hub.dispatchFastFsRequest = async () => ({
+    ok: true,
+    status: 200,
+    meta: { ok: true, name: 'app.js', mime: 'text/javascript; charset=utf-8', etag: '"v1"' },
+    buffer: Buffer.from('console.log("sandbox ok")', 'utf8'),
+  })
+  const mediaTicket = hub.getFullState().mediaTicket
+  const { fetchAdapter } = createHubServer({
+    hub,
+    token: 'admin-secret-token-v068',
+    requireToken: true,
+  })
+
+  const mtRes = await fetchAdapter(
+    `https://dsh-hub.example.run.app/api/hosts/mac-html/fs/stream?path=app.js&mt=${encodeURIComponent(mediaTicket)}`,
+  )
+  assert.equal(mtRes.status, 200)
+  assert.equal(mtRes.headers.get('access-control-allow-origin'), '*')
+
+  const dlRes = await fetchAdapter(
+    `https://dsh-hub.example.run.app/api/hosts/mac-html/fs/stream?path=app.js&download=1&mt=${encodeURIComponent(mediaTicket)}`,
+  )
+  assert.equal(dlRes.status, 200)
+  assert.equal(dlRes.headers.get('access-control-allow-origin'), null)
+  assert.match(dlRes.headers.get('content-disposition') || '', /attachment/)
+
+  const adminNoMtRes = await fetchAdapter(
+    'https://dsh-hub.example.run.app/api/hosts/mac-html/fs/stream?path=app.js',
+    { headers: { authorization: 'Bearer admin-secret-token-v068' } },
+  )
+  assert.equal(adminNoMtRes.status, 200)
+  assert.equal(adminNoMtRes.headers.get('access-control-allow-origin'), null)
+
+  // 5. Built Vite bundle verifies iOS-safe downloadPreviewMedia (no raw <a ... download=> trap) & fullscreen HTML overlay
+  const assetDir = new URL('../../hub/public/assets/', import.meta.url)
+  const assetFiles = await readdir(assetDir)
+  const jsAsset = assetFiles.find(f => f.endsWith('.js'))
+  const jsCode = await readFile(new URL(`../../hub/public/assets/${jsAsset}`, import.meta.url), 'utf8')
+  assert.match(jsCode, /downloadPreviewMedia/)
+  assert.match(jsCode, /openInlineHtmlPreview/)
+  assert.match(jsCode, /htmlPreviewOverlay/)
+  assert.match(jsCode, /‹ 返回对话/)
+  assert.doesNotMatch(jsCode, /<a class="media-toolbar-pill"[^>]*download=/)
+
+  // 6. Bilingual i18n translations
+  assert.equal(translateZhStringToEn('⬇️ 保存/分享视频'), '⬇️ Save / Share Video')
+  assert.equal(translateZhStringToEn('🌐 交互预览'), '🌐 Live Preview')
+  assert.equal(translateZhStringToEn('‹ 返回对话'), '‹ Back to Chat')
 })

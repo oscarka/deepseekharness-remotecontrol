@@ -79,28 +79,45 @@ export function renderInlineMarkdown(rawLine: string): string {
       const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, '%27');
       const isWalkthrough = /walkthrough\.md$/i.test(cleanPath) || /^walkthrough$/i.test(cleanLabel);
       const isPlan = /implementation_plan\.md$/i.test(cleanPath);
+      const isHtml = /\.(html?|xhtml)$/i.test(cleanPath);
       const isVideo = /\.(mp4|m4v|mov|webm|ogv)$/i.test(cleanPath);
       const isImg = /\.(png|jpe?g|webp|gif|svg|bmp|ico|avif|heic|heif)$/i.test(cleanPath);
       const icon = isWalkthrough
         ? '📋'
         : isPlan
           ? '🗺️'
-          : isVideo
-            ? '🎬'
-            : isImg
-              ? '🖼️'
-              : /\.blend$/i.test(cleanPath)
-                ? '🧊'
-                : '📄';
-      const extraClass = isWalkthrough || isPlan ? ' md-artifact-chip' : '';
+          : isHtml
+            ? '🌐'
+            : isVideo
+              ? '🎬'
+              : isImg
+                ? '🖼️'
+                : /\.blend$/i.test(cleanPath)
+                  ? '🧊'
+                  : '📄';
+      const extraClass = isWalkthrough || isPlan || isHtml ? ' md-artifact-chip' : '';
       return stash(
         `<button type="button" class="md-file-chip${extraClass}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">${icon} ${cleanLabel}${lineSuffix}</button>`
       );
     }
   );
 
-  // 3. 行内代码和普通网页链接先「藏起来」，避免里面的 * 或 _ 被当成加粗/斜体
-  safe = safe.replace(/`([^`\n]+)`/g, (_m, code) => stash(`<code>${code}</code>`));
+  // 3. 行内代码和普通网页链接先「藏起来」，避免里面的 * 或 _ 被当成加粗/斜体；若是本地 .html 文件路径则直接升级为可点预览胶囊
+  safe = safe.replace(/`([^`\n]+)`/g, (_m, code) => {
+    const trimmedCode = String(code || '').trim();
+    if (
+      /^(?:file:\/\/\/?[^\s`]+|\/Users\/[^\s`]+|\/home\/[^\s`]+|~\/[^\s`]+|[a-zA-Z0-9_.\-]+(?:\/[a-zA-Z0-9_.\-]+)*)\.(?:html?|xhtml)$/i.test(
+        trimmedCode
+      )
+    ) {
+      const cleanPath = trimmedCode.replace(/^file:\/\//i, '');
+      const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, '%27');
+      return stash(
+        `<button type="button" class="md-file-chip md-artifact-chip" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">🌐 ${code}</button>`
+      );
+    }
+    return stash(`<code>${code}</code>`);
+  });
   safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label, url) =>
     stash(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`)
   );
@@ -265,10 +282,17 @@ export function renderMarkdown(rawText: string): string {
     const code = match[2].replace(/\n$/, '');
     // encodeURIComponent 不转义单引号，手动替换，避免代码里的 ' 截断 onclick
     const encoded = encodeURIComponent(code).replace(/'/g, '%27');
+    const isPreviewableHtml =
+      (/^(html?|xhtml|svg)$/i.test(lang) ||
+        (lang === 'code' && /^\s*(?:<!doctype\s+html\b|<html\b)/i.test(code))) &&
+      /<[a-z!][\s\S]*>/i.test(code);
+    const headerBtnsHtml = isPreviewableHtml
+      ? `<div style="display:inline-flex;align-items:center;gap:6px;"><button type="button" class="code-copy-btn html-preview-btn" style="color:#60a5fa;font-weight:700;" onclick="openInlineHtmlPreview(this)">🌐 交互预览</button><button type="button" class="code-copy-btn" onclick="copyCodeText('${encoded}')">📋 复制</button></div>`
+      : `<button class="code-copy-btn" onclick="copyCodeText('${encoded}')">📋 复制</button>`;
     chunks.push(
       `<div class="code-card"><div class="code-card-header"><span>${esc(
         lang
-      )}</span><button class="code-copy-btn" onclick="copyCodeText('${encoded}')">📋 复制</button></div><pre>${esc(
+      )}</span>${headerBtnsHtml}</div><pre>${esc(
         code
       )}</pre></div>`
     );

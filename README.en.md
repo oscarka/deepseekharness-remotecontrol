@@ -174,7 +174,7 @@ After unlocking the Control Hub on your computer browser, you will see the **Con
 
 ## Supported AI Coding Tools
 
-The background daemon automatically discovers local sessions across all 5 supported coding tools on your machine:
+The background daemon automatically discovers local sessions across all 6 supported coding tools on your machine:
 
 | AI Coding Tool | View Live Sessions | New / Resume Prompt | Emergency Stop | Mobile Approval & Question Popups | Live Mid-Run Steer |
 | :--- | :---: | :---: | :---: | :---: | :---: |
@@ -183,16 +183,17 @@ The background daemon automatically discovers local sessions across all 5 suppor
 | **OpenAI Codex** | ✅ | ✅ *(`codex app-server` + `codex exec` fallback)* | ✅ | ✅ *(JSON-RPC approvals & question cards via `app-server`)* | ✅ |
 | **Tencent WorkBuddy** | ✅ | ✅ *(ACP HTTP+SSE)* | ✅ | ✅ *(ACP permission popups)* | ✅ |
 | **Claude Code** | ✅ | ✅ *(via `claude --resume`)* | ✅ | ⏳ *Planned* | — |
+| **Doubao Desktop (`豆包电脑版`)** | ✅ *(Observe-only)* | — | — | — | — |
 
 ---
 
 <a id="whats-new"></a>
 ## 📅 What's New (Recent Releases)
 
-- **`2026-11-12 · v0.6.7` — WeChat-Style Hold-to-Talk Voice UX, Smart Speech Punctuation, Redesigned New Task Sheet & Incremental SSE Delta Sync**
-  - **WeChat-Style Hold-to-Talk Voice & Smart Chinese Punctuation (`v0.6.3–v0.6.5`)**: Toggle between a full-width **`🎙️ Hold to Talk`** bar and **`⌨️ Type`** keyboard mode on mobile; holding opens a live green transcript & waveform bubble (continuous recognition across breathing pauses, **release to send immediately**, **slide left to cancel**, **slide right to edit text before sending**), complete with `650ms` live pause commas/question marks and automatic clause/sentence punctuation (`，` / `？` / `。`).
-  - **Redesigned New Task Sheet, Pinned / Completed-First Sorting & WorkBuddy Heartbeat Filter (`v0.6.6–v0.6.7`)**: Compact Computer + Engine context card, single-row horizontally scrollable project pills + searchable `All (N) ▾` folder sheet, spacious prompt card with built-in Model / Screenshot / keyboard-free Native Voice toolbar; pinned sessions (`📌`) stay fixed at the very top and unread completed tasks (`🔵 Completed`) sort above background running jobs; plus an updated 5-tool Capability Matrix in Settings and automatic filtering of WorkBuddy's `sessions/<pid>.json` 30s live process heartbeat lockfiles.
-  - **Incremental SSE Delta Sync (`state_delta`), Zero Conclusion Truncation & 5 Official Vector Brand Badges (`v0.6.0–v0.6.1`)**: `/api/events?delta=1` broadcasts only changed host metadata & single changed sessions (`~1–3 KB` compressed, cutting realtime mobile SSE bandwidth by **98%+**), preserves full `48,000`-char hot conclusions with seamless on-demand cold transcript hydration, guards iOS Safari Canvas memory on tall screenshots, and adds crisp `24×24` SVG brand badges + smart multi-Mac-mini host disambiguation.
+- **`2026-11-12 · v0.6.8` — Mobile Sandboxed HTML Live Preview, iOS-Safe Video Save/Share & Doubao Desktop Observe-Only Adapter**
+  - **Mobile Interactive HTML Live Preview & Fullscreen Experience (`v0.6.8`)**: Open and interact with AI-generated `.html` pages right inside mobile DSH—from fenced ```` ```html ```` code blocks (`🌐 Live Preview`), `.html` file chips / artifact cards (`🌐 Live Preview ›`), or the project file browser. Runs inside an isolated `null`-origin `<iframe sandbox="allow-scripts allow-forms allow-modals allow-popups" srcdoc="...">` (never exposing `HUB_TOKEN` or `localStorage`), auto-injects mobile `<meta name="viewport">`, rewrites relative CSS/JS/images via read-only `mediaTicket` URLs, and includes a fullscreen overlay with a safe-area **`‹ Back to Chat`** bar and **`</> Source` / `🌐 Preview`** toggle.
+  - **iOS Home Screen PWA In-Place Video Save/Share & Doubao Desktop Adapter (`v0.6.8`)**: Replaced raw `<a download>` navigation links (which trapped iOS standalone web apps on a system screen with no Back button) with in-place streaming `fetch` + native iOS/Android Share Sheet (`Save Video` to Photos / `Save to Files` / AirDrop); added observe-only session & coding board discovery for **Doubao Desktop (`豆包电脑版`)** with incremental LevelDB caching and `10m` stale-running cleanup.
+  - **WeChat-Style Hold-to-Talk Voice, Smart Punctuation, Redesigned New Task Sheet & Pinned-First Sorting (`v0.6.3–v0.6.7`)**: Toggle between **`🎙️ Hold to Talk`** (release to send, slide left to cancel, slide right to edit, with `650ms` live pause commas & automatic Chinese sentence punctuation) and **`⌨️ Type`**; compact New Task sheet with single-row project pills + searchable folder drawer; pinned (`📌`) & unread completed (`🔵`) sessions sort above background running jobs; plus `state_delta` incremental SSE (`98%+` lower bandwidth, `v0.6.0–v0.6.1`).
 
 - **`2026-11-11 · v0.5.8` — Tencent WorkBuddy Production Hardening, Dead-ACP Auto-Recovery & Direct Mobile Speech Recognition**
   - **WorkBuddy v5.9.3 Production Loop & Auto-Recovery**: Isolated `workbuddy-cli` OAuth credentials via `ACC_PRODUCT_CONFIG_PATH` (never logging out WorkBuddy Desktop, with standalone `node dsh-feishu/daemon.mjs --workbuddy-login` pre-auth), per-`cwd` `codebuddy --serve` ACP process pool with automatic dead-server eviction/respawn across new sessions, follow-up prompts, and live `steer()`, automatic `~/WorkBuddy/<timestamp>` Playground folder routing for mobile new tasks, and bidirectional `workbuddy.db` + `.jsonl` sync.

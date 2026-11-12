@@ -1682,7 +1682,16 @@ export class WorkBuddyAdapter {
     )
   }
 
-  async _syncSessionToWorkBuddyDb({
+  async _syncSessionToWorkBuddyDb(params = {}) {
+    const next = (this._dbSyncQueue || Promise.resolve()).then(
+      () => this._syncSessionToWorkBuddyDbOnce(params),
+      () => this._syncSessionToWorkBuddyDbOnce(params),
+    )
+    this._dbSyncQueue = next
+    return next
+  }
+
+  async _syncSessionToWorkBuddyDbOnce({
     rawId,
     cwd,
     title = '',

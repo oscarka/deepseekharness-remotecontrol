@@ -770,11 +770,14 @@ export function createHubServer({
           },
           { timeoutMs: transcode ? 45_000 : 15_000 },
         )
+        const mtParam = String(urlObj.searchParams.get('mt') ?? '').trim()
+        const hasMediaTicket = Boolean(mtParam && hub.verifyMediaTicket(mtParam))
         if (out.status === 304) {
           return {
             status: 304,
             headers: {
               ...(out.meta?.etag ? { etag: out.meta.etag } : {}),
+              ...(hasMediaTicket && !download ? { 'access-control-allow-origin': '*' } : {}),
               'accept-ranges': 'bytes',
               'cache-control': 'private, max-age=300',
             },
@@ -786,6 +789,7 @@ export function createHubServer({
             status: out.status || 404,
             headers: {
               ...(out.meta?.contentRange ? { 'content-range': out.meta.contentRange } : {}),
+              ...(hasMediaTicket && !download ? { 'access-control-allow-origin': '*' } : {}),
               'accept-ranges': 'bytes',
             },
             json: out.meta || { ok: false, error: 'File stream failed' },
@@ -797,6 +801,7 @@ export function createHubServer({
           'content-length': String(buf.length),
           'accept-ranges': 'bytes',
           'cache-control': 'private, max-age=300',
+          ...(hasMediaTicket && !download ? { 'access-control-allow-origin': '*' } : {}),
           ...(out.meta?.etag ? { etag: out.meta.etag } : {}),
           ...(out.meta?.contentRange ? { 'content-range': out.meta.contentRange } : {}),
           ...(out.meta?.isThumb ? { 'x-dsh-thumb': '1' } : {}),

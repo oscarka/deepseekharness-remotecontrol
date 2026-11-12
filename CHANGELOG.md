@@ -2,6 +2,21 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.6.8] - 2026-11-12
+
+### Added
+
+- **接入「豆包电脑版 (Doubao Desktop)」只读观测适配器（`doubao-adapter.js` / `harness-router.js` / `session-labels.js`）**：
+  - 自动发现并解析本机豆包电脑版会话记录与 `aiboard` 编程任务，内置增量单文件 LevelDB + 沙盒元数据缓存与 `300ms` 监听防抖、`10 分钟` 异常强退僵尸运行态超时清理、纯闲聊会话空 `cwd` 隔离，以及观察态聊天框自动隐藏语音/图片发送栏与设置页第 6 行能力边界展示。
+- **手机端 HTML 网页交互预览与全屏体验（`html-sandbox.js` / `markdown.ts` / `Sheets.tsx` / `controller.js` / `server.js`）**：
+  - 全面覆盖 3 种场景：① 对话内 ```` ```html ```` 代码块右上角直接点 **`🌐 交互预览`**；② 对话中的 `.html` 本地路径胶囊（`` `demo.html` `` / `[index.html](file:///...)`）与产物卡片点 **`🌐 体验网页 ›`**；③ 文件抽屉或「项目文件」页直接打开 `.html` 文件。
+  - 采用无同源权限的隔离沙盒 `<iframe sandbox="allow-scripts allow-forms allow-modals allow-popups" srcdoc="...">`（阻断读取 `HUB_TOKEN` 与 `localStorage`），自动补全移动端自适应 `<meta name="viewport">`，通过只读短效 `mediaTicket`（服务端精准下发 `Access-Control-Allow-Origin: *`）自动重写相对路径 CSS/JS/图片资源，并内置带顶部安全区 **`‹ 返回对话`** 栏与 **`</> 源码` / `🌐 预览`** 一键切换的 `#htmlPreviewOverlay` 全屏浮层。
+
+### Fixed
+
+- **修复手机 / iOS 主屏幕 PWA 点击「下载视频 / 下载文件」跳入无返回键系统预览死胡同页的问题（`controller.js`）**：
+  - 移除会导致独立全屏窗口顶层跳转的裸 `<a href="...download=1" download>` 链接，改为原地流式 `fetch`（实时显示百分比进度）后直接唤起手机系统原生分享/保存面板（支持一键「存储视频」到系统相册、「存储到“文件”」、AirDrop 或微信发送；大文件蜂窝网络超时自动降级为二次轻触 `0ms` 瞬时拉起面板），全程不离开当前对话与预览页。
+
 ## [0.6.7] - 2026-11-12
 
 ### Fixed

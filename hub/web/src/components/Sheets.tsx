@@ -424,6 +424,52 @@ export function Sheets() {
           <div id="modelPickerBody"></div>
         </div>
       </div>
+
+      {/* 全屏 HTML 交互预览层（自带顶部安全区返回栏，解决移动端与 iOS 主屏幕模式体验网页无返回键问题） */}
+      <div
+        id="htmlPreviewOverlay"
+        style="display:none;position:fixed;inset:0;z-index:9999;background:#0f172a;flex-direction:column;"
+      >
+        <div
+          style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:max(10px, env(safe-area-inset-top)) 12px 10px;background:#0f172a;border-bottom:1px solid rgba(148,163,184,0.22);color:#f8fafc;flex-shrink:0;"
+        >
+          <button
+            type="button"
+            class="icon-pill-btn"
+            style="background:rgba(255,255,255,0.12);color:#ffffff;border-color:rgba(255,255,255,0.22);font-weight:700;padding:6px 12px;"
+            onClick={() => (window as any).closeFullscreenHtmlPreview?.()}
+          >
+            ‹ 返回对话
+          </button>
+          <span
+            id="htmlPreviewOverlayTitle"
+            style="font-size:13.5px;font-weight:700;color:#f8fafc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:center;"
+          >
+            🌐 HTML 交互预览
+          </span>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <button
+              type="button"
+              class="icon-pill-btn"
+              id="htmlPreviewModeBtn"
+              style="background:rgba(255,255,255,0.1);color:#e2e8f0;border-color:rgba(255,255,255,0.18);"
+              onClick={() => (window as any).toggleFullscreenHtmlSource?.()}
+            >
+              &lt;/&gt; 源码
+            </button>
+            <button
+              type="button"
+              class="icon-pill-btn"
+              title="重新加载网页"
+              style="background:rgba(255,255,255,0.1);color:#e2e8f0;border-color:rgba(255,255,255,0.18);"
+              onClick={() => (window as any).reloadFullscreenHtmlPreview?.()}
+            >
+              🔄
+            </button>
+          </div>
+        </div>
+        <div id="htmlPreviewOverlayBody" style="flex:1;position:relative;background:#ffffff;overflow:auto;"></div>
+      </div>
     </Fragment>
   );
 }

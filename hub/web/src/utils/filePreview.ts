@@ -128,3 +128,10 @@ export function fileLoadingSpinnerHtml(text: string): string {
   </div>`;
 }
 
+export {
+  isHtmlFileName,
+  escapeSrcdocAttr,
+  resolveRelativeAssetPath,
+  buildSandboxedHtmlSrcdoc,
+} from './html-sandbox.js';
+
