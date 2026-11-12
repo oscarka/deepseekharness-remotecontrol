@@ -1,3 +1,126 @@
+<a id="en"></a>
+
+<p align="right"><strong>🇺🇸 English</strong> · <a href="#zh">🇨🇳 简体中文</a></p>
+
+# Security Policy
+
+## Supported Versions
+
+Security fixes are delivered on the latest commit of the `main` branch. While the project is in `0.x`, interfaces and configuration options may evolve, with security fixes prioritized first.
+
+## Reporting a Vulnerability
+
+**Please do NOT open a public GitHub issue for security vulnerabilities.**
+
+Submit reports privately via [GitHub Private Vulnerability Reporting](https://github.com/oscarka/deepseekharness-remotecontrol/security/advisories/new) or contact the repository maintainer directly. Please include:
+
+- Steps to reproduce or a minimal PoC
+- Impact scope (what can be read, modified, or executed)
+- Version / commit hash tested
+
+We will respond promptly. Please allow time for a fix before public disclosure.
+
+---
+
+## Threat Model
+
+### Trust Boundaries
+
+| Component | Trust Level | Notes |
+| --- | --- | --- |
+| Your computer & `~/.dsh/` | ✅ Trusted | Local AI sessions, host keys, and audit logs live here |
+| Your self-hosted Hub | ⚠️ Semi-trusted | Holds session metadata & **plaintext** active conversation snapshots in memory; cannot decrypt E2EE share payloads |
+| Feishu Open Platform *(optional)* | ⚠️ Semi-trusted | If configured, Feishu bot messages traverse Feishu servers under your tenant retention policy |
+| APNs / Web Push endpoints | ⚠️ Semi-trusted | Carries encrypted RFC 8291 push notifications without full transcript bodies |
+| Public Internet | ❌ Untrusted | Must never gain unauthenticated access to any endpoint |
+
+**Key Takeaway**: This is a self-hosted remote control bridge, not an end-to-end encrypted messenger between your computer and Hub. Only share links (`/share/:id#k=...`) are end-to-end encrypted client-side. Deploy the Hub only on infrastructure or cloud accounts that you control.
+
+### Attack Surface
+
+1. **Control Hub HTTP Endpoints** — The only internet-facing surface when deployed remotely.
+2. **Feishu Bot *(optional)*** — Anyone able to message your custom Feishu app (filtered by `FEISHU_ALLOWED_OPEN_IDS`).
+3. **Local Host Daemon (`dsh-feishu`)** — Runs under your user account on your machine and connects **outbound** to your Hub (no inbound port forwarding required).
+4. **Supply Chain** — The Hub server has zero third-party runtime dependencies by design to keep auditing straightforward.
+
+---
+
+## Implemented Security Controls
+
+### Authentication & Per-Host Isolation
+
+- The Hub **refuses to start** unless `HUB_TOKEN` is configured (`hub/server.js`).
+- All `/api/*` and `/fs/*` routes require authentication except public bootstrap/health endpoints (`/healthz`, `/api/auth/verify`, `/api/pairing/exchange`, `/api/enroll/exchange`), with constant-time `timingSafeEqual` token comparison.
+- **Per-computer isolated credentials**: Enrolling a computer via a 15-minute enrollment code issues a dedicated revocable host token (`hst_...`) pinned to the machine's Ed25519 public key fingerprint. Revoking one computer never disrupts other hosts.
+- **Read-only media tickets**: Inline images and `HTTP 206 Range` video streams use short-lived, path-scoped HMAC `mediaTicket` query tokens so `HUB_TOKEN` is never exposed in `<img src>` or `<video src>` URLs.
+
+### Pairing & Rate Limiting
+
+- 6-digit phone QR / pairing codes are single-use with a short TTL (3 minutes).
+- Authentication and pairing endpoints enforce per-client-IP rate limiting (returning `429` on brute-force attempts, honoring `X-Forwarded-For` only when `TRUST_PROXY=1` or running on Cloud Run).
+
+### Secret File Permissions
+
+- `~/.dsh/feishu.env` must have `0600` permissions; `dsh-feishu/lib/config.js` verifies `stat` at startup and refuses to run if group/world-readable.
+- Host identity keys (`~/.dsh/feishu-host.json`) and audit logs (`~/.dsh/feishu-audit.jsonl`) are written with mode `0600`.
+
+### Authorization & Workspace Confinement
+
+- On Feishu, senders outside `FEISHU_ALLOWED_OPEN_IDS` receive nothing; group chats (`allowGroup`) are disabled by default.
+- File browsing and reverse-tunnel reads are strictly confined to registered workspace roots via `realpath` prefix verification — symlinks pointing outside the workspace root are rejected (`dsh-feishu/lib/workspace-ops.js`), and common credential patterns pass through `redact.js`.
+
+### End-to-End Encrypted Share Links
+
+- Replay links (`/share/:id#k=...`) are encrypted locally using AES-256-GCM with a random 256-bit key. The key lives exclusively in the URL `#k=` fragment and is **never sent in HTTP requests**; the Hub stores only ciphertext and IV.
+
+---
+
+## Known Limitations
+
+Please review and harden as needed for production deployments:
+
+1. **`VAPID_SECRET` fallback chain**: When `VAPID_SECRET` is unset, Web Push key derivation falls back to `HUB_TOKEN`. Set a dedicated `VAPID_SECRET` in production so rotating `HUB_TOKEN` or push keys stays independent:
+   ```bash
+   export VAPID_SECRET="$(openssl rand -hex 32)"
+   ```
+2. **Avoid `?token=` query parameters**: Prefer `Authorization: Bearer <token>` or `X-Hub-Token` headers so tokens never appear in reverse-proxy access logs or browser history.
+3. **Ephemeral `/tmp` storage on Cloud Run**: By default on Cloud Run, state falls back to `/tmp` (though enrolled `hst_...` hosts auto-recover seamlessly on heartbeat). Mount a volume and set `HUB_STATE_FILE` if you require persistent E2EE share links across cold restarts.
+4. **Single-instance design**: Keep `--max-instances 1` on Cloud Run; in-memory live state and SSE streams are not shared across horizontal replicas.
+5. **Full local agent privileges**: The host daemon can read transcripts, send prompts, and approve commands on your machine. Always inspect code before installing third-party forks.
+6. **Share links are bearer credentials**: Anyone holding the full `#k=` URL can decrypt that shared snapshot.
+7. **Logical deletion**: Deleting a share removes its index entry rather than cryptographically wiping underlying disk blocks.
+8. **Feishu server retention**: If Feishu integration is enabled, message retention on Feishu's cloud is governed by your Feishu tenant settings.
+
+---
+
+## Deployment Hardening Checklist
+
+```text
+[ ] HUB_TOKEN is a strong random secret (e.g. >= 32 hex chars)
+[ ] VAPID_SECRET is set separately and differs from HUB_TOKEN
+[ ] Hub is exposed over HTTPS only (never plain HTTP over public networks)
+[ ] ~/.dsh/feishu.env permissions are set to 0600
+[ ] FEISHU_ALLOWED_OPEN_IDS (if using Feishu) contains only your own open_id
+[ ] Never commit feishu.env, feishu-host.json, or hub-state.json to git
+[ ] Cloud Run --max-instances is set to 1
+[ ] Persistent volume (if mounted) is not shared with untrusted containers
+```
+
+## Secret Rotation
+
+| Secret | How to Rotate | Impact |
+| --- | --- | --- |
+| `HUB_TOKEN` | Change in Web Settings or update env var & redeploy | Browsers must sign in again; enrolled `hst_...` computers keep working unless revoked |
+| Host Credential (`hst_...`) | Tap **🚫 Revoke Token** in Web Settings or delete `feishu-host.json` | Only that specific computer is disconnected and must re-enroll |
+| `VAPID_SECRET` | Update env var & redeploy | Existing Web Push subscriptions expire; re-enable Push in phone Settings |
+| Feishu `App Secret` | Reset in Feishu Open Platform console | Update `feishu.env` on Feishu-enabled hosts and restart daemon |
+
+---
+
+<a id="zh"></a>
+
+<p align="right"><a href="#en">🇺🇸 English</a> · <strong>🇨🇳 简体中文</strong></p>
+
 # 安全策略
 
 ## 支持范围
@@ -25,34 +148,35 @@
 | 组件 | 是否可信 | 说明 |
 | --- | --- | --- |
 | 你的电脑与 `~/.dsh/` | ✅ 可信 | 会话、密钥、审计日志都在这里 |
-| 自托管 Hub | ⚠️ 半可信 | 能看到会话元数据与**明文**会话快照；看不到 E2EE 分享的明文 |
-| 飞书开放平台 | ⚠️ 半可信 | 消息内容会经过飞书服务器，按你的租户策略留存 |
-| APNs | ⚠️ 半可信 | 只承载推送载荷，不含会话正文 |
-| 公网其他人 | ❌ 不可信 | 不应能连上任何东西 |
+| 自托管 Hub | ⚠️ 半可信 | 能看到会话元数据与**明文**活跃会话快照；看不到 E2EE 分享的明文 |
+| 飞书开放平台 *(可选)* | ⚠️ 半可信 | 若启用飞书通道，消息内容会经过飞书服务器，按你的租户策略留存 |
+| APNs / Web Push | ⚠️ 半可信 | 只承载加密推送通知，不含完整会话正文 |
+| 公网其他人 | ❌ 不可信 | 不应能连上任何未授权接口 |
 
-**关键结论**：这个项目不是"端到端加密的聊天工具"。如果你不希望会话内容经过飞书或你的 Hub，就不要把内容发进去。E2EE 只覆盖 `!share` 生成的分享链接。
+**关键结论**：这个项目是自托管的远程控制桥，不是电脑到 Hub 之间的端到端加密聊天软件。E2EE 端到端加密仅覆盖 `/share/:id#k=...` 生成的分享回放链接。请只把 Hub 部署在你自己掌控的设备或云账号上。
 
 ### 攻击面
 
-1. **Hub 的 HTTP 接口** —— 唯一对外暴露的面。
-2. **飞书机器人** —— 任何能给机器人发消息的人。
-3. **本地插件进程** —— 运行在 DSH 进程内，拥有 `ctx.agents` 权限。
-4. **供应链** —— 插件会被装进 DSH，代码可读性很重要。
+1. **Hub 的 HTTP 接口** —— 远程部署时唯一对外暴露的面。
+2. **飞书机器人 *(可选)*** —— 任何能给机器人发消息的人（受 `FEISHU_ALLOWED_OPEN_IDS` 白名单拦截）。
+3. **本机守护进程 (`dsh-feishu`)** —— 运行在你自己的电脑用户下，**主动向外**连接 Hub（电脑无需公网 IP 或开放入站端口）。
+4. **供应链** —— Hub 服务端保持零第三方运行时依赖，便于直接阅读审计源码。
 
 ---
 
 ## 已实现的控制
 
-### 认证
+### 认证与一机一证隔离
 
-- Hub 所有 `/api/*` 接口（除 `/api/pairing/exchange`、`/api/auth/verify`、`/healthz`）都要求 `HUB_TOKEN`。
-- 比对使用 `timingSafeEqual`，避免时序侧信道（`hub/server.js`）。
-- 支持三种携带方式：`Authorization: Bearer <token>`、`X-Hub-Token` 头、`?token=` 查询参数。**推荐只用前两种**（见「已知限制」）。
+- 未设置 `HUB_TOKEN` 时 Hub **直接拒绝裸奔启动**（`hub/server.js`）。
+- 所有 `/api/*` 与 `/fs/*` 接口（除公开探活与配对交换接口外）均强制鉴权，并使用 `timingSafeEqual` 防止时序侧信道。
+- **每台电脑独立可吊销凭证**：通过 15 分钟配对码接入的每台电脑都会获得独立的 `hst_...` 凭证并绑定 Ed25519 设备公钥指纹；在手机端吊销某一台电脑不会影响其他机器。
+- **短效只读媒体票据 (`mediaTicket`)**：聊天内嵌图片与 `HTTP 206` 视频流使用绑定文件路径与有效期的 HMAC 只读票据，避免在 `<img src>` / `<video src>` 中暴露主密码 `HUB_TOKEN`。
 
-### 手机配对
+### 手机配对与防爆破限流
 
-- 6 位配对码，有 TTL，一次性使用。
-- 失败尝试按来源分桶限流，1 分钟窗口内超过阈值返回 `429`（`hub/hub-core.js`）。
+- 6 位手机扫码/免密配对码有效期 3 分钟，一次性使用即销毁。
+- 登录与配对接口均按真实客户端 IP 分桶限流，超限返回 `429`（仅在 `TRUST_PROXY=1` 或 Cloud Run 环境下信任代理转发头，防止伪造 IP 绕过限流）。
 
 ### 密钥与文件权限
 
@@ -60,75 +184,53 @@
 - 设备密钥 `~/.dsh/feishu-host.json`、审计日志 `~/.dsh/feishu-audit.jsonl` 写入时强制 `0600`。
 - 环境变量优先级高于密钥文件，便于在 CI/容器里注入。
 
-### 授权
+### 授权与工作区目录隔离
 
-- `FEISHU_ALLOWED_OPEN_IDS` 白名单之外的发送者不会拿到任何会话内容。
-- `allowGroup` 默认关闭；群聊需要显式开启。
-- 每个 agent 同时只能绑定一个控制会话，重新绑定会撤销旧会话的审批权。
+- `FEISHU_ALLOWED_OPEN_IDS` 白名单之外的发送者不会拿到任何会话内容；`allowGroup` 默认关闭。
+- 文件浏览与反向隧道读取严格限制在工作区根目录内：先 `realpath` 解析，再做前缀比对，指向根目录外的符号链接一律拦截（`dsh-feishu/lib/workspace-ops.js`），常见凭据模式经过 `redact.js` 脱敏。
 
-### 工作区隔离
+### 端到端加密分享
 
-- 文件浏览与预览限制在工作区根目录内：先 `realpath` 解析，再做前缀比对，符号链接指向根目录外会被跳过（`dsh-feishu/lib/workspace-ops.js`）。
-- 预览内容会经过 `redact.js` 脱敏常见凭据。
-
-### 数据保护
-
-- 分享使用 AES-256-GCM，随机 256 位密钥，密钥只存在于 URL 的 `#k=` 片段，**不会出现在任何 HTTP 请求里**。
-- Hub 只存密文与 IV。
-- 迁移快照使用加密压缩包，可选是否包含凭据文件。
+- 分享链接使用 AES-256-GCM 与随机 256 位密钥在本地完成加密，解密密钥只存在于 URL 的 `#k=` 片段，**不会出现在任何 HTTP 请求里**；Hub 只存密文与 IV。
 
 ---
 
 ## 已知限制
 
-这些是当前实现里真实存在的短板，请按需加固：
+这些是当前实现里真实存在的边界，生产部署请按需加固：
 
-1. **VAPID 密钥有回退链。** 未设置 `VAPID_SECRET` 时，会依次回退到 `HUB_TOKEN`、`FEISHU_HUB_TOKEN`，最后是内置常量。这意味着 **Hub token 泄露 = 推送身份泄露**。生产部署务必设置独立的 `VAPID_SECRET`：
-
+1. **VAPID 密钥有回退链。** 未设置 `VAPID_SECRET` 时会回退使用 `HUB_TOKEN` 派生推送密钥。生产部署建议单独设置独立的 `VAPID_SECRET`：
    ```bash
    export VAPID_SECRET="$(openssl rand -hex 32)"
    ```
-
-2. **`?token=` 查询参数会进日志。** 网关访问日志、浏览器历史、`Referer` 都可能记录完整 URL。请只用 `Authorization` 头。
-
-3. **Cloud Run 的 Hub 状态默认落在 `/tmp`。** 容器重启后会话元数据与分享密文会丢失。需要持久化就把 `HUB_STATE_FILE` 指向挂载卷。
-
-4. **单实例假设。** 部署脚本固定 `--max-instances 1`。多实例会导致状态不一致，不要横向扩容。
-
-5. **插件拥有 DSH 的全部 agent 权限。** 它能读会话、发指令、执行工作区操作。安装前请自己 review 代码，不要装来路不明的 fork。
-
-6. **分享链接即授权。** 任何拿到 `#k=` 链接的人都能解密。转发前想清楚。
-
-7. **删除不是加密擦除。** 从 Hub 删掉分享只移除索引，底层文件系统可能仍留有数据。
-
-8. **飞书侧留存不受本项目控制。** 消息在飞书服务器上的保留策略由你的租户管理员决定。
+2. **`?token=` 查询参数会进日志。** 网关访问日志、浏览器历史可能记录完整 URL，请优先使用 `Authorization` 请求头。
+3. **Cloud Run 默认状态落在 `/tmp`。** 容器冷启动重启后分享密文会清空（已配对电脑的 `hst_...` 凭证会在心跳时自动无感恢复）；如需持久保存分享链接，请挂载数据卷并指定 `HUB_STATE_FILE`。
+4. **单实例假设。** 部署脚本固定 `--max-instances 1`，多实例会导致内存态与 SSE 流不一致，请勿横向扩容。
+5. **守护进程拥有本机完整开发工具权限。** 它能读会话、发指令、执行审批操作。安装前请自行审阅代码，不要安装来路不明的 fork。
+6. **分享链接即授权。** 任何拿到完整 `#k=` 链接的人都能解密该快照，转发前请确认。
+7. **删除不是加密擦除。** 从 Hub 删掉分享只移除索引，底层存储块可能仍留有残留。
+8. **飞书侧留存不受本项目控制。** 若启用飞书通道，消息在飞书服务器上的保留策略由你的飞书租户管理员决定。
 
 ---
 
 ## 部署检查清单
 
 ```text
-[ ] HUB_TOKEN 是随机生成的强密钥（≥ 32 hex 字符），不是密码
+[ ] HUB_TOKEN 是随机生成的强密钥（如 ≥ 32 hex 字符），避免弱口令
 [ ] VAPID_SECRET 单独设置，且不等于 HUB_TOKEN
 [ ] Hub 只通过 HTTPS 暴露；不要用明文 HTTP 跑公网
-[ ] FEISHU_ALLOWED_OPEN_IDS 已填，且只包含你自己的 open_id
 [ ] ~/.dsh/feishu.env 权限是 0600
+[ ] FEISHU_ALLOWED_OPEN_IDS（若启用飞书）只包含你自己的 open_id
 [ ] 没有把 feishu.env、feishu-host.json、hub-state.json 提交进 git
 [ ] Cloud Run 的 max-instances = 1
-[ ] 如果用了持久卷，确认它没有被其他服务共享
+[ ] 如果挂载了持久卷，确认它没有被其他不可信服务共享
 ```
 
 ## 密钥轮换
 
 | 密钥 | 轮换方式 | 影响 |
 | --- | --- | --- |
-| 飞书 `App Secret` | 飞书开放平台重置 | 更新所有机器的 `feishu.env`，重启插件 |
-| `HUB_TOKEN` | 改环境变量并重新部署 | 所有手机需要重新登录；Web Push 若未设 `VAPID_SECRET` 会一起变，需重新订阅 |
-| `VAPID_SECRET` | 改环境变量并重新部署 | 已有推送订阅全部失效，需要用户重新授权通知 |
-| 设备密钥 | Web 总控台「吊销设备」或删 `feishu-host.json` | 该设备需重新配对 |
-
----
-
-## English summary
-
-This is an independent, self-hosted remote-control bridge for AI coding agents. It holds a Feishu app secret, a hub token and a device private key. Report vulnerabilities via GitHub Security Advisories, not public issues. The main things to harden in a production deployment: set a dedicated `VAPID_SECRET`, use `Authorization` headers instead of `?token=`, keep `~/.dsh/feishu.env` at `0600`, keep the hub at a single instance, and remember that a share link is a bearer credential.
+| `HUB_TOKEN` | 在网页「设置 → 修改密码」或改环境变量重新部署 | 已登录浏览器需重新解锁；已配对电脑（`hst_...` 独立凭证）继续正常工作 |
+| 单机凭证 (`hst_...`) | Web 总控台点「🚫 吊销凭证」或删本机 `feishu-host.json` | 仅该台电脑断开并需重新配对，不影响其他电脑 |
+| `VAPID_SECRET` | 改环境变量并重新部署 | 已有锁屏推送订阅失效，需在手机设置里重新点一次开启推送 |
+| 飞书 `App Secret` | 飞书开放平台重置 | 更新对应机器的 `feishu.env` 并重启守护进程 |
