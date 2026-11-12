@@ -13,7 +13,8 @@
   </p>
 
   <p align="center">
-    <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Foscarka%2Fdeepseekharness-remotecontrol"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="32" /></a>
+    <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Foscarka%2Fdeepseekharness-remotecontrol&amp;envs=HUB_TOKEN&amp;HUB_TOKENDesc=Set+your+own+strong+admin+password+to+unlock+the+Control+Hub"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="32" /></a><br/>
+    <sub>💡 When deploying, enter <strong>your own custom strong password</strong> in the prompted <code>HUB_TOKEN</code> variable.</sub>
   </p>
 
   <p align="center">
@@ -118,7 +119,7 @@ HUB_TOKEN="choose-a-password" PORT=8080 npm start
 The terminal will print both `http://localhost:8080` and your LAN URL (e.g. `http://192.168.1.x:8080`).
 
 #### ☁️ Option C: 1-Click Cloud Deploy on Railway (No CLI Required)
-Click the **Deploy on Railway** button at the top of this README, set the `HUB_TOKEN` environment variable to your password, and Railway will give you a ready-to-use `https://...` URL in ~1 minute.
+Click the **Deploy on Railway** button at the top of this README, enter **your own custom strong password** in the prompted `HUB_TOKEN` field, and click `Settings → Networking → Generate Domain` once deployed to get your `https://...` URL in ~1 minute.
 
 #### 🐳 Option D: VPS / NAS / Raspberry Pi (Docker or Cloudflare Tunnel)
 If you have a home server, NAS, or VPS, you can run the prebuilt Docker image (or run `npm start` + a free tunnel like `cloudflared tunnel --url http://localhost:8080`):

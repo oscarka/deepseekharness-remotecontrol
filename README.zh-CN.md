@@ -13,7 +13,8 @@
   </p>
 
   <p align="center">
-    <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Foscarka%2Fdeepseekharness-remotecontrol"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="32" /></a>
+    <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Foscarka%2Fdeepseekharness-remotecontrol&amp;envs=HUB_TOKEN&amp;HUB_TOKENDesc=%E8%AF%B7%E8%AE%BE%E7%BD%AE%E4%BD%A0%E8%87%AA%E5%B7%B1%E7%9A%84%E6%8E%A7%E5%88%B6%E5%8F%B0%E7%AE%A1%E7%90%86%E5%AF%86%E7%A0%81+%28Set+your+own+strong+admin+password%29"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="32" /></a><br/>
+    <sub>💡 点击一键部署后，请在弹出的 <code>HUB_TOKEN</code> 参数栏填入<strong>你自己设置的强密码</strong>（切勿使用简单弱口令）。</sub>
   </p>
 
   <p align="center">
@@ -118,7 +119,7 @@ HUB_TOKEN="自定义一个密码" PORT=8080 npm start
 终端会同时打印出本机地址 `http://localhost:8080` 和局域网地址 `http://192.168.1.x:8080`。
 
 #### ☁️ 方式 C：Railway 网页一键部署（免敲命令上云）
-不想在本地装命令行工具？直接点击本页顶部的 **Deploy on Railway** 按钮，在网页里填一个 `HUB_TOKEN`（你的控制台密码），1 分钟就能拿到公网 `https://` 网址。
+不想在本地装命令行工具？直接点击本页顶部的 **Deploy on Railway** 按钮，在弹出的 `HUB_TOKEN` 参数栏里**改成你自己设置的强密码**，部署完成后在服务 `Settings → Networking` 点一下 `Generate Domain`，1 分钟就能拿到公网 `https://` 网址。
 
 #### 🐳 方式 D：自有云服务器 / NAS / 树莓派（Docker 或内网穿透）
 如果你有自己的 VPS、群晖 NAS 或软路由，可以直接用一行 Docker 命令启动（或者本机 `npm start` 搭配 `cloudflared` / `cpolar` / `Tailscale`）：
