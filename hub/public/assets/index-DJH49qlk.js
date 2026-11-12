@@ -2873,6 +2873,8 @@ function translateZhStringToEn(raw) {
 		["🧑 我: ", "🧑 Me: "],
 		["⚡ 极速", "⚡ Turbo"],
 		["🐢 轮询", "🐢 Polling"],
+		["(旧版)", "(outdated)"],
+		["✅ 远控+审批", "✅ Control + Approve"],
 		["🔵 看会话/发指令", "🔵 View & Prompt"],
 		["👀 观察模式", "👀 Observe-only"],
 		["⚪ 未安装", "⚪ Not installed"],
@@ -3290,6 +3292,88 @@ function buildShortHostNameMap(hosts = []) {
 		map[item.hostId] = `${tailOwner}·${item.compactBase}`;
 	} else map[item.hostId] = item.label;
 	return map;
+}
+/**
+* Compute session list sort priority:
+* 1. Pinned (`pinned: true`) always stays fixed at the very top of the list (10 + base state priority)
+* 2. Needs Approval / Choice (`status === 'approval'`) -> 4
+* 3. Unread Conclusion / Unread Interrupted (`hasUnreadConclusion || isUnreadInterrupted`) -> 3
+* 4. Actively Running / Queued (`status === 'running' || queuedCount > 0`) -> 2
+* 5. Read / Idle historical conversations -> 0 (sorted by `updatedAt` desc)
+*/
+function computeSessionSortPriority(s) {
+	if (!s) return 0;
+	let base = 0;
+	if (s.status === "approval") base = 4;
+	else if (s.hasUnreadConclusion || s.isUnreadInterrupted) base = 3;
+	else if (s.status === "running" || (Number(s.queuedCount) || 0) > 0) base = 2;
+	return s.pinned ? 10 + base : base;
+}
+function sortNormalizedSessions(list = []) {
+	return [...list].sort((a, b) => {
+		const pa = computeSessionSortPriority(a);
+		const pb = computeSessionSortPriority(b);
+		if (pa !== pb) return pb - pa;
+		return (b.updatedAt || 0) - (a.updatedAt || 0);
+	});
+}
+var HARNESS_CAPABILITY_MATRIX = [
+	{
+		id: "dsh",
+		label: "DSH",
+		canView: true,
+		canPrompt: true,
+		canStop: true,
+		approveState: "supported",
+		canSteer: true
+	},
+	{
+		id: "antigravity-ide",
+		label: "Antigravity IDE",
+		canView: true,
+		canPrompt: true,
+		canStop: true,
+		approveState: "supported",
+		canSteer: true
+	},
+	{
+		id: "codex",
+		label: "Codex",
+		canView: true,
+		canPrompt: true,
+		canStop: true,
+		approveState: "supported",
+		canSteer: true
+	},
+	{
+		id: "workbuddy",
+		label: "WorkBuddy",
+		canView: true,
+		canPrompt: true,
+		canStop: true,
+		approveState: "supported",
+		canSteer: true
+	},
+	{
+		id: "claude",
+		label: "Claude Code",
+		canView: true,
+		canPrompt: true,
+		canStop: true,
+		approveState: "planned",
+		canSteer: false
+	}
+];
+function renderCapabilityMatrixRowsHtml(rows = HARNESS_CAPABILITY_MATRIX) {
+	return rows.map((row, idx) => {
+		const borderStyle = idx < rows.length - 1 ? " style=\"border-bottom:1px solid var(--hairline);\"" : "";
+		const approveCell = row.approveState === "supported" ? "<td>✅</td>" : row.approveState === "planned" ? "<td style=\"color:var(--muted);\">计划中</td>" : "<td style=\"color:var(--muted);\">—</td>";
+		const steerCell = row.canSteer ? "<td>✅</td>" : "<td style=\"color:var(--muted);\">—</td>";
+		return `<tr${borderStyle}>
+                    <td style="text-align:left;padding:7px 4px;font-weight:700;"><span style="display:inline-flex;align-items:center;gap:6px;">${renderHarnessBadgeHtml(row.id, "inline")}<span>${escapeAttr(row.label)}</span></span></td>
+                    <td>${row.canView ? "✅" : "—"}</td><td>${row.canPrompt ? "✅" : "—"}</td><td>${row.canStop ? "✅" : "—"}</td>${approveCell}${steerCell}
+                  </tr>`;
+	}).join("\n");
 }
 // hub/web/src/controller.js
 function initHubController() {
@@ -4108,19 +4192,7 @@ function initHubController() {
 			localStorage.setItem("dsh_seen_v4", JSON.stringify(seenMap));
 			localStorage.setItem("dsh_seen_sig_v1", JSON.stringify(seenSigMap));
 		} catch {}
-		const statePriority = (s) => {
-			if (s.status === "approval") return 4;
-			if (s.status === "running") return 3;
-			if (s.hasUnreadConclusion || s.isUnreadInterrupted) return 2;
-			if (s.pinned) return 1;
-			return 0;
-		};
-		return list.sort((a, b) => {
-			const pa = statePriority(a);
-			const pb = statePriority(b);
-			if (pa !== pb) return pb - pa;
-			return (b.updatedAt || 0) - (a.updatedAt || 0);
-		});
+		return sortNormalizedSessions(list);
 	}
 	function findSessionGlobal(sessionId) {
 		const prevHost = currentHostId;
@@ -7004,13 +7076,17 @@ function initHubController() {
                       </div>
 
                       <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:11.5px;">
-                        <span style="padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">🟣 DSH · ✅ 远控+审批</span>
-                        <span style="padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">⚡ Antigravity · ✅ 远控+审批</span>
-                        ${(h.bridgeState?.harnesses || []).map((ad) => `
-                          <span style="padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">
-                            ${esc(ad.icon || "🔌")} ${esc(ad.label || ad.id)} · ${ad.hasBinary ? "🔵 看会话/发指令" : ad.installed ? "👀 观察模式" : "⚪ 未安装"}
+                        <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">${renderHarnessBadgeHtml("dsh", "inline")} DSH · ✅ 远控+审批</span>
+                        <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">${renderHarnessBadgeHtml("antigravity-ide", "inline")} Antigravity · ✅ 远控+审批</span>
+                        ${(h.bridgeState?.harnesses || []).map((ad) => {
+				const canApproveNow = Boolean(ad.capabilities?.canApprove || ad.id === "codex" || ad.id === "workbuddy");
+				const statusTag = ad.hasBinary ? canApproveNow ? "✅ 远控+审批" : "🔵 看会话/发指令" : ad.installed ? "👀 观察模式" : "⚪ 未安装";
+				return `
+                          <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">
+                            ${renderHarnessBadgeHtml(ad.id, "inline")} ${esc(ad.label || ad.id)} · ${statusTag}
                           </span>
-                        `).join("")}
+                        `;
+			}).join("")}
                       </div>
 
                       <div style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
@@ -7056,30 +7132,15 @@ function initHubController() {
                 <thead>
                   <tr style="border-bottom:1px solid var(--border);color:var(--muted);">
                     <th style="text-align:left;padding:6px 4px;">后端</th>
-                    <th style="padding:6px 4px;">看会话</th>
-                    <th style="padding:6px 4px;">发指令</th>
-                    <th style="padding:6px 4px;">停止</th>
-                    <th style="padding:6px 4px;">手机审批</th>
-                    <th style="padding:6px 4px;">实时插话</th>
+                    <th style="padding:6px 3px;">看会话</th>
+                    <th style="padding:6px 3px;">发指令</th>
+                    <th style="padding:6px 3px;">停止</th>
+                    <th style="padding:6px 3px;">手机审批</th>
+                    <th style="padding:6px 3px;">实时插话</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr style="border-bottom:1px solid var(--hairline);">
-                    <td style="text-align:left;padding:7px 4px;font-weight:700;">DSH</td>
-                    <td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td>
-                  </tr>
-                  <tr style="border-bottom:1px solid var(--hairline);">
-                    <td style="text-align:left;padding:7px 4px;font-weight:700;">Antigravity IDE</td>
-                    <td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td>
-                  </tr>
-                  <tr style="border-bottom:1px solid var(--hairline);">
-                    <td style="text-align:left;padding:7px 4px;font-weight:700;">Claude Code</td>
-                    <td>✅</td><td>✅</td><td>✅</td><td style="color:var(--muted);">计划中</td><td>❌</td>
-                  </tr>
-                  <tr>
-                    <td style="text-align:left;padding:7px 4px;font-weight:700;">Codex</td>
-                    <td>✅</td><td>✅</td><td>✅</td><td style="color:var(--muted);">计划中</td><td>❌</td>
-                  </tr>
+                  ${renderCapabilityMatrixRowsHtml()}
                 </tbody>
               </table>
             </div>

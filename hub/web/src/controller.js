@@ -64,6 +64,8 @@ import {
   normalizeDeviceModelShort,
   buildShortHostNameMap,
   stripRedundantProjectPrefix,
+  sortNormalizedSessions,
+  renderCapabilityMatrixRowsHtml,
 } from './utils/session-labels';
 
 export function initHubController() {
@@ -998,21 +1000,8 @@ export function initHubController() {
       } catch { }
     }
 
-    // 优先级排序：1. 待授权(黄) → 2. 运行中(绿) → 3. 已出结论未读(蓝)/中断 → 4. 置顶 → 5. 最新时间
-    const statePriority = (s) => {
-      if (s.status === 'approval') return 4;
-      if (s.status === 'running') return 3;
-      if (s.hasUnreadConclusion || s.isUnreadInterrupted) return 2;
-      if (s.pinned) return 1;
-      return 0;
-    };
-
-    return list.sort((a, b) => {
-      const pa = statePriority(a);
-      const pb = statePriority(b);
-      if (pa !== pb) return pb - pa;
-      return (b.updatedAt || 0) - (a.updatedAt || 0);
-    });
+    // 优先级排序：1. 置顶(📌 固定最顶部，组内仍按紧急度排) → 2. 待授权(黄) → 3. 已出结论/中断未读(蓝/橙) → 4. 运行中(绿) → 5. 最新时间
+    return sortNormalizedSessions(list);
   }
 
   function findSessionGlobal(sessionId) {
@@ -4476,13 +4465,19 @@ export function initHubController() {
                       </div>
 
                       <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:11.5px;">
-                        <span style="padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">🟣 DSH · ✅ 远控+审批</span>
-                        <span style="padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">⚡ Antigravity · ✅ 远控+审批</span>
-                        ${(h.bridgeState?.harnesses || []).map(ad => `
-                          <span style="padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">
-                            ${esc(ad.icon || '🔌')} ${esc(ad.label || ad.id)} · ${ad.hasBinary ? '🔵 看会话/发指令' : (ad.installed ? '👀 观察模式' : '⚪ 未安装')}
+                        <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">${renderHarnessBadgeHtml('dsh', 'inline')} DSH · ✅ 远控+审批</span>
+                        <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">${renderHarnessBadgeHtml('antigravity-ide', 'inline')} Antigravity · ✅ 远控+审批</span>
+                        ${(h.bridgeState?.harnesses || []).map(ad => {
+                          const canApproveNow = Boolean(ad.capabilities?.canApprove || ad.id === 'codex' || ad.id === 'workbuddy');
+                          const statusTag = ad.hasBinary
+                            ? (canApproveNow ? '✅ 远控+审批' : '🔵 看会话/发指令')
+                            : (ad.installed ? '👀 观察模式' : '⚪ 未安装');
+                          return `
+                          <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">
+                            ${renderHarnessBadgeHtml(ad.id, 'inline')} ${esc(ad.label || ad.id)} · ${statusTag}
                           </span>
-                        `).join('')}
+                        `;
+                        }).join('')}
                       </div>
 
                       <div style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
@@ -4527,30 +4522,15 @@ export function initHubController() {
                 <thead>
                   <tr style="border-bottom:1px solid var(--border);color:var(--muted);">
                     <th style="text-align:left;padding:6px 4px;">后端</th>
-                    <th style="padding:6px 4px;">看会话</th>
-                    <th style="padding:6px 4px;">发指令</th>
-                    <th style="padding:6px 4px;">停止</th>
-                    <th style="padding:6px 4px;">手机审批</th>
-                    <th style="padding:6px 4px;">实时插话</th>
+                    <th style="padding:6px 3px;">看会话</th>
+                    <th style="padding:6px 3px;">发指令</th>
+                    <th style="padding:6px 3px;">停止</th>
+                    <th style="padding:6px 3px;">手机审批</th>
+                    <th style="padding:6px 3px;">实时插话</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr style="border-bottom:1px solid var(--hairline);">
-                    <td style="text-align:left;padding:7px 4px;font-weight:700;">DSH</td>
-                    <td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td>
-                  </tr>
-                  <tr style="border-bottom:1px solid var(--hairline);">
-                    <td style="text-align:left;padding:7px 4px;font-weight:700;">Antigravity IDE</td>
-                    <td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td>
-                  </tr>
-                  <tr style="border-bottom:1px solid var(--hairline);">
-                    <td style="text-align:left;padding:7px 4px;font-weight:700;">Claude Code</td>
-                    <td>✅</td><td>✅</td><td>✅</td><td style="color:var(--muted);">计划中</td><td>❌</td>
-                  </tr>
-                  <tr>
-                    <td style="text-align:left;padding:7px 4px;font-weight:700;">Codex</td>
-                    <td>✅</td><td>✅</td><td>✅</td><td style="color:var(--muted);">计划中</td><td>❌</td>
-                  </tr>
+                  ${renderCapabilityMatrixRowsHtml()}
                 </tbody>
               </table>
             </div>

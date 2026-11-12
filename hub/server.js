@@ -1244,7 +1244,13 @@ export function createHubServer({
       }
     } catch (error) {
       logger?.warn?.(`dsh-hub error: ${error?.message ?? error}`)
-      sendJson(res, 500, { ok: false, error: error?.message ?? 'Internal server error' }, req.headers)
+      if (!res.headersSent) {
+        await sendJson(res, 500, { ok: false, error: error?.message ?? 'Internal server error' }, req.headers)
+      } else {
+        try {
+          res.end()
+        } catch {}
+      }
     }
   })
 

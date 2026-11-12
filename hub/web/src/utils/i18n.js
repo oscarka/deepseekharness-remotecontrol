@@ -574,6 +574,8 @@ export function translateZhStringToEn(raw) {
     ['🧑 我: ', '🧑 Me: '],
     ['⚡ 极速', '⚡ Turbo'],
     ['🐢 轮询', '🐢 Polling'],
+    ['(旧版)', '(outdated)'],
+    ['✅ 远控+审批', '✅ Control + Approve'],
     ['🔵 看会话/发指令', '🔵 View & Prompt'],
     ['👀 观察模式', '👀 Observe-only'],
     ['⚪ 未安装', '⚪ Not installed'],
