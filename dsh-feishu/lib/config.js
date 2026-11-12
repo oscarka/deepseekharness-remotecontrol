@@ -165,6 +165,9 @@ export async function loadSettings(config, env = process.env) {
     : (Array.isArray(config.enabledHarnesses) ? config.enabledHarnesses : null)
   const codexHome = expandHome(env.FEISHU_CODEX_HOME || fileValues.FEISHU_CODEX_HOME || config.codexHome || '')
   const claudeHome = expandHome(env.FEISHU_CLAUDE_HOME || fileValues.FEISHU_CLAUDE_HOME || config.claudeHome || '')
+  const doubaoHome = expandHome(
+    env.FEISHU_DOUBAO_HOME || env.DOUBAO_HOME || fileValues.FEISHU_DOUBAO_HOME || config.doubaoHome || '',
+  )
   const workbuddyHome = expandHome(
     env.FEISHU_WORKBUDDY_HOME ||
       env.WORKBUDDY_CONFIG_DIR ||
@@ -199,6 +202,7 @@ export async function loadSettings(config, env = process.env) {
     ...(enabledHarnesses ? { enabledHarnesses } : {}),
     ...(codexHome ? { codexHome } : {}),
     ...(claudeHome ? { claudeHome } : {}),
+    ...(doubaoHome ? { doubaoHome } : {}),
     ...(workbuddyHome ? { workbuddyHome } : {}),
     ...(workbuddyAcpEndpoint ? { workbuddyAcpEndpoint } : {}),
   }

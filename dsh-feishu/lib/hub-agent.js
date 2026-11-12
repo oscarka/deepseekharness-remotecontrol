@@ -28,6 +28,14 @@ import { createSnapshotBuffer, inspectDshHome, restoreSnapshotBuffer, wipeDshHom
 import { decorateTaskMetadata, HarnessRouter } from './harness-router.js'
 import { ClaudeAdapter } from './harnesses/claude-adapter.js'
 import { CodexAdapter, discoverCodexModels } from './harnesses/codex-adapter.js'
+import {
+  discoverDoubaoModels,
+  discoverDoubaoSessionRoots,
+  DoubaoAdapter,
+  getDoubaoChatsDir,
+  getDoubaoDataRoot,
+  isDoubaoSessionId,
+} from './harnesses/doubao-adapter.js'
 import { discoverDshModels, DshHeadlessRunner } from './harnesses/dsh-headless-adapter.js'
 import { discoverWorkBuddyModels, WorkBuddyAdapter } from './harnesses/workbuddy-adapter.js'
 import { safeError } from './redact.js'
@@ -123,6 +131,30 @@ export class HubAgent {
             claudeHome: this.config?.claudeHome || undefined,
             maxSessions: this.config?.maxClaudeSessions || 8,
             execImpl: this.execImpl,
+          }),
+        )
+      }
+      const isDefaultDshHome = Boolean(
+        this.config?.dshHome && resolve(this.config.dshHome) === resolve(join(homedir(), '.dsh')),
+      )
+      const allowImplicitDoubao =
+        isDefaultDshHome ||
+        this.config?.enableExternalHarnesses === true ||
+        Boolean(this.config?.doubaoHome)
+      if (
+        Boolean(this.config?.doubaoHome) ||
+        (enabledSet
+          ? enabledSet.has('doubao') || (isLegacyDefaultSet && allowImplicitDoubao)
+          : allowImplicitDoubao)
+      ) {
+        this.harnessRouter.registerAdapter(
+          new DoubaoAdapter({
+            doubaoHome: this.config?.doubaoHome || undefined,
+            maxSessions: this.config?.maxDoubaoSessions || 15,
+            execImpl: this.execImpl,
+            onStateChange: () => {
+              this.scheduleFollowUpTick(250)
+            },
           }),
         )
       }
@@ -262,7 +294,10 @@ export class HubAgent {
   shouldLoadExternalHarnesses() {
     if (this.config?.enableExternalHarnesses === false) return false
     if (this.config?.enableExternalHarnesses === true) return true
-    if (this.config?.codexHome || this.config?.claudeHome || this.config?.workbuddyHome) return true
+    if (this.config?.codexHome || this.config?.claudeHome || this.config?.workbuddyHome || this.config?.doubaoHome) return true
+    if (Array.isArray(this.config?.enabledHarnesses) && this.config.enabledHarnesses.some(s => String(s).toLowerCase() === 'doubao')) {
+      return true
+    }
     const defaultDshHome = join(homedir(), '.dsh')
     return Boolean(this.config?.dshHome && resolve(this.config.dshHome) === resolve(defaultDshHome))
   }
@@ -371,6 +406,39 @@ export class HubAgent {
           dshHome: this.config.dshHome,
           now,
         })
+        for (const extSess of this.cachedExternalSessions) {
+          const pending = this.pendingUserPrompts.get(extSess.id)
+          if (!pending || pending.length === 0) continue
+          if (!Array.isArray(extSess.transcript)) extSess.transcript = []
+          const remaining = []
+          for (const item of pending) {
+            if (now - item.time >= 25_000) continue
+            const alreadyInTranscript = extSess.transcript.some(
+              m => m.role === 'user' && String(m.text || '').trim() === item.text,
+            )
+            if (alreadyInTranscript) continue
+            remaining.push(item)
+            extSess.transcript = [
+              ...extSess.transcript,
+              {
+                index: extSess.transcript.length,
+                role: 'user',
+                text: item.text,
+                thinking: '',
+                tools: [],
+                toolCalls: [],
+                time: item.time,
+              },
+            ]
+            extSess.lastActivity = Math.max(extSess.lastActivity || 0, item.time)
+            extSess.updatedAt = Math.max(extSess.updatedAt || 0, item.time)
+          }
+          if (remaining.length === 0) {
+            this.pendingUserPrompts.delete(extSess.id)
+          } else {
+            this.pendingUserPrompts.set(extSess.id, remaining)
+          }
+        }
       } else {
         this.cachedExternalSessions = []
       }
@@ -427,6 +495,8 @@ export class HubAgent {
   resolveExtraArtifactRoots() {
     return [
       this.config?.dshHome || '',
+      ...discoverDoubaoSessionRoots(getDoubaoDataRoot(this.config?.doubaoHome || '')),
+      getDoubaoChatsDir(),
       ...(Array.isArray(this.config?.antigravityBrainDirs) ? this.config.antigravityBrainDirs : []),
     ].filter(Boolean)
   }
@@ -442,7 +512,7 @@ export class HubAgent {
         if (prewarmed.length >= 2) break
         const artName = String(art?.name || '').toLowerCase()
         const artPath = String(art?.path || '').trim()
-        if (!artPath || artName !== 'walkthrough.md') continue
+        if (!artPath || (artName !== 'walkthrough.md' && artName !== 'board.md')) continue
         const mtimeKey = Number(art.mtimeMs) || 0
         if (mtimeKey > 0 && this.prewarmedArtifactMtimes.get(artPath) === mtimeKey) continue
         try {
@@ -811,6 +881,7 @@ export class HubAgent {
           },
           codex: codexCatalog,
           workbuddy: workbuddyCatalog,
+          doubao: discoverDoubaoModels(),
         }
         for (const t of bridgeState.tasks || []) {
           const override = this.sessionModelOverrides.get(t.id)
@@ -1594,7 +1665,11 @@ export class HubAgent {
               }
             }
             if (type === 'stop' && typeof extAdapter.stopSession === 'function') {
-              const stopRes = await extAdapter.stopSession({ sessionId: targetId, cwd: extSess?.cwd || cmd.cwd })
+              const stopRes = await extAdapter.stopSession({
+                sessionId: targetId,
+                cwd: extSess?.cwd || cmd.cwd,
+                execImpl: this.execImpl,
+              })
               this.logger?.log?.(
                 `[dsh-feishu] ⏹ ${extAdapter.label || extAdapter.id} stop (${targetId}) -> ok=${stopRes?.ok} msg=${stopRes?.message || stopRes?.error || ''}`,
               )
@@ -1613,6 +1688,28 @@ export class HubAgent {
                 mode: type,
                 execImpl: this.execImpl,
               })
+              if (extRes?.ok && isDoubaoSessionId(targetId) && effectiveText) {
+                const nowTs = Date.now()
+                const list = this.pendingUserPrompts.get(targetId) || []
+                list.push({ text: effectiveText, time: nowTs })
+                this.pendingUserPrompts.set(targetId, list)
+                if (extSess && Array.isArray(extSess.transcript)) {
+                  extSess.transcript = [
+                    ...extSess.transcript,
+                    {
+                      index: extSess.transcript.length,
+                      role: 'user',
+                      text: effectiveText,
+                      thinking: '',
+                      tools: [],
+                      toolCalls: [],
+                      time: nowTs,
+                    },
+                  ]
+                  extSess.lastActivity = nowTs
+                  extSess.updatedAt = nowTs
+                }
+              }
               this.logger?.log?.(
                 `[dsh-feishu] ${extRes?.ok ? '✅' : '⚠️'} ${extAdapter.label || extAdapter.id} ${type} result (${targetId}) -> ok=${extRes?.ok} msg=${extRes?.message || extRes?.error || ''}`,
               )

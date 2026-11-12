@@ -308,6 +308,9 @@ export function initHubController() {
     const btn = document.getElementById('chatModelBtn');
     const labelEl = document.getElementById('chatModelBtnLabel');
     if (!btn || !labelEl || !session) return;
+    const isObserveOnly = session.controlMode === 'observe-only' && session.harness !== 'dsh';
+    btn.style.display = isObserveOnly ? 'none' : '';
+    if (isObserveOnly) return;
     const catalog = getHarnessModelCatalog(host, session.harness);
     const overrideVal = selectedSessionModels[session.id] || '';
     const displayLabel = resolveModelShortLabel(catalog, overrideVal, session.model);
@@ -823,13 +826,15 @@ export function initHubController() {
           rawIdStr.startsWith('agy-ide:') ? 'antigravity-ide' :
             rawIdStr.startsWith('codex:') ? 'codex' :
               rawIdStr.startsWith('workbuddy:') ? 'workbuddy' :
-                rawIdStr.startsWith('claude:') ? 'claude' : 'dsh'
+                rawIdStr.startsWith('doubao:') ? 'doubao' :
+                  rawIdStr.startsWith('claude:') ? 'claude' : 'dsh'
         );
         const harnessLabel = t.harnessLabel || (
           harness === 'antigravity-ide' ? 'Antigravity IDE' :
             harness === 'codex' ? 'Codex' :
               harness === 'workbuddy' ? 'WorkBuddy' :
-                harness === 'claude' ? 'Claude Code' : 'DeepSeek Harness'
+                harness === 'doubao' ? '豆包电脑版' :
+                  harness === 'claude' ? 'Claude Code' : 'DeepSeek Harness'
         );
 
         let lastConclusionAt = Number(t.lastConclusionAt) || 0;
@@ -1168,6 +1173,7 @@ export function initHubController() {
     const agyCount = sessions.filter(s => s.harness === 'antigravity-ide').length;
     const codexCount = sessions.filter(s => s.harness === 'codex').length;
     const workbuddyCount = sessions.filter(s => s.harness === 'workbuddy').length;
+    const doubaoCount = sessions.filter(s => s.harness === 'doubao').length;
     const claudeCount = sessions.filter(s => s.harness === 'claude').length;
     const dshCount = sessions.filter(s => s.harness === 'dsh').length;
 
@@ -1179,7 +1185,7 @@ export function initHubController() {
     const strip = document.getElementById('projectStrip');
     const nowDate = new Date();
     const todayKey = `${nowDate.getFullYear()}-${nowDate.getMonth() + 1}-${nowDate.getDate()}`;
-    const stripKey = `${todayKey}:${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${claudeCount}:${dshCount}:${projects.map(p => `${p}:${counts[p]}`).join(',')}`;
+    const stripKey = `${todayKey}:${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${doubaoCount}:${claudeCount}:${dshCount}:${projects.map(p => `${p}:${counts[p]}`).join(',')}`;
     if (stripKey === lastRenderedStripKey && strip.children.length > 0) return;
     lastRenderedStripKey = stripKey;
     const prevScrollLeft = strip.scrollLeft;
@@ -1197,10 +1203,13 @@ export function initHubController() {
     if (workbuddyCount > 0) {
       smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_WORKBUDDY' ? 'active' : ''}" onclick="selectProject('HARNESS_WORKBUDDY')">${renderHarnessBadgeHtml('workbuddy', 'pill')} WorkBuddy <span class="count">${workbuddyCount}</span></button>`);
     }
+    if (doubaoCount > 0) {
+      smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_DOUBAO' ? 'active' : ''}" onclick="selectProject('HARNESS_DOUBAO')">${renderHarnessBadgeHtml('doubao', 'pill')} 豆包 <span class="count">${doubaoCount}</span></button>`);
+    }
     if (claudeCount > 0) {
       smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_CLAUDE' ? 'active' : ''}" onclick="selectProject('HARNESS_CLAUDE')">${renderHarnessBadgeHtml('claude', 'pill')} Claude <span class="count">${claudeCount}</span></button>`);
     }
-    if (dshCount > 0 && (agyCount > 0 || codexCount > 0 || workbuddyCount > 0 || claudeCount > 0)) {
+    if (dshCount > 0 && (agyCount > 0 || codexCount > 0 || workbuddyCount > 0 || doubaoCount > 0 || claudeCount > 0)) {
       smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_DSH' ? 'active' : ''}" onclick="selectProject('HARNESS_DSH')">${renderHarnessBadgeHtml('dsh', 'pill')} DSH <span class="count">${dshCount}</span></button>`);
     }
 
@@ -1243,8 +1252,9 @@ export function initHubController() {
       if (currentProject === 'HARNESS_AGY_IDE' && s.harness !== 'antigravity-ide') return false;
       if (currentProject === 'HARNESS_CODEX' && s.harness !== 'codex') return false;
       if (currentProject === 'HARNESS_WORKBUDDY' && s.harness !== 'workbuddy') return false;
+      if (currentProject === 'HARNESS_DOUBAO' && s.harness !== 'doubao') return false;
       if (currentProject === 'HARNESS_CLAUDE' && s.harness !== 'claude') return false;
-      if (!['ALL', 'SMART_ACTIVE', 'SMART_UNREAD', 'HARNESS_DSH', 'HARNESS_AGY_IDE', 'HARNESS_CODEX', 'HARNESS_WORKBUDDY', 'HARNESS_CLAUDE'].includes(currentProject) && s.project !== currentProject) return false;
+      if (!['ALL', 'SMART_ACTIVE', 'SMART_UNREAD', 'HARNESS_DSH', 'HARNESS_AGY_IDE', 'HARNESS_CODEX', 'HARNESS_WORKBUDDY', 'HARNESS_DOUBAO', 'HARNESS_CLAUDE'].includes(currentProject) && s.project !== currentProject) return false;
       if (!q) return true;
       const compactProj = formatCompactProjectLabel(s.project, nowDate).toLowerCase();
       return s.title.toLowerCase().includes(q) || s.project.toLowerCase().includes(q) || compactProj.includes(q) || s.lastPreview.toLowerCase().includes(q);
@@ -1542,9 +1552,11 @@ export function initHubController() {
         ? 'Codex'
         : s.harness === 'workbuddy'
           ? 'WorkBuddy'
-          : s.harness === 'claude'
-            ? 'Claude Code'
-            : 'DSH';
+          : s.harness === 'doubao'
+            ? '豆包电脑版'
+            : s.harness === 'claude'
+              ? 'Claude Code'
+              : 'DSH';
     const isObserveOnly = s.controlMode === 'observe-only' && s.harness !== 'dsh';
     const modeTag = isObserveOnly
       ? ' · 👀 仅观测'

@@ -46,6 +46,15 @@ export const DEFAULT_HARNESS_CAPABILITIES = {
     canApprove: false,
     approvalStatus: 'planned',
   },
+  doubao: {
+    canView: true,
+    canCreateSession: false,
+    canPrompt: false,
+    canSteer: false,
+    canStop: false,
+    canApprove: false,
+    approvalStatus: 'unsupported',
+  },
 }
 
 /**
@@ -57,6 +66,7 @@ export function summarizeInstalledHarnesses({
   hasCodex = false,
   hasWorkBuddy = false,
   hasClaude = false,
+  hasDoubao = false,
 } = {}) {
   const detected = []
   if (hasDsh) detected.push('dsh')
@@ -64,6 +74,7 @@ export function summarizeInstalledHarnesses({
   if (hasCodex) detected.push('codex')
   if (hasWorkBuddy) detected.push('workbuddy')
   if (hasClaude) detected.push('claude')
+  if (hasDoubao) detected.push('doubao')
 
   const hasApprovalBackend = Boolean(hasDsh || hasAntigravity || hasCodex || hasWorkBuddy)
   if (hasApprovalBackend) {
@@ -80,6 +91,14 @@ export function summarizeInstalledHarnesses({
       detected,
       enabledHarnesses: detected.join(','),
       summary: `已检测到 ${detected.join(', ')}（未装 DSH）：当前为观察模式，审批功能需要 DSH（目前支持看会话、发指令、停止）。`,
+    }
+  }
+  if (hasDoubao) {
+    return {
+      mode: 'observe',
+      detected,
+      enabledHarnesses: detected.join(','),
+      summary: `已检测到 ${detected.join(', ')}：当前为仅观测模式（支持查看会话、思考过程与任务产物，不支持远程发指令）。`,
     }
   }
   return {
@@ -108,7 +127,9 @@ export function decorateTaskMetadata(task, { isLiveDsh = false, now = Date.now()
           ? 'WorkBuddy'
           : harness === 'claude'
             ? 'Claude Code'
-            : 'DeepSeek Harness')
+            : harness === 'doubao'
+              ? '豆包电脑版'
+              : 'DeepSeek Harness')
 
   let controlMode = task.controlMode
   if (!controlMode || (harness === 'dsh' && controlMode === 'observe-only')) {

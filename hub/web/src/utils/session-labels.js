@@ -17,7 +17,9 @@ export function renderHarnessBadgeHtml(harness = 'dsh', variant = 'row', titleTe
           ? 'dsh-icon-codex'
           : harness === 'claude'
             ? 'dsh-icon-claude'
-            : 'dsh-icon-dsh';
+            : harness === 'doubao'
+              ? 'dsh-icon-doubao'
+              : 'dsh-icon-dsh';
   const titleAttr = titleText ? ` title="${escapeAttr(titleText)}"` : '';
   return `<span class="harness-icon-badge ${escapeAttr(variant)}"${titleAttr}><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="#${symId}"/></svg></span>`;
 }

@@ -154,6 +154,38 @@ async function main() {
     gateStatus: wbBin || wbSessionFiles > 0 ? 'NEEDS_IPC_INSPECTION' : 'NOT_INSTALLED',
   }
 
+  // 4. Doubao Desktop (`doubao`, cross-platform local observe-only)
+  const doubaoRootCandidates =
+    process.platform === 'win32'
+      ? [
+          process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Doubao', 'User Data') : '',
+          process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Doubao') : '',
+          process.env.APPDATA ? join(process.env.APPDATA, 'Doubao', 'User Data') : '',
+        ].filter(Boolean)
+      : process.platform === 'darwin'
+        ? [join(home, 'Library', 'Application Support', 'Doubao')]
+        : [join(home, '.config', 'Doubao')]
+  const doubaoRoot = doubaoRootCandidates.find(p => existsSync(p)) || ''
+  const doubaoSessionsDir = doubaoRoot
+    ? join(doubaoRoot, 'Default', '.doubao', 'agent_mode', 'workspace', '.sessions')
+    : ''
+  const doubaoIndexedDbDir = doubaoRoot
+    ? join(doubaoRoot, 'Default', 'IndexedDB', 'chrome_doubao-chat_0.indexeddb.leveldb')
+    : ''
+  const doubaoScan = doubaoSessionsDir && existsSync(doubaoSessionsDir)
+    ? countFilesRecursive(doubaoSessionsDir, 'trajectory.jsonl', 4)
+    : { count: 0, latestPath: '' }
+  const hasIndexedDb = Boolean(doubaoIndexedDbDir && existsSync(doubaoIndexedDbDir))
+  report.harnesses.doubao = {
+    dataRoot: doubaoRoot,
+    indexedDbDir: hasIndexedDb ? doubaoIndexedDbDir : '',
+    sessionsDir: doubaoSessionsDir && existsSync(doubaoSessionsDir) ? doubaoSessionsDir : '',
+    sessionFileCount: doubaoScan.count,
+    latestSessionFile: doubaoScan.latestPath,
+    controlMode: 'observe-only',
+    gateStatus: hasIndexedDb || doubaoScan.count > 0 ? 'PASS_LOCAL_OBSERVE_ONLY' : 'NOT_INSTALLED',
+  }
+
   console.log(JSON.stringify(report, null, 2))
 }
 

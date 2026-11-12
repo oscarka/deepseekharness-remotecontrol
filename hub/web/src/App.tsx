@@ -104,6 +104,15 @@ const HARNESS_SVG_SPRITE = `<svg id="dshHarnessSvgDefs" width="24" height="24" v
       <circle cx="9.2" cy="12.2" r="1.0" fill="#1D4ED8"/>
       <path d="M10.5 5.2c.4-.9 1.3-1.4 2.1-1.2M8.8 5.8c-.3-.8-.9-1.2-1.7-1.1" stroke="#93C5FD" stroke-width="1.4" stroke-linecap="round" fill="none"/>
     </symbol>
+
+    <!-- 6. Doubao Desktop -->
+    <symbol id="dsh-icon-doubao" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.4" fill="#1E6FFF"/>
+      <circle cx="12" cy="12.2" r="6.8" fill="#FFFFFF"/>
+      <circle cx="9.6" cy="11.2" r="1.15" fill="#1E6FFF"/>
+      <circle cx="14.4" cy="11.2" r="1.15" fill="#1E6FFF"/>
+      <path d="M9.4 14.3c.7.9 1.6 1.3 2.6 1.3s1.9-.4 2.6-1.3" stroke="#1E6FFF" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+    </symbol>
   </defs>
 </svg>`;
 

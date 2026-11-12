@@ -28,37 +28,37 @@
 		fetch(link.href, fetchOpts);
 	}
 })();
-// node_modules/.pnpm/preact@11.1.1/node_modules/preact/dist/preact.mjs
+// node_modules/preact/dist/preact.mjs
 var n;
 var t;
-var i;
 var u;
+var i;
 var f;
-var e;
 var o;
+var e;
 var l;
 var c;
 var a;
 var h = Symbol.for("pv");
 var p = {};
-var v = [];
-var y = /^m(i|n|o|s|text|space)$/;
+var y = [];
+var v = /^m(i|n|o|s|text|space)$/;
 var w = Array.isArray;
-var d = v.slice;
+var d = y.slice;
 var _ = Object.assign;
 function g(n) {
 	n && n.parentNode && n.remove();
 }
 function k(n, t, r) {
-	var i, u, f, e = {}, o = arguments.length;
-	for (f in t) "key" == f ? i = t[f] : "ref" == f && "function" != typeof n ? u = t[f] : e[f] = t[f];
-	return o > 2 && (e.children = o > 3 ? d.call(arguments, 2) : r), m(n, e, i, u, null);
+	var u, i, f, o = {}, e = arguments.length;
+	for (f in t) "key" == f ? u = t[f] : "ref" == f && "function" != typeof n ? i = t[f] : o[f] = t[f];
+	return e > 2 && (o.children = e > 3 ? d.call(arguments, 2) : r), m(n, o, u, i, null);
 }
-function m(r, i, u, f, e) {
-	var o = {
+function m(r, u, i, f, o) {
+	var e = {
 		type: r,
-		props: i,
-		key: u,
+		props: u,
+		key: i,
 		ref: f,
 		__k: null,
 		__: null,
@@ -66,13 +66,13 @@ function m(r, i, u, f, e) {
 		__e: null,
 		__c: null,
 		constructor: h,
-		__v: e || ++t,
+		__v: o || ++t,
 		__i: -1,
 		__u: 0
 	};
-	return !e && n.vnode && n.vnode(o), o;
+	return !o && n.vnode && n.vnode(e), e;
 }
-function M(n) {
+function $(n) {
 	return n.children;
 }
 function x(n, t) {
@@ -83,73 +83,76 @@ function S(n, t) {
 	for (var r; t < n.__k.length; t++) if ((r = n.__k[t]) && r.__e) return r.__e;
 	return "function" != typeof n.type || n.props.__P ? null : S(n);
 }
-function C(n) {
+function C(t) {
+	var r, u = t.__v, i = u.__e, f = [], o = [], e = t.__P;
+	e && ((r = _({ constructor: h }, u)).__v = u.__v + 1, n.vnode && n.vnode(r), z(e, r, u, t.__n, e.namespaceURI, 32 & u.__u ? [i] : null, f, i || S(u), 32 & u.__u, o), r.__v = u.__v, r.__.__k[r.__i] = r, E(f, r, o), u.__ = u.__e = null, r.__e != i && j(r));
+}
+function j(n) {
 	if ((n = n.__) && n.__c && !n.props.__P) return n.__e = null, n.__k.some(function(t) {
 		return t && (n.__e = t.__e);
-	}), C(n);
+	}), j(n);
 }
-function j(t) {
-	(8 & t.__g || (t.__g |= 8, i.push(t), f++)) && u == n.debounceRendering || ((u = n.debounceRendering) || queueMicrotask)(L);
+function L(t) {
+	(8 & t.__g || (t.__g |= 8, u.push(t), f++)) && i == n.debounceRendering || ((i = n.debounceRendering) || queueMicrotask)(H);
 }
-function L() {
-	var t, r, o, l, c, a, s, p, v;
+function H() {
 	try {
-		for (r = 1; i.length;) i.length > r && i.sort(e), t = i.shift(), r = i.length, 8 & t.__g && (l = void 0, c = void 0, a = (c = (o = t).__v).__e, s = [], p = [], (v = o.__P) && ((l = _({ constructor: h }, c)).__v = c.__v + 1, n.vnode && n.vnode(l), V(v, l, c, o.__n, v.namespaceURI, 32 & c.__u ? [a] : null, s, a || S(c), 32 & c.__u, p), l.__v = c.__v, l.__.__k[l.__i] = l, D(s, l, p), c.__ = c.__e = null, l.__e != a && C(l)));
+		for (var n, t = 1; u.length;) u.length > t && u.sort(o), n = u.shift(), t = u.length, 8 & n.__g && C(n);
 	} finally {
-		(f = i.length) && (u || queueMicrotask)(L);
+		(f = u.length) && (i || queueMicrotask)(H);
 	}
 }
-function H(n, t, r, i, u, f, e, o, l, c, a) {
-	var s, h, y, w, d, _, g = i.__k || v, k = t.length;
-	for (l = I(r, t, g, l, k), s = 0; s < k; s++) null != (y = r.__k[s]) && (h = ~y.__i && g[y.__i] || p, y.__i = s, _ = V(n, y, h, u, f, e, o, l, c, a), w = y.__e, (h.ref != y.ref || 8 & h.__u) && (h.ref && F(h.ref, null, y, h), y.ref && a.push(y.ref, y.__c || w, y)), d = d || w, 4 & y.__u ? (l = q(y, l, n, !h.__v), h.__e && (h.__e = null)) : "function" == typeof y.type && void 0 !== _ ? l = _ : w && (l = w.nextSibling), y.__u &= -21);
+function I(n, t, r, u, i, f, o, e, l, c, a) {
+	var s, h, v, w, d, _, g = u.__k || y, k = t.length;
+	for (l = q(r, t, g, l, k), s = 0; s < k; s++) null != (v = r.__k[s]) && (h = ~v.__i && g[v.__i] || p, v.__i = s, _ = z(n, v, h, i, f, o, e, l, c, a), w = v.__e, (h.ref != v.ref || 8 & h.__u) && (h.ref && G(h.ref, null, v, h), v.ref && a.push(v.ref, v.__c || w, v)), d = d || w, 4 & v.__u ? (l = A(v, l, n, !h.__v), h.__e && (h.__e = null)) : "function" == typeof v.type && void 0 !== _ ? l = _ : w && (l = w.nextSibling), v.__u &= -21);
 	return r.__e = d, l;
 }
-function I(n, t, r, i, u) {
-	var f, e, o, l, c, a, s, p, v, y = r.length, d = y, _ = 0, g = 0, k = n.__k = Array(u);
-	for (f = 0; f < u; f++) null != (e = t[f]) && "boolean" != typeof e && "function" != typeof e ? ("object" != typeof e || e.constructor === String ? e = k[f] = m(null, e) : w(e) ? e = k[f] = m(M, { children: e }) : e.constructor === h && e.__b ? e = k[f] = m(e.type, e.props, e.key, e.ref, e.__v) : k[f] = e, l = f + _, e.__ = n, e.__b = n.__b + 1, o = null, ~(c = e.__i = O(e, r, l, d)) && (d--, (o = r[c]) && (o.__u |= 2)), o && o.__v ? (e.__u |= 16, c == l - 1 ? _-- : c == l + 1 ? _++ : c != l && (c > l ? _-- : _++, g = 1)) : (~c || (u > y ? _-- : u < y && _++), "function" != typeof e.type && (e.__u |= 4))) : k[f] = null;
+function q(n, t, r, u, i) {
+	var f, o, e, l, c, a, s, p, y, v = r.length, d = v, _ = 0, g = 0, k = n.__k = Array(i);
+	for (f = 0; f < i; f++) null != (o = t[f]) && "boolean" != typeof o && "function" != typeof o ? ("object" != typeof o || o.constructor === String ? o = k[f] = m(null, o) : w(o) ? o = k[f] = m($, { children: o }) : o.constructor === h && o.__b ? o = k[f] = m(o.type, o.props, o.key, o.ref, o.__v) : k[f] = o, l = f + _, o.__ = n, o.__b = n.__b + 1, e = null, ~(c = o.__i = P(o, r, l, d)) && (d--, (e = r[c]) && (e.__u |= 2)), e && e.__v ? (o.__u |= 16, c == l - 1 ? _-- : c == l + 1 ? _++ : c != l && (c > l ? _-- : _++, g = 1)) : (~c || (i > v ? _-- : i < v && _++), "function" != typeof o.type && (o.__u |= 4))) : k[f] = null;
 	if (g) {
-		for (a = [], s = [], f = 0; f < u; f++) if ((e = k[f]) && 16 & e.__u) {
-			for (_ = 0, p = a.length; _ < p;) a[v = _ + p >> 1] < e.__i ? _ = v + 1 : p = v;
-			a[_] = e.__i, s[f] = _ + 1;
+		for (a = [], s = [], f = 0; f < i; f++) if ((o = k[f]) && 16 & o.__u) {
+			for (_ = 0, p = a.length; _ < p;) a[y = _ + p >> 1] < o.__i ? _ = y + 1 : p = y;
+			a[_] = o.__i, s[f] = _ + 1;
 		}
 		for (_ = a.length; f--;) s[f] && (s[f] == _ ? _-- : k[f].__u |= 4);
 	}
-	if (d) for (f = 0; f < y; f++) !(o = r[f]) || 2 & o.__u || (o.__e == i && (i = S(o)), G(o, o));
-	return i;
+	if (d) for (f = 0; f < v; f++) !(e = r[f]) || 2 & e.__u || (e.__e == u && (u = S(e)), J(e, e));
+	return u;
 }
-function q(n, t, r, i) {
-	var u, f, e, o;
+function A(n, t, r, u) {
+	var i, f, o, e;
 	if ("function" == typeof n.type) {
 		if (n.props.__P) return t;
-		if (u = n.__k) for (f = 0; f < u.length; f++) u[f] && (u[f].__ = n, t = q(u[f], t, r, !1));
+		if (i = n.__k) for (f = 0; f < i.length; f++) i[f] && (i[f].__ = n, t = A(i[f], t, r, !1));
 		return t;
 	}
-	for (t && !t.parentNode && (t = S(n)) && !t.parentNode && (t = null), e = n.__e, o = t; o && 8 == o.nodeType;) o = o.nextSibling;
-	for (e != o && (!i && r.moveBefore && e.parentNode ? r.moveBefore(e, t) : r.insertBefore(e, t || null)), t = e; (t = t && t.nextSibling) && 8 == t.nodeType && !t.data.startsWith("$s"););
+	for (t && !t.parentNode && (t = S(n)) && !t.parentNode && (t = null), o = n.__e, e = t; e && 8 == e.nodeType;) e = e.nextSibling;
+	for (o != e && (!u && r.moveBefore && o.parentNode ? r.moveBefore(o, t) : r.insertBefore(o, t || null)), t = o; (t = t && t.nextSibling) && 8 == t.nodeType && !t.data.startsWith("$s"););
 	return t;
 }
-function O(n, t, r, i) {
-	var u, f = n.key, e = n.type, o = t[r], l = o && !(2 & o.__u);
-	if (null === o && null == f || l && f == o.key && e == o.type) return r;
-	if (i > (l ? 1 : 0)) {
-		for (u = r - 1; u >= 0; u--) if ((o = t[u]) && !(2 & o.__u) && f == o.key && e == o.type) return u;
-		for (u = r + 1; u < t.length; u++) if ((o = t[u]) && !(2 & o.__u) && f == o.key && e == o.type) return u;
+function P(n, t, r, u) {
+	var i, f = n.key, o = n.type, e = t[r], l = e && !(2 & e.__u);
+	if (null === e && null == f || l && f == e.key && o == e.type) return r;
+	if (u > (l ? 1 : 0)) {
+		for (i = r - 1; i >= 0; i--) if ((e = t[i]) && !(2 & e.__u) && f == e.key && o == e.type) return i;
+		for (i = r + 1; i < t.length; i++) if ((e = t[i]) && !(2 & e.__u) && f == e.key && o == e.type) return i;
 	}
 	return -1;
 }
-function P(n, t, r) {
+function T(n, t, r) {
 	r ??= "", "-" == t[0] ? n.setProperty(t, r) : n[t] = r;
 }
-function T(n, t, r, i, u) {
-	var f, e;
+function N(n, t, r, u, i) {
+	var f, o;
 	if ("style" == t) if ("string" == typeof r) n.style.cssText = r;
 	else {
-		if ("string" == typeof i && (n.style.cssText = i = ""), i) for (t in i) r && t in r || P(n.style, t);
-		if (r) for (t in r) i && r[t] == i[t] || P(n.style, t, r[t]);
+		if ("string" == typeof u && (n.style.cssText = u = ""), u) for (t in u) r && t in r || T(n.style, t);
+		if (r) for (t in r) u && r[t] == u[t] || T(n.style, t, r[t]);
 	}
-	else if ("o" == t[0] && "n" == t[1]) (n.__e || (n.__e = {}))[t] = r, r && i || (e = a[t] || (a[t] = N(t)), (n.__a || (n.__a = {}))[t] = c, f = t != (t = t.replace(l, "$1")), (t = t.slice(2))[0] < "a" && (t = t.toLowerCase()), r ? n.addEventListener(t, e, f) : n.removeEventListener(t, e, f));
+	else if ("o" == t[0] && "n" == t[1]) "function" != typeof r && (r = null), "function" != typeof u && (u = null), (n.__e || (n.__e = {}))[t] = r, r && u || (o = a[t] || (a[t] = V(t)), (n.__a || (n.__a = {}))[t] = c, f = t != (t = t.replace(l, "$1")), (t = t.slice(2))[0] < "a" && (t = t.toLowerCase()), r ? n.addEventListener(t, o, f) : n.removeEventListener(t, o, f));
 	else {
-		if ("http://www.w3.org/2000/svg" == u) t = t.replace(/xlink(H|:h)/, "h").replace(/sName$/, "s");
+		if ("http://www.w3.org/2000/svg" == i) t = t.replace(/xlink(H|:h)/, "h").replace(/sName$/, "s");
 		else if ("width" != t && "height" != t && "href" != t && "list" != t && "form" != t && "tabIndex" != t && "download" != t && "rowSpan" != t && "colSpan" != t && "role" != t && "popover" != t && t in n) try {
 			n[t] = null == r ? "" : r;
 			return;
@@ -158,65 +161,65 @@ function T(n, t, r, i, u) {
 		null == r || !1 === r && "-" != t[4] ? n.removeAttribute(t) : n.setAttribute(t, "popover" == t && 1 == r ? "" : r);
 	}
 }
-function N(t) {
+function V(t) {
 	return function(r) {
-		var i = this.__e;
-		if (i) {
-			if (i = i[t], null == r[o]) r[o] = c++;
-			else if (r[o] < this.__a[t]) return;
-			return i(n.event ? n.event(r) : r);
+		var u = this.__e;
+		if (u) {
+			if (u = u[t], null == r[e]) r[e] = c++;
+			else if (r[e] < this.__a[t]) return;
+			return u(n.event ? n.event(r) : r);
 		}
 	};
 }
-function V(t, r, i, u, f, e, o, l, c, a) {
-	var s, p, y, d, k, b, m, $, C, j, L, I, q, A, O, P, T, N, V = r.type;
+function z(t, r, u, i, f, o, e, l, c, a) {
+	var s, p, v, d, k, b, m, M, C, j, L, H, q, A, O, P, T, N, V = r.type;
 	if (r.constructor !== h) return null;
-	128 & i.__u && (c = 32 & i.__u, s = i.__c.__z) && (r.__u |= c, p = e = [], 8 == s.nodeType ? l = z(s, e) : e.push(s), l = e[0] || l), (s = n.__b) && s(r);
+	128 & u.__u && (c = 32 & u.__u, s = u.__c.__z) && (r.__u |= c, p = o = [], 8 == s.nodeType ? l = B(s, o) : o.push(s), l = o[0] || l), (s = n.__b) && s(r);
 	n: if ("function" == typeof V) {
-		y = o.length;
+		v = e.length;
 		try {
-			if ($ = r.props, C = (s = V.prototype) && s.render, j = (s = V.contextType) && u[s.__c], L = s ? j ? j.props.value : s.__ : u, (d = i.__c) ? (r.__c = d, 2 & d.__g && (d.__g |= 1)) : (C ? r.__c = d = new V($, L) : (r.__c = d = new x($, L), d.constructor = V, d.render = J), j && j.sub(d), d.state || (d.state = {}), d.__n = u, d.__g |= 8, d.__h = [], d.__k = []), C && (d.__s || (d.__s = d.state), V.getDerivedStateFromProps && (d.__s == d.state && (d.__s = _({}, d.__s)), _(d.__s, V.getDerivedStateFromProps($, d.__s)))), k = d.props, b = d.state, d.__v = r, i.__c) {
-				if ($ !== k && C && !V.getDerivedStateFromProps && d.componentWillReceiveProps && d.componentWillReceiveProps($, L), r.__v == i.__v && !(8 & d.__g) || !(4 & d.__g) && d.shouldComponentUpdate && !1 === d.shouldComponentUpdate($, d.__s, L)) {
-					r.__v != i.__v && (d.props = $, d.state = d.__s, d.__g &= -9), r.__e = i.__e, r.__k = i.__k, r.__k.some(function(n) {
+			if (M = r.props, C = (s = V.prototype) && s.render, j = (s = V.contextType) && i[s.__c], L = s ? j ? j.props.value : s.__ : i, (d = u.__c) ? (r.__c = d, 2 & d.__g && (d.__g |= 1)) : (C ? r.__c = d = new V(M, L) : (r.__c = d = new x(M, L), d.constructor = V, d.render = K), j && j.sub(d), d.state || (d.state = {}), d.__n = i, d.__g |= 8, d.__h = [], d.__k = []), C && (d.__s || (d.__s = d.state), V.getDerivedStateFromProps && (d.__s == d.state && (d.__s = _({}, d.__s)), _(d.__s, V.getDerivedStateFromProps(M, d.__s)))), k = d.props, b = d.state, d.__v = r, u.__c) {
+				if (M !== k && C && !V.getDerivedStateFromProps && d.componentWillReceiveProps && d.componentWillReceiveProps(M, L), r.__v == u.__v && !(8 & d.__g) || !(4 & d.__g) && d.shouldComponentUpdate && !1 === d.shouldComponentUpdate(M, d.__s, L)) {
+					r.__v != u.__v && (d.props = M, d.state = d.__s, d.__g &= -9), r.__e = u.__e, r.__k = u.__k, r.__k.some(function(n) {
 						n && (n.__ = r);
-					}), v.push.apply(d.__h, d.__k), d.__k = [], d.__h.length && o.push(d), l = S(i);
+					}), y.push.apply(d.__h, d.__k), d.__k = [], d.__h.length && e.push(d), l = S(u);
 					break n;
 				}
-				d.componentWillUpdate && d.componentWillUpdate($, d.__s, L), C && d.componentDidUpdate && d.__h.push(function() {
+				d.componentWillUpdate && d.componentWillUpdate(M, d.__s, L), C && d.componentDidUpdate && d.__h.push(function() {
 					d.componentDidUpdate(k, b, m);
 				});
 			} else C && !V.getDerivedStateFromProps && d.componentWillMount && d.componentWillMount(), C && d.componentDidMount && d.__h.push(d.componentDidMount);
-			if (d.context = L, d.props = $, d.__P = t, d.__g &= -5, I = n.__r, q = 0, C) d.state = d.__s, d.__g &= -9, I && I(r), s = d.render(d.props, d.state, d.context), v.push.apply(d.__h, d.__k), d.__k = [];
-			else do
-				d.__g &= -9, I && I(r), s = d.render(d.props, d.state, d.context), d.state = d.__s;
+			d.context = L, d.props = M, d.__P = t, d.__g &= -5, H = n.__r, q = C ? 25 : 0;
+			do
+				d.__g &= -9, H && H(r), s = d.render(d.props, d.state = d.__s, d.context);
 			while (8 & d.__g && ++q < 25);
-			d.state = d.__s, d.getChildContext && (u = _({}, u, d.getChildContext())), C && i.__c && d.getSnapshotBeforeUpdate && (m = d.getSnapshotBeforeUpdate(k, b)), A = s && s.type === M && null == s.key ? s.props.children : s, $.__P && (s = l, f = (t = $.__P).namespaceURI, c = e = null, i.props && i.props.__P != t && (i.__k.some(function(n) {
-				n && G(n, n);
-			}), i.__k = null), l = i.__k ? S(i, 0) : null), l = H(t, w(A) ? A : [A], r, i, u, f, e, o, l, c, a), $.__P && (r.__e = null, l = s), r.__u &= -161, p && p.some(g), d.__h.length && o.push(d), 1 & d.__g && (d.__g &= -4);
+			C && (y.push.apply(d.__h, d.__k), d.__k = []), d.state = d.__s, d.getChildContext && (i = _({}, i, d.getChildContext())), C && u.__c && d.getSnapshotBeforeUpdate && (m = d.getSnapshotBeforeUpdate(k, b)), A = s && s.type === $ && null == s.key ? s.props.children : s, M.__P && (s = l, f = (t = M.__P).namespaceURI, c = o = null, u.props && u.props.__P != t && (u.__k.some(function(n) {
+				n && J(n, n);
+			}), u.__k = null), l = u.__k ? S(u, 0) : null), l = I(t, w(A) ? A : [A], r, u, i, f, o, e, l, c, a), M.__P && (r.__e = null, l = s), r.__u &= -161, p && p.some(g), d.__h.length && e.push(d), 1 & d.__g && (d.__g &= -4);
 		} catch (t) {
-			if (o.length = y, r.__v = null, c || e) if (t.then) {
-				if (O = 0, r.__u |= 128 | c, e) {
-					for (~(T = e.indexOf(l || void 0)) || (T = e.length); (N = e[T - 1]) && 8 == N.nodeType;) T--;
-					for (; T < e.length; T++) if (N = e[T]) {
-						if (e[T] = null, 8 == N.nodeType) {
-							if (N.data.startsWith("$s")) O++ || (P = N);
-							else if (O && N.data.startsWith("/$s") && !--O) break;
-						} else if (!O) break;
+			if (e.length = v, r.__v = null, c || o) if (t && t.then) {
+				if (r.__u |= 128 | c, o) {
+					for (~(T = o.indexOf(l || void 0)) || (T = o.length); (N = o[T - 1]) && 8 == N.nodeType;) T--;
+					for (; T < o.length; T++) if (N = o[T]) if (o[T] = null, O) {
+						if (N == P) break;
+					} else {
+						if (8 != N.nodeType) break;
+						N.data.startsWith("$s") && (P = B(O = N));
 					}
 				}
-				if (!P) {
+				if (!O) {
 					for (; l && 8 == l.nodeType && l.nextSibling;) l = l.nextSibling;
-					P = l;
+					O = l;
 				}
-				(s = z(P = r.__c.__z || (r.__c.__z = P))) ? (r.__e = P, l = s) : r.__e = l, l = l && l.nextSibling;
-			} else e && e.some(g);
-			else r.__e = i.__e;
-			r.__k || (r.__k = i.__k || []), t.then || B(r), n.__e(t, r, i);
+				(s = B(O = r.__c.__z || (r.__c.__z = O))) ? (r.__e = O, l = s) : r.__e = l, l = l && l.nextSibling;
+			} else o && o.some(g);
+			else r.__e = u.__e;
+			r.__k || (r.__k = u.__k || []), t && t.then || D(r), n.__e(t, r, u);
 		}
-	} else l = r.__e = E(i.__e, r, i, u, f, e, o, c, a, t);
+	} else l = r.__e = F(u.__e, r, u, i, f, o, e, c, a, t);
 	return (s = n.diffed) && s(r), l;
 }
-function z(n, t) {
+function B(n, t) {
 	if (n && 8 == n.nodeType && n.data.startsWith("$s")) for (var r = 1; n = n.nextSibling;) {
 		if (8 == n.nodeType) {
 			if (n.data.startsWith("$s")) r++;
@@ -225,11 +228,11 @@ function z(n, t) {
 		t && t.push(n);
 	}
 }
-function B(n) {
-	n && (n.__c && (n.__c.__g |= 4), n.__k && n.__k.some(B));
+function D(n) {
+	n && (n.__c && (n.__c.__g |= 4), n.__k && n.__k.some(D));
 }
-function D(t, r, i) {
-	for (var u = 0; u < i.length;) F(i[u++], i[u++], i[u++]);
+function E(t, r, u) {
+	for (var i = 0; i < u.length;) G(u[i++], u[i++], u[i++]);
 	n.__c && n.__c(r, t), t.some(function(r) {
 		try {
 			t = r.__h, r.__h = [], t.some(function(n) {
@@ -240,58 +243,58 @@ function D(t, r, i) {
 		}
 	});
 }
-function E(t, r, i, u, f, e, o, l, c, a) {
-	var s, h, v, _, k, b, m, $, M, x = i.props || p, C = r.props, j = r.type;
-	if ("svg" == j ? f = "http://www.w3.org/2000/svg" : "math" == j ? f = "http://www.w3.org/1998/Math/MathML" : f || (f = "http://www.w3.org/1999/xhtml"), e) {
-		for (s = 0; s < e.length; s++) if ((k = e[s]) && (j ? k.localName == j : 3 == k.nodeType)) {
-			t = k, e[s] = null;
+function F(t, r, u, i, f, o, e, l, c, a) {
+	var s, h, y, _, k, b, m, M, $ = u.props || p, x = r.props, C = r.type;
+	if ("svg" == C ? f = "http://www.w3.org/2000/svg" : "math" == C ? f = "http://www.w3.org/1998/Math/MathML" : f || (f = "http://www.w3.org/1999/xhtml"), o) {
+		for (s = 0; s < o.length; s++) if ((k = o[s]) && (C ? k.localName == C : 3 == k.nodeType)) {
+			t = k, o[s] = null;
 			break;
 		}
 	}
 	if (!t) {
-		if ($ = a.ownerDocument || document, !j) return $.createTextNode(C);
-		t = $.createElementNS(f, j, C.is && C), l && (n.__m && n.__m(r, e), l = !1), e = null;
+		if (M = a.ownerDocument || document, !C) return M.createTextNode(x);
+		t = M.createElementNS(f, C, x.is ? x : a), l && (n.__m && n.__m(r, o), l = !1), o = null;
 	}
-	if (j) {
-		if (a = "template" == j && t.content || t, e = "textarea" == j && null != C.defaultValue ? null : e && d.call(a.childNodes), !l && e) for (x = {}, s = 0; s < t.attributes.length; s++) x[(k = t.attributes[s]).name] = k.value;
-		for (s in x) k = x[s], "dangerouslySetInnerHTML" == s ? v = k : "children" == s || s in C || "value" == s && "defaultValue" in C || "checked" == s && "defaultChecked" in C || T(t, s, null, k, f);
-		for (s in M = 1 & i.__u, C) k = C[s], "children" == s ? _ = k : "dangerouslySetInnerHTML" == s ? h = k : "value" == s ? b = k : "checked" == s ? m = k : l && "function" != typeof k || !(x[s] !== k || M && null != k) || T(t, s, k, x[s], f);
-		h ? (l || v && (h.__html == v.__html || h.__html == t.innerHTML) || (t.innerHTML = h.__html), r.__k = []) : (v && (t.textContent = ""), ("foreignObject" == j || "http://www.w3.org/1998/Math/MathML" == f && y.test(j)) && (f = "http://www.w3.org/1999/xhtml"), H(a, w(_) ? _ : [_], r, i, u, f, e, o, e ? e[0] : i.__k && S(i, 0), l, c), e && e.some(g)), l && "textarea" != j || (s = "value", "progress" == j && null == b ? t.removeAttribute(s) : null == b || b === t[s] && ("progress" != j || b) || T(t, s, b, x[s], f), s = "checked", null != m && m != t[s] && T(t, s, m, x[s], f));
-	} else x === C || l && t.data == C || (t.data = C);
+	if (C) {
+		if (a = "template" == C && t.content || t, o = "textarea" == C && null != x.defaultValue ? null : o && d.call(a.childNodes), !l && o) for ($ = {}, s = 0; s < t.attributes.length; s++) $[(k = t.attributes[s]).name] = k.value;
+		for (s in $) k = $[s], "dangerouslySetInnerHTML" == s ? y = k : "children" == s || s in x || "value" == s && "defaultValue" in x || "checked" == s && "defaultChecked" in x || N(t, s, null, k, f);
+		for (s in x) k = x[s], "children" == s ? _ = k : "dangerouslySetInnerHTML" == s ? h = k : "value" == s ? b = k : "checked" == s ? m = k : l && "function" != typeof k || $[s] === k || N(t, s, k, $[s], f);
+		h ? (l || y && (h.__html == y.__html || h.__html == t.innerHTML) || (t.innerHTML = h.__html), r.__k = []) : (y && (t.textContent = ""), ("foreignObject" == C || "http://www.w3.org/1998/Math/MathML" == f && v.test(C)) && (f = "http://www.w3.org/1999/xhtml"), I(a, w(_) ? _ : [_], r, u, i, f, o, e, o ? o[0] : u.__k && S(u, 0), l, c), o && o.some(g)), l && "textarea" != C || (s = "value", "progress" == C && null == b ? t.removeAttribute(s) : null == b || b === t[s] && ("progress" != C || b) || N(t, s, b, $[s], f), s = "checked", null != m && m != t[s] && N(t, s, m, $[s], f));
+	} else $ === x || l && t.data == x || (t.data = x);
 	return t;
 }
-function F(t, r, i, u) {
+function G(t, r, u, i) {
 	try {
-		"function" == typeof t ? r ? r.__x = t(r) || 1 : u && (u = u.__c || u.__e) && (r = u.__x) && (u.__x = null, "function" == typeof r ? r() : t(null)) : t.current = r;
+		"function" == typeof t ? r ? r.__x = t(r) || 1 : i && (i = i.__c || i.__e) && (r = i.__x) && (i.__x = null, "function" == typeof r ? r() : t(null)) : t.current = r;
 	} catch (t) {
-		n.__e(t, i);
+		n.__e(t, u);
 	}
 }
-function G(t, r, i) {
-	var u, f, e, o;
-	if (n.unmount && n.unmount(t), !(u = t.ref) || u.current && u.current != t.__e || F(u, null, r, t), u = t.__c) {
-		if (u.componentWillUnmount) try {
-			u.componentWillUnmount();
+function J(t, r, u) {
+	var i, f, o, e;
+	if (n.unmount && n.unmount(t), !(i = t.ref) || i.current && i.current != t.__e || G(i, null, r, t), i = t.__c) {
+		if (i.componentWillUnmount) try {
+			i.componentWillUnmount();
 		} catch (t) {
 			n.__e(t, r);
 		}
-		u.__P = u.__n = null;
+		i.__P = i.__n = null;
 	}
-	if (u = t.__k) for (o = 0; o < u.length; o++) u[o] && G(u[o], r, "function" != typeof t.type || i && !t.props.__P);
-	!i && (u = t.__c) && (u = u.__z) && (f = z(u, e = [])) && (u == t.__e && e.some(g), g(f), g(u)), (u = t.__e) && (i || g(u), u.__e && (u.__e = null)), t.__e = t.__c = t.__ = null;
+	if (i = t.__k) for (e = 0; e < i.length; e++) i[e] && J(i[e], r, "function" != typeof t.type || u && !t.props.__P);
+	!u && (i = t.__c) && (i = i.__z) && (f = B(i, o = [])) && (i == t.__e && o.some(g), g(f), g(i)), u || g(t.__e), t.__e = t.__c = t.__ = null;
 }
-function J(n, t, r) {
+function K(n, t, r) {
 	return this.constructor(n, r);
 }
-function K(t, r) {
-	var i, u, f, e;
-	n.__ && n.__(t, r), 9 == r.nodeType && (r = r.documentElement), u = (i = t && 32 & t.__u) ? null : r.__k, r.__k = m(M, { children: [t] }), f = [], e = [], V(r, r.__k, u || p, p, r.namespaceURI, u ? null : r.firstChild ? d.call(r.childNodes) : null, f, u ? u.__e : r.firstChild, i, e), D(f, r.__k, e), r.__k.props.children = null;
+function Q(t, r) {
+	var u, i, f, o;
+	n.__ && n.__(t, r), 9 == r.nodeType && (r = r.documentElement), i = (u = t && 32 & t.__u) ? null : r.__k, r.__k = m($, { children: [t] }), f = [], o = [], z(r, r.__k, i || p, p, r.namespaceURI, i ? null : r.firstChild ? d.call(r.childNodes) : null, f, i ? i.__e : r.firstChild, u, o), E(f, r.__k, o), r.__k.props.children = null;
 }
-n = { __e: function(n, t, r, i) {
-	for (var u, e, o; t = t.__;) if ((u = t.__c) && !(1 & u.__g)) {
-		u.__g |= 4;
+n = { __e: function(n, t, r, u) {
+	for (var i, o, e; t = t.__;) if ((i = t.__c) && !(1 & i.__g)) {
+		i.__g |= 4;
 		try {
-			if ((o = (e = u.constructor) && e.getDerivedStateFromError) && u.setState(e.getDerivedStateFromError(n)), u.componentDidCatch && (u.componentDidCatch(n, i || {}), o = 1), o && 8 & u.__g) return void (u.__g |= 2);
+			if ((e = (o = i.constructor) && o.getDerivedStateFromError) && i.setState(o.getDerivedStateFromError(n)), i.componentDidCatch && (i.componentDidCatch(n, u || {}), e = 1), e && 8 & i.__g) return void (i.__g |= 2);
 		} catch (t) {
 			n = t;
 		}
@@ -299,15 +302,15 @@ n = { __e: function(n, t, r, i) {
 	throw f = 0, n;
 } }, t = 0, x.prototype.setState = function(n, t) {
 	var r = this.__s;
-	r && r != this.state || (r = this.__s = _({}, this.state)), "function" == typeof n && (n = n(_({}, r), this.props)), n && (_(r, n), this.__v && (t && this.__k.push(t), j(this)));
+	r && r != this.state || (r = this.__s = _({}, this.state)), "function" == typeof n && (n = n(_({}, r), this.props)), n && (_(r, n), this.__v && (t && this.__k.push(t), L(this)));
 }, x.prototype.forceUpdate = function(n) {
-	this.__v && (this.__g |= 4, n && this.__h.push(n), j(this));
-}, x.prototype.render = M, i = [], f = 0, e = function(n, t) {
+	this.__v && (this.__g |= 4, n && this.__h.push(n), L(this));
+}, x.prototype.render = $, u = [], f = 0, o = function(n, t) {
 	return n.__v.__b - t.__v.__b;
-}, o = Symbol(), l = /(PointerCapture)$|Capture$/i, c = 0, a = {};
+}, e = Symbol(), l = /(PointerCapture)$|Capture$/i, c = 0, a = {};
 // hub/web/src/components/TopBar.tsx
 function TopBar() {
-	return /* @__PURE__ */ k(M, null, /* @__PURE__ */ k("header", {
+	return /* @__PURE__ */ k($, null, /* @__PURE__ */ k("header", {
 		class: "top-bar",
 		id: "mobileTopHostBtn"
 	}, /* @__PURE__ */ k("div", { class: "top-bar-left" }, /* @__PURE__ */ k("button", {
@@ -551,7 +554,7 @@ function Sheets() {
 	const closeIfBackdrop = (sheetId) => (e) => {
 		if (e.target === e.currentTarget) window.closeSheet?.(sheetId);
 	};
-	return /* @__PURE__ */ k(M, null, /* @__PURE__ */ k("div", {
+	return /* @__PURE__ */ k($, null, /* @__PURE__ */ k("div", {
 		class: "sheet-backdrop",
 		id: "hostSheet",
 		onClick: closeIfBackdrop("hostSheet")
@@ -873,10 +876,19 @@ var HARNESS_SVG_SPRITE = `<svg id="dshHarnessSvgDefs" width="24" height="24" vie
       <circle cx="9.2" cy="12.2" r="1.0" fill="#1D4ED8"/>
       <path d="M10.5 5.2c.4-.9 1.3-1.4 2.1-1.2M8.8 5.8c-.3-.8-.9-1.2-1.7-1.1" stroke="#93C5FD" stroke-width="1.4" stroke-linecap="round" fill="none"/>
     </symbol>
+
+    <!-- 6. Doubao Desktop -->
+    <symbol id="dsh-icon-doubao" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5.4" fill="#1E6FFF"/>
+      <circle cx="12" cy="12.2" r="6.8" fill="#FFFFFF"/>
+      <circle cx="9.6" cy="11.2" r="1.15" fill="#1E6FFF"/>
+      <circle cx="14.4" cy="11.2" r="1.15" fill="#1E6FFF"/>
+      <path d="M9.4 14.3c.7.9 1.6 1.3 2.6 1.3s1.9-.4 2.6-1.3" stroke="#1E6FFF" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+    </symbol>
   </defs>
 </svg>`;
 function App() {
-	return /* @__PURE__ */ k(M, null, /* @__PURE__ */ k("div", {
+	return /* @__PURE__ */ k($, null, /* @__PURE__ */ k("div", {
 		style: "position:fixed;left:-9999px;top:-9999px;width:24px;height:24px;overflow:hidden;opacity:0;pointer-events:none;",
 		"aria-hidden": "true",
 		dangerouslySetInnerHTML: { __html: HARNESS_SVG_SPRITE }
@@ -3186,7 +3198,7 @@ function escapeAttr(str) {
 	return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 function renderHarnessBadgeHtml(harness = "dsh", variant = "row", titleText = "") {
-	const symId = harness === "antigravity-ide" ? "dsh-icon-ide" : harness === "workbuddy" ? "dsh-icon-workbuddy" : harness === "codex" ? "dsh-icon-codex" : harness === "claude" ? "dsh-icon-claude" : "dsh-icon-dsh";
+	const symId = harness === "antigravity-ide" ? "dsh-icon-ide" : harness === "workbuddy" ? "dsh-icon-workbuddy" : harness === "codex" ? "dsh-icon-codex" : harness === "claude" ? "dsh-icon-claude" : harness === "doubao" ? "dsh-icon-doubao" : "dsh-icon-dsh";
 	const titleAttr = titleText ? ` title="${escapeAttr(titleText)}"` : "";
 	return `<span class="harness-icon-badge ${escapeAttr(variant)}"${titleAttr}><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="#${symId}"/></svg></span>`;
 }
@@ -3607,6 +3619,9 @@ function initHubController() {
 		const btn = document.getElementById("chatModelBtn");
 		const labelEl = document.getElementById("chatModelBtnLabel");
 		if (!btn || !labelEl || !session) return;
+		const isObserveOnly = session.controlMode === "observe-only" && session.harness !== "dsh";
+		btn.style.display = isObserveOnly ? "none" : "";
+		if (isObserveOnly) return;
 		const catalog = getHarnessModelCatalog(host, session.harness);
 		const overrideVal = selectedSessionModels[session.id] || "";
 		labelEl.textContent = `🤖 ${resolveModelShortLabel(catalog, overrideVal, session.model)}`;
@@ -3994,8 +4009,8 @@ function initHubController() {
 				const status = pendingApp ? "approval" : t.status === "running" || hasActiveInflight ? "running" : t.status || "idle";
 				const queuedCount = queuedCmds.length;
 				const rawIdStr = String(t.id || "");
-				const harness = t.harness || (rawIdStr.startsWith("agy-ide:") ? "antigravity-ide" : rawIdStr.startsWith("codex:") ? "codex" : rawIdStr.startsWith("workbuddy:") ? "workbuddy" : rawIdStr.startsWith("claude:") ? "claude" : "dsh");
-				const harnessLabel = t.harnessLabel || (harness === "antigravity-ide" ? "Antigravity IDE" : harness === "codex" ? "Codex" : harness === "workbuddy" ? "WorkBuddy" : harness === "claude" ? "Claude Code" : "DeepSeek Harness");
+				const harness = t.harness || (rawIdStr.startsWith("agy-ide:") ? "antigravity-ide" : rawIdStr.startsWith("codex:") ? "codex" : rawIdStr.startsWith("workbuddy:") ? "workbuddy" : rawIdStr.startsWith("doubao:") ? "doubao" : rawIdStr.startsWith("claude:") ? "claude" : "dsh");
+				const harnessLabel = t.harnessLabel || (harness === "antigravity-ide" ? "Antigravity IDE" : harness === "codex" ? "Codex" : harness === "workbuddy" ? "WorkBuddy" : harness === "doubao" ? "豆包电脑版" : harness === "claude" ? "Claude Code" : "DeepSeek Harness");
 				let lastConclusionAt = Number(t.lastConclusionAt) || 0;
 				if (!lastConclusionAt && status === "idle" && lastMsg?.role === "assistant" && Boolean(lastMsg?.text)) lastConclusionAt = ts;
 				const lastInterruptedAt = Number(t.lastInterruptedAt) || 0;
@@ -4249,6 +4264,7 @@ function initHubController() {
 		const agyCount = sessions.filter((s) => s.harness === "antigravity-ide").length;
 		const codexCount = sessions.filter((s) => s.harness === "codex").length;
 		const workbuddyCount = sessions.filter((s) => s.harness === "workbuddy").length;
+		const doubaoCount = sessions.filter((s) => s.harness === "doubao").length;
 		const claudeCount = sessions.filter((s) => s.harness === "claude").length;
 		const dshCount = sessions.filter((s) => s.harness === "dsh").length;
 		const counts = {};
@@ -4256,7 +4272,7 @@ function initHubController() {
 		const projects = Object.keys(counts);
 		const strip = document.getElementById("projectStrip");
 		const nowDate = /* @__PURE__ */ new Date();
-		const stripKey = `${`${nowDate.getFullYear()}-${nowDate.getMonth() + 1}-${nowDate.getDate()}`}:${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${claudeCount}:${dshCount}:${projects.map((p) => `${p}:${counts[p]}`).join(",")}`;
+		const stripKey = `${`${nowDate.getFullYear()}-${nowDate.getMonth() + 1}-${nowDate.getDate()}`}:${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${doubaoCount}:${claudeCount}:${dshCount}:${projects.map((p) => `${p}:${counts[p]}`).join(",")}`;
 		if (stripKey === lastRenderedStripKey && strip.children.length > 0) return;
 		lastRenderedStripKey = stripKey;
 		const prevScrollLeft = strip.scrollLeft;
@@ -4264,8 +4280,9 @@ function initHubController() {
 		if (agyCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_AGY_IDE" ? "active" : ""}" onclick="selectProject('HARNESS_AGY_IDE')">${renderHarnessBadgeHtml("antigravity-ide", "pill")} IDE <span class="count">${agyCount}</span></button>`);
 		if (codexCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_CODEX" ? "active" : ""}" onclick="selectProject('HARNESS_CODEX')">${renderHarnessBadgeHtml("codex", "pill")} Codex <span class="count">${codexCount}</span></button>`);
 		if (workbuddyCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_WORKBUDDY" ? "active" : ""}" onclick="selectProject('HARNESS_WORKBUDDY')">${renderHarnessBadgeHtml("workbuddy", "pill")} WorkBuddy <span class="count">${workbuddyCount}</span></button>`);
+		if (doubaoCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_DOUBAO" ? "active" : ""}" onclick="selectProject('HARNESS_DOUBAO')">${renderHarnessBadgeHtml("doubao", "pill")} 豆包 <span class="count">${doubaoCount}</span></button>`);
 		if (claudeCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_CLAUDE" ? "active" : ""}" onclick="selectProject('HARNESS_CLAUDE')">${renderHarnessBadgeHtml("claude", "pill")} Claude <span class="count">${claudeCount}</span></button>`);
-		if (dshCount > 0 && (agyCount > 0 || codexCount > 0 || workbuddyCount > 0 || claudeCount > 0)) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_DSH" ? "active" : ""}" onclick="selectProject('HARNESS_DSH')">${renderHarnessBadgeHtml("dsh", "pill")} DSH <span class="count">${dshCount}</span></button>`);
+		if (dshCount > 0 && (agyCount > 0 || codexCount > 0 || workbuddyCount > 0 || doubaoCount > 0 || claudeCount > 0)) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_DSH" ? "active" : ""}" onclick="selectProject('HARNESS_DSH')">${renderHarnessBadgeHtml("dsh", "pill")} DSH <span class="count">${dshCount}</span></button>`);
 		strip.innerHTML = [
 			`<button class="filter-pill ${currentProject === "ALL" ? "active" : ""}" onclick="selectProject('ALL')">全部 <span class="count">${sessions.length}</span></button>`,
 			...smartPills,
@@ -4304,6 +4321,7 @@ function initHubController() {
 			if (currentProject === "HARNESS_AGY_IDE" && s.harness !== "antigravity-ide") return false;
 			if (currentProject === "HARNESS_CODEX" && s.harness !== "codex") return false;
 			if (currentProject === "HARNESS_WORKBUDDY" && s.harness !== "workbuddy") return false;
+			if (currentProject === "HARNESS_DOUBAO" && s.harness !== "doubao") return false;
 			if (currentProject === "HARNESS_CLAUDE" && s.harness !== "claude") return false;
 			if (![
 				"ALL",
@@ -4313,6 +4331,7 @@ function initHubController() {
 				"HARNESS_AGY_IDE",
 				"HARNESS_CODEX",
 				"HARNESS_WORKBUDDY",
+				"HARNESS_DOUBAO",
 				"HARNESS_CLAUDE"
 			].includes(currentProject) && s.project !== currentProject) return false;
 			if (!q) return true;
@@ -4547,7 +4566,7 @@ function initHubController() {
 			chatTitleEl.dataset.titleKey = `${langPref}:${chatHeaderTitle}`;
 			chatTitleEl.textContent = chatHeaderTitle;
 		}
-		const harnessNameText = s.harness === "antigravity-ide" ? "Antigravity IDE" : s.harness === "codex" ? "Codex" : s.harness === "workbuddy" ? "WorkBuddy" : s.harness === "claude" ? "Claude Code" : "DSH";
+		const harnessNameText = s.harness === "antigravity-ide" ? "Antigravity IDE" : s.harness === "codex" ? "Codex" : s.harness === "workbuddy" ? "WorkBuddy" : s.harness === "doubao" ? "豆包电脑版" : s.harness === "claude" ? "Claude Code" : "DSH";
 		const isObserveOnly = s.controlMode === "observe-only" && s.harness !== "dsh";
 		const modeTag = isObserveOnly ? " · 👀 仅观测" : s.controlMode === "idle-resumable" || s.controlMode === "observe-only" && s.harness === "dsh" ? " · 🔵 可续聊" : "";
 		const compactChatProj = formatCompactProjectLabel(s.project);
@@ -8728,6 +8747,6 @@ function initHubController() {
 // hub/web/src/main.tsx
 var root = document.getElementById("app");
 if (root) {
-	K(/* @__PURE__ */ k(App, null), root);
+	Q(/* @__PURE__ */ k(App, null), root);
 	initHubController();
 }

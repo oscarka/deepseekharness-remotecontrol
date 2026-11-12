@@ -143,11 +143,12 @@ HAS_AGY=0
 HAS_CODEX=0
 HAS_WORKBUDDY=0
 HAS_CLAUDE=0
+HAS_DOUBAO=0
 
 if command -v dsh >/dev/null 2>&1 || [ -x "/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" ] || [ -x "$HOME/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh" ]; then
   HAS_DSH=1
 fi
-if [ -d "$HOME/.gemini/antigravity" ] || [ -d "/Applications/Antigravity IDE.app" ] || [ -d "$HOME/Applications/Antigravity IDE.app" ]; then
+if [ -d "$HOME/.gemini/antigravity" ] || [ -d "/Applications/Antigravity IDE.app" ] || [ -d "$HOME/Applications/Antigravity IDE.app" ] || [ -d "/Applications/Antigravity.app" ]; then
   HAS_AGY=1
 fi
 if command -v codex >/dev/null 2>&1 || [ -d "$HOME/.codex" ] || [ -d "/Applications/Codex.app" ] || [ -d "$HOME/Applications/Codex.app" ]; then
@@ -159,6 +160,9 @@ fi
 if command -v claude >/dev/null 2>&1 || [ -d "$HOME/.claude" ]; then
   HAS_CLAUDE=1
 fi
+if [ -d "/Applications/Doubao.app" ] || [ -d "$HOME/Applications/Doubao.app" ] || [ -d "$HOME/Library/Application Support/Doubao/Default" ] || [ -d "$HOME/.config/Doubao/Default" ]; then
+  HAS_DOUBAO=1
+fi
 
 DETECTED_LIST=()
 [ "$HAS_DSH" = "1" ] && DETECTED_LIST+=("DSH")
@@ -166,9 +170,10 @@ DETECTED_LIST=()
 [ "$HAS_CODEX" = "1" ] && DETECTED_LIST+=("Codex")
 [ "$HAS_WORKBUDDY" = "1" ] && DETECTED_LIST+=("WorkBuddy")
 [ "$HAS_CLAUDE" = "1" ] && DETECTED_LIST+=("Claude Code")
+[ "$HAS_DOUBAO" = "1" ] && DETECTED_LIST+=("豆包电脑版")
 
-if [ "$EXISTING_HARNESSES" = "dsh,antigravity-ide,codex,claude" ]; then
-  EXISTING_HARNESSES="dsh,antigravity-ide,codex,workbuddy,claude"
+if [ "$EXISTING_HARNESSES" = "dsh,antigravity-ide,codex,claude" ] || [ "$EXISTING_HARNESSES" = "dsh,antigravity-ide,codex,workbuddy,claude" ]; then
+  EXISTING_HARNESSES="dsh,antigravity-ide,codex,workbuddy,claude,doubao"
 fi
 
 install -m 600 /dev/null "$ENV_FILE"
@@ -180,7 +185,7 @@ FEISHU_HUB_TOKEN=${HUB_TOKEN}
 FEISHU_APP_ID=${FEISHU_APP_ID:-$EXISTING_APP_ID}
 FEISHU_APP_SECRET=${FEISHU_APP_SECRET:-$EXISTING_APP_SECRET}
 FEISHU_ALLOWED_OPEN_IDS=${FEISHU_ALLOWED_OPEN_IDS:-$EXISTING_OPEN_IDS}
-FEISHU_ENABLED_HARNESSES=${FEISHU_ENABLED_HARNESSES:-${EXISTING_HARNESSES:-dsh,antigravity-ide,codex,workbuddy,claude}}
+FEISHU_ENABLED_HARNESSES=${FEISHU_ENABLED_HARNESSES:-${EXISTING_HARNESSES:-dsh,antigravity-ide,codex,workbuddy,claude,doubao}}
 EOF
 chmod 600 "$ENV_FILE"
 

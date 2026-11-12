@@ -1575,7 +1575,7 @@ test('Vite + Preact bundle, static /assets/* serving, voice input abort state ma
     },
   }
 
-  assert.doesNotMatch(bundle, /豆包/, 'Bundle must not contain any third-party Doubao IME prompts')
+  assert.doesNotMatch(bundle, /豆包输入法/, 'Bundle must not contain any third-party Doubao IME prompts')
 
   const fakeWindow = {
     webkitSpeechRecognition: class FakeSpeechRecognition {
