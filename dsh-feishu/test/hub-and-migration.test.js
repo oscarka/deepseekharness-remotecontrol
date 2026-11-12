@@ -2187,7 +2187,7 @@ test('Mobile UX Enhancements (#1, #3, #6, #13): 5MB image preview stripped from 
   // 1. Verify /healthz and /api/state expose build metadata (#13)
   const healthRes = await (await fetchAdapter(`${hubUrl}/healthz`)).json()
   assert.equal(healthRes.ok, true)
-  assert.equal(healthRes.build.version, '0.6.6')
+  assert.equal(healthRes.build.version, '0.6.7')
   assert.ok(healthRes.build.uiBuild)
   assert.ok(healthRes.build.startedAt > 0)
 
@@ -4904,7 +4904,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
 
     // Wait for async prompt completion & SQLite sync
     let dbExistingRows = []
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 150; i++) {
       const s = await wb.getSession(`workbuddy:${existingId}`)
       dbExistingRows = JSON.parse(
         execFileSync('sqlite3', ['-json', dbPath, `SELECT * FROM sessions WHERE id = '${existingId}';`], { encoding: 'utf8' }) || '[]',
@@ -5645,4 +5645,67 @@ test('WorkBuddy skips sessions/<pid>.json live process heartbeat lockfiles and H
   } finally {
     await rm(tmpDir, { recursive: true, force: true })
   }
+})
+
+test('v0.6.7: pinned & unread concluded sessions sort above running tasks, and Settings capability matrix matches DEFAULT_HARNESS_CAPABILITIES', async () => {
+  const {
+    computeSessionSortPriority,
+    sortNormalizedSessions,
+    HARNESS_CAPABILITY_MATRIX,
+    renderCapabilityMatrixRowsHtml,
+  } = await import('../../hub/web/src/utils/session-labels.js')
+  const { DEFAULT_HARNESS_CAPABILITIES } = await import('../lib/harness-router.js')
+
+  // 1. Verify sort priority: Pinned (top) -> Approval -> Unread Conclusion / Interrupted -> Running -> Idle
+  const sessions = [
+    { id: 'idle-newer', status: 'idle', pinned: false, hasUnreadConclusion: false, updatedAt: 5000 },
+    { id: 'running-long', status: 'running', pinned: false, hasUnreadConclusion: false, updatedAt: 6000 },
+    { id: 'concluded-unread', status: 'idle', pinned: false, hasUnreadConclusion: true, updatedAt: 4000 },
+    { id: 'interrupted-unread', status: 'idle', pinned: false, isUnreadInterrupted: true, updatedAt: 3500 },
+    { id: 'needs-approval', status: 'approval', pinned: false, hasUnreadConclusion: false, updatedAt: 3000 },
+    { id: 'pinned-idle', status: 'idle', pinned: true, hasUnreadConclusion: false, updatedAt: 1000 },
+    { id: 'pinned-concluded', status: 'idle', pinned: true, hasUnreadConclusion: true, updatedAt: 900 },
+  ]
+  const sortedIds = sortNormalizedSessions(sessions).map(s => s.id)
+  assert.deepStrictEqual(sortedIds, [
+    'pinned-concluded',
+    'pinned-idle',
+    'needs-approval',
+    'concluded-unread',
+    'interrupted-unread',
+    'running-long',
+    'idle-newer',
+  ])
+  assert.ok(computeSessionSortPriority({ pinned: true, status: 'idle' }) > computeSessionSortPriority({ status: 'running' }))
+  assert.ok(computeSessionSortPriority({ hasUnreadConclusion: true, status: 'idle' }) > computeSessionSortPriority({ status: 'running' }))
+
+  // 2. Verify Settings capability matrix includes all 6 harnesses and stays in sync with DEFAULT_HARNESS_CAPABILITIES
+  assert.deepStrictEqual(
+    HARNESS_CAPABILITY_MATRIX.map(r => r.id),
+    ['dsh', 'antigravity-ide', 'codex', 'workbuddy', 'claude', 'doubao'],
+  )
+  for (const row of HARNESS_CAPABILITY_MATRIX) {
+    const backendCaps = DEFAULT_HARNESS_CAPABILITIES[row.id]
+    assert.ok(backendCaps, `Missing backend capabilities for ${row.id}`)
+    assert.equal(row.canView, Boolean(backendCaps.canView))
+    assert.equal(row.canPrompt, Boolean(backendCaps.canPrompt))
+    assert.equal(row.canStop, Boolean(backendCaps.canStop))
+    assert.equal(row.canSteer, Boolean(backendCaps.canSteer))
+    assert.equal(row.approveState, backendCaps.approvalStatus)
+  }
+
+  const matrixHtml = renderCapabilityMatrixRowsHtml()
+  assert.match(matrixHtml, /#dsh-icon-dsh/)
+  assert.match(matrixHtml, /#dsh-icon-ide/)
+  assert.match(matrixHtml, /#dsh-icon-codex/)
+  assert.match(matrixHtml, /#dsh-icon-workbuddy/)
+  assert.match(matrixHtml, /#dsh-icon-claude/)
+  assert.match(matrixHtml, /#dsh-icon-doubao/)
+  assert.match(matrixHtml, /WorkBuddy/)
+  assert.match(matrixHtml, /豆包电脑版/)
+  assert.doesNotMatch(matrixHtml, /❌/)
+
+  const { translateZhStringToEn } = await import('../../hub/web/src/utils/i18n.js')
+  assert.equal(translateZhStringToEn('豆包电脑版'), 'Doubao Desktop')
+  assert.equal(translateZhStringToEn('👀 仅观测'), '👀 Observe-only')
 })

@@ -612,3 +612,174 @@ test('DoubaoAdapter filters empty welcome stubs, local_* transient drafts, and n
     rmSync(tmp, { recursive: true, force: true })
   }
 })
+
+test('DoubaoAdapter expires stale board.md running tasks, keeps pure chats free of unrelated chatsDir folders, and caches unchanged WAL/SST files cleanly', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'doubao-hardening-'))
+  try {
+    // 1. Stale Agent Workspace task where board.md still says "进行中" after Doubao was closed 25 mins ago
+    const staleSessDir = join(
+      tmp,
+      'Default',
+      '.doubao',
+      'agent_mode',
+      'workspace',
+      '.sessions',
+      '38457777777777777',
+    )
+    const staleSys = join(staleSessDir, 'agents', 'm_stale', 'system')
+    const unrelatedChatsSub = join(tmp, 'DoubaoChats', 'chats', '2026-10-01', 'old-project')
+    mkdirSync(staleSys, { recursive: true })
+    mkdirSync(unrelatedChatsSub, { recursive: true })
+    writeFileSync(join(unrelatedChatsSub, 'old.txt'), 'unrelated old deliverable')
+
+    const twentyFiveMinsAgoIso = '2026-11-11T10:00:00.000Z'
+    const twentyFiveMinsAgoMs = Date.parse(twentyFiveMinsAgoIso)
+    const nowMs = twentyFiveMinsAgoMs + 25 * 60_000
+
+    writeFileSync(
+      join(staleSessDir, 'board.md'),
+      [
+        '# 任务公告板（board.md）',
+        `_最后更新：${twentyFiveMinsAgoIso}_`,
+        '| 任务ID | 标题 | Organizer | 状态 | 产物路径 | 产物链接 |',
+        '| --- | --- | --- | --- | --- | --- |',
+        '| t1 | 中途中断的爬虫任务 | m_stale | 进行中 | - | - |',
+      ].join('\n'),
+    )
+    writeFileSync(
+      join(staleSys, 'assignment.md'),
+      [
+        '# Assignment',
+        '- Role: main',
+        `- Created: ${twentyFiveMinsAgoIso}`,
+        '',
+        `## [${twentyFiveMinsAgoIso}] 需求`,
+        '抓取示例列表',
+      ].join('\n'),
+    )
+    writeFileSync(
+      join(staleSys, 'trajectory.jsonl'),
+      JSON.stringify({ role: 'assistant', content: '开始初始化任务...' }),
+    )
+    const staleDate = new Date(twentyFiveMinsAgoMs)
+    utimesSync(join(staleSessDir, 'board.md'), staleDate, staleDate)
+    utimesSync(join(staleSys, 'assignment.md'), staleDate, staleDate)
+    utimesSync(join(staleSys, 'trajectory.jsonl'), staleDate, staleDate)
+    utimesSync(staleSessDir, staleDate, staleDate)
+
+    // 2. Pure IndexedDB casual chat (no workspace dir, no sandbox cwd) across two WAL files
+    const idbDir = join(tmp, 'Default', 'IndexedDB', 'chrome_doubao-chat_0.indexeddb.leveldb')
+    mkdirSync(idbDir, { recursive: true })
+    writeFileSync(
+      join(idbDir, '000001.log'),
+      buildWalRecord([
+        {
+          schema: 'conversation-list-data-overall-v2',
+          data: {
+            conversations: [
+              {
+                conversation_id: '38458888888888888',
+                conversation_type: 1,
+                name: '日常闲聊食谱',
+                update_time: String(Math.floor((nowMs - 60_000) / 1000)),
+              },
+            ],
+          },
+        },
+      ]),
+    )
+    writeFileSync(
+      join(idbDir, '000002.log'),
+      buildWalRecord([
+        {
+          state: {
+            mainTaskDataMap: {
+              turn_recipe: {
+                sessionId: 'turn_recipe',
+                createTime: nowMs - 60_000,
+                sentMessages: {
+                  u1: {
+                    conversationId: '38458888888888888',
+                    extra: {
+                      create_time: nowMs - 60_000,
+                      content_blocks_v2: [{ content: { text_block: { text: '番茄炒蛋先放蛋还是番茄？' } } }],
+                    },
+                  },
+                },
+                receivedMessages: {
+                  a1: {
+                    conversationId: '38458888888888888',
+                    extra: {
+                      ext: { is_finish: '1', finish_time_ms: String(nowMs - 55_000) },
+                      content_blocks_v2: [{ content: { text_block: { text: '建议先炒鸡蛋盛出备用，再炒番茄出汁。' } }, is_finish: true }],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      ]),
+    )
+
+    const adapter = new DoubaoAdapter({
+      doubaoHome: tmp,
+      chatsDir: join(tmp, 'DoubaoChats'),
+    })
+    const list1 = await adapter.listSessions({ now: nowMs })
+    const staleTask = list1.find(s => s.id === 'doubao:38457777777777777')
+    const casualChat = list1.find(s => s.id === 'doubao:38458888888888888')
+
+    assert.ok(staleTask)
+    assert.equal(staleTask.status, 'idle', 'Stale board.md running task (>10m without updates) must not stay stuck in running')
+    assert.equal(staleTask.statusLabel, '👀 仅观测')
+    assert.equal(staleTask.cwd, unrelatedChatsSub, 'Workspace session still resolves chats deliverable fallback when no sandbox entry exists')
+
+    assert.ok(casualChat)
+    assert.equal(casualChat.project, '豆包对话')
+    assert.equal(casualChat.cwd, '', 'Pure IndexedDB chat without workspace/sandbox must not hijack unrelated chatsDir folders')
+
+    // Append a new WAL file while 000001.log stays cached; verify merged metadata + new turn stay intact
+    writeFileSync(
+      join(idbDir, '000003.log'),
+      buildWalRecord([
+        {
+          state: {
+            mainTaskDataMap: {
+              turn_recipe_2: {
+                sessionId: 'turn_recipe_2',
+                createTime: nowMs - 10_000,
+                sentMessages: {
+                  u2: {
+                    conversationId: '38458888888888888',
+                    extra: {
+                      create_time: nowMs - 10_000,
+                      content_blocks_v2: [{ content: { text_block: { text: '要加一点糖提鲜吗？' } } }],
+                    },
+                  },
+                },
+                receivedMessages: {
+                  a2: {
+                    conversationId: '38458888888888888',
+                    extra: {
+                      ext: { is_finish: '1', finish_time_ms: String(nowMs - 8_000) },
+                      content_blocks_v2: [{ content: { text_block: { text: '加半小勺白糖能中和番茄酸味。' } }, is_finish: true }],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      ]),
+    )
+    const list2 = await adapter.listSessions({ now: nowMs })
+    const casualChat2 = list2.find(s => s.id === 'doubao:38458888888888888')
+    assert.equal(casualChat2.title, '日常闲聊食谱', 'Cached 000001.log conversation title remains intact when 000003.log is added')
+    assert.equal(casualChat2.transcript.length, 4)
+
+    adapter.shutdown()
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+})

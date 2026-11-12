@@ -64,6 +64,8 @@ import {
   normalizeDeviceModelShort,
   buildShortHostNameMap,
   stripRedundantProjectPrefix,
+  sortNormalizedSessions,
+  renderCapabilityMatrixRowsHtml,
 } from './utils/session-labels';
 
 export function initHubController() {
@@ -1003,21 +1005,8 @@ export function initHubController() {
       } catch { }
     }
 
-    // 优先级排序：1. 待授权(黄) → 2. 运行中(绿) → 3. 已出结论未读(蓝)/中断 → 4. 置顶 → 5. 最新时间
-    const statePriority = (s) => {
-      if (s.status === 'approval') return 4;
-      if (s.status === 'running') return 3;
-      if (s.hasUnreadConclusion || s.isUnreadInterrupted) return 2;
-      if (s.pinned) return 1;
-      return 0;
-    };
-
-    return list.sort((a, b) => {
-      const pa = statePriority(a);
-      const pb = statePriority(b);
-      if (pa !== pb) return pb - pa;
-      return (b.updatedAt || 0) - (a.updatedAt || 0);
-    });
+    // 优先级排序：1. 置顶(📌 固定最顶部，组内仍按紧急度排) → 2. 待授权(黄) → 3. 已出结论/中断未读(蓝/橙) → 4. 运行中(绿) → 5. 最新时间
+    return sortNormalizedSessions(list);
   }
 
   function findSessionGlobal(sessionId) {
@@ -1611,6 +1600,13 @@ export function initHubController() {
       const chatInput = document.getElementById('globalPromptInput');
       const sendBtn = document.getElementById('chatSendBtn');
       const voiceBtn = document.getElementById('chatVoiceBtn');
+      const imageBtn = document.getElementById('chatImageBtn');
+      const composerCard = document.getElementById('composerUnifiedCard');
+      const toolbarRow =
+        typeof document.querySelector === 'function'
+          ? document.querySelector('#composerUnifiedCard .composer-toolbar-row')
+          : null;
+      const attachStrip = document.getElementById('composerAttachmentsStrip');
       if (isObserveOnly) {
         runningBar.classList.remove('show');
         chatInput.disabled = true;
@@ -1618,31 +1614,57 @@ export function initHubController() {
         sendBtn.style.display = 'none';
         chatInput.placeholder = '👀 当前会话为观察模式（仅支持查看对话记录）';
         sendBtn.textContent = '👀 仅观察';
-      } else if (s.status === 'running') {
-        runningBar.classList.add('show');
-        const canSteer = s.capabilities?.canSteer !== false && s.harness !== 'claude';
-        if (!canSteer) {
-          chatInput.disabled = true;
-          sendBtn.disabled = true;
-          sendBtn.style.display = 'none';
-          chatInput.placeholder = '⏳ 当前后端正在执行中（不支持实时插话，可点击上方停止）';
-          sendBtn.textContent = '🟢 执行中';
+        if (composerCard?.classList) composerCard.classList.remove('wechat-voice-mode');
+        if (voiceBtn) {
+          voiceBtn.disabled = true;
+          voiceBtn.style.display = 'none';
+        }
+        if (imageBtn) {
+          imageBtn.disabled = true;
+          imageBtn.style.display = 'none';
+        }
+        if (toolbarRow) toolbarRow.style.display = 'none';
+        if (attachStrip) attachStrip.style.display = 'none';
+      } else {
+        if (composerCard?.classList) {
+          composerCard.classList.toggle('wechat-voice-mode', Boolean(isWechatVoiceMode()));
+        }
+        if (voiceBtn) {
+          voiceBtn.disabled = false;
+          voiceBtn.style.display = '';
+        }
+        if (imageBtn) {
+          imageBtn.disabled = false;
+          imageBtn.style.display = '';
+        }
+        if (toolbarRow) toolbarRow.style.display = '';
+        renderAttachmentStrip('chat');
+        if (s.status === 'running') {
+          runningBar.classList.add('show');
+          const canSteer = s.capabilities?.canSteer !== false && s.harness !== 'claude';
+          if (!canSteer) {
+            chatInput.disabled = true;
+            sendBtn.disabled = true;
+            sendBtn.style.display = 'none';
+            chatInput.placeholder = '⏳ 当前后端正在执行中（不支持实时插话，可点击上方停止）';
+            sendBtn.textContent = '🟢 执行中';
+          } else {
+            chatInput.disabled = false;
+            sendBtn.disabled = false;
+            sendBtn.style.display = '';
+            chatInput.placeholder = '⚡ 实时插话 (Steer)：补充指令将立即注入...';
+            sendBtn.textContent = '⚡ 插话';
+          }
         } else {
+          runningBar.classList.remove('show');
           chatInput.disabled = false;
           sendBtn.disabled = false;
           sendBtn.style.display = '';
-          chatInput.placeholder = '⚡ 实时插话 (Steer)：补充指令将立即注入...';
-          sendBtn.textContent = '⚡ 插话';
+          chatInput.placeholder = s.controlMode === 'idle-resumable'
+            ? `发指令通过 ${s.harnessLabel || s.harness} CLI 继续对话...`
+            : '发指令继续对话...';
+          sendBtn.textContent = '发送';
         }
-      } else {
-        runningBar.classList.remove('show');
-        chatInput.disabled = false;
-        sendBtn.disabled = false;
-        sendBtn.style.display = '';
-        chatInput.placeholder = s.controlMode === 'idle-resumable'
-          ? `发指令通过 ${s.harnessLabel || s.harness} CLI 继续对话...`
-          : '发指令继续对话...';
-        sendBtn.textContent = '发送';
       }
       if (chatInput) {
         chatInput.dataset.origPlaceholder = chatInput.placeholder;
@@ -2318,6 +2340,13 @@ export function initHubController() {
   }
 
   function triggerImagePicker(target = 'chat') {
+    if (target === 'chat') {
+      const curSess = findSessionGlobal(activeSessionId)?.session;
+      if (curSess && curSess.controlMode === 'observe-only' && curSess.harness !== 'dsh') {
+        showToast('👀 当前会话为观察模式（仅支持查看对话记录）');
+        return;
+      }
+    }
     const inputId = target === 'newTask' ? 'newTaskImageInput' : 'chatImageInput';
     const el = document.getElementById(inputId);
     if (el) {
@@ -4488,13 +4517,24 @@ export function initHubController() {
                       </div>
 
                       <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:11.5px;">
-                        <span style="padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">🟣 DSH · ✅ 远控+审批</span>
-                        <span style="padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">⚡ Antigravity · ✅ 远控+审批</span>
-                        ${(h.bridgeState?.harnesses || []).map(ad => `
-                          <span style="padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">
-                            ${esc(ad.icon || '🔌')} ${esc(ad.label || ad.id)} · ${ad.hasBinary ? '🔵 看会话/发指令' : (ad.installed ? '👀 观察模式' : '⚪ 未安装')}
+                        <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">${renderHarnessBadgeHtml('dsh', 'inline')} DSH · ✅ 远控+审批</span>
+                        <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">${renderHarnessBadgeHtml('antigravity-ide', 'inline')} Antigravity · ✅ 远控+审批</span>
+                        ${(h.bridgeState?.harnesses || []).map(ad => {
+                          const canApproveNow = Boolean(ad.capabilities?.canApprove || ad.id === 'codex' || ad.id === 'workbuddy');
+                          const isObserveAdapter = ad.capabilities?.canPrompt === false || ad.id === 'doubao';
+                          const statusTag = !ad.installed && !ad.hasBinary
+                            ? '⚪ 未安装'
+                            : isObserveAdapter
+                              ? '👀 仅观测'
+                              : ad.hasBinary
+                                ? (canApproveNow ? '✅ 远控+审批' : '🔵 看会话/发指令')
+                                : '👀 观察模式';
+                          return `
+                          <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">
+                            ${renderHarnessBadgeHtml(ad.id, 'inline')} ${esc(ad.label || ad.id)} · ${statusTag}
                           </span>
-                        `).join('')}
+                        `;
+                        }).join('')}
                       </div>
 
                       <div style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
@@ -4539,30 +4579,15 @@ export function initHubController() {
                 <thead>
                   <tr style="border-bottom:1px solid var(--border);color:var(--muted);">
                     <th style="text-align:left;padding:6px 4px;">后端</th>
-                    <th style="padding:6px 4px;">看会话</th>
-                    <th style="padding:6px 4px;">发指令</th>
-                    <th style="padding:6px 4px;">停止</th>
-                    <th style="padding:6px 4px;">手机审批</th>
-                    <th style="padding:6px 4px;">实时插话</th>
+                    <th style="padding:6px 3px;">看会话</th>
+                    <th style="padding:6px 3px;">发指令</th>
+                    <th style="padding:6px 3px;">停止</th>
+                    <th style="padding:6px 3px;">手机审批</th>
+                    <th style="padding:6px 3px;">实时插话</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr style="border-bottom:1px solid var(--hairline);">
-                    <td style="text-align:left;padding:7px 4px;font-weight:700;">DSH</td>
-                    <td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td>
-                  </tr>
-                  <tr style="border-bottom:1px solid var(--hairline);">
-                    <td style="text-align:left;padding:7px 4px;font-weight:700;">Antigravity IDE</td>
-                    <td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td>
-                  </tr>
-                  <tr style="border-bottom:1px solid var(--hairline);">
-                    <td style="text-align:left;padding:7px 4px;font-weight:700;">Claude Code</td>
-                    <td>✅</td><td>✅</td><td>✅</td><td style="color:var(--muted);">计划中</td><td>❌</td>
-                  </tr>
-                  <tr>
-                    <td style="text-align:left;padding:7px 4px;font-weight:700;">Codex</td>
-                    <td>✅</td><td>✅</td><td>✅</td><td style="color:var(--muted);">计划中</td><td>❌</td>
-                  </tr>
+                  ${renderCapabilityMatrixRowsHtml()}
                 </tbody>
               </table>
             </div>

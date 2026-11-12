@@ -34,7 +34,6 @@ import {
   DoubaoAdapter,
   getDoubaoChatsDir,
   getDoubaoDataRoot,
-  isDoubaoSessionId,
 } from './harnesses/doubao-adapter.js'
 import { discoverDshModels, DshHeadlessRunner } from './harnesses/dsh-headless-adapter.js'
 import { discoverWorkBuddyModels, WorkBuddyAdapter } from './harnesses/workbuddy-adapter.js'
@@ -1688,7 +1687,7 @@ export class HubAgent {
                 mode: type,
                 execImpl: this.execImpl,
               })
-              if (extRes?.ok && isDoubaoSessionId(targetId) && effectiveText) {
+              if (extRes?.ok && effectiveText) {
                 const nowTs = Date.now()
                 const list = this.pendingUserPrompts.get(targetId) || []
                 list.push({ text: effectiveText, time: nowTs })

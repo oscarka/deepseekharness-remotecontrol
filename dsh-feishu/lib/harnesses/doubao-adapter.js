@@ -4,6 +4,8 @@ import { basename, join, resolve } from 'node:path'
 import { discoverDoubaoIndexedDbDirs, readDoubaoIndexedDbSnapshot } from './doubao-idb.js'
 
 export const DOUBAO_SESSION_PREFIX = 'doubao:'
+export const DOUBAO_BOARD_RUNNING_STALE_MS = 10 * 60_000
+export const DOUBAO_WATCH_DEBOUNCE_MS = 300
 
 export function isDoubaoSessionId(id = '') {
   return String(id || '').startsWith(DOUBAO_SESSION_PREFIX)
@@ -390,6 +392,8 @@ export class DoubaoAdapter {
     this.customTitles = new Map()
     this.fallbackSeenAt = new Map()
     this.lastIdbDigest = ''
+    this.wsWatchTimer = null
+    this.idbWatchTimer = null
     this.watchers = new Map()
     this._setupWatchers()
   }
@@ -413,7 +417,12 @@ export class DoubaoAdapter {
       if (this.watchers.has(root)) continue
       try {
         const w = watch(root, { persistent: false }, () => {
-          this.onStateChange?.()
+          if (this.wsWatchTimer) return
+          this.wsWatchTimer = setTimeout(() => {
+            this.wsWatchTimer = null
+            this.onStateChange?.()
+          }, DOUBAO_WATCH_DEBOUNCE_MS)
+          this.wsWatchTimer.unref?.()
         })
         w.on('error', () => {
           try { w.close() } catch {}
@@ -426,13 +435,18 @@ export class DoubaoAdapter {
       if (this.watchers.has(idbDir)) continue
       try {
         const w = watch(idbDir, { persistent: false }, () => {
-          try {
-            const snap = readDoubaoIndexedDbSnapshot(this.doubaoHome)
-            const nextDigest = this._computeIdbDigest(snap)
-            if (nextDigest === this.lastIdbDigest) return
-            this.lastIdbDigest = nextDigest
-          } catch {}
-          this.onStateChange?.()
+          if (this.idbWatchTimer) return
+          this.idbWatchTimer = setTimeout(() => {
+            this.idbWatchTimer = null
+            try {
+              const snap = readDoubaoIndexedDbSnapshot(this.doubaoHome)
+              const nextDigest = this._computeIdbDigest(snap)
+              if (nextDigest === this.lastIdbDigest) return
+              this.lastIdbDigest = nextDigest
+            } catch {}
+            this.onStateChange?.()
+          }, DOUBAO_WATCH_DEBOUNCE_MS)
+          this.idbWatchTimer.unref?.()
         })
         w.on('error', () => {
           try { w.close() } catch {}
@@ -444,6 +458,14 @@ export class DoubaoAdapter {
   }
 
   shutdown() {
+    if (this.wsWatchTimer) {
+      clearTimeout(this.wsWatchTimer)
+      this.wsWatchTimer = null
+    }
+    if (this.idbWatchTimer) {
+      clearTimeout(this.idbWatchTimer)
+      this.idbWatchTimer = null
+    }
     for (const w of this.watchers.values()) {
       try { w.close() } catch {}
     }
@@ -602,12 +624,14 @@ export class DoubaoAdapter {
 
       const lastMsg = fullTranscript[fullTranscript.length - 1] || null
       const lastRole = lastMsg?.role || 'idle'
+      const boardRunningFresh =
+        boardInfo.hasRunningTask && now - latestMtimeMs < DOUBAO_BOARD_RUNNING_STALE_MS
       const subAgentActive =
-        (boardInfo.tasks.length === 0 || boardInfo.hasRunningTask) &&
+        (boardInfo.tasks.length === 0 || boardRunningFresh) &&
         subAgents.some(sa => now - (sa.mtimeMs || 0) < 30_000)
       const idbStreaming = idbTurns.some(t => t.isStreaming && now - (t.assistantTimeMs || t.userTimeMs || 0) < 120_000)
       const isActivelyRunning =
-        boardInfo.hasRunningTask ||
+        boardRunningFresh ||
         subAgentActive ||
         idbStreaming ||
         (lastRole === 'user' && now - latestMtimeMs < 60_000)
@@ -663,7 +687,7 @@ export class DoubaoAdapter {
         })
       }
 
-      let resolvedCwd = idbSnap.cwdByConvId.get(sess.id) || sess.dir || this.chatsDir || ''
+      let resolvedCwd = idbSnap.cwdByConvId.get(sess.id) || sess.dir || ''
       if (idbSnap.cwdByConvId.has(sess.id) && existsSync(resolvedCwd)) {
         try {
           for (const f of readdirSync(resolvedCwd)) {
@@ -683,7 +707,7 @@ export class DoubaoAdapter {
             }
           }
         } catch {}
-      } else if (!idbSnap.cwdByConvId.has(sess.id) && this.chatsDir && existsSync(join(this.chatsDir, 'chats'))) {
+      } else if (sess.dir && !idbSnap.cwdByConvId.has(sess.id) && this.chatsDir && existsSync(join(this.chatsDir, 'chats'))) {
         try {
           const dateDirs = readdirSync(join(this.chatsDir, 'chats'), { withFileTypes: true })
             .filter(d => d.isDirectory() && !d.name.startsWith('.'))

@@ -2,6 +2,13 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.6.7] - 2026-11-12
+
+### Fixed
+
+- **会话列表排序优先级修正**（`session-labels.js` / `controller.js`）：将置顶会话（`📌 已置顶`）真正固定在列表最顶部（置顶组内仍按状态紧急度排序），并将未读完结结论 / 中断会话（`🔵 已出结论` / `⚠️ 中断待继续`）排在后台 `● 运行中` 会话之上，避免刚跑完出结论或手动置顶的对话被后台长任务挤到下方。
+- **「设备与设置 → 各后端功能边界（诚实矩阵）」与电脑详情徽章同步更新**：补齐五大工具（`DSH`、`Antigravity IDE`、`Codex`、`WorkBuddy`、`Claude Code`）官方品牌矢量徽章与最新能力状态（`Codex` 与 `WorkBuddy` 均已完整支持手机审批与实时插话），并同步刷新 README 中英文配图。
+
 ## [0.6.6] - 2026-11-12
 
 ### Changed

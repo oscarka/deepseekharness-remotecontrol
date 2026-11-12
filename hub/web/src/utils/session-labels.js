@@ -147,3 +147,108 @@ export function buildShortHostNameMap(hosts = []) {
   }
   return map;
 }
+
+/**
+ * Compute session list sort priority:
+ * 1. Pinned (`pinned: true`) always stays fixed at the very top of the list (10 + base state priority)
+ * 2. Needs Approval / Choice (`status === 'approval'`) -> 4
+ * 3. Unread Conclusion / Unread Interrupted (`hasUnreadConclusion || isUnreadInterrupted`) -> 3
+ * 4. Actively Running / Queued (`status === 'running' || queuedCount > 0`) -> 2
+ * 5. Read / Idle historical conversations -> 0 (sorted by `updatedAt` desc)
+ */
+export function computeSessionSortPriority(s) {
+  if (!s) return 0;
+  let base = 0;
+  if (s.status === 'approval') base = 4;
+  else if (s.hasUnreadConclusion || s.isUnreadInterrupted) base = 3;
+  else if (s.status === 'running' || (Number(s.queuedCount) || 0) > 0) base = 2;
+  return s.pinned ? 10 + base : base;
+}
+
+export function sortNormalizedSessions(list = []) {
+  return [...list].sort((a, b) => {
+    const pa = computeSessionSortPriority(a);
+    const pb = computeSessionSortPriority(b);
+    if (pa !== pb) return pb - pa;
+    return (b.updatedAt || 0) - (a.updatedAt || 0);
+  });
+}
+
+export const HARNESS_CAPABILITY_MATRIX = [
+  {
+    id: 'dsh',
+    label: 'DSH',
+    canView: true,
+    canPrompt: true,
+    canStop: true,
+    approveState: 'supported',
+    canSteer: true,
+  },
+  {
+    id: 'antigravity-ide',
+    label: 'Antigravity IDE',
+    canView: true,
+    canPrompt: true,
+    canStop: true,
+    approveState: 'supported',
+    canSteer: true,
+  },
+  {
+    id: 'codex',
+    label: 'Codex',
+    canView: true,
+    canPrompt: true,
+    canStop: true,
+    approveState: 'supported',
+    canSteer: true,
+  },
+  {
+    id: 'workbuddy',
+    label: 'WorkBuddy',
+    canView: true,
+    canPrompt: true,
+    canStop: true,
+    approveState: 'supported',
+    canSteer: true,
+  },
+  {
+    id: 'claude',
+    label: 'Claude Code',
+    canView: true,
+    canPrompt: true,
+    canStop: true,
+    approveState: 'planned',
+    canSteer: false,
+  },
+  {
+    id: 'doubao',
+    label: '豆包电脑版',
+    canView: true,
+    canPrompt: false,
+    canStop: false,
+    approveState: 'unsupported',
+    canSteer: false,
+  },
+];
+
+export function renderCapabilityMatrixRowsHtml(rows = HARNESS_CAPABILITY_MATRIX) {
+  return rows
+    .map((row, idx) => {
+      const borderStyle = idx < rows.length - 1 ? ' style="border-bottom:1px solid var(--hairline);"' : '';
+      const viewCell = row.canView ? '<td>✅</td>' : '<td style="color:var(--muted);">—</td>';
+      const promptCell = row.canPrompt ? '<td>✅</td>' : '<td style="color:var(--muted);">—</td>';
+      const stopCell = row.canStop ? '<td>✅</td>' : '<td style="color:var(--muted);">—</td>';
+      const approveCell =
+        row.approveState === 'supported'
+          ? '<td>✅</td>'
+          : row.approveState === 'planned'
+            ? '<td style="color:var(--muted);">计划中</td>'
+            : '<td style="color:var(--muted);">—</td>';
+      const steerCell = row.canSteer ? '<td>✅</td>' : '<td style="color:var(--muted);">—</td>';
+      return `<tr${borderStyle}>
+                    <td style="text-align:left;padding:7px 4px;font-weight:700;"><span style="display:inline-flex;align-items:center;gap:6px;">${renderHarnessBadgeHtml(row.id, 'inline')}<span>${escapeAttr(row.label)}</span></span></td>
+                    ${viewCell}${promptCell}${stopCell}${approveCell}${steerCell}
+                  </tr>`;
+    })
+    .join('\n');
+}

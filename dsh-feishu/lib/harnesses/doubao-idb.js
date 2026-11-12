@@ -3,6 +3,8 @@ import { join, resolve } from 'node:path'
 import v8 from 'node:v8'
 
 const IDB_CACHE = new Map()
+const FILE_OBJECTS_CACHE = new Map()
+const SANDBOX_META_CACHE = new Map()
 
 export function normalizeEpochMs(val) {
   const n = Number(val)
@@ -290,37 +292,103 @@ export function readDoubaoSandboxMeta(doubaoHome = '') {
   const cwdByConvId = new Map()
   const localToRealId = new Map()
   if (!doubaoHome || !existsSync(doubaoHome)) return { cwdByConvId, localToRealId }
+  const cacheKey = resolve(doubaoHome)
   const candidates = [
     join(doubaoHome, 'Default', 'saman_shell_db_storage'),
     join(doubaoHome, 'saman_shell_db_storage'),
   ]
+  const sigParts = []
+  const filesToScan = []
   for (const dir of candidates) {
     if (!existsSync(dir)) continue
     try {
-      for (const f of readdirSync(dir).filter(n => n.endsWith('.log') || n.endsWith('.ldb'))) {
-        const raw = readFileSync(join(dir, f), 'utf8')
-        const marker = '"entriesBySandboxId":'
-        let idx = 0
-        while (true) {
-          const pos = raw.indexOf(marker, idx)
-          if (pos === -1) break
-          const chunk = raw.slice(pos, Math.min(raw.length, pos + 4096))
-          const re = /"conversationId":"([^"]+)"(?:,"localConversationId":"([^"]+)")?[\s\S]{0,400}?"cwd":"([^"]+)"/g
-          let m
-          while ((m = re.exec(chunk)) !== null) {
-            cwdByConvId.set(m[1], m[3])
-            if (m[2]) localToRealId.set(m[2], m[1])
-          }
-          idx = pos + marker.length
-        }
+      for (const f of readdirSync(dir).filter(n => n.endsWith('.log') || n.endsWith('.ldb')).sort()) {
+        const full = join(dir, f)
+        const st = statSync(full)
+        sigParts.push(`${full}:${st.size}:${Math.round(st.mtimeMs)}`)
+        filesToScan.push(full)
       }
     } catch {}
   }
+  const sig = sigParts.join('|')
+  const cached = SANDBOX_META_CACHE.get(cacheKey)
+  if (cached && cached.sig === sig) {
+    return {
+      cwdByConvId: new Map(cached.cwdByConvId),
+      localToRealId: new Map(cached.localToRealId),
+    }
+  }
+  for (const full of filesToScan) {
+    try {
+      const raw = readFileSync(full, 'utf8')
+      const marker = '"entriesBySandboxId":'
+      let idx = 0
+      while (true) {
+        const pos = raw.indexOf(marker, idx)
+        if (pos === -1) break
+        const chunk = raw.slice(pos, Math.min(raw.length, pos + 4096))
+        const re = /"conversationId":"([^"]+)"(?:,"localConversationId":"([^"]+)")?[\s\S]{0,400}?"cwd":"([^"]+)"/g
+        let m
+        while ((m = re.exec(chunk)) !== null) {
+          cwdByConvId.set(m[1], m[3])
+          if (m[2]) localToRealId.set(m[2], m[1])
+        }
+        idx = pos + marker.length
+      }
+    } catch {}
+  }
+  SANDBOX_META_CACHE.set(cacheKey, {
+    sig,
+    cwdByConvId: new Map(cwdByConvId),
+    localToRealId: new Map(localToRealId),
+  })
   return { cwdByConvId, localToRealId }
 }
 
 export function readDoubaoSandboxCwds(doubaoHome = '') {
   return readDoubaoSandboxMeta(doubaoHome).cwdByConvId
+}
+
+function extractLevelDbFileObjects(full, isLog, fileSig) {
+  const cached = FILE_OBJECTS_CACHE.get(full)
+  if (cached && cached.sig === fileSig) {
+    return cached.objects
+  }
+  const objects = []
+  try {
+    const raw = readFileSync(full)
+    const chunks = isLog ? readLevelDbWalRecords(raw) : readLevelDbSstBlocks(raw)
+    for (const chunk of chunks) {
+      if (
+        !chunk.includes('conversation') &&
+        !chunk.includes('mainTaskDataMap') &&
+        !chunk.includes('sentMessages')
+      ) {
+        continue
+      }
+      for (let i = 0; i < chunk.length - 4; i++) {
+        if (chunk[i] === 0xff && chunk[i + 1] >= 13 && chunk[i + 1] <= 22 && chunk[i + 2] === 0x6f) {
+          try {
+            const obj = v8.deserialize(chunk.subarray(i))
+            if (
+              obj &&
+              typeof obj === 'object' &&
+              ((typeof obj.schema === 'string' && obj.schema.startsWith('conversation-list-data-')) ||
+                (obj.state?.mainTaskDataMap && typeof obj.state.mainTaskDataMap === 'object'))
+            ) {
+              objects.push(obj)
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch {}
+  if (FILE_OBJECTS_CACHE.size > 300) {
+    const oldestKey = FILE_OBJECTS_CACHE.keys().next().value
+    if (oldestKey) FILE_OBJECTS_CACHE.delete(oldestKey)
+  }
+  FILE_OBJECTS_CACHE.set(full, { sig: fileSig, objects })
+  return objects
 }
 
 export function readDoubaoIndexedDbSnapshot(doubaoHome = '') {
@@ -344,8 +412,9 @@ export function readDoubaoIndexedDbSnapshot(doubaoHome = '') {
         const full = join(dir, name)
         const st = statSync(full)
         if (st.mtimeMs > latestMtimeMs) latestMtimeMs = st.mtimeMs
-        sigParts.push(`${full}:${st.size}:${Math.round(st.mtimeMs)}`)
-        filesToRead.push({ full, isLog: name.endsWith('.log') })
+        const fileSig = `${st.size}:${Math.round(st.mtimeMs)}`
+        sigParts.push(`${full}:${fileSig}`)
+        filesToRead.push({ full, isLog: name.endsWith('.log'), fileSig })
       }
     } catch {}
   }
@@ -363,28 +432,11 @@ export function readDoubaoIndexedDbSnapshot(doubaoHome = '') {
     }
   }
 
-  for (const { full, isLog } of filesToRead) {
-    try {
-      const raw = readFileSync(full)
-      const chunks = isLog ? readLevelDbWalRecords(raw) : readLevelDbSstBlocks(raw)
-      for (const chunk of chunks) {
-        if (
-          !chunk.includes('conversation') &&
-          !chunk.includes('mainTaskDataMap') &&
-          !chunk.includes('sentMessages')
-        ) {
-          continue
-        }
-        for (let i = 0; i < chunk.length - 4; i++) {
-          if (chunk[i] === 0xff && chunk[i + 1] >= 13 && chunk[i + 1] <= 22 && chunk[i + 2] === 0x6f) {
-            try {
-              const obj = v8.deserialize(chunk.subarray(i))
-              ingestV8Object(obj, conversationsById, rawTurnsByConvId)
-            } catch {}
-          }
-        }
-      }
-    } catch {}
+  for (const { full, isLog, fileSig } of filesToRead) {
+    const objects = extractLevelDbFileObjects(full, isLog, fileSig)
+    for (const obj of objects) {
+      ingestV8Object(obj, conversationsById, rawTurnsByConvId)
+    }
   }
 
   // Remap temporary `local_*` conversation IDs to canonical server IDs when known,
