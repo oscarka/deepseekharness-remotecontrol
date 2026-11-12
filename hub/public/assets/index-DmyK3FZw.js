@@ -562,75 +562,28 @@ function Sheets() {
 		class: "sheet-backdrop",
 		id: "newTaskSheet",
 		onClick: closeIfBackdrop("newTaskSheet")
-	}, /* @__PURE__ */ k("div", { class: "sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", { class: "sheet-title" }, /* @__PURE__ */ k("span", null, "✨ 新建远程对话任务"), /* @__PURE__ */ k("button", {
+	}, /* @__PURE__ */ k("div", { class: "sheet-panel new-task-sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", {
+		class: "sheet-title",
+		style: "margin-bottom:12px;"
+	}, /* @__PURE__ */ k("span", null, "✨ 新建远程对话任务"), /* @__PURE__ */ k("button", {
 		type: "button",
-		style: "border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;",
+		style: "border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;",
 		onClick: () => window.closeSheet?.("newTaskSheet")
-	}, "✕")), /* @__PURE__ */ k("div", { class: "form-label" }, "1. 选择执行电脑"), /* @__PURE__ */ k("div", {
-		class: "chip-selector",
+	}, "✕")), /* @__PURE__ */ k("div", { class: "new-task-context-card" }, /* @__PURE__ */ k("div", { class: "new-task-context-row" }, /* @__PURE__ */ k("span", { class: "context-row-label" }, "💻 执行电脑"), /* @__PURE__ */ k("div", {
+		class: "context-row-chips",
 		id: "newTaskHostChips"
-	}), /* @__PURE__ */ k("div", { class: "form-label" }, "2. 选择执行引擎 (Harness / IDE)"), /* @__PURE__ */ k("div", {
-		class: "chip-selector",
+	})), /* @__PURE__ */ k("div", { class: "new-task-context-row" }, /* @__PURE__ */ k("span", { class: "context-row-label" }, "⚡ 执行引擎"), /* @__PURE__ */ k("div", {
+		class: "context-row-chips",
 		id: "newTaskHarnessChips"
-	}), /* @__PURE__ */ k("div", { class: "form-label" }, "3. 选择项目文件夹（免手敲路径）"), /* @__PURE__ */ k("div", {
-		class: "chip-selector",
+	}))), /* @__PURE__ */ k("div", { class: "new-task-proj-section" }, /* @__PURE__ */ k("div", { class: "new-task-proj-header" }, /* @__PURE__ */ k("span", { class: "proj-header-title" }, "📁 项目工作区"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "proj-header-more-btn",
+		id: "newTaskProjMoreBtn",
+		onClick: () => window.openNewTaskProjectPickerSheet?.()
+	}, "全部 ▾")), /* @__PURE__ */ k("div", {
+		class: "new-task-proj-scroll",
 		id: "newTaskProjectChips"
-	}), /* @__PURE__ */ k("div", {
-		class: "form-label",
-		style: "display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;"
-	}, /* @__PURE__ */ k("span", null, "4. 任务指令（支持截图或语音）"), /* @__PURE__ */ k("div", { style: "display:inline-flex;align-items:center;gap:6px;" }, /* @__PURE__ */ k("input", {
-		type: "file",
-		id: "newTaskImageInput",
-		accept: "image/*",
-		multiple: true,
-		style: "display:none;",
-		onChange: (e) => window.onChatImageSelected?.(e, "newTask")
-	}), /* @__PURE__ */ k("button", {
-		type: "button",
-		class: "voice-pill-btn",
-		id: "newTaskModelBtn",
-		onClick: (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-			window.openModelPickerSheet?.("newTask");
-		}
-	}, /* @__PURE__ */ k("span", { id: "newTaskModelBtnLabel" }, "🤖 默认模型"), /* @__PURE__ */ k("span", { style: "opacity:0.7;font-size:10px;" }, "▾")), /* @__PURE__ */ k("button", {
-		type: "button",
-		class: "voice-pill-btn",
-		id: "newTaskImageBtn",
-		onClick: (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-			window.triggerImagePicker?.("newTask");
-		}
-	}, "🖼️ 传截图"), /* @__PURE__ */ k("button", {
-		type: "button",
-		class: "voice-pill-btn",
-		id: "newTaskVoiceBtn",
-		onMouseDown: (e) => {
-			e.preventDefault();
-		},
-		onClick: (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-			window.toggleVoiceInput?.("newTaskInput", "newTaskVoiceBtn");
-		}
-	}, "🎤 语音输入"))), /* @__PURE__ */ k("div", {
-		class: "chip-selector",
-		style: "margin-bottom:6px;"
-	}, /* @__PURE__ */ k("button", {
-		type: "button",
-		class: "choice-chip",
-		onClick: () => window.fillQuickPrompt?.("帮我检查当前项目的定时任务和运行日志是否正常")
-	}, "🔍 检查运行状态"), /* @__PURE__ */ k("button", {
-		type: "button",
-		class: "choice-chip",
-		onClick: () => window.fillQuickPrompt?.("运行单元测试并修复所有报错")
-	}, "🧪 跑测试修 Bug"), /* @__PURE__ */ k("button", {
-		type: "button",
-		class: "choice-chip",
-		onClick: () => window.fillQuickPrompt?.("查看 git status 并总结最近的代码改动")
-	}, "📦 总结代码改动")), /* @__PURE__ */ k("div", {
+	})), /* @__PURE__ */ k("div", { class: "new-task-card-wrap" }, /* @__PURE__ */ k("div", {
 		class: "composer-attachments-strip",
 		id: "newTaskAttachmentsStrip",
 		style: "display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"
@@ -642,7 +595,7 @@ function Sheets() {
 	}), /* @__PURE__ */ k("textarea", {
 		class: "new-task-textarea",
 		id: "newTaskInput",
-		placeholder: "输入你想让电脑执行的任务，或点击右上角🖼️传截图...",
+		placeholder: "输入你想让电脑执行的任务，或点击下方传截图/语音输入...",
 		autocorrect: "on",
 		autocapitalize: "sentences",
 		spellcheck: true,
@@ -650,11 +603,83 @@ function Sheets() {
 			if (!window.isVoiceRecording?.() && !e?.isComposing) window.hideVoiceHintBar?.("newTaskInput");
 		},
 		onPaste: (e) => window.onComposerPaste?.(e, "newTask")
+	}), /* @__PURE__ */ k("div", { class: "new-task-toolbar" }, /* @__PURE__ */ k("input", {
+		type: "file",
+		id: "newTaskImageInput",
+		accept: "image/*",
+		multiple: true,
+		style: "display:none;",
+		onChange: (e) => window.onChatImageSelected?.(e, "newTask")
 	}), /* @__PURE__ */ k("button", {
 		type: "button",
-		class: "primary-block-btn",
+		class: "new-task-tool-btn model-btn",
+		id: "newTaskModelBtn",
+		title: "选择模型",
+		onClick: (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			window.openModelPickerSheet?.("newTask");
+		}
+	}, /* @__PURE__ */ k("span", { id: "newTaskModelBtnLabel" }, "🤖 默认模型"), /* @__PURE__ */ k("span", {
+		class: "model-arrow",
+		style: "opacity:0.7;font-size:10px;margin-left:3px;"
+	}, "▾")), /* @__PURE__ */ k("div", { class: "new-task-toolbar-actions" }, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "new-task-tool-btn",
+		id: "newTaskImageBtn",
+		onClick: (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			window.triggerImagePicker?.("newTask");
+		}
+	}, "🖼️ 截图"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "new-task-tool-btn",
+		id: "newTaskVoiceBtn",
+		onMouseDown: (e) => {
+			e.preventDefault();
+		},
+		onClick: (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			window.toggleVoiceInput?.("newTaskInput", "newTaskVoiceBtn");
+		}
+	}, "🎤 语音")))), /* @__PURE__ */ k("div", { class: "new-task-quick-strip" }, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "quick-prompt-pill",
+		onClick: () => window.fillQuickPrompt?.("帮我检查当前项目的定时任务和运行日志是否正常")
+	}, "🔍 检查运行状态"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "quick-prompt-pill",
+		onClick: () => window.fillQuickPrompt?.("运行单元测试并修复所有报错")
+	}, "🧪 跑测试修 Bug"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "quick-prompt-pill",
+		onClick: () => window.fillQuickPrompt?.("查看 git status 并总结最近的代码改动")
+	}, "📦 总结代码改动")), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "primary-block-btn new-task-submit-btn",
 		onClick: () => window.submitNewTask?.()
 	}, "🚀 立即在电脑上启动任务"))), /* @__PURE__ */ k("div", {
+		class: "sheet-backdrop",
+		id: "newTaskProjectPickerSheet",
+		onClick: closeIfBackdrop("newTaskProjectPickerSheet")
+	}, /* @__PURE__ */ k("div", { class: "sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", { class: "sheet-title" }, /* @__PURE__ */ k("span", null, "📁 选择项目文件夹"), /* @__PURE__ */ k("button", {
+		type: "button",
+		style: "border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;",
+		onClick: () => window.closeSheet?.("newTaskProjectPickerSheet")
+	}, "✕")), /* @__PURE__ */ k("div", { style: "padding:0 2px 10px;" }, /* @__PURE__ */ k("input", {
+		type: "text",
+		class: "auth-input",
+		id: "newTaskProjectSearchInput",
+		placeholder: "搜索项目名称或路径...",
+		style: "margin:0 0 10px;",
+		onInput: (e) => window.filterNewTaskProjects?.(e.target.value)
+	})), /* @__PURE__ */ k("div", {
+		class: "host-options-list",
+		id: "newTaskProjectPickerBody",
+		style: "max-height:50vh;overflow-y:auto;"
+	}))), /* @__PURE__ */ k("div", {
 		class: "sheet-backdrop",
 		id: "taskActionSheet",
 		onClick: closeIfBackdrop("taskActionSheet")
@@ -2652,7 +2677,20 @@ var EXACT_ZH_TO_EN = {
 	"📦 总结最近一次 commit 改动": "📦 Summarize latest commit changes",
 	"🔍 排查当前目录报错日志": "🔍 Diagnose errors in current project",
 	"描述你要让远程 AI 执行的开发任务（可点上方上传截图）...": "Describe the coding task for your remote AI agent (you can also attach screenshots)...",
+	"输入你想让电脑执行的任务，或点击下方传截图/语音输入...": "Describe the task to run on your remote computer, or attach screenshots/voice below...",
+	"📁 项目工作区": "📁 Project Workspaces",
+	"💻 执行电脑": "💻 Target Computer",
+	"⚡ 执行引擎": "⚡ AI Engine",
+	"⚠️ 暂无在线电脑": "⚠️ No Computer Online",
+	"选择模型": "Select Model",
+	"🤖 默认模型": "🤖 Default Model",
+	"🖼️ 截图": "🖼️ Screenshot",
+	"📁 选择项目文件夹": "📁 Select Project Folder",
+	"搜索项目名称或路径...": "Search project name or path...",
+	"未找到匹配的项目文件夹": "No matching project folder found",
+	"全部 ▾": "All ▾",
 	"🚀 立即在远程电脑启动": "🚀 Launch on Remote Computer",
+	"🚀 立即在远程电脑启动任务": "🚀 Launch Task on Remote Computer",
 	"📂 项目文件速览": "📂 Project Files",
 	"关闭": "Close",
 	"‹ 返回目录": "‹ Back to folder",
@@ -2697,6 +2735,8 @@ var REGEX_ZH_TO_EN = [
 	[/^🤖 选择模型 · (.+)$/, "🤖 Select Model · $1"],
 	[/^✨ 跟随电脑端当前默认 \((.+)\)$/, "✨ Computer Default ($1)"],
 	[/^🤖 默认 \((.+)\)$/, "🤖 Default ($1)"],
+	[/^🤖 默认 · (.+)$/, "🤖 Default · $1"],
+	[/^全部 \((\d+)\) ▾$/, "All ($1) ▾"],
 	[/^全部电脑 \((\d+)\)$/, "All Computers ($1)"],
 	[/^已接入电脑 \((\d+) 台 · 点击卡片展开详情\)$/, "Connected Computers ($1 · tap card for details)"],
 	[/^端到端加密分享记录 \((\d+)\)$/, "Encrypted Share History ($1)"],
@@ -3572,11 +3612,30 @@ function initHubController() {
 		labelEl.textContent = `🤖 ${resolveModelShortLabel(catalog, overrideVal, session.model)}`;
 		btn.classList.toggle("active-override", Boolean(overrideVal));
 	}
+	function cleanModelHumanLabel(rawLabel) {
+		let s = String(rawLabel || "").trim();
+		if (!s) return "默认模型";
+		s = s.replace(/\([^)]*-[0-9]{4,}[^)]*\)/g, "").trim();
+		s = s.replace(/\(\s*\)/g, "").trim();
+		let tierSuffix = "";
+		const parenMatch = s.match(/\(([^)]+)\)\s*$/);
+		if (parenMatch) {
+			const tierHit = parenMatch[1].trim().match(/^(High|Medium|Low|Thinking|Fast|Mini|Pro)\b/i);
+			if (tierHit) {
+				const rawTier = tierHit[1];
+				tierSuffix = ` (${rawTier.charAt(0).toUpperCase()}${rawTier.slice(1).toLowerCase()})`;
+			}
+			s = s.slice(0, parenMatch.index).trim();
+		}
+		if (/^deepseek\s*默认模型$/i.test(s)) return "DeepSeek";
+		const combined = `${s}${tierSuffix}`.trim();
+		return combined.length > 26 ? `${combined.slice(0, 24)}…` : combined;
+	}
 	function updateNewTaskModelPill() {
 		const labelEl = document.getElementById("newTaskModelBtnLabel");
 		if (!labelEl) return;
-		const displayLabel = resolveModelShortLabel(getHarnessModelCatalog((hubState.hosts || []).find((h) => h.hostId === newTaskHostId), newTaskHarness), newTaskModel, "");
-		labelEl.textContent = newTaskModel ? `🤖 ${displayLabel}` : `🤖 默认 (${displayLabel})`;
+		const cleanLabel = cleanModelHumanLabel(resolveModelShortLabel(getHarnessModelCatalog((hubState.hosts || []).find((h) => h.hostId === newTaskHostId), newTaskHarness), newTaskModel, ""));
+		labelEl.textContent = newTaskModel ? `🤖 ${cleanLabel}` : `🤖 默认 · ${cleanLabel}`;
 	}
 	function openModelPickerSheet(target = "chat") {
 		let host = null;
@@ -3831,6 +3890,7 @@ function initHubController() {
 				return a;
 			});
 			for (const t of tasks) {
+				if (/^workbuddy:\d+$/.test(String(t?.id || "").trim()) && (!Array.isArray(t?.transcript) || t.transcript.length === 0) && !(Number(t?.messageCount) > 0) && t?.status !== "running" && t?.status !== "approval" && !t?.pendingApproval) continue;
 				const ts = t.updatedAt || t.lastActivity || 0;
 				const pendingApp = approvals.find((a) => a.agentId === t.id);
 				const rawWireTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
@@ -6159,30 +6219,37 @@ function initHubController() {
 		renderNewTaskForm();
 		renderAttachmentStrip("newTask");
 		openSheet("newTaskSheet");
-		setTimeout(() => document.getElementById("newTaskInput").focus(), 100);
+		if (!window.matchMedia?.("(max-width: 768px)")?.matches) setTimeout(() => document.getElementById("newTaskInput")?.focus(), 100);
 	}
 	function renderNewTaskForm() {
 		const hosts = hubState.hosts || [];
 		const hostChips = document.getElementById("newTaskHostChips");
-		if (hosts.length === 0) hostChips.innerHTML = `
-          <div style="font-size:12.5px;color:#b45309;background:var(--amber-soft);border:1px solid #fde68a;padding:9px 11px;border-radius:10px;line-height:1.5;width:100%;">
-            ⚠️ 当前还没有已接入的电脑。请先关闭此面板，复制首页的「添加电脑」一行命令在电脑终端执行。
-          </div>
-        `;
-		else hostChips.innerHTML = hosts.map((h) => `
-          <button class="choice-chip ${h.hostId === newTaskHostId ? "selected" : ""}" onclick="selectNewTaskHost('${esc(h.hostId)}')">
-            🟢 ${esc(h.hostName)}
-          </button>
-        `).join("");
+		if (hosts.length === 0) {
+			if (hostChips) hostChips.innerHTML = `
+            <div style="font-size:12px;color:#b45309;background:var(--amber-soft);padding:4px 8px;border-radius:6px;width:100%;">
+              ⚠️ 暂无在线电脑
+            </div>
+          `;
+		} else if (hostChips) {
+			const shortHostMap = buildShortHostNameMap(hosts);
+			hostChips.innerHTML = hosts.map((h) => {
+				const shortName = shortHostMap[h.hostId] || h.hostName;
+				return `
+            <button type="button" class="context-chip ${h.hostId === newTaskHostId ? "selected" : ""}" title="${esc(h.hostName)}" onclick="selectNewTaskHost('${esc(h.hostId)}')">
+              🟢 ${esc(shortName)}
+            </button>
+          `;
+			}).join("");
+		}
 		const harnessChips = document.getElementById("newTaskHarnessChips");
 		if (harnessChips) harnessChips.innerHTML = [
 			{
 				id: "antigravity-ide",
-				label: "Antigravity IDE"
+				label: "IDE"
 			},
 			{
 				id: "codex",
-				label: "OpenAI Codex"
+				label: "Codex"
 			},
 			{
 				id: "workbuddy",
@@ -6190,26 +6257,76 @@ function initHubController() {
 			},
 			{
 				id: "claude",
-				label: "Claude Code"
+				label: "Claude"
 			},
 			{
 				id: "dsh",
-				label: "DeepSeek Harness"
+				label: "DSH"
 			}
 		].map((opt) => `
-          <button class="choice-chip ${opt.id === newTaskHarness ? "selected" : ""}" onclick="selectNewTaskHarness('${opt.id}')">
+          <button type="button" class="context-chip ${opt.id === newTaskHarness ? "selected" : ""}" onclick="selectNewTaskHarness('${opt.id}')">
             ${renderHarnessBadgeHtml(opt.id, "chip")} ${esc(opt.label)}
           </button>
         `).join("");
 		const projects = getHostProjects(hosts.find((h) => h.hostId === newTaskHostId));
 		if (!projects.some((p) => p.cwd === newTaskCwd) && projects[0]) newTaskCwd = projects[0].cwd;
+		const moreBtn = document.getElementById("newTaskProjMoreBtn");
+		if (moreBtn) moreBtn.textContent = `全部 (${projects.length}) ▾`;
 		const projChips = document.getElementById("newTaskProjectChips");
-		projChips.innerHTML = projects.map((p) => `
-        <button class="choice-chip ${p.cwd === newTaskCwd ? "selected" : ""}" title="${esc(p.name)}" onclick="selectNewTaskProject('${esc(p.cwd)}')">
-          📁 ${esc(formatCompactProjectLabel(p.name))}
-        </button>
-      `).join("");
+		if (projChips) {
+			projChips.innerHTML = projects.map((p) => `
+          <button type="button" class="new-task-proj-pill ${p.cwd === newTaskCwd ? "selected" : ""}" title="${esc(p.name)} (${esc(p.cwd)})" onclick="selectNewTaskProject('${esc(p.cwd)}')">
+            📁 ${esc(formatCompactProjectLabel(p.name))}
+          </button>
+        `).join("");
+			const selBtn = projChips.querySelector(".new-task-proj-pill.selected");
+			if (selBtn) setTimeout(() => selBtn.scrollIntoView?.({
+				block: "nearest",
+				inline: "nearest",
+				behavior: "smooth"
+			}), 50);
+		}
 		updateNewTaskModelPill();
+	}
+	let newTaskProjectSearchQuery = "";
+	function openNewTaskProjectPickerSheet() {
+		newTaskProjectSearchQuery = "";
+		const input = document.getElementById("newTaskProjectSearchInput");
+		if (input) input.value = "";
+		renderNewTaskProjectPickerList();
+		openSheet("newTaskProjectPickerSheet");
+		if (input) setTimeout(() => input.focus(), 150);
+	}
+	function filterNewTaskProjects(query) {
+		newTaskProjectSearchQuery = String(query || "").trim().toLowerCase();
+		renderNewTaskProjectPickerList();
+	}
+	function renderNewTaskProjectPickerList() {
+		const body = document.getElementById("newTaskProjectPickerBody");
+		if (!body) return;
+		const projects = getHostProjects((hubState.hosts || []).find((h) => h.hostId === newTaskHostId));
+		const q = newTaskProjectSearchQuery;
+		const filtered = projects.filter((p) => !q || p.name.toLowerCase().includes(q) || p.cwd.toLowerCase().includes(q));
+		if (filtered.length === 0) {
+			body.innerHTML = `
+        <div style="padding:24px 12px;text-align:center;color:var(--muted);font-size:13px;">
+          未找到匹配的项目文件夹
+        </div>
+      `;
+			return;
+		}
+		body.innerHTML = filtered.map((p) => {
+			const isSel = p.cwd === newTaskCwd;
+			return `
+        <div class="host-option ${isSel ? "selected" : ""}" onclick="selectNewTaskProject('${esc(p.cwd)}'); closeSheet('newTaskProjectPickerSheet');">
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:13.5px;font-weight:700;color:var(--text);">📁 ${esc(p.name)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.cwd)}</div>
+          </div>
+          ${isSel ? "<span style=\"color:var(--primary);font-weight:700;margin-left:8px;\">✓</span>" : ""}
+        </div>
+      `;
+		}).join("");
 	}
 	function selectNewTaskHost(id) {
 		newTaskHostId = id;
@@ -8466,6 +8583,8 @@ function initHubController() {
 		selectNewTaskHost,
 		selectNewTaskHarness,
 		selectNewTaskProject,
+		openNewTaskProjectPickerSheet,
+		filterNewTaskProjects,
 		fillQuickPrompt,
 		submitNewTask,
 		openCurrentSessionActions,

@@ -2,6 +2,19 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.6.6] - 2026-11-12
+
+### Changed
+
+- 全新重构「✨ 新建远程对话任务」半屏面板（`Sheets.tsx` / `controller.js` / `app.css`）：
+  - 合并顶部「💻 执行电脑」与「⚡ 执行引擎」为双行紧凑结构化卡片
+  - 「📁 项目工作区」改为单行横滑胶囊 + `全部 (N) ▾` 独立带搜索抽屉（`#newTaskProjectPickerSheet`），告别多项目折行刷屏并把首屏空间留给大号任务输入框
+  - 输入卡片内置底栏工具条（`🤖 模型`、`🖼️ 截图`、`🎤 语音`）：保留原生 `<button>` 直接唤起手机系统语音识别（免弹键盘、录音态红底脉冲 `⏹ 停止`），并优化模型简称清洗以保留 `(High)` / `(Low)` 档位与精确版本号
+
+### Fixed
+
+- 修复腾讯 WorkBuddy 存活进程心跳文件（`~/.workbuddy/sessions/<pid>.json`，每 30 秒刷新 `lastHeartbeat`）被误导入为幽灵会话并持续排在会话列表顶部的 Bug（`WorkBuddyAdapter` 跳过进程心跳锁文件并保持真实会话历史时间戳，`HubCore` 服务端双保险过滤旧节点上报的 `workbuddy:<pid>` 空记录）
+
 ## [0.6.5] - 2026-11-12
 
 ### Fixed

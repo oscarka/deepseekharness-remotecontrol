@@ -222,7 +222,7 @@ function resolveSpeechLang(): string {
       typeof localStorage !== 'undefined' &&
       localStorage.getItem('dsh_lang_pref') === 'en' &&
       rawLang.startsWith('en');
-  } catch {}
+  } catch { }
   return preferEn
     ? String(nav.language)
     : rawLang.startsWith('zh-tw') || rawLang.startsWith('zh-hant')
@@ -287,7 +287,7 @@ function focusInputWithVisualPulse(input: any, targetInputId: string, hintMsg: s
         input.setSelectionRange(len, len);
       }
     }
-  } catch {}
+  } catch { }
   try {
     const card = input.closest ? input.closest('.composer-unified-card') || input : input;
     if (card && card.classList) {
@@ -296,10 +296,10 @@ function focusInputWithVisualPulse(input: any, targetInputId: string, hintMsg: s
       setTimeout(() => {
         try {
           card.classList.remove('composer-voice-flash');
-        } catch {}
+        } catch { }
       }, 900);
     }
-  } catch {}
+  } catch { }
   showVoiceHintBar(targetInputId, hintMsg, 'fallback', 6500);
   showToast(hintMsg);
 }
@@ -428,7 +428,7 @@ export function setWechatVoiceMode(enabled: boolean, persist = true, focusText =
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem('dsh_voice_mode', wechatVoiceMode ? '1' : '0');
       }
-    } catch {}
+    } catch { }
   }
   if (!wechatVoiceMode && (holdActive || holdStopping)) {
     cancelHoldVoice();
@@ -466,7 +466,7 @@ export function setWechatVoiceMode(enabled: boolean, persist = true, focusText =
           if (typeof input.setSelectionRange === 'function') {
             input.setSelectionRange(len, len);
           }
-        } catch {}
+        } catch { }
         const win: any = typeof window !== 'undefined' ? window : null;
         if (win && typeof win.autoGrowComposer === 'function') {
           win.autoGrowComposer();
@@ -487,7 +487,7 @@ export function initWechatVoiceMode(): void {
     if (typeof localStorage !== 'undefined') {
       saved = localStorage.getItem('dsh_voice_mode');
     }
-  } catch {}
+  } catch { }
 
   let preferVoice = false;
   if (saved === '1') {
@@ -521,7 +521,7 @@ function handleWindowTouchMove(e: any): void {
   if (e && typeof e.preventDefault === 'function') {
     try {
       e.preventDefault();
-    } catch {}
+    } catch { }
   }
   const t = e?.touches?.[0] || e?.changedTouches?.[0];
   if (t) {
@@ -574,7 +574,7 @@ function attachHoldWindowListeners(): void {
     window.addEventListener('mousemove', handleWindowMouseMove);
     window.addEventListener('mouseup', handleWindowMouseUp);
     window.addEventListener('blur', handleWindowBlur);
-  } catch {}
+  } catch { }
 }
 
 function detachHoldWindowListeners(): void {
@@ -587,7 +587,7 @@ function detachHoldWindowListeners(): void {
     window.removeEventListener('mousemove', handleWindowMouseMove);
     window.removeEventListener('mouseup', handleWindowMouseUp);
     window.removeEventListener('blur', handleWindowBlur);
-  } catch {}
+  } catch { }
 }
 
 function forceAbortActiveRecognition(): void {
@@ -598,13 +598,13 @@ function forceAbortActiveRecognition(): void {
       rec.onresult = null;
       rec.onerror = null;
       rec.onend = null;
-    } catch {}
+    } catch { }
     try {
       rec.abort();
-    } catch {}
+    } catch { }
     try {
       rec.stop();
-    } catch {}
+    } catch { }
   }
 }
 
@@ -691,12 +691,12 @@ function finalizeHoldSession(): void {
   updateWechatOverlayUI();
 
   const win: any = typeof window !== 'undefined' ? window : null;
-  const showToast = deps?.showToast || (win && win.showToast ? win.showToast : () => {});
+  const showToast = deps?.showToast || (win && win.showToast ? win.showToast : () => { });
   const onComposerInput =
-    deps?.onComposerInput || (win && win.onComposerInput ? win.onComposerInput : () => {});
+    deps?.onComposerInput || (win && win.onComposerInput ? win.onComposerInput : () => { });
   const sendPrompt =
     deps?.sendPrompt ||
-    (win && win.sendPromptToActiveSession ? win.sendPromptToActiveSession : () => {});
+    (win && win.sendPromptToActiveSession ? win.sendPromptToActiveSession : () => { });
   const input: any =
     typeof document !== 'undefined' && document
       ? document.getElementById('globalPromptInput')
@@ -733,7 +733,7 @@ function finalizeHoldSession(): void {
 export function startHoldVoice(startX: any, startY: any, deps?: VoiceControllerDeps): boolean {
   const win: any = typeof window !== 'undefined' ? window : null;
   const nav: any = typeof navigator !== 'undefined' ? navigator : null;
-  const showToast = deps?.showToast || (win && win.showToast ? win.showToast : () => {});
+  const showToast = deps?.showToast || (win && win.showToast ? win.showToast : () => { });
   const input: any =
     typeof document !== 'undefined' && document
       ? document.getElementById('globalPromptInput')
@@ -781,7 +781,7 @@ export function startHoldVoice(startX: any, startY: any, deps?: VoiceControllerD
     if (nav && typeof nav.vibrate === 'function') {
       nav.vibrate(12);
     }
-  } catch {}
+  } catch { }
 
   attachHoldWindowListeners();
   updateWechatOverlayUI();
@@ -810,7 +810,7 @@ export function startHoldVoice(startX: any, startY: any, deps?: VoiceControllerD
       recognition.maxAlternatives = 1;
       try {
         recognition.unspokenPunctuation = true;
-      } catch {}
+      } catch { }
 
       const chunkStartAt = Date.now();
       let chunkProducedText = false;
@@ -966,7 +966,7 @@ export function moveHoldVoice(clientX: any, clientY: any): string {
       if (nav && typeof nav.vibrate === 'function') {
         nav.vibrate(10);
       }
-    } catch {}
+    } catch { }
     updateWechatOverlayUI();
   }
   return holdZone;
@@ -976,7 +976,7 @@ export function cancelHoldVoice(deps?: VoiceControllerDeps): void {
   if (!holdActive && !holdStopping) return;
   const win: any = typeof window !== 'undefined' ? window : null;
   const showToast =
-    deps?.showToast || activeHoldDeps?.showToast || (win && win.showToast ? win.showToast : () => {});
+    deps?.showToast || activeHoldDeps?.showToast || (win && win.showToast ? win.showToast : () => { });
   const input: any =
     typeof document !== 'undefined' && document
       ? document.getElementById('globalPromptInput')
@@ -999,7 +999,7 @@ export function endHoldVoice(deps?: VoiceControllerDeps): void {
 
   const win: any = typeof window !== 'undefined' ? window : null;
   const showToast =
-    activeHoldDeps?.showToast || (win && win.showToast ? win.showToast : () => {});
+    activeHoldDeps?.showToast || (win && win.showToast ? win.showToast : () => { });
   const durationMs = Date.now() - holdStartAt;
 
   if (holdZone === 'cancel') {
@@ -1052,8 +1052,8 @@ export function toggleVoiceInput(
   deps?: VoiceControllerDeps
 ): void {
   const win: any = window;
-  const showToast = deps?.showToast || (win.showToast ?? (() => {}));
-  const onComposerInput = deps?.onComposerInput || (win.onComposerInput ?? (() => {}));
+  const showToast = deps?.showToast || (win.showToast ?? (() => { }));
+  const onComposerInput = deps?.onComposerInput || (win.onComposerInput ?? (() => { }));
   const btn = document.getElementById(btnId);
 
   // 如果当前正处于录音状态（无论是 voiceSessionActive、activeVoiceRecognition 还在，还是按钮带有 .recording 类），点击立即强制关闭！
@@ -1117,7 +1117,7 @@ export function toggleVoiceInput(
         if (typeof Event === 'function' && typeof inputEl.dispatchEvent === 'function') {
           inputEl.dispatchEvent(new Event('input', { bubbles: true }));
         }
-      } catch {}
+      } catch { }
     }
   };
 
@@ -1132,7 +1132,7 @@ export function toggleVoiceInput(
       recognition.maxAlternatives = 1;
       try {
         recognition.unspokenPunctuation = true;
-      } catch {}
+      } catch { }
 
       const chunkStartAt = Date.now();
       let chunkProducedText = false;
