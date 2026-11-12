@@ -16,3 +16,4 @@
         notifyDigestMs: 5000
         maxReplyChars: 4000
         appSecretFile: '~/.dsh/feishu.env'
+
