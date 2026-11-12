@@ -21,10 +21,11 @@ HUB_TOKEN="你的管理员强密码" \
 
 ## 方案 1：Railway 一键部署（免装命令行）
 
-1. 点击主 README 的 **Deploy on Railway** 按钮。
-2. 在自动弹出的环境变量框中，务必把 **`HUB_TOKEN`** 填写为**你自己设置的强密码**（至少 8 位，切勿使用简单默认密码）。
-3. *(可选)* 在服务设置里挂载一个 Volume 到 `/data`（`Dockerfile` 已预设 `HUB_STATE_FILE=/data/dsh-hub-state.json`，挂载后容器重启不会丢分享链接）。
-4. 部署完成后在服务 `Settings → Networking` 点击 **Generate Domain**，即可得到你的 `https://xxxx.up.railway.app` 网址。
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/dsh-remote-control-hub?referralCode=44kg1p&utm_medium=integration&utm_source=template&utm_campaign=generic)
+
+1. 点击上方或主 README 的 **Deploy on Railway** 按钮。
+2. 模板已自动为你预生成 32 位随机强密钥 **`HUB_TOKEN`** 与锁屏推送密钥 **`VAPID_SECRET`**（建议在部署页面把 `HUB_TOKEN` 记下来，或直接改成你自己好记的强密码）。
+3. 点击 **Deploy** 后会自动分配公网 `https://xxxx.up.railway.app` 网址，约 1 分钟即可打开使用。
 
 ---
 
