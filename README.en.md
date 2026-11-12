@@ -88,6 +88,14 @@ Before starting, it helps to understand the two lightweight pieces and how data 
 
 ## Get Started in 3 Steps
 
+> **⚡ Zero-Config 1-Command Install via DSH Market / `dsh plugin` (Instant Same-Wi-Fi Control)**:
+> If you already use **DeepSeek Harness (DSH >= 0.2.0)**, install directly from **DSH Market (`dsh-plugin-market`)** or run one command in your terminal:
+> ```bash
+> dsh plugin --profile desktop add github:oscarka/deepseekharness-remotecontrol
+> # Or use --profile web if you run `dsh web`
+> ```
+> No configuration files needed! Right after enabling, the plugin automatically starts an embedded Local Control Hub on your computer (default `http://localhost:8788`, saving your local admin token to `~/.dsh/local-hub.token` and writing a 1-tap phone pairing URL to `~/.dsh/local-hub-info.json` and the startup log). Connect your phone to the same Wi-Fi to control everything immediately — or follow the 3 steps below anytime to upgrade to 24/7 cellular 4G/5G multi-computer control.
+
 ### Step 1: Start Your Control Hub (Pick 1 of 4 Ways)
 
 Choose the deployment method that best fits how you use your phone:
@@ -190,6 +198,10 @@ The background daemon automatically discovers local sessions across all 6 suppor
 <a id="whats-new"></a>
 ## 📅 What's New (Recent Releases)
 
+- **`2026-11-12 · v0.7.0` — Official DSH Market Bundle Support, Zero-Config Embedded Local Hub & Universal Mobile Video Engine (`v0.6.9`)**
+  - **1-Click DSH Market Install & Zero-Config Local Hub (`v0.7.0`)**: Full root-level DSH `>= 0.2.0` plugin bundle manifest (`dsh.bundle.patch`, `engines.dsh`, `icon.svg`, `locale/{en,zh,zh-CN}.json`, `cordis.patch.yml`). Installing from DSH Market or via `dsh plugin --profile desktop add github:oscarka/deepseekharness-remotecontrol` works out of the box with zero config — automatically starting an embedded Local Control Hub on port `8788` (`~/.dsh/local-hub.token` + 24h Wi-Fi pairing link) and seamlessly switching to remote Cloud Hub mode whenever `FEISHU_HUB_URL` is configured.
+  - **3-Tier Adaptive Video Compatibility Engine & True Zero-Buffering Stream Tunnel (`v0.6.9`)**: Zero-dependency `< 2ms` ISO BMFF (`mp4`/`mov`) codec & `moov` parser automatically routes **L1 Direct Original**, **L2 Lossless `faststart` Remux**, and **L3 Hardware-First H.264 Transcoding** (`h264_videotoolbox` → `libx264` → macOS `/usr/bin/avconvert`), fixing `yuv444p`, `.mov`, `.webm`, and `.mkv` playback on iOS Safari; upgraded `/api/fs-tunnel` to zero-buffering stream piping (`TTFB < 100ms`) with multi-Range lossless downloads for `> 16 MiB` videos and stateless deterministic `mediaTicket` signing.
+
 - **`2026-11-12 · v0.6.8` — Mobile Sandboxed HTML Live Preview, iOS-Safe Video Save/Share & Doubao Desktop Observe-Only Adapter**
   - **Mobile Interactive HTML Live Preview & Fullscreen Experience (`v0.6.8`)**: Open and interact with AI-generated `.html` pages right inside mobile DSH—from fenced ```` ```html ```` code blocks (`🌐 Live Preview`), `.html` file chips / artifact cards (`🌐 Live Preview ›`), or the project file browser. Runs inside an isolated `null`-origin `<iframe sandbox="allow-scripts allow-forms allow-modals allow-popups" srcdoc="...">` (never exposing `HUB_TOKEN` or `localStorage`), auto-injects mobile `<meta name="viewport">`, rewrites relative CSS/JS/images via read-only `mediaTicket` URLs, and includes a fullscreen overlay with a safe-area **`‹ Back to Chat`** bar and **`</> Source` / `🌐 Preview`** toggle.
   - **iOS Home Screen PWA In-Place Video Save/Share & Doubao Desktop Adapter (`v0.6.8`)**: Replaced raw `<a download>` navigation links (which trapped iOS standalone web apps on a system screen with no Back button) with in-place streaming `fetch` + native iOS/Android Share Sheet (`Save Video` to Photos / `Save to Files` / AirDrop); added observe-only session & coding board discovery for **Doubao Desktop (`豆包电脑版`)** with incremental LevelDB caching and `10m` stale-running cleanup.
@@ -225,6 +237,7 @@ The background daemon automatically discovers local sessions across all 6 suppor
 - **Mandatory Password Gate**: The Control Hub refuses to start unless `HUB_TOKEN` is set, and protects login/pairing endpoints with brute-force rate limiting.
 - **Per-Computer Isolated Tokens**: Each enrolled computer receives its own token (`hst_...`) and Ed25519 device fingerprint. You can revoke any single computer in **Settings** without affecting other machines.
 - **End-to-End Encrypted Sharing**: When you generate a session replay link, encryption happens on your computer using AES-256-GCM; the decryption key stays in the URL `#k=` fragment and is never sent to the server.
+- **Transparent Plugin Permissions Disclosure**: When installed as a DSH plugin, this package reads local AI coding session directories on your machine (`~/.dsh`, Antigravity, Codex, Claude Code, WorkBuddy, Doubao) and streams workspace files only on explicit user preview requests. It contains **zero third-party telemetry and zero vendor relay calls** — listening locally with token/pairing authentication by default, and connecting outbound only if you explicitly configure your own `FEISHU_HUB_URL` or Feishu self-built app credentials.
 
 ---
 

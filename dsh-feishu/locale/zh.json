@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "飞书桥",
-    "description": "通过飞书自建应用的长连接查看 DSH 会话、发送任务并处理审批。"
+    "title": "DSH 手机远程总控台",
+    "description": "用手机网页或飞书随时随地遥控电脑上的 DSH、Antigravity、Codex、Claude Code、WorkBuddy 与豆包；支持零配置局域网即装即用与云端跨网多机总控。"
   }
 }

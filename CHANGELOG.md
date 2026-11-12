@@ -2,6 +2,15 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.7.0] - 2026-11-12
+
+### Added
+
+- **全面支持上架 DSH Market 与官方 `dsh plugin` 一键安装（根目录标准 DSH Bundle 规范）**：
+  - 仓库根目录补齐标准 DSH 插件清单与元数据（`package.json` 的 `dsh.bundle.patch`、`engines.dsh: ">=0.2.0"`、`exports`、`icon.svg`、`locale/en.json`、`locale/zh.json`、`locale/zh-CN.json`、`cordis.patch.yml` 与 `index.js`），支持通过 DSH 插件市场或 `dsh plugin --profile desktop add github:oscarka/deepseekharness-remotecontrol` 直接一键安装启用，同时完整兼容现有 Cloud Run / Docker / Railway 零依赖部署与 `connect-host.sh` 守护进程。
+- **插件市场用户「零配置局域网总控台」即装即用模式（`dsh-feishu/lib/local-hub.js` / `dsh-feishu/index.js`）**：
+  - 从 DSH 插件市场安装后若尚未配置远程 `hubUrl` 或飞书应用，插件自动在本机嵌入式拉起零依赖总控台（默认监听 `8788`，端口冲突时智能复用同机已启动的本地总控台或自动回退空闲端口），自动生成并持久化本机管理员密码（`~/.dsh/local-hub.token`）与 24 小时免密扫码配对链接（`~/.dsh/local-hub-info.json`），手机连同一 Wi-Fi 打开链接即可免配置直接遥控本机 DSH、Antigravity、Codex、Claude Code、WorkBuddy 与豆包；当用户后续配置 Cloud Run / Railway `hubUrl` 时无缝切换至云端跨网模式。
+
 ## [0.6.9] - 2026-11-12
 
 ### Added

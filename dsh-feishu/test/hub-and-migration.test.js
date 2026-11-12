@@ -6251,3 +6251,248 @@ test('v0.6.9 Real HTTP/1.1 Socket Stream Piping: zero-buffering /api/fs-tunnel -
     await rm(tmpDir, { recursive: true, force: true })
   }
 })
+
+test('v0.7.0: root DSH Market & DSH >=0.2.0 bundle manifest, icon, locales, and cordis.patch.yml strict validation', async () => {
+  const repoRootUrl = new URL('../../', import.meta.url)
+  const pkg = JSON.parse(await readFile(new URL('package.json', repoRootUrl), 'utf8'))
+
+  // 1. Public npm package identity & SemVer rules from @deepseek-ai/dsh-plugin-market-index
+  assert.notEqual(pkg.private, true, 'root package.json must not be private for DSH Market listing')
+  assert.match(pkg.name, /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/u)
+  assert.ok(pkg.name.length <= 214)
+  assert.equal(pkg.version, '0.7.0')
+  assert.equal(pkg.license, 'MIT')
+  assert.equal(pkg.type, 'module')
+  assert.equal(pkg.main, './index.js')
+  assert.equal(pkg.icon, './icon.svg')
+
+  // 2. Repository & homepage URL rules (https canonical URL without git+ prefix)
+  assert.equal(pkg.repository?.type, 'git')
+  const repoParsed = new URL(pkg.repository?.url)
+  assert.equal(repoParsed.protocol, 'https:')
+  assert.ok(!repoParsed.href.includes('?') && !repoParsed.href.includes('#'))
+  assert.ok(URL.canParse(pkg.homepage))
+  assert.ok(Array.isArray(pkg.keywords) && pkg.keywords.includes('dsh-plugin'))
+
+  // 3. Engines & exports required by @deepseek-ai/dsh-app-boot readPluginMeta()
+  assert.equal(pkg.engines?.node, '>=20')
+  assert.equal(pkg.engines?.dsh, '>=0.2.0')
+  assert.equal(pkg.exports?.['.'], './index.js')
+  assert.equal(pkg.exports?.['./package.json'], './package.json')
+  assert.equal(pkg.exports?.['./cordis.patch.yml'], './cordis.patch.yml')
+  assert.equal(pkg.exports?.['./locale/*.json'], './locale/*.json')
+  assert.equal(pkg.exports?.['./icon'], './icon.svg')
+
+  // 4. Icon size <= 32 KiB (MAX_INLINE_ICON_BYTES in dsh-plugin-market-index) & LICENSE presence
+  const iconBytes = await readFile(new URL('icon.svg', repoRootUrl))
+  assert.ok(iconBytes.length > 100 && iconBytes.length <= 32 * 1024)
+  assert.match(iconBytes.toString('utf8'), /<svg\b/)
+  const licenseText = await readFile(new URL('LICENSE', repoRootUrl), 'utf8')
+  assert.match(licenseText, /MIT License/)
+
+  // 5. Locales: en.json MUST exist first so readPluginMeta discovers sibling zh.json & zh-CN.json
+  for (const localeFile of ['locale/en.json', 'locale/zh.json', 'locale/zh-CN.json']) {
+    const loc = JSON.parse(await readFile(new URL(localeFile, repoRootUrl), 'utf8'))
+    assert.ok(typeof loc?.meta?.title === 'string' && loc.meta.title.trim().length > 0, `${localeFile} missing meta.title`)
+    assert.ok(
+      typeof loc?.meta?.description === 'string' && loc.meta.description.trim().length > 0,
+      `${localeFile} missing meta.description`,
+    )
+  }
+
+  // 6. dsh.bundle.patch & cordis.patch.yml insert entry matches root package name
+  assert.equal(pkg.dsh?.bundle?.patch, './cordis.patch.yml')
+  const patchYaml = await readFile(new URL('cordis.patch.yml', repoRootUrl), 'utf8')
+  assert.match(patchYaml, /- insert:/)
+  assert.ok(
+    patchYaml.includes(`name: '${pkg.name}'`) || patchYaml.includes(`name: "${pkg.name}"`) || patchYaml.includes(`name: ${pkg.name}`),
+    'cordis.patch.yml insert entry name must match root package.json name',
+  )
+
+  // 7. Root entry index.js exports Cordis plugin contract cleanly without requiring Feishu SDK at import time
+  const rootPlugin = await import('../../index.js')
+  assert.equal(rootPlugin.name, 'dsh-remotecontrol')
+  assert.deepEqual(rootPlugin.inject, ['agents'])
+  assert.equal(typeof rootPlugin.apply, 'function')
+})
+
+test('v0.7.0: zero-config DSH Market plugin install auto-starts Embedded Local Hub, pairs over HTTP, syncs live sessions, and reuses/falls back ports cleanly', async () => {
+  const { apply } = await import('../../index.js')
+  const { startEmbeddedLocalHub } = await import('../lib/local-hub.js')
+  const { createServer } = await import('node:http')
+
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-market-zerocfg-'))
+  const dshHome = join(tmpDir, '.dsh')
+  const savedEnv = {}
+  const envKeys = [
+    'FEISHU_APP_ID',
+    'FEISHU_APP_SECRET',
+    'FEISHU_HUB_URL',
+    'FEISHU_HUB_TOKEN',
+    'FEISHU_AUTO_LOCAL_HUB',
+    'FEISHU_WEB_PORT',
+    'FEISHU_DSH_HOME',
+    'DSH_HOME',
+  ]
+  for (const k of envKeys) {
+    savedEnv[k] = process.env[k]
+    delete process.env[k]
+  }
+
+  let disposeEffect = null
+  let extraHub = null
+  let blockerServer = null
+  try {
+    // Prepare a free port first so we can also test same-port multi-profile reuse deterministically
+    const probeSrv = createServer()
+    await new Promise(resolve => probeSrv.listen(0, '127.0.0.1', resolve))
+    const chosenPort = probeSrv.address().port
+    await new Promise(resolve => probeSrv.close(resolve))
+
+    const liveSession = makeAgent('session-market-zero-cfg-001', 'DSH Market Zero-Config Session')
+    liveSession.session.header.cwd = tmpDir
+    liveSession.session._messages = [
+      { role: 'user', content: [{ type: 'text', text: '测试插件市场即装即用' }] },
+      { role: 'assistant', content: [{ type: 'text', text: '本地总控台已就绪！' }] },
+    ]
+
+    const logs = []
+    const rootCtx = {}
+    const fakeCtx = {
+      root: rootCtx,
+      agents: {
+        list: () => [liveSession],
+        get: id => (id === liveSession.id ? liveSession : undefined),
+      },
+      logger: {
+        info: msg => logs.push(String(msg)),
+        warn: msg => logs.push(String(msg)),
+        error: msg => logs.push(String(msg)),
+      },
+      effect(fn) {
+        disposeEffect = fn()
+      },
+      on() {},
+    }
+
+    let readyPayload = null
+    const readyPromise = new Promise(resolve => {
+      apply(fakeCtx, {
+        enabled: true,
+        autoLocalHub: true,
+        localWebPort: chosenPort,
+        localBindHost: '127.0.0.1',
+        hubUrl: '',
+        appId: '',
+        dshHome,
+        appSecretFile: join(dshHome, 'feishu.env'), // does not exist!
+        hostId: 'market-mac',
+        hostName: 'Market-MacBook',
+        enabledHarnesses: ['dsh'],
+        onReady(payload) {
+          readyPayload = payload
+          resolve(payload)
+        },
+      })
+    })
+
+    // Duplicate bundle mount on the same rootCtx should be safely skipped
+    let duplicateMounted = false
+    apply(
+      {
+        ...fakeCtx,
+        effect() {
+          duplicateMounted = true
+        },
+      },
+      { enabled: true, dshHome },
+    )
+    assert.equal(duplicateMounted, false, 'duplicate bundle mount on same rootCtx should be skipped')
+
+    await readyPromise
+    assert.ok(readyPayload?.localHub, 'Embedded Local Hub should start automatically when hubUrl & appId are empty')
+    assert.equal(readyPayload.localHub.reused, false)
+    assert.equal(readyPayload.localHub.port, chosenPort)
+    assert.match(readyPayload.localHub.pairCode, /^[A-Z0-9]{6}$/)
+    assert.ok(logs.some(line => line.includes('零配置局域网总控台已就绪')))
+
+    // Verify persisted token & info files in ~/.dsh
+    const savedToken = (await readFile(join(dshHome, 'local-hub.token'), 'utf8')).trim()
+    assert.equal(savedToken.length, 32)
+    assert.equal(readyPayload.effectiveConfig.hubToken, savedToken)
+    const savedInfo = JSON.parse(await readFile(join(dshHome, 'local-hub-info.json'), 'utf8'))
+    assert.equal(savedInfo.port, chosenPort)
+    assert.ok(savedInfo.pairUrl.includes(`?pair=${readyPayload.localHub.pairCode}`))
+
+    // Phone pairing exchange works immediately without typing password
+    const pairExchangeRes = await fetch(`http://127.0.0.1:${chosenPort}/api/pairing/exchange`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: readyPayload.localHub.pairCode }),
+    })
+    assert.equal(pairExchangeRes.status, 200)
+    const pairExchangeJson = await pairExchangeRes.json()
+    assert.equal(pairExchangeJson.ok, true)
+    assert.equal(pairExchangeJson.token, savedToken)
+
+    // Force one HubAgent tick and verify live DSH session synced into Embedded Local Hub
+    if (readyPayload.hubAgent.inflightTick) {
+      await readyPayload.hubAgent.inflightTick
+    }
+    await readyPayload.hubAgent.tick()
+    const stateRes = await fetch(`http://127.0.0.1:${chosenPort}/api/state`, {
+      headers: { authorization: `Bearer ${savedToken}` },
+    })
+    assert.equal(stateRes.status, 200)
+    const stateJson = await stateRes.json()
+    assert.equal(stateJson.ok, true)
+    const syncedHost = stateJson.hosts.find(h => h.hostId === 'market-mac')
+    assert.ok(syncedHost, 'in-process HubAgent should enroll and sync into Embedded Local Hub')
+    assert.ok(
+      Array.isArray(syncedHost.bridgeState?.tasks) &&
+        syncedHost.bridgeState.tasks.some(s => s.id === 'session-market-zero-cfg-001'),
+      'live DSH session should appear in Embedded Local Hub state',
+    )
+
+    // Multi-profile coexistence 1: second profile sharing dshHome + chosenPort reuses existing Local Hub cleanly
+    const reusedHub = await startEmbeddedLocalHub({
+      dshHome,
+      preferredPort: chosenPort,
+      bindHost: '127.0.0.1',
+      logger: { info() {}, warn() {}, error() {} },
+    })
+    assert.equal(reusedHub.reused, true)
+    assert.equal(reusedHub.port, chosenPort)
+    assert.equal(reusedHub.hubToken, savedToken)
+    await reusedHub.close()
+
+    // Multi-profile coexistence 2: if preferredPort is occupied by an unrelated server, falls back to an OS-assigned free port
+    blockerServer = createServer((_req, res) => {
+      res.writeHead(404)
+      res.end('unrelated app')
+    })
+    await new Promise(resolve => blockerServer.listen(0, '127.0.0.1', resolve))
+    const busyPort = blockerServer.address().port
+    extraHub = await startEmbeddedLocalHub({
+      dshHome: join(tmpDir, '.dsh-other'),
+      preferredPort: busyPort,
+      bindHost: '127.0.0.1',
+      logger: { info() {}, warn() {}, error() {} },
+    })
+    assert.equal(extraHub.reused, false)
+    assert.notEqual(extraHub.port, busyPort)
+    assert.ok(extraHub.port > 0)
+  } finally {
+    disposeEffect?.()
+    await extraHub?.close?.()
+    if (blockerServer) {
+      blockerServer.closeAllConnections?.()
+      await new Promise(resolve => blockerServer.close(() => resolve()))
+    }
+    for (const k of envKeys) {
+      if (savedEnv[k] === undefined) delete process.env[k]
+      else process.env[k] = savedEnv[k]
+    }
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})

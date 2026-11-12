@@ -1,0 +1,18 @@
+- insert:
+    - id: dsh-remotecontrol
+      name: 'deepseekharness-remotecontrol'
+      config:
+        enabled: true
+        autoLocalHub: true
+        localWebPort: 8788
+        hubUrl: ''
+        hostId: ''
+        hostName: ''
+        appId: ''
+        tenantKey: ''
+        allowGroup: false
+        allowedOpenIds: []
+        approvalTtlSeconds: 120
+        notifyDigestMs: 5000
+        maxReplyChars: 4000
+        appSecretFile: '~/.dsh/feishu.env'

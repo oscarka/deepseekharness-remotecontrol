@@ -1,11 +1,76 @@
 {
   "name": "deepseekharness-remotecontrol",
-  "version": "0.6.9",
-  "private": true,
+  "version": "0.7.0",
   "type": "module",
-  "description": "Feishu long-connection remote control & Google Cloud Run multi-host Web Control Hub for DeepSeek Harness (DSH).",
+  "license": "MIT",
+  "description": "Mobile Web & Feishu Remote Control Hub for DeepSeek Harness (DSH), Antigravity, Codex, Claude Code, WorkBuddy, and Doubao.",
+  "author": "oscarka",
+  "icon": "./icon.svg",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json",
+    "dsh-feishu/index.js",
+    "dsh-feishu/daemon.mjs",
+    "dsh-feishu/cordis.patch.yml",
+    "dsh-feishu/icon.svg",
+    "dsh-feishu/locale/*.json",
+    "dsh-feishu/lib/**/*.js",
+    "dsh-turbo/index.js",
+    "dsh-turbo/enable-turbo.sh",
+    "hub/server.js",
+    "hub/hub-core.js",
+    "hub/delta-state.js",
+    "hub/public/**/*",
+    "scripts/*.mjs",
+    "connect-host.sh",
+    "LICENSE",
+    "README.md",
+    "README.zh-CN.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "remote-control",
+    "mobile",
+    "web-ui",
+    "feishu",
+    "lark",
+    "antigravity",
+    "codex",
+    "claude-code",
+    "workbuddy",
+    "doubao"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oscarka/deepseekharness-remotecontrol"
+  },
+  "homepage": "https://github.com/oscarka/deepseekharness-remotecontrol#readme",
+  "bugs": {
+    "url": "https://github.com/oscarka/deepseekharness-remotecontrol/issues"
+  },
   "engines": {
-    "node": ">=20"
+    "node": ">=20",
+    "dsh": ">=0.2.0"
+  },
+  "optionalDependencies": {
+    "@larksuiteoapi/node-sdk": "1.76.0"
   },
   "scripts": {
     "dev": "vite",

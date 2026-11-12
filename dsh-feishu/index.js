@@ -10,7 +10,10 @@ import {
   readPendingDshInteractionResponses,
 } from './lib/workspace-ops.js'
 
+export const name = 'dsh-remotecontrol'
 export const inject = ['agents']
+
+const ACTIVE_GUARD = Symbol.for('deepseekharness-remotecontrol.active')
 
 async function readRemoteState(path) {
   if (!path) return null
@@ -41,10 +44,22 @@ export function apply(ctx, rawConfig) {
   if (!config.enabled) return
 
   const logger = ctx.logger
+  const rootCtx = ctx?.root && typeof ctx.root === 'object' ? ctx.root : null
+  if (rootCtx && rootCtx[ACTIVE_GUARD]) {
+    logger?.info?.(
+      'dsh-remotecontrol: already active in this DSH process, skipping duplicate bundle entry',
+    )
+    return
+  }
+  if (rootCtx) {
+    rootCtx[ACTIVE_GUARD] = true
+  }
+
   const audit = new AuditLog(config.auditFile, logger)
   let bridge
   let transport
   let hubAgent
+  let localHubHandle = null
   let daemonLock = null
   let stopped = false
 
@@ -198,7 +213,9 @@ export function apply(ctx, rawConfig) {
           })()
         }, 1200)
         liveWsReconcileTimer.unref?.()
-        const settings = await loadSettings(config)
+        const settings = await loadSettings(config, process.env, {
+          allowZeroConfig: config.autoLocalHub !== false,
+        })
         const initialControlChat = await readControlChat(config.controlChatFile)
         const initialRemoteState = await readRemoteState(config.remoteStateFile)
         const effectiveConfig = {
@@ -211,9 +228,28 @@ export function apply(ctx, rawConfig) {
           hostName: settings.hostName,
           hubUrl: settings.hubUrl,
           hubToken: settings.hubToken,
+          autoLocalHub: settings.autoLocalHub,
           localWebPort: settings.localWebPort,
           dshHome: settings.dshHome,
           enabledHarnesses: settings.enabledHarnesses,
+        }
+        if (!effectiveConfig.hubUrl && !settings.appId && effectiveConfig.autoLocalHub !== false) {
+          const { startEmbeddedLocalHub } = await import('./lib/local-hub.js')
+          const candidateHub = await startEmbeddedLocalHub({
+            dshHome: effectiveConfig.dshHome,
+            preferredPort: effectiveConfig.localWebPort || 8788,
+            bindHost: rawConfig?.localBindHost || '0.0.0.0',
+            explicitToken: effectiveConfig.hubToken,
+            hostId: effectiveConfig.hostId,
+            logger,
+          })
+          if (stopped) {
+            await candidateHub.close()
+            return
+          }
+          localHubHandle = candidateHub
+          effectiveConfig.hubUrl = candidateHub.hubUrl
+          effectiveConfig.hubToken = candidateHub.hubToken
         }
         if (settings.appId && settings.appSecret) {
           const { FeishuTransport } = await import('./lib/feishu-transport.js')
@@ -272,10 +308,19 @@ export function apply(ctx, rawConfig) {
           hostId: effectiveConfig.hostId,
           hostName: effectiveConfig.hostName,
           hubUrl: effectiveConfig.hubUrl,
+          localHubMode: Boolean(localHubHandle),
         })
         logger?.info?.(
-          `dsh-feishu: bridge started for app ${settings.appId} on host ${effectiveConfig.hostName} (${effectiveConfig.hostId})`,
+          `dsh-feishu: bridge started for app ${settings.appId || '(local-hub)'} on host ${effectiveConfig.hostName} (${effectiveConfig.hostId})`,
         )
+        if (typeof rawConfig?.onReady === 'function') {
+          rawConfig.onReady({
+            effectiveConfig,
+            localHub: localHubHandle,
+            hubAgent,
+            bridge,
+          })
+        }
       } catch (error) {
         await audit.write('startup_error', { error: safeError(error) })
         logger?.warn?.(`dsh-feishu: not started: ${safeError(error)}`)
@@ -284,6 +329,9 @@ export function apply(ctx, rawConfig) {
 
     return () => {
       stopped = true
+      if (rootCtx) {
+        delete rootCtx[ACTIVE_GUARD]
+      }
       if (liveWsReconcileTimer) {
         clearInterval(liveWsReconcileTimer)
         liveWsReconcileTimer = null
@@ -294,6 +342,7 @@ export function apply(ctx, rawConfig) {
       hubAgent?.stop()
       void bridge?.dispose()
       void transport?.stop()
+      void localHubHandle?.close?.()
     }
   }, 'dsh-feishu')
 

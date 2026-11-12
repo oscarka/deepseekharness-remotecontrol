@@ -26,6 +26,7 @@ const DEFAULTS = {
   hubUrl: '',
   hubToken: '',
   hubPollMs: 1200,
+  autoLocalHub: true,
   localWebPort: 0,
   dshHome: '~/.dsh',
 }
@@ -92,6 +93,9 @@ export function resolveConfig(raw = {}) {
   config.hubUrl = String(process.env.FEISHU_HUB_URL || config.hubUrl || '').trim().replace(/\/+$/, '')
   config.hubToken = String(process.env.FEISHU_HUB_TOKEN || config.hubToken || '').trim()
   config.hubPollMs = clampInt(config.hubPollMs, 300, 30_000, 1200)
+  config.autoLocalHub =
+    config.autoLocalHub !== false &&
+    String(process.env.FEISHU_AUTO_LOCAL_HUB || '').toLowerCase() !== 'false'
   config.localWebPort = clampInt(process.env.FEISHU_WEB_PORT || config.localWebPort, 0, 65535, 0)
   return config
 }
@@ -134,7 +138,7 @@ export function parseEnvFile(text) {
  * Resolve App ID/Secret without ever putting the secret in the composed profile.
  * Precedence: process env > private env file. The file must be 0600 on POSIX.
  */
-export async function loadSettings(config, env = process.env) {
+export async function loadSettings(config, env = process.env, { allowZeroConfig = false } = {}) {
   const fileValues = await readSecretEnvFile(config.appSecretFile)
   const appId = String(env.FEISHU_APP_ID || config.appId || fileValues.FEISHU_APP_ID || '').trim()
   const appSecret = String(env.FEISHU_APP_SECRET || fileValues.FEISHU_APP_SECRET || '').trim()
@@ -185,7 +189,13 @@ export async function loadSettings(config, env = process.env) {
       '',
   ).trim()
 
-  if (!appId && !hubUrl) throw new Error('Feishu App ID is missing: set it in the profile config, FEISHU_APP_ID, or the secret file')
+  const autoLocalHub =
+    config.autoLocalHub !== false &&
+    String(env.FEISHU_AUTO_LOCAL_HUB || fileValues.FEISHU_AUTO_LOCAL_HUB || '').toLowerCase() !== 'false'
+
+  if (!appId && !hubUrl && !allowZeroConfig) {
+    throw new Error('Feishu App ID is missing: set it in the profile config, FEISHU_APP_ID, or the secret file')
+  }
   if (appId && !appSecret) throw new Error('Feishu App Secret is missing: set FEISHU_APP_SECRET or add it to the secret file')
   return {
     appId,
@@ -197,6 +207,7 @@ export async function loadSettings(config, env = process.env) {
     hostName,
     hubUrl,
     hubToken,
+    autoLocalHub,
     localWebPort,
     dshHome,
     ...(enabledHarnesses ? { enabledHarnesses } : {}),
