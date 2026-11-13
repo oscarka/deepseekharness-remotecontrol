@@ -596,17 +596,32 @@ export class HubCore {
       : []
 
     const rawTasks = Array.isArray(bridgeState.tasks)
-      ? bridgeState.tasks.filter(
-          t =>
-            !(
-              /^workbuddy:\d+$/.test(String(t?.id || '').trim()) &&
-              (!Array.isArray(t?.transcript) || t.transcript.length === 0) &&
-              !(Number(t?.messageCount) > 0) &&
-              t?.status !== 'running' &&
-              t?.status !== 'approval' &&
-              !t?.pendingApproval
-            ),
-        )
+      ? bridgeState.tasks.filter(t => {
+          if (t?.isSubagent || t?.origin === 'subagent' || t?.parentConversationId) {
+            return false
+          }
+          if (
+            (String(t?.harness || '') === 'antigravity-ide' ||
+              String(t?.harnessId || '') === 'antigravity' ||
+              String(t?.id || '').startsWith('antigravity:')) &&
+            Array.isArray(t?.transcript) &&
+            t.transcript.length > 0 &&
+            !t.transcript.some(m => m?.role === 'user')
+          ) {
+            return false
+          }
+          if (
+            /^workbuddy:\d+$/.test(String(t?.id || '').trim()) &&
+            (!Array.isArray(t?.transcript) || t.transcript.length === 0) &&
+            !(Number(t?.messageCount) > 0) &&
+            t?.status !== 'running' &&
+            t?.status !== 'approval' &&
+            !t?.pendingApproval
+          ) {
+            return false
+          }
+          return true
+        })
       : []
 
     const tasks = rawTasks.map((t, taskIdx) => {

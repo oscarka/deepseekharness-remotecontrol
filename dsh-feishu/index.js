@@ -64,8 +64,15 @@ export function apply(ctx, rawConfig) {
   let stopped = false
 
   const rawAgents = ctx.agents
+  const isLiveSubagent = a =>
+    Boolean(
+      a?.session?.header?.origin === 'subagent' ||
+        a?.session?.origin === 'subagent' ||
+        a?.origin === 'subagent' ||
+        a?.isSubagent,
+    )
   const agentsFacade = Object.create(rawAgents || {})
-  agentsFacade.list = () => rawAgents?.list?.() ?? []
+  agentsFacade.list = () => (rawAgents?.list?.() ?? []).filter(a => !isLiveSubagent(a))
   agentsFacade.get = id => rawAgents?.get?.(id)
   agentsFacade.resolveOrResume = async id => {
     const existing = rawAgents?.get?.(id)

@@ -278,19 +278,39 @@ export function parseAntigravityToolCalls(rawToolCalls) {
     const isDaemonRaw = args.IsDaemon
     const isDaemon = isDaemonRaw === true || isDaemonRaw === 'true' || isDaemonRaw === '"true"'
 
-    const defaultToolSummary = detectedArtifact
-      ? `${name === 'edit_file' || name.includes('replace') ? 'Updated' : 'Created'} ${detectedArtifact.title} (${detectedArtifact.name})`
-      : isWriteOrEdit && pathArg
-        ? `${name === 'edit_file' || name.includes('replace') ? 'Edited' : 'Wrote'} ${basename(pathArg)}`
-        : (name === 'read_file' || name === 'view_file') && pathArg
-          ? `Read ${basename(pathArg)}`
-          : name
+    const isInvokeSubagent = name === 'invoke_subagent'
+    const isSendSubagentMsg = name === 'send_message'
+    const isManageSubagents = name === 'manage_subagents'
+    const subRole = isInvokeSubagent ? String(unquote(args.Role || '') || '').trim() : ''
+    const subType = isInvokeSubagent ? String(unquote(args.TypeName || 'subagent') || '').trim() : ''
+    const subPrompt = isInvokeSubagent ? String(unquote(args.Prompt || '') || '').trim() : ''
+    const subRecipient = isSendSubagentMsg ? String(unquote(args.Recipient || '') || '').trim() : ''
+    const subMessage = isSendSubagentMsg ? String(unquote(args.Message || '') || '').trim() : ''
+    const subManageAction = isManageSubagents ? String(unquote(args.Action || 'list') || '').trim() : ''
 
-    const defaultCommandLine = cmdLine
-      ? cmdLine.slice(0, 2000)
-      : detectedArtifact
-        ? `${detectedArtifact.path}${detectedArtifact.summary ? `\n${detectedArtifact.summary}` : ''}`
-        : pathArg || ''
+    const defaultToolSummary = isInvokeSubagent
+      ? `🤖 子智能体: ${subRole || subType || 'Subagent'}${subRole && subType ? ` (${subType})` : ''}`
+      : isSendSubagentMsg
+        ? `💬 发送消息给子智能体 (${subRecipient.slice(0, 8) || 'subagent'})`
+        : isManageSubagents
+          ? `⚙️ 管理子智能体 (${subManageAction})`
+          : detectedArtifact
+            ? `${name === 'edit_file' || name.includes('replace') ? 'Updated' : 'Created'} ${detectedArtifact.title} (${detectedArtifact.name})`
+            : isWriteOrEdit && pathArg
+              ? `${name === 'edit_file' || name.includes('replace') ? 'Edited' : 'Wrote'} ${basename(pathArg)}`
+              : (name === 'read_file' || name === 'view_file') && pathArg
+                ? `Read ${basename(pathArg)}`
+                : name
+
+    const defaultCommandLine = isInvokeSubagent
+      ? `${subRole ? `[子智能体角色] ${subRole}${subType ? ` (${subType})` : ''}\n` : ''}${subPrompt ? `[分配任务]\n${subPrompt.slice(0, 1600)}` : ''}`.trim()
+      : isSendSubagentMsg
+        ? subMessage.slice(0, 1600)
+        : cmdLine
+          ? cmdLine.slice(0, 2000)
+          : detectedArtifact
+            ? `${detectedArtifact.path}${detectedArtifact.summary ? `\n${detectedArtifact.summary}` : ''}`
+            : pathArg || ''
 
     tools.push({
       name,
@@ -299,6 +319,7 @@ export function parseAntigravityToolCalls(rawToolCalls) {
       commandLine: defaultCommandLine,
       ...(pathArg ? { filePath: pathArg } : {}),
       ...(rawArtifactMeta ? { artifactMeta: parseArtifactMetadata(rawArtifactMeta) } : {}),
+      ...(isInvokeSubagent ? { isSubagentTool: true, subagentRole: subRole || subType || 'Subagent', subagentType: subType } : {}),
       bypassSandbox,
       isDaemon,
     })
@@ -400,6 +421,8 @@ export function parseAntigravityTranscript(jsonlText, {
   liveModel = '',
   hasLiveSummary = false,
   liveWaitingSteps = null,
+  liveTrajectoryMeta = null,
+  liveSummariesMap = null,
   fullContentByStepIndex = null,
   diskArtifacts = [],
 } = {}) {
@@ -473,11 +496,27 @@ export function parseAntigravityTranscript(jsonlText, {
   let lastConclusionAt = 0
   let pendingApproval = null
   const pendingBackgroundTaskIds = new Set()
+  const unassignedSubagentTools = []
+  const subagentToolByConvId = new Map()
   const changedFilesMap = new Map()
   const artifactsMap = new Map()
   if (Array.isArray(diskArtifacts)) {
     for (const da of diskArtifacts) {
       if (da && da.path) artifactsMap.set(da.path, { ...da })
+    }
+  }
+
+  let detectedParentConvId = ''
+  const firstStep = lines[0] || {}
+  if (firstStep.type === 'SYSTEM_MESSAGE' && typeof firstStep.content === 'string') {
+    const senderUuidMatch = firstStep.content.match(/sender=([^\s\r\n>]+)/i)
+    if (
+      senderUuidMatch
+      && senderUuidMatch[1]
+      && senderUuidMatch[1] !== conversationId
+      && !/^(?:user|system)$/i.test(senderUuidMatch[1])
+    ) {
+      detectedParentConvId = senderUuidMatch[1].trim()
     }
   }
 
@@ -495,7 +534,19 @@ export function parseAntigravityTranscript(jsonlText, {
         if (m[1]) pendingBackgroundTaskIds.delete(m[1].trim().replace(/[.,;]+$/, ''))
       }
       for (const m of sysContent.matchAll(/sender=([^\s\r\n>]+)/g)) {
-        if (m[1]) pendingBackgroundTaskIds.delete(m[1].trim().replace(/[.,;]+$/, ''))
+        if (m[1]) {
+          const senderId = m[1].trim().replace(/[.,;]+$/, '')
+          pendingBackgroundTaskIds.delete(senderId)
+          const subTool = subagentToolByConvId.get(senderId)
+          if (subTool) {
+            subTool.subagentStatus = 'done'
+            subTool.summary = `🤖 子智能体已完成: ${subTool.subagentRole || senderId.slice(0, 8)} ✅`
+            const contentMatch = sysContent.match(/sender=[^\s\r\n>]+\s+(?:[a-z_]+=[^\r\n]+\s+)*content=([\s\S]*?)(?:<\/SYSTEM_MESSAGE>|$)/i)
+            const replyPreview = contentMatch?.[1] ? cleanForChat(redactText(contentMatch[1].trim()), 1800) : ''
+            const baseCmd = String(subTool.commandLine || '').replace(/\n*\[子智能体状态\][^\n]*/g, '').trim()
+            subTool.commandLine = `${baseCmd}\n\n[子智能体状态] ✅ 已完成并汇入当前对话 (${senderId.slice(0, 8)})${replyPreview ? `\n[子智能体汇报结果]\n${replyPreview}` : ''}`.trim()
+          }
+        }
       }
       if (stepType === 'SYSTEM_MESSAGE') continue
     }
@@ -580,6 +631,11 @@ export function parseAntigravityTranscript(jsonlText, {
       const rawContent = fullStepContent.trim()
       const rawThinking = String(step.thinking ?? '').trim()
       const { tools, inferredWs, approvalRequest, fileChanges, artifacts } = parseAntigravityToolCalls(step.tool_calls)
+      for (const t of tools) {
+        if (t && t.name === 'invoke_subagent') {
+          unassignedSubagentTools.push(t)
+        }
+      }
       if (inferredWs && !boundWs && (!cwd || project === 'Antigravity IDE')) {
         cwd = inferredWs.cwd
         project = inferredWs.project
@@ -783,6 +839,19 @@ export function parseAntigravityTranscript(jsonlText, {
         }
       }
       if (typeof step.content === 'string') {
+        const subCreatedMatch = step.content.match(/Created the following subagent:[\s\S]*?"conversationId":\s*"([^"]+)"/i)
+        if (subCreatedMatch && subCreatedMatch[1]) {
+          const subConvId = subCreatedMatch[1].trim()
+          pendingBackgroundTaskIds.add(subConvId)
+          const subTool = unassignedSubagentTools.shift()
+          if (subTool) {
+            subTool.subagentId = subConvId
+            subTool.subagentStatus = 'running'
+            subTool.summary = `🟢 子智能体运行中: ${subTool.subagentRole || subConvId.slice(0, 8)}`
+            subTool.commandLine = `${String(subTool.commandLine || '').trim()}\n\n[子智能体状态] 🟢 正在后台执行 (${subConvId.slice(0, 8)})`.trim()
+            subagentToolByConvId.set(subConvId, subTool)
+          }
+        }
         const bgMatch = step.content.match(/^(?:Created At:[^\r\n]+\r?\n)?Tool is running as a background task with task id:\s*([^\s\r\n"]+)/i)
         if (bgMatch && bgMatch[1]) {
           const prevAsst = transcript.at(-1)
@@ -868,15 +937,58 @@ export function parseAntigravityTranscript(jsonlText, {
 
   const sessionId = `${AGY_IDE_PREFIX}${conversationId}`
   const firstUserMsg = transcript.find(m => m.role === 'user')?.text || ''
+  const parentConversationId = String(
+    liveTrajectoryMeta?.parentConversationId
+    || (liveTrajectoryMeta?.rootConversationId && liveTrajectoryMeta.rootConversationId !== conversationId
+      ? liveTrajectoryMeta.rootConversationId
+      : '')
+    || detectedParentConvId
+    || '',
+  ).trim()
+  const isSubagent = Boolean(
+    parentConversationId
+    || liveTrajectoryMeta?.subagentSpec
+    || Number(liveTrajectoryMeta?.nestingDepth) > 0
+    || (!firstUserMsg && firstStep.type === 'SYSTEM_MESSAGE'),
+  )
+
+  for (const [subConvId, subTool] of subagentToolByConvId.entries()) {
+    if (subTool.subagentStatus !== 'running') continue
+    const subLive = liveSummariesMap instanceof Map ? liveSummariesMap.get(subConvId) : null
+    const subFinished = Boolean(
+      subLive?.status === 'CASCADE_RUN_STATUS_IDLE'
+      || subLive?.killed
+      || liveStatus === 'CASCADE_RUN_STATUS_IDLE',
+    )
+    if (subFinished) {
+      pendingBackgroundTaskIds.delete(subConvId)
+      subTool.subagentStatus = 'done'
+      subTool.summary = `🤖 子智能体已完成: ${subTool.subagentRole || subConvId.slice(0, 8)} ✅`
+      const baseCmd = String(subTool.commandLine || '').replace(/\n*\[子智能体状态\][^\n]*/g, '').trim()
+      subTool.commandLine = `${baseCmd}\n\n[子智能体状态] ✅ 已完成 (${subConvId.slice(0, 8)})`.trim()
+    } else if (subLive?.stepCount) {
+      subTool.summary = `🟢 子智能体运行中: ${subTool.subagentRole || subConvId.slice(0, 8)} (已执行 ${subLive.stepCount} 步)`
+    }
+  }
+  for (const msg of transcript) {
+    if (msg.role === 'assistant' && msg.isToolStepOnly && Array.isArray(msg.tools) && msg.tools.some(t => t?.isSubagentTool)) {
+      msg.text = msg.tools.map(t => t.summary || t.name).join(' · ')
+    }
+  }
+
   const cleanFirstLine = firstUserMsg
     .split('\n')[0]
     .replace(/^[#>*\-\s]+/, '')
     .slice(0, 42)
     .trim()
 
+  const safeNativeTitle = nativeTitle && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(nativeTitle)
+    ? nativeTitle
+    : ''
+
   const title = customTitles[sessionId]
     || customTitles[conversationId]
-    || nativeTitle
+    || safeNativeTitle
     || checkpointTitle
     || cleanFirstLine
     || `Antigravity 会话 ${String(conversationId).slice(0, 8)}`
@@ -1040,6 +1152,8 @@ export function parseAntigravityTranscript(jsonlText, {
     shortId: String(conversationId).slice(0, 8),
     harness: 'antigravity-ide',
     harnessLabel: 'Antigravity IDE',
+    ...(isSubagent ? { isSubagent: true } : {}),
+    ...(parentConversationId ? { parentConversationId } : {}),
     ...(resolvedModel ? { model: resolvedModel } : {}),
     controlMode: hasLiveSummary ? 'managed' : 'idle-resumable',
     capabilities: {
@@ -1196,7 +1310,10 @@ async function loadAntigravityMetadataForCandidates(brainDirs, candidates) {
         }
         const titleMatch = slice.match(/\n\$([^\x00-\x1f\r\n]{2,90})/)
         if (titleMatch && !existing.title) {
-          existing.title = titleMatch[1].trim()
+          const candTitle = titleMatch[1].trim()
+          if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(candTitle)) {
+            existing.title = candTitle
+          }
         }
         metaMap.set(item.convId, existing)
       }
@@ -1357,9 +1474,9 @@ export async function loadAntigravityIdeSessions({
     }
   }
 
-  // Sort by mtime descending and only parse top (maxSessions * 2) candidates for fast I/O
+  // Sort by mtime descending and scan candidates while filtering out subagent conversations
   candidateFiles.sort((a, b) => b.mtimeMs - a.mtimeMs)
-  const topCandidates = candidateFiles.slice(0, Math.max(maxSessions * 2, 30))
+  const topCandidates = candidateFiles.slice(0, Math.max(maxSessions * 4, 60))
   const latestCandidateMtimeMs = topCandidates[0]?.mtimeMs || 0
   const [nativeMetaMap, liveSummariesMap] = await Promise.all([
     loadAntigravityMetadataForCandidates(brainDirs, topCandidates),
@@ -1369,9 +1486,20 @@ export async function loadAntigravityIdeSessions({
   const settledKey = settledApprovals ? [...settledApprovals].join(',') : ''
   const sessions = []
   for (const item of topCandidates) {
+    if (sessions.length >= maxSessions * 2) break
     try {
       const nativeMeta = nativeMetaMap.get(item.convId)
       const liveSummary = liveSummariesMap.get(item.convId)
+      const liveTrajMeta = liveSummary?.trajectoryMetadata || null
+      const isLiveSubagent = Boolean(
+        (liveTrajMeta?.parentConversationId && liveTrajMeta.parentConversationId !== item.convId)
+        || (liveTrajMeta?.rootConversationId && liveTrajMeta.rootConversationId !== item.convId)
+        || liveTrajMeta?.subagentSpec
+        || Number(liveTrajMeta?.nestingDepth) > 0,
+      )
+      if (isLiveSubagent) {
+        continue
+      }
       const hasLiveSummary = Boolean(liveSummary)
       const liveWaitingSteps = Array.isArray(liveSummary?.waitingSteps) ? liveSummary.waitingSteps : []
       const waitingKey = liveWaitingSteps.map(w => w?.stepIndex ?? '').join(',')
@@ -1388,6 +1516,7 @@ export async function loadAntigravityIdeSessions({
       const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${maxMessages}:${customTitle}:${effectiveNativeTitle}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}:${liveModel}:${hasLiveSummary ? 1 : 0}:${waitingKey}`
       const cached = sessionParseCache.get(item.convId)
       if (cached && cached.cacheKey === cacheKey && cached.session) {
+        if (cached.session.isSubagent) continue
         // Recompute dynamic running/idle status against current `now` while skipping disk read & JSONL parse
         const hasBgTask = Boolean(cached.session.hasActiveBackgroundTask) && (now - cached.session.lastActivity <= 15 * 60_000)
         const isRecentlyActive = liveStatus === 'CASCADE_RUN_STATUS_RUNNING'
@@ -1443,6 +1572,8 @@ export async function loadAntigravityIdeSessions({
         liveModel,
         hasLiveSummary,
         liveWaitingSteps,
+        liveTrajectoryMeta: liveTrajMeta,
+        liveSummariesMap,
         fullContentByStepIndex,
         diskArtifacts,
       })
@@ -1452,7 +1583,9 @@ export async function loadAntigravityIdeSessions({
           const oldestKey = sessionParseCache.keys().next().value
           sessionParseCache.delete(oldestKey)
         }
-        sessions.push(parsed)
+        if (!parsed.isSubagent) {
+          sessions.push(parsed)
+        }
       }
     } catch {
       // ignore unreadable transcript

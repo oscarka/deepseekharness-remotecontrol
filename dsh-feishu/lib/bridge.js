@@ -980,7 +980,13 @@ export class FeishuBridge {
   }
 
   collectTasks(showAll = false) {
-    const all = this.agents.list().slice()
+    const all = (this.agents.list() || []).filter(
+      agent =>
+        agent?.session?.header?.origin !== 'subagent' &&
+        agent?.session?.origin !== 'subagent' &&
+        agent?.origin !== 'subagent' &&
+        !agent?.isSubagent,
+    )
     const live = showAll ? all : all.filter(agent => agent.status === 'running' || sessionHasContent(agent))
     const hidden = all.length - live.length
     live.sort((a, b) => {

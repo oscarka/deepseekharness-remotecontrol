@@ -4120,6 +4120,8 @@ function initHubController() {
 				return a;
 			});
 			for (const t of tasks) {
+				if (t?.isSubagent || t?.origin === "subagent" || t?.parentConversationId) continue;
+				if (String(t?.harness || "") === "antigravity-ide" && Array.isArray(t?.transcript) && t.transcript.length > 0 && !t.transcript.some((m) => m?.role === "user")) continue;
 				if (/^workbuddy:\d+$/.test(String(t?.id || "").trim()) && (!Array.isArray(t?.transcript) || t.transcript.length === 0) && !(Number(t?.messageCount) > 0) && t?.status !== "running" && t?.status !== "approval" && !t?.pendingApproval) continue;
 				const ts = t.updatedAt || t.lastActivity || 0;
 				const pendingApp = approvals.find((a) => a.agentId === t.id);

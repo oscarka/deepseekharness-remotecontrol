@@ -6496,3 +6496,138 @@ test('v0.7.0: zero-config DSH Market plugin install auto-starts Embedded Local H
     await rm(tmpDir, { recursive: true, force: true })
   }
 })
+
+test('antigravity subagent recognition: folds invoke_subagent lifecycle in parent conversation and hides standalone subagent sessions', async () => {
+  const parentTranscript = [
+    JSON.stringify({
+      step_index: 1,
+      type: 'USER_INPUT',
+      status: 'DONE',
+      created_at: '2026-04-19T12:00:00Z',
+      content: '<USER_REQUEST>\n调查数据库死锁问题\n</USER_REQUEST>',
+    }),
+    JSON.stringify({
+      step_index: 2,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: '2026-04-19T12:00:05Z',
+      thinking: '启动两个子智能体并行排查。',
+      content: '',
+      tool_calls: [
+        {
+          id: 'tc-sub-1',
+          name: 'invoke_subagent',
+          args: {
+            Role: 'Root Cause Analyst A',
+            TypeName: 'research',
+            Prompt: 'Check slow query logs',
+          },
+        },
+      ],
+    }),
+    JSON.stringify({
+      step_index: 3,
+      type: 'GENERIC',
+      status: 'DONE',
+      created_at: '2026-04-19T12:00:06Z',
+      content: 'Created the following subagent:\n{\n "conversationId": "subagent-uuid-1111"\n}',
+    }),
+  ].join('\n')
+
+  // While subagent is still running
+  const runningParsed = parseAntigravityTranscript(parentTranscript, {
+    conversationId: 'parent-uuid-0000',
+    mtimeMs: Date.parse('2026-04-19T12:00:06Z'),
+    now: Date.parse('2026-04-19T12:00:10Z'),
+  })
+  assert.equal(Boolean(runningParsed.isSubagent), false)
+  assert.equal(runningParsed.status, 'running')
+  assert.match(runningParsed.transcript[1].toolCalls[0].summary, /子智能体运行中: Root Cause Analyst A/)
+
+  // Once subagent reports back via SYSTEM_MESSAGE and parent replies
+  const completedTranscript = [
+    parentTranscript,
+    JSON.stringify({
+      step_index: 4,
+      type: 'SYSTEM_MESSAGE',
+      status: 'DONE',
+      created_at: '2026-04-19T12:00:25Z',
+      content:
+        '<SYSTEM_MESSAGE>\nYou have 1 new message(s):\n\n### Message 1\nsender=subagent-uuid-1111\nsent_at=2026-04-19T12:00:24Z\ncontent=Found lock contention on orders table.\n\n</SYSTEM_MESSAGE>',
+    }),
+    JSON.stringify({
+      step_index: 5,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: '2026-04-19T12:00:30Z',
+      content: '排查完成：orders 表存在行锁竞争。',
+    }),
+  ].join('\n')
+
+  const completedParsed = parseAntigravityTranscript(completedTranscript, {
+    conversationId: 'parent-uuid-0000',
+    mtimeMs: Date.parse('2026-04-19T12:00:30Z'),
+    now: Date.parse('2026-04-19T12:00:35Z'),
+  })
+  assert.equal(Boolean(completedParsed.isSubagent), false)
+  assert.equal(completedParsed.status, 'idle')
+  assert.match(completedParsed.transcript[1].toolCalls[0].summary, /🤖 子智能体已完成: Root Cause Analyst A ✅/)
+  assert.match(completedParsed.transcript[1].toolCalls[0].commandLine, /Found lock contention on orders table/)
+
+  // Standalone subagent transcript on disk is detected as isSubagent=true
+  const childTranscript = [
+    JSON.stringify({
+      step_index: 0,
+      type: 'SYSTEM_MESSAGE',
+      source: 'SYSTEM',
+      status: 'DONE',
+      created_at: '2026-04-19T12:00:06Z',
+      content:
+        'You have 1 new message(s):\n\n### Message 1\nsender=parent-uuid-0000\nsent_at=2026-04-19T12:00:05Z\ncontent=Check slow query logs\n',
+    }),
+    JSON.stringify({
+      step_index: 1,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: '2026-04-19T12:00:24Z',
+      content: 'Found lock contention on orders table.',
+    }),
+  ].join('\n')
+
+  const childParsed = parseAntigravityTranscript(childTranscript, {
+    conversationId: 'subagent-uuid-1111',
+    mtimeMs: Date.parse('2026-04-19T12:00:24Z'),
+    now: Date.parse('2026-04-19T12:00:35Z'),
+  })
+  assert.equal(childParsed.isSubagent, true)
+  assert.equal(childParsed.parentConversationId, 'parent-uuid-0000')
+
+  // HubCore filters out any stale or subagent tasks from bridgeState
+  const hub = new HubCore()
+  const filteredState = hub.reconcileBridgeStateApprovals('mac-test', {
+    tasks: [
+      {
+        id: 'antigravity:parent-uuid-0000',
+        harnessId: 'antigravity',
+        title: '调查数据库死锁问题',
+        transcript: completedParsed.transcript,
+      },
+      {
+        id: 'antigravity:subagent-uuid-1111',
+        harnessId: 'antigravity',
+        title: 'Antigravity 会话 subagent',
+        isSubagent: true,
+        transcript: childParsed.transcript,
+      },
+      {
+        id: 'antigravity:legacy-subagent-2222',
+        harnessId: 'antigravity',
+        title: 'Antigravity 会话 legacy',
+        transcript: [{ role: 'assistant', text: 'I am a subagent with no user prompt' }],
+      },
+    ],
+  })
+  assert.equal(filteredState.tasks.length, 1)
+  assert.equal(filteredState.tasks[0].id, 'antigravity:parent-uuid-0000')
+})
+

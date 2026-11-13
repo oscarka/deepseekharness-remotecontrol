@@ -38,10 +38,11 @@ function walkClaudeProjectFiles(dir, maxDepth = 3, depth = 0, out = []) {
     const entries = readdirSync(dir, { withFileTypes: true })
     for (const e of entries) {
       if (e.name.startsWith('.')) continue
+      if (e.isDirectory() && e.name === 'subagents') continue
       const full = join(dir, e.name)
       if (e.isDirectory()) {
         walkClaudeProjectFiles(full, maxDepth, depth + 1, out)
-      } else if (e.isFile() && e.name.endsWith('.jsonl')) {
+      } else if (e.isFile() && e.name.endsWith('.jsonl') && !e.name.startsWith('agent-')) {
         try {
           const st = statSync(full)
           out.push({ path: full, mtimeMs: st.mtimeMs, size: st.size })

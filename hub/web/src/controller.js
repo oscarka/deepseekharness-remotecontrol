@@ -672,6 +672,17 @@ export function initHubController() {
         return a;
       });
       for (const t of tasks) {
+        if (t?.isSubagent || t?.origin === 'subagent' || t?.parentConversationId) {
+          continue;
+        }
+        if (
+          String(t?.harness || '') === 'antigravity-ide' &&
+          Array.isArray(t?.transcript) &&
+          t.transcript.length > 0 &&
+          !t.transcript.some(m => m?.role === 'user')
+        ) {
+          continue;
+        }
         if (
           /^workbuddy:\d+$/.test(String(t?.id || '').trim()) &&
           (!Array.isArray(t?.transcript) || t.transcript.length === 0) &&
