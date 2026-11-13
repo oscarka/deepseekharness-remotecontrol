@@ -1779,7 +1779,7 @@ export function initHubController() {
           : '';
         const stepToolId = `tool-step-${msgIdx}`;
         return `
-            <div class="bubble assistant" style="padding:10px 14px;">
+            <div class="bubble assistant" style="padding:2px 0;">
               ${thought}
               <details class="tool-chip-details" data-detail-id="${stepToolId}" ${openDetailIds.has(stepToolId) ? 'open' : ''} style="border:none;background:transparent;">
                 <summary style="padding:2px 0;font-size:13px;color:var(--text-secondary);">
@@ -1802,7 +1802,7 @@ export function initHubController() {
           const chipId = `tool-${msgIdx}-${tIdx}`;
           return `
               <details class="tool-chip-details" data-detail-id="${chipId}" ${openDetailIds.has(chipId) ? 'open' : ''}>
-                <summary><span>🔧 ${esc(tName)}${tSummary ? ` · ${esc(tSummary.slice(0, 64))}` : ''}</span><span style="color:#94a3b8;font-size:10.5px;">点击查看详情 ▾</span></summary>
+                <summary><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔧 ${esc(tName)}${tSummary ? ` · ${esc(tSummary.slice(0, 64))}` : ''}</span><span style="color:#94a3b8;font-size:10.5px;white-space:nowrap;flex-shrink:0;">点击查看详情 ▾</span></summary>
                 <div class="tool-chip-output">${esc(tDetail)}</div>
               </details>
             `;
@@ -1846,7 +1846,7 @@ export function initHubController() {
         lastRenderedAssistantTexts[msgIdx] = cleanReplyText;
       }
       const copyFooterHtml = cleanReplyText
-        ? `<div class="assistant-copy-footer"><span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 一键复制全文</button></div>`
+        ? `<div class="assistant-copy-footer"><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 复制全文</button><span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span></div>`
         : '';
       const bodyHtml = cleanReplyText
         ? `<div class="md-body">${formatAssistantText(cleanReplyText)}</div>${copyFooterHtml}`

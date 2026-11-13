@@ -2580,6 +2580,7 @@ var EXACT_ZH_TO_EN = {
 	"🔍 查看 git status 与改动": "🔍 Check git status & diff",
 	"🧪 运行测试验证": "🧪 Run tests & verify",
 	"📋 一键复制全文": "📋 Copy Full Reply",
+	"📋 复制全文": "📋 Copy Reply",
 	"✅ 已复制全文": "✅ Copied",
 	"⚙️ 正在思考与执行工具调用...": "⚙️ Thinking and running tools...",
 	"点击查看详情 ▾": "View details ▾",
@@ -4936,7 +4937,7 @@ function initHubController() {
 				const waitText = m.waitingForInput ? `<div style="margin-top:6px;font-size:12.5px;color:var(--muted);">Waiting for user input.</div>` : "";
 				const stepToolId = `tool-step-${msgIdx}`;
 				return `
-            <div class="bubble assistant" style="padding:10px 14px;">
+            <div class="bubble assistant" style="padding:2px 0;">
               ${thought}
               <details class="tool-chip-details" data-detail-id="${stepToolId}" ${openDetailIds.has(stepToolId) ? "open" : ""} style="border:none;background:transparent;">
                 <summary style="padding:2px 0;font-size:13px;color:var(--text-secondary);">
@@ -4959,7 +4960,7 @@ function initHubController() {
 					const chipId = `tool-${msgIdx}-${tIdx}`;
 					return `
               <details class="tool-chip-details" data-detail-id="${chipId}" ${openDetailIds.has(chipId) ? "open" : ""}>
-                <summary><span>🔧 ${esc(tName)}${tSummary ? ` · ${esc(tSummary.slice(0, 64))}` : ""}</span><span style="color:#94a3b8;font-size:10.5px;">点击查看详情 ▾</span></summary>
+                <summary><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔧 ${esc(tName)}${tSummary ? ` · ${esc(tSummary.slice(0, 64))}` : ""}</span><span style="color:#94a3b8;font-size:10.5px;white-space:nowrap;flex-shrink:0;">点击查看详情 ▾</span></summary>
                 <div class="tool-chip-output">${esc(tDetail)}</div>
               </details>
             `;
@@ -4996,7 +4997,7 @@ function initHubController() {
       ` : "";
 			const cleanReplyText = m.text ? String(m.text).trim() : "";
 			if (cleanReplyText) lastRenderedAssistantTexts[msgIdx] = cleanReplyText;
-			const copyFooterHtml = cleanReplyText ? `<div class="assistant-copy-footer"><span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 一键复制全文</button></div>` : "";
+			const copyFooterHtml = cleanReplyText ? `<div class="assistant-copy-footer"><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 复制全文</button><span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span></div>` : "";
 			const bodyHtml = cleanReplyText ? `<div class="md-body">${formatAssistantText(cleanReplyText)}</div>${copyFooterHtml}` : `<div style="font-size:12.5px;color:var(--muted);margin-top:4px;">⚙️ 正在思考与执行工具调用...</div>`;
 			return `<div class="bubble assistant">${thought}${tools}${bodyHtml}${artifactsCardHtml}</div>`;
 		}).join("");

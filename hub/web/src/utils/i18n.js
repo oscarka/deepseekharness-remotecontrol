@@ -130,6 +130,7 @@ const EXACT_ZH_TO_EN = {
   '🔍 查看 git status 与改动': '🔍 Check git status & diff',
   '🧪 运行测试验证': '🧪 Run tests & verify',
   '📋 一键复制全文': '📋 Copy Full Reply',
+  '📋 复制全文': '📋 Copy Reply',
   '✅ 已复制全文': '✅ Copied',
   '⚙️ 正在思考与执行工具调用...': '⚙️ Thinking and running tools...',
   '点击查看详情 ▾': 'View details ▾',
