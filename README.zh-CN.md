@@ -198,6 +198,10 @@ docker run -d --name dsh-hub \
 <a id="最近版本更新记录"></a>
 ## 📅 最近版本更新记录
 
+- **`2026-11-13 · v0.7.1` — 子智能体（Subagent）自动归并入父对话 & ChatGPT 同款无边框文档流排版**
+  - **Subagent 子智能体任务自动归并入父会话 & 过滤僵尸子会话（`v0.7.1`）**：全链路识别 Antigravity IDE（`invoke_subagent` / `parentConversationId`）、DSH（`origin: 'subagent'`）与 Claude Code（`subagents/agent-*.jsonl`）派生的子智能体任务；在父对话的「已执行 N 项操作」折叠块中实时追踪子智能体状态（`🟢 子智能体运行中: <角色>` → `🤖 子智能体已完成: <角色> ✅`）并内嵌展示分配任务与汇报结果，同时在宿主机、云端 Hub 与手机前端三层同步剔除独立的孤儿 Subagent 聊天（顺手修复 protobuf 摘要长度字节 `0x24` 误将 36 位 UUID 识别为会话标题的问题）。
+  - **ChatGPT App 同款「无边框文档流」AI 回复排版（`v0.7.1`）**：移除 AI 回复外层的卡片气泡背景与边框，让 Markdown 标题、表格、代码块、思考过程与操作折叠面板直接平铺在页面画布上（手机端有效阅读宽度提升约 `15%`），仅保留用户提问为右侧圆角胶囊气泡，阅读长篇分析与代码更清爽。
+
 - **`2026-11-12 · v0.7.0` — 支持上架 DSH Market 插件市场、零配置局域网即装即用 & 全格式手机视频自适应播放 (`v0.6.9`)**
   - **DSH 插件市场一键安装与零配置即装即用（`v0.7.0`）**：完整适配 DSH `>= 0.2.0` 官方 Bundle 插件规范与社区 DSH Market（支持 `dsh plugin --profile desktop add github:oscarka/deepseekharness-remotecontrol` 一键安装）；未配置云端地址时自动在后台拉起本机嵌入式总控台（默认端口 `8788`，自动生成 `~/.dsh/local-hub.token` 与局域网免密扫码地址），装完 10 秒即可在同一 Wi-Fi 下用手机遥控，配置 `FEISHU_HUB_URL` 后无缝切换云端跨网总控。
   - **三档自适应视频兼容引擎与全链路真流式隧道（`v0.6.9`）**：纯 Node.js `< 2ms` 解析 `.mp4` / `.mov` 编码结构，自动分流 **原画直出**、**毫秒级无损 `faststart` 重封装**与 **macOS 硬件加速 / `libx264` 兼容转码**（彻底解决 `yuv444p`、`.mov`、`.webm`、`.mkv` 在 iPhone 上黑屏或无法播放的问题）；反向文件隧道升级为零缓冲真流式直通（TTFB `< 100ms`），并支持 `> 16 MiB` 大视频多段无损拼接下载与无状态确定性 `mediaTicket`。
