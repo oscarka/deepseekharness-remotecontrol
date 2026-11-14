@@ -238,6 +238,11 @@ export function apply(ctx, rawConfig) {
           autoLocalHub: settings.autoLocalHub,
           localWebPort: settings.localWebPort,
           dshHome: settings.dshHome,
+          codexHome: settings.codexHome || rawConfig?.codexHome,
+          claudeHome: settings.claudeHome || rawConfig?.claudeHome,
+          doubaoHome: settings.doubaoHome || rawConfig?.doubaoHome,
+          workbuddyHome: settings.workbuddyHome || rawConfig?.workbuddyHome,
+          workbuddyAcpEndpoint: settings.workbuddyAcpEndpoint || rawConfig?.workbuddyAcpEndpoint,
           enabledHarnesses: settings.enabledHarnesses,
         }
         if (!effectiveConfig.hubUrl && !settings.appId && effectiveConfig.autoLocalHub !== false) {

@@ -75,7 +75,7 @@
                                                        ▼                                                 ▼
                                       ┌─────────────────────────────────┐               ┌─────────────────────────────────┐
                                       │ 💻 电脑 A (公司 MacBook-Pro)    │               │ 💻 电脑 B (家里主机 Mac-Studio) │
-                                      │ DSH · Antigravity · Claude      │               │ DSH · Codex · Antigravity       │
+                                      │ DSH · Antigravity · Codex       │               │ DSH · Codex · WorkBuddy         │
                                       └─────────────────────────────────┘               └─────────────────────────────────┘
 ```
 
@@ -198,6 +198,10 @@ docker run -d --name dsh-hub \
 <a id="最近版本更新记录"></a>
 ## 📅 最近版本更新记录
 
+- **`2026-11-14 · v0.7.2` — OpenAI Codex 全功能深度远控引擎（`app-server` 双向 JSON-RPC + `codex exec` 双模全通）**
+  - **Codex 发消息与多轮续聊 100% 稳定化 & 单写者锁自动恢复（`v0.7.2`）**：全面修复 `codex app-server` 与 `codex exec resume` 的 8 项通信卡点——每轮对话结束自动发送 `thread/unsubscribe` 释放 `~/.codex/thread-writer-locks/<id>.lock` 防止与桌面端 `Codex.app` 抢锁冲突；遇到残留锁冲突自动清理并恢复连接；通过 `mergeCodexTranscripts` 无损合并磁盘历史与实时流式吐字；过滤非法占位模型名（`codex`/`default`/`auto`）；修正 `codex exec --skip-git-repo-check --sandbox workspace-write --json ... resume --all` 参数顺序，并接入 `250ms` 极速状态推送。
+  - **推理强度档位切换、实时计划清单、修改文件 Diff 卡片与 MCP 手机审批（`v0.7.2`）**：对齐官方 `Codex.app` 与高星远控项目全部能力——支持在手机端切换推理深度（`GPT-5.4 (High 推理)`、`GPT-5.4 (xHigh 极客推理)` 等）、实时展示 `📋 执行计划` 步骤打勾进度、统计并渲染 `Files With Changes` 修改文件增删行数卡片（`+新增/-删除`）、实时透传终端命令输出流（`outputDelta`）/ 网页搜索（`webSearch`）/ 子智能体协作，并补齐 MCP 工具调用手机端授权审批（`item/mcpToolCall/requestApproval`）。
+
 - **`2026-11-13 · v0.7.1` — 子智能体（Subagent）自动归并入父对话 & ChatGPT 同款无边框文档流排版**
   - **Subagent 子智能体任务自动归并入父会话 & 过滤僵尸子会话（`v0.7.1`）**：全链路识别 Antigravity IDE（`invoke_subagent` / `parentConversationId`）、DSH（`origin: 'subagent'`）与 Claude Code（`subagents/agent-*.jsonl`）派生的子智能体任务；在父对话的「已执行 N 项操作」折叠块中实时追踪子智能体状态（`🟢 子智能体运行中: <角色>` → `🤖 子智能体已完成: <角色> ✅`）并内嵌展示分配任务与汇报结果，同时在宿主机、云端 Hub 与手机前端三层同步剔除独立的孤儿 Subagent 聊天（顺手修复 protobuf 摘要长度字节 `0x24` 误将 36 位 UUID 识别为会话标题的问题）。
   - **ChatGPT App 同款「无边框文档流」AI 回复排版（`v0.7.1`）**：移除 AI 回复外层的卡片气泡背景与边框，让 Markdown 标题、表格、代码块、思考过程与操作折叠面板直接平铺在页面画布上（手机端有效阅读宽度提升约 `15%`），仅保留用户提问为右侧圆角胶囊气泡，阅读长篇分析与代码更清爽。
@@ -230,7 +234,7 @@ docker run -d --name dsh-hub \
 - **`2026-11-07 · v0.4.0` — 一行命令配对接入、单机独立凭证吊销与手机传截图**
   - 新增 15 分钟有效的多机配对码与 `/install.sh` 一键接入流程；每台电脑分配独立可吊销的访问凭证与 Ed25519 设备指纹；支持在手机对话与新建任务时直接上传相册截图并自动压缩。
 - **`2026-11-06 · v0.3.0` — 四大 AI 编程工具统一接入与 Rust 极速实时引擎**
-  - 在 DSH 基础上新增对 Antigravity IDE、Claude Code 与 OpenAI Codex 的统一会话发现与远程控制，内置 `dsh-turbo` 原生加速模块与 SSE 双向实时流。
+  - 在 DSH 基础上新增对 Antigravity IDE、OpenAI Codex 与 Claude Code 的统一会话发现与远程控制，内置 `dsh-turbo` 原生加速模块与 SSE 双向实时流。
 - **`2026-11-05 · v0.2.0` — iOS 16.4+ 锁屏 Web Push 推送、跨电脑一键迁移与端到端加密分享**
   - 支持零外部依赖的 iPhone 主屏幕 Web Push 锁屏通知、跨电脑一键打包迁移 `~/.dsh` 会话，以及 AES-256-GCM 端到端加密会话回放分享链接 (`#k=`)。
 

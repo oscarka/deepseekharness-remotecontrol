@@ -75,7 +75,7 @@ Before starting, it helps to understand the two lightweight pieces and how data 
                                                        ▼                                                 ▼
                                       ┌─────────────────────────────────┐               ┌─────────────────────────────────┐
                                       │ 💻 Computer A (Office MacBook)  │               │ 💻 Computer B (Home Workstation)│
-                                      │ DSH · Antigravity · Claude      │               │ DSH · Codex · Antigravity       │
+                                      │ DSH · Antigravity · Codex       │               │ DSH · Codex · WorkBuddy         │
                                       └─────────────────────────────────┘               └─────────────────────────────────┘
 ```
 
@@ -198,6 +198,10 @@ The background daemon automatically discovers local sessions across all 6 suppor
 <a id="whats-new"></a>
 ## 📅 What's New (Recent Releases)
 
+- **`2026-11-14 · v0.7.2` — Full-Featured OpenAI Codex Remote Engine (`app-server` JSON-RPC 2.0 + `codex exec` Dual Mode)**
+  - **Reliable Multi-Turn Codex Messaging & Writer-Lock Auto-Recovery (`v0.7.2`)**: Fixed 8 messaging reliability bottlenecks across `codex app-server` and `codex exec resume`: automatic `thread/unsubscribe` after `turn/completed` to release `~/.codex/thread-writer-locks/<id>.lock`, stale writer-lock recovery (`-32600: already has an active writer`), lossless multi-turn disk + live streaming transcript merge (`mergeCodexTranscripts`), placeholder model filtering (`codex`/`default`/`auto`), correct `codex exec --skip-git-repo-check --sandbox workspace-write --json ... resume --all` flag ordering, and `250ms` reactive state-change push.
+  - **Reasoning Effort, Live Plan Checklist, File Diff Card & MCP Approvals (`v0.7.2`)**: Added reasoning effort selection (`gpt-5.4::high`, `gpt-5.4::xhigh`, `gpt-5.3-codex::high`), live execution plan checklists (`turn/plan/updated`), mobile `Files With Changes` diff cards (`+added / -removed` lines from `apply_patch` & `turn/diff/updated`), live terminal `outputDelta` / `webSearch` / `collabToolCall` telemetry, and mobile MCP tool call approvals (`item/mcpToolCall/requestApproval`).
+
 - **`2026-11-13 · v0.7.1` — Subagent Lifecycle Folding in Parent Chat & ChatGPT-Style Unboxed Document Flow**
   - **Automatic Subagent Folding & Orphan Subagent Filtering (`v0.7.1`)**: Recognizes subagent tasks across Antigravity IDE (`invoke_subagent` / `parentConversationId`), DSH (`origin: 'subagent'`), and Claude Code (`subagents/agent-*.jsonl`). Subagent runs fold directly into the parent conversation's collapsible tool steps (`🟢 Subagent Running: <Role>` → `🤖 Subagent Completed: <Role> ✅`) with full role, prompt, and reported findings inline, while standalone subagent chats are automatically filtered out across Host, Cloud Hub, and Mobile Web (also fixing protobuf `0x24` length-prefix collisions that previously surfaced raw 36-char UUIDs as session titles).
   - **ChatGPT-Style Unboxed Document Flow for AI Replies (`v0.7.1`)**: Removed the outer card border and background box around assistant messages so Markdown headings, tables, code blocks, thinking panels, and tool chips flow directly across the full mobile viewport width (`~15%` wider reading area), keeping only user prompts inside right-aligned pill bubbles.
@@ -229,8 +233,8 @@ The background daemon automatically discovers local sessions across all 6 suppor
   - **Host Power & Network Telemetry**: Settings cards display real-time laptop battery percentage, charging/AC status, low-battery warnings, and Wi-Fi/LAN latency (`rttMs`).
 - **`2026-11-07 · v0.4.0` — 1-Line Enrollment, Per-Host Revocable Credentials & Mobile Screenshot Upload**
   - Added 15-minute multi-host enrollment codes (`/install.sh`), per-host Ed25519 fingerprint pinning & independent token revocation, and mobile camera/photo-library screenshot attachments with client-side Canvas compression.
-- **`2026-11-06 · v0.3.0` — Multi-Harness Support (Antigravity IDE, Claude Code, Codex) & Rust Turbo Engine**
-  - Added unified session discovery and remote control for Antigravity IDE, Claude Code, and OpenAI Codex alongside DSH, powered by the `dsh-turbo` native accelerator and bidirectional SSE streaming.
+- **`2026-11-06 · v0.3.0` — Multi-Harness Support (Antigravity IDE, Codex, Claude Code) & Rust Turbo Engine**
+  - Added unified session discovery and remote control for Antigravity IDE, OpenAI Codex, and Claude Code alongside DSH, powered by the `dsh-turbo` native accelerator and bidirectional SSE streaming.
 - **`2026-11-05 · v0.2.0` — iOS 16.4+ Lock-Screen Web Push, Cross-Host Migration & E2EE Session Replay**
   - Added RFC 8291/8292 zero-dependency Web Push lock-screen notifications, 1-click cross-computer session migration, and AES-256-GCM end-to-end encrypted shareable replay links (`#k=`).
 

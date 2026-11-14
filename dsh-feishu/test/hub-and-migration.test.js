@@ -11,7 +11,14 @@ import { HarnessRouter } from '../lib/harness-router.js'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { ClaudeAdapter } from '../lib/harnesses/claude-adapter.js'
-import { CodexAdapter, CodexAppServerClient, discoverCodexModels } from '../lib/harnesses/codex-adapter.js'
+import {
+  CodexAdapter,
+  CodexAppServerClient,
+  discoverCodexModels,
+  mergeCodexTranscripts,
+  normalizeCodexModel,
+  parseCodexModelAndEffort,
+} from '../lib/harnesses/codex-adapter.js'
 import {
   discoverWorkBuddyModels,
   isWorkBuddyProcessHeartbeatRecord,
@@ -1758,7 +1765,7 @@ test('v0.6.4: WeChat-style Hold-to-Talk voice interaction (release to send, slid
       },
       setAttribute(k, v) { this.attrs[k] = v },
       focus() { this.focused = true },
-      setSelectionRange() {},
+      setSelectionRange() { },
     }
   }
 
@@ -1793,8 +1800,8 @@ test('v0.6.4: WeChat-style Hold-to-Talk voice interaction (release to send, slid
       stop() { stopCount += 1 }
       abort() { abortCount += 1 }
     },
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener() { },
+    removeEventListener() { },
   }
   const fakeDoc = {
     visibilityState: 'visible',
@@ -1812,7 +1819,7 @@ test('v0.6.4: WeChat-style Hold-to-Talk voice interaction (release to send, slid
   const wv = factory(fakeWin, fakeDoc, fakeNav)
   const deps = {
     showToast(msg) { toasts.push(msg) },
-    onComposerInput() {},
+    onComposerInput() { },
     sendPrompt() { sentPrompts.push(els.globalPromptInput.value) },
   }
 
@@ -2916,7 +2923,17 @@ test('Phase 2: CodexAdapter & ClaudeAdapter parse real JSONL schemas, detect con
     })
     assert.equal(codexRes.ok, true)
     assert.equal(executedCmds[0].bin, fakeCodexBin)
-    assert.deepEqual(executedCmds[0].args.slice(0, 4), ['exec', 'resume', codexUuid, '补充 Dockerfile 示例'])
+    assert.deepEqual(executedCmds[0].args, [
+      'exec',
+      '--skip-git-repo-check',
+      '--sandbox',
+      'workspace-write',
+      '--json',
+      'resume',
+      '--all',
+      codexUuid,
+      '补充 Dockerfile 示例',
+    ])
 
     const claudeRes = await claudeAdapter.sendPrompt({
       sessionId: `claude:${claudeUuid}`,
@@ -2933,7 +2950,14 @@ test('Phase 2: CodexAdapter & ClaudeAdapter parse real JSONL schemas, detect con
     })
     assert.equal(codexNewRes.ok, true)
     assert.equal(executedCmds[2].bin, fakeCodexBin)
-    assert.deepEqual(executedCmds[2].args.slice(0, 2), ['exec', '初始化 FastAPI Agent Hosting 骨架'])
+    assert.deepEqual(executedCmds[2].args, [
+      'exec',
+      '--skip-git-repo-check',
+      '--sandbox',
+      'workspace-write',
+      '--json',
+      '初始化 FastAPI Agent Hosting 骨架',
+    ])
 
     const claudeNewRes = await claudeAdapter.createSession({
       prompt: '编写单元测试',
@@ -4838,7 +4862,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
         const port = portIdx !== -1 ? args[portIdx + 1] : '0'
         spawnedCalls.push({ cmd, args, cwd: opts.cwd, port })
         const proc = new EventEmitter()
-        proc.unref = () => {}
+        proc.unref = () => { }
         proc.kill = () => {
           proc.killed = true
         }
@@ -5109,7 +5133,7 @@ test('daemon.mjs --workbuddy-login runs as a standalone one-shot CLI command wit
     assert.equal(authCalled, 1)
     assert.match(out.stdout, /WorkBuddy CLI 浏览器授权成功 \(TestWBUser\)/)
   } finally {
-    await new Promise(r => mockAcpServer.close(r)).catch(() => {})
+    await new Promise(r => mockAcpServer.close(r)).catch(() => { })
     await rm(tmpDir, { recursive: true, force: true })
   }
 })
@@ -5126,16 +5150,16 @@ test('v0.5.9 Mobile Foreground Connection Stability: hot/cold wire compaction bu
         mIdx % 2 === 0
           ? { role: 'user', text: `User prompt ${mIdx} on host-${hIdx} task-${tIdx}` }
           : {
-              role: 'assistant',
-              text: `Reply ${hIdx}-${tIdx}-${mIdx}: ` + 'A'.repeat(tIdx === 0 ? 52_000 : 28_000),
-              thinking: `Thought ${hIdx}-${tIdx}-${mIdx}: ` + 'T'.repeat(7_000),
-              tools: Array.from({ length: 12 }, (___, k) => ({
-                name: 'run_command',
-                id: `tc-${k}`,
-                summary: `Step ${k}`,
-                commandLine: `echo ${k} ` + 'X'.repeat(500),
-              })),
-            },
+            role: 'assistant',
+            text: `Reply ${hIdx}-${tIdx}-${mIdx}: ` + 'A'.repeat(tIdx === 0 ? 52_000 : 28_000),
+            thinking: `Thought ${hIdx}-${tIdx}-${mIdx}: ` + 'T'.repeat(7_000),
+            tools: Array.from({ length: 12 }, (___, k) => ({
+              name: 'run_command',
+              id: `tc-${k}`,
+              summary: `Step ${k}`,
+              commandLine: `echo ${k} ` + 'X'.repeat(500),
+            })),
+          },
       )
       return {
         id: `sess-${hIdx}-${tIdx}`,
@@ -5987,15 +6011,15 @@ test('v0.6.9: 3-tier ISO BMFF video probe, single-flight remux/transcode, stream
         get: id => (id === liveTask.id ? liveTask : undefined),
       },
       sender: { sendText: async () => ({}), sendCard: async () => ({}), updateCard: async () => ({}) },
-      audit: { write: async () => {} },
-      logger: { info() {}, warn() {}, error() {} },
+      audit: { write: async () => { } },
+      logger: { info() { }, warn() { }, error() { } },
     })
     const agent = new HubAgent({
       config: cfg,
       bridge,
       fetchImpl: fetchAdapter,
       execImpl: mockExecImpl,
-      logger: { info() {}, warn() {}, error() {} },
+      logger: { info() { }, warn() { }, error() { } },
     })
     await agent.tick()
     const unsubFs = hub.onHostFsRequest((targetHostId, fsReq) => {
@@ -6147,7 +6171,7 @@ test('v0.6.9 Real HTTP/1.1 Socket Stream Piping: zero-buffering /api/fs-tunnel -
     hub,
     token: 'sock-secret-v069',
     requireToken: true,
-    logger: { info() {}, warn() {}, error() {} },
+    logger: { info() { }, warn() { }, error() { } },
   })
   await new Promise((resolve, reject) => {
     server.once('error', reject)
@@ -6191,14 +6215,14 @@ test('v0.6.9 Real HTTP/1.1 Socket Stream Piping: zero-buffering /api/fs-tunnel -
         get: id => (id === liveTask.id ? liveTask : undefined),
       },
       sender: { sendText: async () => ({}), sendCard: async () => ({}), updateCard: async () => ({}) },
-      audit: { write: async () => {} },
-      logger: { info() {}, warn() {}, error() {} },
+      audit: { write: async () => { } },
+      logger: { info() { }, warn() { }, error() { } },
     })
     const agent = new HubAgent({
       config: cfg,
       bridge,
       execImpl: async () => ({ stdout: '', stderr: '' }),
-      logger: { info() {}, warn() {}, error() {} },
+      logger: { info() { }, warn() { }, error() { } },
     })
     await agent.tick()
     const unsub = hub.onHostFsRequest((targetHostId, fsReq) => {
@@ -6231,7 +6255,7 @@ test('v0.6.9 Real HTTP/1.1 Socket Stream Piping: zero-buffering /api/fs-tunnel -
       const firstChunk = await reader.read()
       assert.equal(firstChunk.done, false)
       ac.abort()
-      await reader.cancel().catch(() => {})
+      await reader.cancel().catch(() => { })
       await new Promise(r => setTimeout(r, 30))
 
       // 3. Subsequent Range request immediately succeeds
@@ -6261,7 +6285,7 @@ test('v0.7.0: root DSH Market & DSH >=0.2.0 bundle manifest, icon, locales, and 
   assert.match(pkg.name, /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/u)
   assert.ok(pkg.name.length <= 214)
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/)
-  assert.equal(pkg.version, '0.7.1')
+  assert.equal(pkg.version, '0.7.2')
   assert.equal(pkg.license, 'MIT')
   assert.equal(pkg.type, 'module')
   assert.equal(pkg.main, './index.js')
@@ -6373,7 +6397,7 @@ test('v0.7.0: zero-config DSH Market plugin install auto-starts Embedded Local H
       effect(fn) {
         disposeEffect = fn()
       },
-      on() {},
+      on() { },
     }
 
     let readyPayload = null
@@ -6451,7 +6475,7 @@ test('v0.7.0: zero-config DSH Market plugin install auto-starts Embedded Local H
     assert.ok(syncedHost, 'in-process HubAgent should enroll and sync into Embedded Local Hub')
     assert.ok(
       Array.isArray(syncedHost.bridgeState?.tasks) &&
-        syncedHost.bridgeState.tasks.some(s => s.id === 'session-market-zero-cfg-001'),
+      syncedHost.bridgeState.tasks.some(s => s.id === 'session-market-zero-cfg-001'),
       'live DSH session should appear in Embedded Local Hub state',
     )
 
@@ -6460,7 +6484,7 @@ test('v0.7.0: zero-config DSH Market plugin install auto-starts Embedded Local H
       dshHome,
       preferredPort: chosenPort,
       bindHost: '127.0.0.1',
-      logger: { info() {}, warn() {}, error() {} },
+      logger: { info() { }, warn() { }, error() { } },
     })
     assert.equal(reusedHub.reused, true)
     assert.equal(reusedHub.port, chosenPort)
@@ -6478,7 +6502,7 @@ test('v0.7.0: zero-config DSH Market plugin install auto-starts Embedded Local H
       dshHome: join(tmpDir, '.dsh-other'),
       preferredPort: busyPort,
       bindHost: '127.0.0.1',
-      logger: { info() {}, warn() {}, error() {} },
+      logger: { info() { }, warn() { }, error() { } },
     })
     assert.equal(extraHub.reused, false)
     assert.notEqual(extraHub.port, busyPort)
@@ -6631,4 +6655,362 @@ test('antigravity subagent recognition: folds invoke_subagent lifecycle in paren
   assert.equal(filteredState.tasks.length, 1)
   assert.equal(filteredState.tasks[0].id, 'antigravity:parent-uuid-0000')
 })
+
+test('Codex remote messaging reliability: multi-turn resume transcript merge, thread/closed & turn/completed unsubscribe, writer-lock recovery, error rollback, and exec JSONL streaming', async () => {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-codex-msg-fix-'))
+  try {
+    // 1. Model normalization prevents placeholder strings ('codex', 'default', 'auto') from being passed as explicit model slugs
+    // and parses reasoning effort (`gpt-5.4::high`, `gpt-5.4::xhigh`)
+    assert.equal(normalizeCodexModel('codex'), undefined)
+    assert.equal(normalizeCodexModel('DEFAULT'), undefined)
+    assert.equal(normalizeCodexModel('auto'), undefined)
+    assert.equal(normalizeCodexModel('gpt-5.4'), 'gpt-5.4')
+    assert.deepEqual(parseCodexModelAndEffort('gpt-5.4::high'), { model: 'gpt-5.4', effort: 'high' })
+    assert.deepEqual(parseCodexModelAndEffort('gpt-5.3-codex@xhigh'), { model: 'gpt-5.3-codex', effort: 'xhigh' })
+    assert.deepEqual(parseCodexModelAndEffort('codex::medium'), { model: undefined, effort: 'medium' })
+
+    const codexHome = join(tmpDir, 'codex-home')
+    const sessionsDayDir = join(codexHome, 'sessions', '2026', '11', '13')
+    const locksDir = join(codexHome, 'thread-writer-locks')
+    await mkdir(sessionsDayDir, { recursive: true })
+    await mkdir(locksDir, { recursive: true })
+
+    const fakeCodexBin = join(codexHome, 'codex')
+    await writeFile(fakeCodexBin, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+
+    // Create a 2-turn (4-message) historical session on disk
+    const existingUuid = '019e4ec0-1111-75c2-89c3-376ce1029999'
+    const rolloutPath = join(sessionsDayDir, `rollout-2026-11-13T10-00-00-${existingUuid}.jsonl`)
+    const rolloutLines = [
+      JSON.stringify({
+        timestamp: '2026-11-13T10:00:00.000Z',
+        type: 'session_meta',
+        payload: { id: existingUuid, cwd: '/Users/dev/codex-app' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-11-13T10:00:01.000Z',
+        type: 'event_msg',
+        payload: { type: 'user_message', message: '第一轮问题：架构怎么分层？' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-11-13T10:00:05.000Z',
+        type: 'event_msg',
+        payload: { type: 'agent_message', message: '第一轮回答：分为 Gateway、Service 与 Repository 三层。' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-11-13T10:01:00.000Z',
+        type: 'event_msg',
+        payload: { type: 'user_message', message: '第二轮问题：数据库选什么？' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-11-13T10:01:06.000Z',
+        type: 'event_msg',
+        payload: { type: 'agent_message', message: '第二轮回答：推荐使用 PostgreSQL 16。' },
+      }),
+      JSON.stringify({
+        timestamp: '2026-11-13T10:01:07.000Z',
+        type: 'event_msg',
+        payload: { type: 'task_complete', turn_id: 'turn-hist-2' },
+      }),
+    ]
+    await writeFile(rolloutPath, rolloutLines.join('\n') + '\n', 'utf8')
+
+    // Create a stale writer lock file on disk to simulate orphaned writer-lock contention on first `thread/resume`
+    const lockFile = join(locksDir, `${existingUuid}.lock`)
+    await writeFile(lockFile, 'stale-lock', 'utf8')
+
+    let serverStdin = null
+    let serverStdout = null
+    const rpcCalls = []
+    let resumeAttempts = 0
+    let failNextTurnStart = false
+    let stateChangeCount = 0
+
+    const mockAppServerSpawn = () => {
+      serverStdin = new PassThrough()
+      serverStdout = new PassThrough()
+      const stderr = new PassThrough()
+      const proc = new EventEmitter()
+      proc.stdin = serverStdin
+      proc.stdout = serverStdout
+      proc.stderr = stderr
+      proc.killed = false
+      proc.kill = () => {
+        proc.killed = true
+        proc.emit('exit', 0)
+      }
+
+      let buf = ''
+      serverStdin.on('data', chunk => {
+        buf += chunk.toString('utf8')
+        const lines = buf.split('\n')
+        buf = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          const msg = JSON.parse(line)
+          if (msg.method && msg.id !== undefined) {
+            rpcCalls.push(msg)
+            if (msg.method === 'initialize') {
+              serverStdout.write(`${JSON.stringify({ id: msg.id, result: { userAgent: 'codex-test/2.0' } })}\n`)
+            } else if (msg.method === 'thread/resume') {
+              resumeAttempts += 1
+              if (resumeAttempts === 1) {
+                // Simulate single-writer lock contention on first attempt
+                serverStdout.write(
+                  `${JSON.stringify({
+                    id: msg.id,
+                    error: {
+                      code: -32600,
+                      message: `thread ${msg.params.threadId} already has an active writer`,
+                    },
+                  })}\n`,
+                )
+              } else {
+                serverStdout.write(
+                  `${JSON.stringify({
+                    id: msg.id,
+                    result: {
+                      thread: { id: msg.params.threadId, cwd: '/Users/dev/codex-app' },
+                      cwd: '/Users/dev/codex-app',
+                      model: 'gpt-5.4',
+                    },
+                  })}\n`,
+                )
+              }
+            } else if (msg.method === 'thread/unsubscribe') {
+              serverStdout.write(`${JSON.stringify({ id: msg.id, result: { status: 'unsubscribed' } })}\n`)
+            } else if (msg.method === 'turn/start') {
+              if (failNextTurnStart) {
+                failNextTurnStart = false
+                serverStdout.write(
+                  `${JSON.stringify({
+                    id: msg.id,
+                    error: { code: -32602, message: 'turn/start simulated RPC failure' },
+                  })}\n`,
+                )
+              } else {
+                serverStdout.write(
+                  `${JSON.stringify({
+                    id: msg.id,
+                    result: { turn: { id: `turn-live-${rpcCalls.length}`, status: 'inProgress', items: [] } },
+                  })}\n`,
+                )
+              }
+            }
+          }
+        }
+      })
+      return proc
+    }
+
+    const adapter = new CodexAdapter({
+      codexHome,
+      binaryPath: fakeCodexBin,
+      spawnImpl: mockAppServerSpawn,
+      useAppServer: true,
+      onStateChange: () => {
+        stateChangeCount += 1
+      },
+    })
+
+    // 2. Resume the existing 4-message disk session with a 3rd turn prompt (and placeholder model 'codex')
+    const sendRes = await adapter.sendPrompt({
+      sessionId: `codex:${existingUuid}`,
+      text: '第三轮问题：请加上 Redis 缓存层',
+      model: 'codex',
+    })
+    assert.equal(sendRes.ok, true)
+    assert.ok(stateChangeCount > 0)
+    // Verify stale lock file was removed and `thread/resume` succeeded on retry with `excludeTurns: true`
+    assert.equal(resumeAttempts, 2)
+    const resumeCall = rpcCalls.find(c => c.method === 'thread/resume')
+    assert.equal(resumeCall.params.excludeTurns, true)
+    assert.equal(resumeCall.params.model, undefined)
+
+    // Emit live plan update (`turn/plan/updated`), command output delta (`item/commandExecution/outputDelta`),
+    // webSearch (`item/started`), diff update (`turn/diff/updated`), and streaming delta on the 3rd turn
+    serverStdout.write(
+      `${JSON.stringify({
+        method: 'turn/plan/updated',
+        params: {
+          threadId: existingUuid,
+          explanation: '实现 Redis 缓存方案',
+          plan: [
+            { step: '初始化 Redis 客户端连接池', status: 'completed' },
+            { step: '在 Repository 层接入读写穿透逻辑', status: 'inProgress' },
+          ],
+        },
+      })}\n`,
+    )
+    serverStdout.write(
+      `${JSON.stringify({
+        method: 'item/started',
+        params: {
+          threadId: existingUuid,
+          item: { id: 'item-ws-1', type: 'webSearch', query: 'ioredis cluster best practices' },
+        },
+      })}\n`,
+    )
+    serverStdout.write(
+      `${JSON.stringify({
+        method: 'item/commandExecution/outputDelta',
+        params: {
+          threadId: existingUuid,
+          itemId: 'item-cmd-1',
+          delta: 'added 3 packages in 1.2s\n',
+        },
+      })}\n`,
+    )
+    serverStdout.write(
+      `${JSON.stringify({
+        method: 'turn/diff/updated',
+        params: {
+          threadId: existingUuid,
+          diff: '*** Update File: src/cache/redis.js\n@@ -1,2 +1,5 @@\n+import Redis from "ioredis"\n+export const redis = new Redis()\n-const oldCache = null\n',
+        },
+      })}\n`,
+    )
+    serverStdout.write(
+      `${JSON.stringify({
+        method: 'item/agentMessage/delta',
+        params: {
+          threadId: existingUuid,
+          itemId: 'item-asst-3',
+          delta: '第三轮回答（流式）：正在配置 Redis 读写穿透缓存...',
+        },
+      })}\n`,
+    )
+
+    // Verify all 4 historical messages + 2 new live turn messages = 6 messages are preserved,
+    // along with plan checklist, WebSearch tool call, and changedFiles (+added/-removed)!
+    let sessions = await adapter.listSessions()
+    assert.equal(sessions.length, 1)
+    assert.equal(sessions[0].status, 'running')
+    assert.equal(sessions[0].transcript.length, 6)
+    assert.equal(sessions[0].transcript[0].text, '第一轮问题：架构怎么分层？')
+    assert.equal(sessions[0].transcript[3].text, '第二轮回答：推荐使用 PostgreSQL 16。')
+    assert.equal(sessions[0].transcript[4].text, '第三轮问题：请加上 Redis 缓存层')
+    assert.match(sessions[0].transcript[5].text, /第三轮回答（流式）/)
+    assert.match(sessions[0].transcript[5].thinking, /\[x\] 初始化 Redis 客户端连接池/)
+    assert.ok(sessions[0].transcript[5].tools.includes('WebSearch'))
+    assert.equal(sessions[0].changedFiles.length, 1)
+    assert.equal(sessions[0].changedFiles[0].path, 'src/cache/redis.js')
+    assert.equal(sessions[0].changedFiles[0].added, 2)
+    assert.equal(sessions[0].changedFiles[0].removed, 1)
+
+    // Test MCP tool call approval request (`item/mcpToolCall/requestApproval`)
+    serverStdout.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 888,
+        method: 'item/mcpToolCall/requestApproval',
+        params: {
+          threadId: existingUuid,
+          itemId: 'mcp-1',
+          tool: 'github_create_pr',
+          reason: 'Create PR for Redis cache layer',
+        },
+      })}\n`,
+    )
+    sessions = await adapter.listSessions()
+    assert.equal(sessions[0].status, 'approval')
+    assert.equal(sessions[0].pendingApproval?.toolName, 'github_create_pr')
+    const mcpApproveRes = await adapter.resolveApproval({
+      sessionId: `codex:${existingUuid}`,
+      code: sessions[0].pendingApproval.code,
+      allow: true,
+      optionIndex: 1,
+    })
+    assert.equal(mcpApproveRes.ok, true)
+
+    // 3. Complete the turn -> adapter must auto-send `thread/unsubscribe` to release writer lock
+    serverStdout.write(
+      `${JSON.stringify({
+        method: 'turn/completed',
+        params: {
+          threadId: existingUuid,
+          turn: { id: 'turn-live-3', status: 'completed' },
+        },
+      })}\n`,
+    )
+    sessions = await adapter.listSessions()
+    assert.equal(sessions[0].status, 'idle')
+    assert.equal(sessions[0].turnState, 'conclusion')
+    assert.ok(rpcCalls.some(c => c.method === 'thread/unsubscribe' && c.params.threadId === existingUuid))
+
+    // 4. If `turn/start` fails on the next turn, `sendPrompt` returns `{ ok: false }` and rolls back `status` to `'idle'`
+    failNextTurnStart = true
+    const failedTurnRes = await adapter.sendPrompt({
+      sessionId: `codex:${existingUuid}`,
+      text: '第四轮问题（触发异常回滚）',
+    })
+    assert.equal(failedTurnRes.ok, false)
+    assert.match(failedTurnRes.error, /turn\/start simulated RPC failure/)
+    sessions = await adapter.listSessions()
+    assert.equal(sessions[0].status, 'idle')
+    assert.equal(sessions[0].transcript.length, 6)
+
+    // 5. Verify `codex exec --json` fallback captures `thread.started` and surfaces immediate CLI exit errors
+    const execSpawnedArgs = []
+    const cliAdapter = new CodexAdapter({
+      codexHome,
+      binaryPath: fakeCodexBin,
+      useAppServer: false,
+      spawnImpl: (_bin, args) => {
+        execSpawnedArgs.push(args)
+        const proc = new EventEmitter()
+        proc.stdout = new PassThrough()
+        proc.stderr = new PassThrough()
+        proc.kill = () => proc.emit('exit', 0)
+        setImmediate(() => {
+          if (args.includes('触发CLI启动报错')) {
+            proc.stderr.write('error: unexpected argument found\n')
+            proc.emit('exit', 2)
+          } else {
+            proc.stdout.write(`${JSON.stringify({ type: 'thread.started', thread_id: 'exec-thread-777' })}\n`)
+            proc.stdout.write(
+              `${JSON.stringify({
+                type: 'item.completed',
+                item: { id: 'it-1', type: 'agent_message', text: 'CLI JSONL 回复内容' },
+              })}\n`,
+            )
+            proc.stdout.write(`${JSON.stringify({ type: 'turn.completed' })}\n`)
+          }
+        })
+        return proc
+      },
+    })
+
+    const createdCli = await cliAdapter.createSession({
+      prompt: '通过 CLI JSONL 创建新会话',
+      cwd: tmpDir,
+      model: 'gpt-5.4::high',
+    })
+    assert.equal(createdCli.ok, true)
+    assert.equal(createdCli.agentId, 'codex:exec-thread-777')
+    assert.deepEqual(execSpawnedArgs[0], [
+      'exec',
+      '--skip-git-repo-check',
+      '--sandbox',
+      'workspace-write',
+      '--json',
+      '-m',
+      'gpt-5.4',
+      '-c',
+      'model_reasoning_effort="high"',
+      '通过 CLI JSONL 创建新会话',
+    ])
+
+    const failedCli = await cliAdapter.sendPrompt({
+      sessionId: `codex:${existingUuid}`,
+      text: '触发CLI启动报错',
+      cwd: tmpDir,
+    })
+    assert.equal(failedCli.ok, false)
+    assert.match(failedCli.error, /unexpected argument found/)
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true })
+  }
+})
+
 

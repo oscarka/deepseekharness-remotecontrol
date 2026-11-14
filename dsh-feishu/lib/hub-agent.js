@@ -97,12 +97,21 @@ export class HubAgent {
         enabledSet.has('antigravity-ide') &&
         enabledSet.has('codex') &&
         enabledSet.has('claude')
-      if (!enabledSet || enabledSet.has('codex')) {
+      if (
+        !enabledSet ||
+        isLegacyDefaultSet ||
+        enabledSet.has('codex') ||
+        Boolean(this.config?.codexHome)
+      ) {
         this.harnessRouter.registerAdapter(
           new CodexAdapter({
             codexHome: this.config?.codexHome || undefined,
             maxSessions: this.config?.maxCodexSessions || 10,
             execImpl: this.execImpl,
+            logger: this.logger,
+            onStateChange: () => {
+              this.scheduleFollowUpTick(250)
+            },
           }),
         )
       }
@@ -1716,18 +1725,24 @@ export class HubAgent {
                 list.push({ text: effectiveText, time: nowTs })
                 this.pendingUserPrompts.set(targetId, list)
                 if (extSess && Array.isArray(extSess.transcript)) {
-                  extSess.transcript = [
-                    ...extSess.transcript,
-                    {
-                      index: extSess.transcript.length,
-                      role: 'user',
-                      text: effectiveText,
-                      thinking: '',
-                      tools: [],
-                      toolCalls: [],
-                      time: nowTs,
-                    },
-                  ]
+                  const lastMsg = extSess.transcript[extSess.transcript.length - 1]
+                  if (!lastMsg || lastMsg.role !== 'user' || String(lastMsg.text || '').trim() !== effectiveText) {
+                    extSess.transcript = [
+                      ...extSess.transcript,
+                      {
+                        index: extSess.transcript.length,
+                        role: 'user',
+                        text: effectiveText,
+                        thinking: '',
+                        tools: [],
+                        toolCalls: [],
+                        time: nowTs,
+                      },
+                    ]
+                  }
+                  extSess.status = 'running'
+                  extSess.turnState = 'thinking'
+                  extSess.statusLabel = '🟢 运行中'
                   extSess.lastActivity = nowTs
                   extSess.updatedAt = nowTs
                 }
@@ -1898,13 +1913,13 @@ export class HubAgent {
           }
           const extAdapter = this.harnessRouter?.getAdapter(targetId)
           if (extAdapter && typeof extAdapter.listSessions === 'function') {
-            const extList = await extAdapter.listSessions({ maxMessages: 120 })
+            const extList = await extAdapter.listSessions({ maxMessages: cmd.maxMessages || 200 })
             const found = (extList || []).find(s => s.id === targetId)
             if (found) {
               return {
                 ok: true,
                 agentId: targetId,
-                totalCount: found.transcript?.length || 0,
+                totalCount: found.messageCount || found.transcript?.length || 0,
                 transcript: found.transcript || [],
               }
             }

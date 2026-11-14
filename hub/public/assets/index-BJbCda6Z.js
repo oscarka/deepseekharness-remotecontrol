@@ -2786,6 +2786,7 @@ var EXACT_ZH_TO_EN = {
 	"⚠️ 暂无在线电脑": "⚠️ No Computer Online",
 	"选择模型": "Select Model",
 	"🤖 默认模型": "🤖 Default Model",
+	"🤖 DeepSeek 默认模型": "🤖 DeepSeek Default",
 	"🖼️ 截图": "🖼️ Screenshot",
 	"📁 选择项目文件夹": "📁 Select Project Folder",
 	"搜索项目名称或路径...": "Search project name or path...",
@@ -4799,7 +4800,7 @@ function initHubController() {
 			const otherProj = otherApproval.app.project ? `${formatCompactProjectLabel(otherApproval.app.project)} / ` : "";
 			const nextAlertHtml = `
           <span>${isOtherQuestion ? "💬" : "⏳"} [${esc(otherApproval.host.hostName)}]「${esc(otherProj)}${esc(otherApproval.app.title || otherApproval.app.toolName)}」${isOtherQuestion ? "待你选择" : "待你审批"}</span>
-          <button style="border:none;background:#d97706;color:#fff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600;cursor:pointer;" onclick="openChat('${esc(otherApproval.app.agentId)}')">立即切换 ›</button>
+          <button style="border:none;background:#d97706;color:#fff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;" onclick="openChat('${esc(otherApproval.app.agentId)}')">立即切换 ›</button>
         `;
 			alertBar.style.display = "flex";
 			const nextAlertSig = `${langPref}:${nextAlertHtml}`;
@@ -5025,7 +5026,7 @@ function initHubController() {
 		}).join("")}
         </div>
       ` : "";
-		const filesChangedHtml = s.harness === "antigravity-ide" && Array.isArray(s.changedFiles) && s.changedFiles.length > 0 ? `
+		const filesChangedHtml = (s.harness === "antigravity-ide" || s.harness === "codex") && Array.isArray(s.changedFiles) && s.changedFiles.length > 0 ? `
         <div class="agy-files-changed-card">
           ${s.changedFiles.slice(-8).map((fc) => {
 			return `
@@ -5209,6 +5210,7 @@ function initHubController() {
 			setScrollBottomVisible(true);
 		}
 		lastRenderedChatSessionId = s.id;
+		if (langPref === "en") applyLangToDom(document.getElementById("chatFullscreen") || document.body, langPref);
 	}
 	async function hydrateColdSessionTranscript(hostId, sessionId, sessionRev = "") {
 		if (!hostId || !sessionId || hydratingWireSessionIds.has(sessionId)) return;
