@@ -33,6 +33,7 @@
     "hub/public/**/*",
     "scripts/*.mjs",
     "connect-host.sh",
+    "screenshots.json",
     "LICENSE",
     "README.md",
     "README.zh-CN.md"
@@ -59,7 +60,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/oscarka/deepseekharness-remotecontrol"
+    "url": "git+https://github.com/oscarka/deepseekharness-remotecontrol.git"
   },
   "homepage": "https://github.com/oscarka/deepseekharness-remotecontrol#readme",
   "bugs": {
