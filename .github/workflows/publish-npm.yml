@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   publish:
-    name: Build & Publish npm Package
+    name: Build & Publish npm Package (OIDC)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -24,7 +24,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: 'https://registry.npmjs.org'
+
+      - name: Ensure latest npm CLI for OIDC Trusted Publishing
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: |
@@ -36,9 +38,7 @@ jobs:
           npm test
           npm run build
 
-      - name: Publish to npm registry
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish to npm via OIDC Trusted Publisher
         run: |
           PKG_NAME="$(node -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync('./package.json', 'utf8')).name)")"
           PKG_VER="$(node -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync('./package.json', 'utf8')).version)")"
@@ -46,7 +46,4 @@ jobs:
             echo "Package ${PKG_NAME}@${PKG_VER} is already published on npm. Skipping."
             exit 0
           fi
-          if [ -n "${NPM_TOKEN:-}" ]; then
-            export NODE_AUTH_TOKEN="${NPM_TOKEN}"
-          fi
-          npm publish --provenance --access public || npm publish --access public
+          npm publish --provenance --access public --registry https://registry.npmjs.org/
