@@ -1,0 +1,52 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Build & Publish npm Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npm --prefix dsh-feishu install
+
+      - name: Run tests & build frontend
+        run: |
+          npm test
+          npm run build
+
+      - name: Publish to npm registry
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          PKG_NAME="$(node -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync('./package.json', 'utf8')).name)")"
+          PKG_VER="$(node -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync('./package.json', 'utf8')).version)")"
+          if npm view "${PKG_NAME}@${PKG_VER}" version --registry https://registry.npmjs.org/ >/dev/null 2>&1; then
+            echo "Package ${PKG_NAME}@${PKG_VER} is already published on npm. Skipping."
+            exit 0
+          fi
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            export NODE_AUTH_TOKEN="${NPM_TOKEN}"
+          fi
+          npm publish --provenance --access public || npm publish --access public
