@@ -12,6 +12,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: publish-to-npm
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: Build & Publish npm Package (OIDC)
@@ -40,10 +44,22 @@ jobs:
 
       - name: Publish to npm via OIDC Trusted Publisher
         run: |
+          set -eo pipefail
           PKG_NAME="$(node -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync('./package.json', 'utf8')).name)")"
           PKG_VER="$(node -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync('./package.json', 'utf8')).version)")"
           if npm view "${PKG_NAME}@${PKG_VER}" version --registry https://registry.npmjs.org/ >/dev/null 2>&1; then
             echo "Package ${PKG_NAME}@${PKG_VER} is already published on npm. Skipping."
             exit 0
           fi
-          npm publish --provenance --access public --registry https://registry.npmjs.org/
+          PUB_LOG="$(mktemp)"
+          if npm publish --provenance --access public --registry https://registry.npmjs.org/ 2>&1 | tee "${PUB_LOG}"; then
+            rm -f "${PUB_LOG}"
+            exit 0
+          fi
+          if grep -Eqi "cannot publish over the previously published versions|You cannot publish over|EPUBLISHCONFLICT" "${PUB_LOG}"; then
+            echo "Package ${PKG_NAME}@${PKG_VER} was already published by a preceding run. Skipping."
+            rm -f "${PUB_LOG}"
+            exit 0
+          fi
+          rm -f "${PUB_LOG}"
+          exit 1
