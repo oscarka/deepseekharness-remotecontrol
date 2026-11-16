@@ -198,45 +198,95 @@ docker run -d --name dsh-hub \
 <a id="最近版本更新记录"></a>
 ## 📅 最近版本更新记录
 
-- **`2026-11-14 · v0.7.2` — OpenAI Codex 全功能深度远控引擎（`app-server` 双向 JSON-RPC + `codex exec` 双模全通）**
-  - **Codex 发消息与多轮续聊 100% 稳定化 & 单写者锁自动恢复（`v0.7.2`）**：全面修复 `codex app-server` 与 `codex exec resume` 的 8 项通信卡点——每轮对话结束自动发送 `thread/unsubscribe` 释放 `~/.codex/thread-writer-locks/<id>.lock` 防止与桌面端 `Codex.app` 抢锁冲突；遇到残留锁冲突自动清理并恢复连接；通过 `mergeCodexTranscripts` 无损合并磁盘历史与实时流式吐字；过滤非法占位模型名（`codex`/`default`/`auto`）；修正 `codex exec --skip-git-repo-check --sandbox workspace-write --json ... resume --all` 参数顺序，并接入 `250ms` 极速状态推送。
-  - **推理强度档位切换、实时计划清单、修改文件 Diff 卡片与 MCP 手机审批（`v0.7.2`）**：对齐官方 `Codex.app` 与高星远控项目全部能力——支持在手机端切换推理深度（`GPT-5.4 (High 推理)`、`GPT-5.4 (xHigh 极客推理)` 等）、实时展示 `📋 执行计划` 步骤打勾进度、统计并渲染 `Files With Changes` 修改文件增删行数卡片（`+新增/-删除`）、实时透传终端命令输出流（`outputDelta`）/ 网页搜索（`webSearch`）/ 子智能体协作，并补齐 MCP 工具调用手机端授权审批（`item/mcpToolCall/requestApproval`）。
+<details>
+<summary><strong><code>2026-11-15 · v0.7.3</code> — 正式收录官方插件市场 &amp; OIDC 免密溯源发布</strong></summary>
 
-- **`2026-11-13 · v0.7.1` — 子智能体（Subagent）自动归并入父对话 & ChatGPT 同款无边框文档流排版**
-  - **Subagent 子智能体任务自动归并入父会话 & 过滤僵尸子会话（`v0.7.1`）**：全链路识别 Antigravity IDE（`invoke_subagent` / `parentConversationId`）、DSH（`origin: 'subagent'`）与 Claude Code（`subagents/agent-*.jsonl`）派生的子智能体任务；在父对话的「已执行 N 项操作」折叠块中实时追踪子智能体状态（`🟢 子智能体运行中: <角色>` → `🤖 子智能体已完成: <角色> ✅`）并内嵌展示分配任务与汇报结果，同时在宿主机、云端 Hub 与手机前端三层同步剔除独立的孤儿 Subagent 聊天（顺手修复 protobuf 摘要长度字节 `0x24` 误将 36 位 UUID 识别为会话标题的问题）。
-  - **ChatGPT App 同款「无边框文档流」AI 回复排版（`v0.7.1`）**：移除 AI 回复外层的卡片气泡背景与边框，让 Markdown 标题、表格、代码块、思考过程与操作折叠面板直接平铺在页面画布上（手机端有效阅读宽度提升约 `15%`），仅保留用户提问为右侧圆角胶囊气泡，阅读长篇分析与代码更清爽。
+- **正式收录 `awesome-dsh-plugin` 官方列表 & OIDC 可信发布（`v0.7.3`）**：补齐 `screenshots.json` 规范并合并入社区官方插件目录；切换为 GitHub Actions OIDC 免密可信发布（`npm publish --provenance`），附带 Sigstore SLSA v1 溯源签名与防并发撞车保护。
 
-- **`2026-11-12 · v0.7.0` — 支持上架 DSH Market 插件市场、零配置局域网即装即用 & 全格式手机视频自适应播放 (`v0.6.9`)**
-  - **DSH 插件市场一键安装与零配置即装即用（`v0.7.0`）**：完整适配 DSH `>= 0.2.0` 官方 Bundle 插件规范与社区 DSH Market（支持 `dsh plugin --profile desktop add github:oscarka/deepseekharness-remotecontrol` 一键安装）；未配置云端地址时自动在后台拉起本机嵌入式总控台（默认端口 `8788`，自动生成 `~/.dsh/local-hub.token` 与局域网免密扫码地址），装完 10 秒即可在同一 Wi-Fi 下用手机遥控，配置 `FEISHU_HUB_URL` 后无缝切换云端跨网总控。
-  - **三档自适应视频兼容引擎与全链路真流式隧道（`v0.6.9`）**：纯 Node.js `< 2ms` 解析 `.mp4` / `.mov` 编码结构，自动分流 **原画直出**、**毫秒级无损 `faststart` 重封装**与 **macOS 硬件加速 / `libx264` 兼容转码**（彻底解决 `yuv444p`、`.mov`、`.webm`、`.mkv` 在 iPhone 上黑屏或无法播放的问题）；反向文件隧道升级为零缓冲真流式直通（TTFB `< 100ms`），并支持 `> 16 MiB` 大视频多段无损拼接下载与无状态确定性 `mediaTicket`。
+</details>
 
-- **`2026-11-12 · v0.6.8` — 手机端 HTML 隔离沙盒交互预览、iOS 视频无损原地保存/分享 & 接入豆包电脑版观测**
-  - **手机端直接打开体验 HTML 网页（`v0.6.8`）**：无论 AI 在对话里给你发一段 ```` ```html ```` 代码块（点击右上角 **`🌐 交互预览`**）、给出本地 `.html` 胶囊路径 / 产物卡片（点击 **`🌐 体验网页 ›`**），还是在「项目文件」中点开 `.html`，均可在无同源权限隔离沙盒 `<iframe sandbox="allow-scripts allow-forms allow-modals allow-popups" srcdoc="...">` 中直接点击交互（绝不暴露 `HUB_TOKEN` 与 `localStorage`）；自动注入移动端 `<meta name="viewport">`，通过只读 `mediaTicket` 自动加载相对路径 CSS/JS/图片资源，并配备带顶部安全区 **`‹ 返回对话`** 按钮与 **`</> 源码` / `🌐 预览`** 切换的全屏体验浮层。
-  - **修复手机点击下载视频无返回键死胡同 & 接入豆包电脑版（`v0.6.8`）**：将视频/文件的 `<a download>` 顶层跳转改为原地流式拉取（实时百分比进度）后直接唤起系统原生分享菜单（一键「存储视频」到相册 /「存储到“文件”」/ 隔空投送 / 发微信，不离开当前页面）；新增**豆包电脑版 (`Doubao Desktop`)** 会话与 `aiboard` 编程任务只读观测适配器（支持增量单文件 LevelDB 缓存与 10 分钟僵尸运行态超时清理）。
-  - **微信同款「按住 说话」、智能中文标点、全新「新建任务」面板与置顶/完结优先排序（`v0.6.3–v0.6.7`）**：底部支持切换「`🎙️ 按住 说话`」（直接松手发送、左滑取消、右滑转文字编辑，内置 `650ms` 换气逗号与疑问句自动标点）与「`⌨️ 打字`」；紧凑重构「新建任务」面板；修正列表排序使置顶会话（`📌`）固定最顶部、已出结论未读（`🔵`）排在运行中任务上方，叠加 `state_delta` 增量流式同步（节省 **98%+** 实时流量，`v0.6.0–v0.6.1`）。
+<details>
+<summary><strong><code>2026-11-14 · v0.7.2</code> — OpenAI Codex 全功能深度远控引擎（<code>app-server</code> + <code>codex exec</code>）</strong></summary>
 
-- **`2026-11-11 · v0.5.8` — 腾讯 WorkBuddy 真机生产闭环自愈、iOS 手机原生语音唤醒与审批防误敲幂等保护**
-  - **腾讯 WorkBuddy（v5.9.3）生产闭环与进程自愈**：通过 `ACC_PRODUCT_CONFIG_PATH` 隔离独立 `workbuddy-cli` OAuth 凭证（与桌面端钥匙串登录态互不顶号，支持 `node dsh-feishu/daemon.mjs --workbuddy-login` 独立一键预授权）；按项目 `cwd` 隔离 `codebuddy --serve` 进程池并在进程退出/断连时自动重拉恢复（覆盖新建、追问与实时插话）；手机新建会话自动创建 `~/WorkBuddy/<时间戳>` Playground 目录，并与 `workbuddy.db` 及 `.jsonl` 双向落盘同步。
-  - **移动端直接原生语音识别（`v0.6.2`）**：点击输入框 `🎤` 按钮不弹软键盘、直接调起手机系统自带语音识别实时上屏（支持后台麦克风占用检测与桌面图标受限模式自动回退引导）。
-  - **电脑点完手机亚秒级消失 & 迟到点击防误敲 `"1"`（`v0.5.7`）**：待审批期间将实时轨迹缓存缩短至 `350ms`；当电脑端已先点击通过、手机端再点残留按钮时，严格校验 `CORTEX_STEP_STATUS_WAITING` 并直接幂等返回 `alreadySettled: true`，彻底杜绝回退模拟按键向电脑聊天框误敲数字 `"1"`。
+- **Codex 发消息与多轮续聊 100% 稳定化 & 单写者锁自动恢复（`v0.7.2`）**：全面修复 `codex app-server` 与 `codex exec resume` 的 8 项通信卡点——每轮对话结束自动发送 `thread/unsubscribe` 释放 `~/.codex/thread-writer-locks/<id>.lock` 防止与桌面端 `Codex.app` 抢锁冲突；遇到残留锁冲突自动清理并恢复连接；通过 `mergeCodexTranscripts` 无损合并磁盘历史与实时流式吐字；过滤非法占位模型名（`codex`/`default`/`auto`）；修正 `codex exec --skip-git-repo-check --sandbox workspace-write --json ... resume --all` 参数顺序，并接入 `250ms` 极速状态推送。
+- **推理强度档位切换、实时计划清单、修改文件 Diff 卡片与 MCP 手机审批（`v0.7.2`）**：对齐官方 `Codex.app` 与高星远控项目全部能力——支持在手机端切换推理深度（`GPT-5.4 (High 推理)`、`GPT-5.4 (xHigh 极客推理)` 等）、实时展示 `📋 执行计划` 步骤打勾进度、统计并渲染 `Files With Changes` 修改文件增删行数卡片（`+新增/-删除`）、实时透传终端命令输出流（`outputDelta`）/ 网页搜索（`webSearch`）/ 子智能体协作，并补齐 MCP 工具调用手机端授权审批（`item/mcpToolCall/requestApproval`）。
 
-- **`2026-11-11 · v0.5.6` — 独立反向流式文件隧道、手机 `206 Range` 视频秒播、气泡零闪烁与 Cloud Run 连接防断加固**
-  - **反向 HTTP 流式文件直连隧道 & 手机原生视频播放**：新增 `/fs/list|read|stream` 与 `/api/fs-tunnel` 二进制直连通道，配合 Host SSE `event: fs_req` `0ms` 唤醒本地读取，彻底消除 `/api/state` 轮询风暴；全面支持手机 `<video playsinline>` 拖动进度条分片秒播（`206 Partial Content`）、一键 H.264 转码兼容播放（`ffmpeg` / macOS `avconvert`）、保长截图清晰度的 `sips` 智能省流缩略图（可一键切换无损原图）、`walkthrough.md` 热缓存预热，以及不暴露 `HUB_TOKEN` 的短效只读 `mediaTicket` 票据。
-  - **手机发送消息零闪烁 & Cloud Run 审批无感防断**：新增服务端 `inflightCommands` 追踪消除已发送气泡消失重现空窗；新增 `/api/events` 240 秒优雅轮转（`event: rotate`，彻底避开 Cloud Run 300 秒强制截断）与客户端幂等 `id` + 网络闪断（`Load failed`）自动静默重试。
-  - **OpenAI Codex (`app-server`) 与腾讯 WorkBuddy (`ACP`) 深度接入**：完整支持 JSON-RPC / ACP 实时流式输出、运行中实时插话、手机命令/权限审批、多选题卡片与模型自动发现，并叠加 `v0.5.3–v0.5.4` 极速轻量心跳（稳态流量降低 99.9%）与 Antigravity `walkthrough` 产物卡片渲染。
+</details>
 
-- **`2026-11-09 · v0.5.0` — 中英双语控制台、聊天内嵌本地图片/文件速览胶囊与极速文件读取**
-  - **控制台支持中英双语 (`中文` / `English`)**：自动根据浏览器语言识别中英文，并在登录框、顶栏与设置页提供 `🌐 EN / 中文` 一键切换按钮。
-  - **聊天直接渲染本地生成图 + 可点击文件胶囊**：DSH 与 Antigravity IDE 在本机生成的渲染对比图（含 `.gemini/antigravity/brain/` 产物与 `carousel` 轮播图）直接在手机聊天气泡内加载显示；对话中的 `[file.py](file:///...)` 路径自动渲染为可点击胶囊，配合 Hub 6 小时缓存与电脑端毫秒级 Fast-Flush 立即回传，点开代码和图片速度提升约 3–5 倍。
-  - **DSH 选择题与方案审批弹窗**：完整支持在手机端直接点选回答 DSH 的 `ask_user_question`（单选/多选/自定义输入）与 `exit_plan_mode` 方案确认弹窗。
-  - **新用户首次部署防坑闭环与 Cloud Run 自动重连**：非 Docker 直接运行 `npm start` 时自动回退持久化状态至 `~/.dsh/hub-state.json`；电脑用 `localhost` 打开生成手机二维码时自动修正为本机局域网 IP；Cloud Run 容器重部署或缩容重启后自动恢复已配对电脑的 `hst_...` 凭证。
-  - **多电脑电量与网络延迟监控**：在「设备与设置」卡片中实时展示笔记本电池百分比、充电/电源直供状态、低电量预警与 Wi-Fi/局域网延迟 (`rttMs`)。
-- **`2026-11-07 · v0.4.0` — 一行命令配对接入、单机独立凭证吊销与手机传截图**
-  - 新增 15 分钟有效的多机配对码与 `/install.sh` 一键接入流程；每台电脑分配独立可吊销的访问凭证与 Ed25519 设备指纹；支持在手机对话与新建任务时直接上传相册截图并自动压缩。
-- **`2026-11-06 · v0.3.0` — 四大 AI 编程工具统一接入与 Rust 极速实时引擎**
-  - 在 DSH 基础上新增对 Antigravity IDE、OpenAI Codex 与 Claude Code 的统一会话发现与远程控制，内置 `dsh-turbo` 原生加速模块与 SSE 双向实时流。
-- **`2026-11-05 · v0.2.0` — iOS 16.4+ 锁屏 Web Push 推送、跨电脑一键迁移与端到端加密分享**
-  - 支持零外部依赖的 iPhone 主屏幕 Web Push 锁屏通知、跨电脑一键打包迁移 `~/.dsh` 会话，以及 AES-256-GCM 端到端加密会话回放分享链接 (`#k=`)。
+<details>
+<summary><strong><code>2026-11-13 · v0.7.1</code> — 子智能体（Subagent）自动归并父对话 &amp; ChatGPT 无边框排版</strong></summary>
+
+- **Subagent 子智能体任务自动归并入父会话 & 过滤僵尸子会话（`v0.7.1`）**：全链路识别 Antigravity IDE（`invoke_subagent` / `parentConversationId`）、DSH（`origin: 'subagent'`）与 Claude Code（`subagents/agent-*.jsonl`）派生的子智能体任务；在父对话的「已执行 N 项操作」折叠块中实时追踪子智能体状态（`🟢 子智能体运行中: <角色>` → `🤖 子智能体已完成: <角色> ✅`）并内嵌展示分配任务与汇报结果，同时在宿主机、云端 Hub 与手机前端三层同步剔除独立的孤儿 Subagent 聊天（顺手修复 protobuf 摘要长度字节 `0x24` 误将 36 位 UUID 识别为会话标题的问题）。
+- **ChatGPT App 同款「无边框文档流」AI 回复排版（`v0.7.1`）**：移除 AI 回复外层的卡片气泡背景与边框，让 Markdown 标题、表格、代码块、思考过程与操作折叠面板直接平铺在页面画布上（手机端有效阅读宽度提升约 `15%`），仅保留用户提问为右侧圆角胶囊气泡，阅读长篇分析与代码更清爽。
+
+</details>
+
+<details>
+<summary><strong><code>2026-11-12 · v0.7.0</code> — 上架 DSH Market 插件市场、零配置本地总控 &amp; 全格式视频引擎</strong></summary>
+
+- **DSH 插件市场一键安装与零配置即装即用（`v0.7.0`）**：完整适配 DSH `>= 0.2.0` 官方 Bundle 插件规范与社区 DSH Market（支持 `dsh plugin --profile desktop add github:oscarka/deepseekharness-remotecontrol` 一键安装）；未配置云端地址时自动在后台拉起本机嵌入式总控台（默认端口 `8788`，自动生成 `~/.dsh/local-hub.token` 与局域网免密扫码地址），装完 10 秒即可在同一 Wi-Fi 下用手机遥控，配置 `FEISHU_HUB_URL` 后无缝切换云端跨网总控。
+- **三档自适应视频兼容引擎与全链路真流式隧道（`v0.6.9`）**：纯 Node.js `< 2ms` 解析 `.mp4` / `.mov` 编码结构，自动分流 **原画直出**、**毫秒级无损 `faststart` 重封装**与 **macOS 硬件加速 / `libx264` 兼容转码**（彻底解决 `yuv444p`、`.mov`、`.webm`、`.mkv` 在 iPhone 上黑屏或无法播放的问题）；反向文件隧道升级为零缓冲真流式直通（TTFB `< 100ms`），并支持 `> 16 MiB` 大视频多段无损拼接下载与无状态确定性 `mediaTicket`。
+
+</details>
+
+<details>
+<summary><strong><code>2026-11-12 · v0.6.8</code> — 手机端 HTML 交互预览、iOS 视频原地保存 &amp; 豆包电脑版观测</strong></summary>
+
+- **手机端直接打开体验 HTML 网页（`v0.6.8`）**：无论 AI 在对话里给你发一段 ```` ```html ```` 代码块（点击右上角 **`🌐 交互预览`**）、给出本地 `.html` 胶囊路径 / 产物卡片（点击 **`🌐 体验网页 ›`**），还是在「项目文件」中点开 `.html`，均可在无同源权限隔离沙盒 `<iframe sandbox="allow-scripts allow-forms allow-modals allow-popups" srcdoc="...">` 中直接点击交互（绝不暴露 `HUB_TOKEN` 与 `localStorage`）；自动注入移动端 `<meta name="viewport">`，通过只读 `mediaTicket` 自动加载相对路径 CSS/JS/图片资源，并配备带顶部安全区 **`‹ 返回对话`** 按钮与 **`</> 源码` / `🌐 预览`** 切换的全屏体验浮层。
+- **修复手机点击下载视频无返回键死胡同 & 接入豆包电脑版（`v0.6.8`）**：将视频/文件的 `<a download>` 顶层跳转改为原地流式拉取（实时百分比进度）后直接唤起系统原生分享菜单（一键「存储视频」到相册 /「存储到“文件”」/ 隔空投送 / 发微信，不离开当前页面）；新增**豆包电脑版 (`Doubao Desktop`)** 会话与 `aiboard` 编程任务只读观测适配器（支持增量单文件 LevelDB 缓存与 10 分钟僵尸运行态超时清理）。
+- **微信同款「按住 说话」、智能中文标点、全新「新建任务」面板与置顶/完结优先排序（`v0.6.3–v0.6.7`）**：底部支持切换「`🎙️ 按住 说话`」（直接松手发送、左滑取消、右滑转文字编辑，内置 `650ms` 换气逗号与疑问句自动标点）与「`⌨️ 打字`」；紧凑重构「新建任务」面板；修正列表排序使置顶会话（`📌`）固定最顶部、已出结论未读（`🔵`）排在运行中任务上方，叠加 `state_delta` 增量流式同步（节省 **98%+** 实时流量，`v0.6.0–v0.6.1`）。
+
+</details>
+
+<details>
+<summary><strong><code>2026-11-11 · v0.5.8</code> — 腾讯 WorkBuddy 进程自愈、手机原生语音识别 &amp; 审批防误敲</strong></summary>
+
+- **腾讯 WorkBuddy（v5.9.3）生产闭环与进程自愈**：通过 `ACC_PRODUCT_CONFIG_PATH` 隔离独立 `workbuddy-cli` OAuth 凭证（与桌面端钥匙串登录态互不顶号，支持 `node dsh-feishu/daemon.mjs --workbuddy-login` 独立一键预授权）；按项目 `cwd` 隔离 `codebuddy --serve` 进程池并在进程退出/断连时自动重拉恢复（覆盖新建、追问与实时插话）；手机新建会话自动创建 `~/WorkBuddy/<时间戳>` Playground 目录，并与 `workbuddy.db` 及 `.jsonl` 双向落盘同步。
+- **移动端直接原生语音识别（`v0.6.2`）**：点击输入框 `🎤` 按钮不弹软键盘、直接调起手机系统自带语音识别实时上屏（支持后台麦克风占用检测与桌面图标受限模式自动回退引导）。
+- **电脑点完手机亚秒级消失 & 迟到点击防误敲 `"1"`（`v0.5.7`）**：待审批期间将实时轨迹缓存缩短至 `350ms`；当电脑端已先点击通过、手机端再点残留按钮时，严格校验 `CORTEX_STEP_STATUS_WAITING` 并直接幂等返回 `alreadySettled: true`，彻底杜绝回退模拟按键向电脑聊天框误敲数字 `"1"`。
+
+</details>
+
+<details>
+<summary><strong><code>2026-11-11 · v0.5.6</code> — 反向流式文件隧道、手机 <code>206 Range</code> 视频秒播 &amp; 防断加固</strong></summary>
+
+- **反向 HTTP 流式文件直连隧道 & 手机原生视频播放**：新增 `/fs/list|read|stream` 与 `/api/fs-tunnel` 二进制直连通道，配合 Host SSE `event: fs_req` `0ms` 唤醒本地读取，彻底消除 `/api/state` 轮询风暴；全面支持手机 `<video playsinline>` 拖动进度条分片秒播（`206 Partial Content`）、一键 H.264 转码兼容播放（`ffmpeg` / macOS `avconvert`）、保长截图清晰度的 `sips` 智能省流缩略图（可一键切换无损原图）、`walkthrough.md` 热缓存预热，以及不暴露 `HUB_TOKEN` 的短效只读 `mediaTicket` 票据。
+- **手机发送消息零闪烁 & Cloud Run 审批无感防断**：新增服务端 `inflightCommands` 追踪消除已发送气泡消失重现空窗；新增 `/api/events` 240 秒优雅轮转（`event: rotate`，彻底避开 Cloud Run 300 秒强制截断）与客户端幂等 `id` + 网络闪断（`Load failed`）自动静默重试。
+- **OpenAI Codex (`app-server`) 与腾讯 WorkBuddy (`ACP`) 深度接入**：完整支持 JSON-RPC / ACP 实时流式输出、运行中实时插话、手机命令/权限审批、多选题卡片与模型自动发现，并叠加 `v0.5.3–v0.5.4` 极速轻量心跳（稳态流量降低 99.9%）与 Antigravity `walkthrough` 产物卡片渲染。
+
+</details>
+
+<details>
+<summary><strong><code>2026-11-09 · v0.5.0</code> — 中英双语控制台、聊天内嵌本地图片 &amp; 文件速览胶囊</strong></summary>
+
+- **控制台支持中英双语 (`中文` / `English`)**：自动根据浏览器语言识别中英文，并在登录框、顶栏与设置页提供 `🌐 EN / 中文` 一键切换按钮。
+- **聊天直接渲染本地生成图 + 可点击文件胶囊**：DSH 与 Antigravity IDE 在本机生成的渲染对比图（含 `.gemini/antigravity/brain/` 产物与 `carousel` 轮播图）直接在手机聊天气泡内加载显示；对话中的 `[file.py](file:///...)` 路径自动渲染为可点击胶囊，配合 Hub 6 小时缓存与电脑端毫秒级 Fast-Flush 立即回传，点开代码和图片速度提升约 3–5 倍。
+- **DSH 选择题与方案审批弹窗**：完整支持在手机端直接点选回答 DSH 的 `ask_user_question`（单选/多选/自定义输入）与 `exit_plan_mode` 方案确认弹窗。
+- **新用户首次部署防坑闭环与 Cloud Run 自动重连**：非 Docker 直接运行 `npm start` 时自动回退持久化状态至 `~/.dsh/hub-state.json`；电脑用 `localhost` 打开生成手机二维码时自动修正为本机局域网 IP；Cloud Run 容器重部署或缩容重启后自动恢复已配对电脑的 `hst_...` 凭证。
+- **多电脑电量与网络延迟监控**：在「设备与设置」卡片中实时展示笔记本电池百分比、充电/电源直供状态、低电量预警与 Wi-Fi/局域网延迟 (`rttMs`)。
+
+</details>
+
+<details>
+<summary><strong><code>2026-11-07 · v0.4.0</code> — 一行命令配对接入、单机独立凭证吊销 &amp; 手机传截图</strong></summary>
+
+- 新增 15 分钟有效的多机配对码与 `/install.sh` 一键接入流程；每台电脑分配独立可吊销的访问凭证与 Ed25519 设备指纹；支持在手机对话与新建任务时直接上传相册截图并自动压缩。
+
+</details>
+
+<details>
+<summary><strong><code>2026-11-06 · v0.3.0</code> — 四大 AI 编程工具统一接入 &amp; Rust 极速实时引擎</strong></summary>
+
+- 在 DSH 基础上新增对 Antigravity IDE、OpenAI Codex 与 Claude Code 的统一会话发现与远程控制，内置 `dsh-turbo` 原生加速模块与 SSE 双向实时流。
+
+</details>
+
+<details>
+<summary><strong><code>2026-11-05 · v0.2.0</code> — iOS 16.4+ 锁屏 Web Push 推送、跨电脑迁移 &amp; 加密分享</strong></summary>
+
+- 支持零外部依赖的 iPhone 主屏幕 Web Push 锁屏通知、跨电脑一键打包迁移 `~/.dsh` 会话，以及 AES-256-GCM 端到端加密会话回放分享链接 (`#k=`)。
+
+</details>
 
 ---
 
