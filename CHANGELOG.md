@@ -2,6 +2,20 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased] - 2026-11-16
+
+### Added
+
+- **AI 回复零配置纯算法语音播报（`hub/web/src/utils/speech.js` / `controller.js`）**：
+  - 在每条 AI 回复底部紧邻 `📋 复制全文` 新增 **`🔊 播报`** 按钮，基于零 LLM、零人工词表的结构化 Markdown AST 清洗、词法可发音度分类与 TextRank 图排序摘要算法（`< 5ms`），支持 **`⚡ 重点` / `📖 全文`** 切换、优选系统神经网络单嗓子不断气直读、语音输入防串音自动停播，以及 `onboundary` + 已播时长双保险的**原地无损倍速切换（`1x / 1.25x / 1.5x`）**。
+
+### Fixed
+
+- **Cloud Run 反向文件隧道断连清理、多 `language_server` 摘要仲裁与内嵌视频懒加载（`hub/server.js` / `hub/hub-core.js` / `antigravity-ide.js` / `deploy-cloudrun.sh`）**：
+  - 透传客户端断开 `AbortController` 信号并及时回收 `/api/fs-tunnel` 流槽位；多实例 `language_server` 按 `lastModifiedTime` 与活跃状态确定性择优；内嵌 `<video>` 改为 `preload="none"`；Cloud Run 默认升级为 `1Gi` 内存、`200` 并发与 `--cpu-boost`。
+- **CI 发布防并发撞车与 README 折叠历史记录（`publish-npm.yml` / `docker-publish.yml` / `README*.md`）**：
+  - 增加 GitHub Actions 工作流级 `concurrency` 互斥锁与 `EPUBLISHCONFLICT` 幂等保护，并将中英文 README 历史更新记录收敛为单行 `<details>` 折叠面板。
+
 ## [0.7.0] - 2026-11-12
 
 ### Added

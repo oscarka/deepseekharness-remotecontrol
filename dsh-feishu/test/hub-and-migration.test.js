@@ -2802,6 +2802,7 @@ test('Phase 1A & 1B Stability Suite: daemon lockfile, server-authoritative appro
   }
 })
 
+
 test('Phase 2: CodexAdapter & ClaudeAdapter parse real JSONL schemas, detect controlMode, and resume via CLI', async () => {
   const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-phase2-adapters-'))
   try {
@@ -3000,6 +3001,7 @@ test('Phase 2: CodexAdapter & ClaudeAdapter parse real JSONL schemas, detect con
     await rm(tmpDir, { recursive: true, force: true })
   }
 })
+
 
 test('antigravity-ide walkthrough & artifacts: surfaces tool-call and disk walkthroughs across multi-step turns and wire compaction', async () => {
   const tmpBrain = await mkdtemp(join(tmpdir(), 'dsh-agy-walkthrough-'))
@@ -3620,6 +3622,7 @@ test('Phase 3 Deep Integration: Codex app-server JSON-RPC & WorkBuddy ACP HTTP+S
   }
 })
 
+
 test('Fast FS Tunnel & Mobile Media Streaming (Plan 1 + Plan 2): HTTP 206 Range video, ETag 304, read-only mediaTicket, smart sips thumb & walkthrough prewarm', async () => {
   const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-fast-fs-media-'))
   try {
@@ -3813,6 +3816,7 @@ test('Fast FS Tunnel & Mobile Media Streaming (Plan 1 + Plan 2): HTTP 206 Range 
     await rm(tmpDir, { recursive: true, force: true })
   }
 })
+
 
 test('In-flight prompt tracking: sent messages never vanish between command pull and disk transcript sync (even on repeated text)', () => {
   let nowMs = 1_770_000_000_000
@@ -4282,6 +4286,7 @@ test('WorkBuddy v5.9.3 projects JSONL transcript parsing & wbipc/endpoint.json d
     await rm(tmpDir, { recursive: true, force: true })
   }
 })
+
 
 test('WorkBuddy v5.9.3 Streamable HTTP POST SSE frames, takeWriter session/load, auth error surfacing, and wbipc fast-skip', async () => {
   const http = await import('node:http')
@@ -5056,6 +5061,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
   }
 })
 
+
 test('daemon.mjs --workbuddy-login runs as a standalone one-shot CLI command without FEISHU_HUB_URL or --once and exits cleanly', async () => {
   const { createServer } = await import('node:http')
   const { execFile: cpExecFile } = await import('node:child_process')
@@ -5675,6 +5681,7 @@ test('WorkBuddy skips sessions/<pid>.json live process heartbeat lockfiles and H
   }
 })
 
+
 test('v0.6.7: pinned & unread concluded sessions sort above running tasks, and Settings capability matrix matches DEFAULT_HARNESS_CAPABILITIES', async () => {
   const {
     computeSessionSortPriority,
@@ -6163,6 +6170,7 @@ test('v0.6.9: 3-tier ISO BMFF video probe, single-flight remux/transcode, stream
     await rm(tmpDir, { recursive: true, force: true })
   }
 })
+
 
 test('v0.6.9 Real HTTP/1.1 Socket Stream Piping: zero-buffering /api/fs-tunnel -> pipeline(req, res) & client mid-stream abort safety', async () => {
   const tmpDir = await mkdtemp(join(tmpdir(), 'dsh-v069-socket-'))
@@ -7013,5 +7021,6 @@ test('Codex remote messaging reliability: multi-turn resume transcript merge, th
     await rm(tmpDir, { recursive: true, force: true })
   }
 })
+
 
 

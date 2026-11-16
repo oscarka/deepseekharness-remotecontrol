@@ -1268,9 +1268,10 @@
 
     .assistant-copy-footer {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: flex-start;
-      gap: 10px;
+      gap: 8px;
       margin-top: 8px;
       padding-top: 2px;
       border-top: none;
@@ -1313,6 +1314,18 @@
       border-color: #86efac;
       background: var(--green-soft);
       color: var(--green);
+    }
+
+    .assistant-speak-btn.speaking {
+      border-color: #60a5fa;
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+
+    .assistant-speak-sub-btn {
+      padding: 3px 8px;
+      font-size: 11px;
+      border-style: dashed;
     }
 
     .thought-box {

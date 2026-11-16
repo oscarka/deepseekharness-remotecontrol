@@ -62,6 +62,13 @@ import { applyStateDelta } from './state/delta-merge';
 import { compressImageFile } from './utils/image-compress';
 import { compareSemver } from './utils/semver';
 import {
+  prepareSpeechScript,
+  pickBestBrowserVoice,
+  splitIntoContinuousBrowserChunks,
+  computeSpeechResumeOffset,
+  snapToCleanSpeechOffset,
+} from './utils/speech';
+import {
   renderHarnessBadgeHtml,
   formatCompactProjectLabel,
   normalizeDeviceModelShort,
@@ -1471,6 +1478,7 @@ export function initHubController() {
 
   function rawCloseChat() {
     stopVoiceInput();
+    stopAssistantSpeech();
     document.getElementById('chatFullscreen').classList.remove('open');
     document.body.classList.remove('mobile-chat-open');
     setScrollBottomVisible(false);
@@ -1520,6 +1528,247 @@ export function initHubController() {
       return;
     }
     await copyAssistantReply(keys[0], btnEl);
+  }
+
+  // ---- AI 回复纯算法语音播报（单嗓子不断气直读 + 重点摘要 / 全文去噪 + 原地无损倍速切换） ----
+  const SPEECH_RATES = [1, 1.25, 1.5];
+  const activeSpeechState = {
+    playing: false,
+    sessionId: '',
+    msgIdx: -1,
+    mode: (typeof localStorage !== 'undefined' && localStorage.getItem('dsh_tts_mode') === 'full') ? 'full' : 'concise',
+    rate: (() => {
+      const saved = typeof localStorage !== 'undefined' ? Number(localStorage.getItem('dsh_tts_rate')) : 1;
+      return SPEECH_RATES.includes(saved) ? saved : 1;
+    })(),
+    hasDistinctSummary: false,
+    fullSpokenText: '',
+    docLang: 'zh',
+    segmentBaseOffset: 0,
+    segmentStartedAt: 0,
+    segmentRate: 1,
+    boundaryCharOffset: -1,
+    boundaryUpdatedAt: 0,
+    runId: 0,
+  };
+
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    try {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.addEventListener?.('voiceschanged', () => {
+        try { window.speechSynthesis.getVoices(); } catch { }
+      });
+    } catch { }
+  }
+
+  function renderAssistantFooterHtml(sessionId, msgIdx, cleanReplyText) {
+    const isSpeakingThis =
+      activeSpeechState.playing &&
+      activeSpeechState.sessionId === sessionId &&
+      activeSpeechState.msgIdx === msgIdx;
+    const speakControlsHtml = isSpeakingThis
+      ? `<button type="button" class="assistant-copy-btn assistant-speak-btn speaking" onclick="stopAssistantSpeech()">⏹ 停止</button>` +
+        (activeSpeechState.hasDistinctSummary
+          ? `<button type="button" class="assistant-copy-btn assistant-speak-sub-btn" onclick="switchAssistantSpeechMode(${msgIdx})" title="切换重点摘要 / 完整去噪">${activeSpeechState.mode === 'concise' ? '⚡ 重点' : '📖 全文'}</button>`
+          : '') +
+        `<button type="button" class="assistant-copy-btn assistant-speak-sub-btn" onclick="cycleAssistantSpeechRate(${msgIdx})" title="切换播报倍速">${activeSpeechState.rate}x</button>`
+      : `<button type="button" class="assistant-copy-btn assistant-speak-btn" onclick="toggleSpeakAssistantReply(${msgIdx})">🔊 播报</button>`;
+    return `<div class="assistant-copy-footer" data-footer-session-id="${esc(sessionId)}" data-footer-msg-idx="${msgIdx}"><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 复制全文</button>${speakControlsHtml}<span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span></div>`;
+  }
+
+  function syncSpeechFooterDom() {
+    if (typeof document === 'undefined') return;
+    document.querySelectorAll('.assistant-copy-footer[data-footer-msg-idx]').forEach(el => {
+      const mIdx = Number(el.getAttribute('data-footer-msg-idx'));
+      const sessId = el.getAttribute('data-footer-session-id') || activeSessionId || '';
+      const rawText = String(lastRenderedAssistantTexts?.[mIdx] || '').trim();
+      if (!rawText) return;
+      const tmp = document.createElement('div');
+      tmp.innerHTML = renderAssistantFooterHtml(sessId, mIdx, rawText);
+      const nextEl = tmp.firstElementChild;
+      if (!nextEl) return;
+      if (getLangPref() === 'en') {
+        applyLangToDom(nextEl, 'en');
+      }
+      el.replaceWith(nextEl);
+    });
+  }
+
+  function stopAssistantSpeech() {
+    activeSpeechState.runId += 1;
+    const wasPlaying = activeSpeechState.playing;
+    activeSpeechState.playing = false;
+    activeSpeechState.sessionId = '';
+    activeSpeechState.msgIdx = -1;
+    activeSpeechState.fullSpokenText = '';
+    activeSpeechState.segmentBaseOffset = 0;
+    activeSpeechState.segmentStartedAt = 0;
+    activeSpeechState.boundaryCharOffset = -1;
+    activeSpeechState.boundaryUpdatedAt = 0;
+    try {
+      window.speechSynthesis?.cancel();
+    } catch { }
+    if (wasPlaying) {
+      syncSpeechFooterDom();
+    }
+  }
+
+  function startAssistantSpeech(msgIdx, { startOffset = 0 } = {}) {
+    if (typeof window === 'undefined' || !window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') {
+      showToast('⚠️ 当前浏览器暂不支持系统语音播报');
+      return;
+    }
+    const rawText = String(lastRenderedAssistantTexts?.[msgIdx] || '').trim();
+    if (!rawText) {
+      showToast('⚠️ 暂无可播报的回复内容');
+      return;
+    }
+
+    // Stop active voice recording first so microphone and speaker never collide
+    if (isVoiceRecording()) {
+      stopVoiceInput();
+    }
+
+    const prepared = prepareSpeechScript(rawText);
+    const fullSpokenText = (activeSpeechState.mode === 'concise' && prepared.hasDistinctSummary)
+      ? prepared.conciseText
+      : prepared.fullText;
+    if (!fullSpokenText) {
+      showToast('⚠️ 暂无可播报的回复内容');
+      return;
+    }
+
+    const effectiveOffset = startOffset > 0
+      ? snapToCleanSpeechOffset(fullSpokenText, startOffset)
+      : 0;
+    const remainingText = effectiveOffset > 0 && effectiveOffset < fullSpokenText.length
+      ? fullSpokenText.slice(effectiveOffset)
+      : fullSpokenText;
+    const actualBaseOffset = (effectiveOffset > 0 && effectiveOffset < fullSpokenText.length) ? effectiveOffset : 0;
+
+    const myRunId = ++activeSpeechState.runId;
+    try {
+      window.speechSynthesis.cancel();
+    } catch { }
+
+    const nowMs = Date.now();
+    activeSpeechState.playing = true;
+    activeSpeechState.sessionId = activeSessionId || '';
+    activeSpeechState.msgIdx = msgIdx;
+    activeSpeechState.hasDistinctSummary = prepared.hasDistinctSummary;
+    activeSpeechState.fullSpokenText = fullSpokenText;
+    activeSpeechState.docLang = prepared.docLang;
+    activeSpeechState.segmentBaseOffset = actualBaseOffset;
+    activeSpeechState.segmentStartedAt = nowMs;
+    activeSpeechState.segmentRate = activeSpeechState.rate;
+    activeSpeechState.boundaryCharOffset = -1;
+    activeSpeechState.boundaryUpdatedAt = 0;
+    syncSpeechFooterDom();
+
+    const voices = window.speechSynthesis.getVoices() || [];
+    const chosenVoice = pickBestBrowserVoice(voices, prepared.docLang);
+    const isAppleWebKit = isIosDevice() || (/AppleWebKit/i.test(navigator.userAgent || '') && !/Chrome|Chromium|Edg/i.test(navigator.userAgent || ''));
+    const chunks = splitIntoContinuousBrowserChunks(remainingText, isAppleWebKit);
+
+    let runningChunkOffset = actualBaseOffset;
+    chunks.forEach((chunkText, idx) => {
+      const thisChunkBase = runningChunkOffset;
+      const posInFull = fullSpokenText.indexOf(chunkText, runningChunkOffset);
+      const resolvedChunkBase = posInFull >= 0 ? posInFull : thisChunkBase;
+      runningChunkOffset = resolvedChunkBase + chunkText.length;
+
+      const u = new SpeechSynthesisUtterance(chunkText);
+      u.lang = chosenVoice?.lang || (prepared.docLang === 'en' ? 'en-US' : 'zh-CN');
+      if (chosenVoice) {
+        u.voice = chosenVoice;
+      }
+      u.rate = activeSpeechState.rate;
+      if (idx === 0) {
+        u.onstart = () => {
+          if (activeSpeechState.runId !== myRunId) return;
+          activeSpeechState.segmentStartedAt = Date.now();
+        };
+      }
+      u.onboundary = ev => {
+        if (activeSpeechState.runId !== myRunId) return;
+        if (ev && typeof ev.charIndex === 'number' && ev.charIndex >= 0) {
+          activeSpeechState.boundaryCharOffset = resolvedChunkBase + ev.charIndex;
+          activeSpeechState.boundaryUpdatedAt = Date.now();
+        }
+      };
+      if (idx === chunks.length - 1) {
+        u.onend = () => {
+          if (activeSpeechState.runId !== myRunId) return;
+          activeSpeechState.playing = false;
+          activeSpeechState.sessionId = '';
+          activeSpeechState.msgIdx = -1;
+          syncSpeechFooterDom();
+        };
+      }
+      u.onerror = () => {
+        if (activeSpeechState.runId !== myRunId) return;
+        activeSpeechState.playing = false;
+        activeSpeechState.sessionId = '';
+        activeSpeechState.msgIdx = -1;
+        syncSpeechFooterDom();
+      };
+      window.speechSynthesis.speak(u);
+    });
+  }
+
+  function toggleSpeakAssistantReply(msgIdx) {
+    if (
+      activeSpeechState.playing &&
+      activeSpeechState.sessionId === (activeSessionId || '') &&
+      activeSpeechState.msgIdx === msgIdx
+    ) {
+      stopAssistantSpeech();
+      return;
+    }
+    startAssistantSpeech(msgIdx, { startOffset: 0 });
+  }
+
+  function switchAssistantSpeechMode(msgIdx) {
+    activeSpeechState.mode = activeSpeechState.mode === 'concise' ? 'full' : 'concise';
+    try {
+      localStorage.setItem('dsh_tts_mode', activeSpeechState.mode);
+    } catch { }
+    if (activeSpeechState.playing && activeSpeechState.msgIdx === msgIdx) {
+      startAssistantSpeech(msgIdx, { startOffset: 0 });
+    } else {
+      syncSpeechFooterDom();
+    }
+  }
+
+  function cycleAssistantSpeechRate(msgIdx) {
+    const prevRate = activeSpeechState.rate;
+    const isCurrentlySpeakingThis =
+      activeSpeechState.playing &&
+      activeSpeechState.sessionId === (activeSessionId || '') &&
+      activeSpeechState.msgIdx === msgIdx;
+    const resumeOffset = isCurrentlySpeakingThis
+      ? computeSpeechResumeOffset({
+          fullText: activeSpeechState.fullSpokenText,
+          docLang: activeSpeechState.docLang,
+          segmentBaseOffset: activeSpeechState.segmentBaseOffset,
+          segmentStartedAt: activeSpeechState.segmentStartedAt,
+          segmentRate: prevRate,
+          boundaryCharOffset: activeSpeechState.boundaryCharOffset,
+          boundaryUpdatedAt: activeSpeechState.boundaryUpdatedAt,
+          nowMs: Date.now(),
+        })
+      : 0;
+
+    const curIdx = SPEECH_RATES.indexOf(prevRate);
+    activeSpeechState.rate = SPEECH_RATES[(curIdx + 1) % SPEECH_RATES.length];
+    try {
+      localStorage.setItem('dsh_tts_rate', String(activeSpeechState.rate));
+    } catch { }
+    if (isCurrentlySpeakingThis) {
+      startAssistantSpeech(msgIdx, { startOffset: resumeOffset });
+    } else {
+      syncSpeechFooterDom();
+    }
   }
 
   function selectAgyApprovalOption(idx) {
@@ -1857,7 +2106,7 @@ export function initHubController() {
         lastRenderedAssistantTexts[msgIdx] = cleanReplyText;
       }
       const copyFooterHtml = cleanReplyText
-        ? `<div class="assistant-copy-footer"><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 复制全文</button><span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span></div>`
+        ? renderAssistantFooterHtml(s.id, msgIdx, cleanReplyText)
         : '';
       const bodyHtml = cleanReplyText
         ? `<div class="md-body">${formatAssistantText(cleanReplyText)}</div>${copyFooterHtml}`
@@ -2336,6 +2585,7 @@ export function initHubController() {
     if (!input) return;
     if (composerSessionId === nextSessionId) return;
     stopVoiceInput();
+    stopAssistantSpeech();
     if (composerSessionId) persistComposerDraft(composerSessionId);
     composerSessionId = nextSessionId || '';
     input.value = readComposerDraft(composerSessionId);
@@ -2964,7 +3214,7 @@ export function initHubController() {
         window.__dshInlineVideoCache[vPath] = vSrc;
         vNode.classList.remove('md-local-video-pending');
         vNode.removeAttribute('onclick');
-        vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc(baseName)} · 点此打开大屏预览</span>`;
+        vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="none" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc(baseName)} · 点此打开大屏预览</span>`;
       }
     }
 
@@ -6710,6 +6960,10 @@ export function initHubController() {
     submitAgyApproval,
     copyAssistantReply,
     copyLatestAssistantReply,
+    toggleSpeakAssistantReply,
+    stopAssistantSpeech,
+    switchAssistantSpeechMode,
+    cycleAssistantSpeechRate,
     loadEarlierTranscript,
     renderActiveChatStage,
     renderInlineMarkdown,
@@ -6739,13 +6993,19 @@ export function initHubController() {
     setVoiceBtnRecording,
     isVoiceRecording,
     stopVoiceInput,
-    toggleVoiceInput,
+    toggleVoiceInput: (...args) => {
+      stopAssistantSpeech();
+      return toggleVoiceInput(...args);
+    },
     initWechatVoiceMode,
     isWechatVoiceMode,
     setWechatVoiceMode,
     toggleWechatVoiceMode,
     syncWechatHoldBtnState,
-    startHoldVoice,
+    startHoldVoice: (...args) => {
+      stopAssistantSpeech();
+      return startHoldVoice(...args);
+    },
     moveHoldVoice,
     endHoldVoice,
     cancelHoldVoice,

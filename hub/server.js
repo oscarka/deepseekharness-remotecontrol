@@ -246,6 +246,7 @@ export function createHubServer({
     rawBuffer = null,
     rawStream = null,
     remoteAddress = '',
+    signal = null,
   }) {
     const protoHeader = String(headers['x-forwarded-proto'] ?? headers['X-Forwarded-Proto'] ?? '')
       .split(',')[0]
@@ -728,12 +729,16 @@ export function createHubServer({
         const baseStreamUrl = `/api/hosts/${encodeURIComponent(hostId)}/fs/stream?${streamQuery}`
 
         if (fsOp === 'list') {
-          const out = await hub.dispatchFastFsRequest(hostId, {
-            op: 'list',
-            path: reqPath,
-            cwd,
-            agentId,
-          })
+          const out = await hub.dispatchFastFsRequest(
+            hostId,
+            {
+              op: 'list',
+              path: reqPath,
+              cwd,
+              agentId,
+            },
+            { signal },
+          )
           return {
             status: out.ok ? 200 : out.status || 502,
             json: out.meta || { ok: false, error: 'Directory list failed' },
@@ -752,12 +757,16 @@ export function createHubServer({
               },
             }
           }
-          const out = await hub.dispatchFastFsRequest(hostId, {
-            op: 'read',
-            path: reqPath,
-            cwd,
-            agentId,
-          })
+          const out = await hub.dispatchFastFsRequest(
+            hostId,
+            {
+              op: 'read',
+              path: reqPath,
+              cwd,
+              agentId,
+            },
+            { signal },
+          )
           if (
             out.ok &&
             out.meta?.kind === 'text' &&
@@ -795,7 +804,7 @@ export function createHubServer({
             download,
             raw,
           },
-          { timeoutMs: transcode || download || isVideoPath ? 60_000 : 30_000 },
+          { timeoutMs: transcode || download || isVideoPath ? 60_000 : 30_000, signal },
         )
         const mtParam = String(urlObj.searchParams.get('mt') ?? '').trim()
         const hasMediaTicket = Boolean(mtParam && hub.verifyMediaTicket(mtParam))
@@ -1049,6 +1058,8 @@ export function createHubServer({
   }
 
   const server = createServer(async (req, res) => {
+    req.on('error', () => {})
+    res.on('error', () => {})
     try {
       const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
       if (req.method === 'GET' && urlObj.pathname === '/api/events') {
@@ -1311,7 +1322,24 @@ export function createHubServer({
           await sendJson(res, outcome.status || 404, outcome, req.headers)
           return
         }
-        await outcome.streamDone
+        const settleOnClose = () => {
+          if (!req.complete) {
+            outcome.onStreamDone?.()
+          }
+        }
+        const settleOnResClose = () => {
+          if (!res.writableFinished) {
+            outcome.onStreamDone?.()
+          }
+        }
+        req.once('close', settleOnClose)
+        res.once('close', settleOnResClose)
+        try {
+          await outcome.streamDone
+        } finally {
+          req.removeListener('close', settleOnClose)
+          res.removeListener('close', settleOnResClose)
+        }
         if (!res.destroyed && !res.writableEnded) {
           await sendJson(
             res,
@@ -1322,6 +1350,13 @@ export function createHubServer({
         }
         return
       }
+      const clientAbortController = new AbortController()
+      const abortOnClientClose = () => {
+        if (!res.writableFinished) {
+          clientAbortController.abort()
+        }
+      }
+      res.once('close', abortOnClientClose)
       const body = req.method === 'POST' ? await readJsonBody(req) : {}
       const result = await dispatchRequest({
         method: req.method,
@@ -1330,6 +1365,9 @@ export function createHubServer({
         body,
         rawBuffer: null,
         remoteAddress: req.socket?.remoteAddress || '',
+        signal: clientAbortController.signal,
+      }).finally(() => {
+        res.removeListener('close', abortOnClientClose)
       })
       if (result.json !== undefined) {
         await sendJson(res, result.status, result.json, req.headers)

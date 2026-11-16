@@ -59,6 +59,8 @@ export class HubCore {
     this.pendingFsRequests = new Map()
     this.fsHotCache = new Map()
     this.stateSeq = 1
+    this._persistInFlight = null
+    this._persistQueued = false
   }
 
   setTokenSecret(secret = '', { rotateSeed = false } = {}) {
@@ -444,41 +446,56 @@ export class HubCore {
 
   async persist() {
     if (!this.stateFile) return
-    try {
-      await mkdir(dirname(this.stateFile), { recursive: true })
-      const now = this.now()
-      const payload = {
-        activeHostId: this.activeHostId,
-        mediaSeed: this.mediaSeed,
-        vapidKeys: this.vapidKeys,
-        pushSubscriptions: [...this.pushSubscriptions.values()],
-        hosts: [...this.hosts.values()].map(h => ({
-          ...h,
-          lastFilePreview: h.lastFilePreview ? this.sanitizeFilePreviewForState(h.hostId, h.lastFilePreview) : null,
-          commands: (h.commands ?? []).filter(c => c && (!c.expiresAt || now <= c.expiresAt)),
-          recentResults: (h.recentResults ?? []).slice(-15).map(r => {
-            if (
-              r &&
-              (r.dataBase64 ||
-                Array.isArray(r.transcript) ||
-                (typeof r.content === 'string' && r.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS))
-            ) {
-              const { dataBase64, content, transcript, ...rest } = r
-              return { ...rest, hasBlob: true }
-            }
-            return r
-          }),
-        })),
-        snapshots: [...this.snapshots.values()],
-        shares: [...this.shares.values()],
-        approvalLedger: [...this.approvalLedger.entries()],
-        sessionReadState: Object.fromEntries(this.sessionReadState),
-        enrollment: this.enrollment,
-      }
-      await writeFile(this.stateFile, JSON.stringify(payload), 'utf8')
-    } catch {
-      // best effort persistence
+    if (this._persistInFlight) {
+      this._persistQueued = true
+      return this._persistInFlight
     }
+    this._persistInFlight = (async () => {
+      do {
+        try {
+          await mkdir(dirname(this.stateFile), { recursive: true })
+          // Clear queued flag right before reading the in-memory snapshot so
+          // multiple synchronous mutations in the same tick coalesce into one write.
+          this._persistQueued = false
+          const now = this.now()
+          const payload = {
+            activeHostId: this.activeHostId,
+            mediaSeed: this.mediaSeed,
+            vapidKeys: this.vapidKeys,
+            pushSubscriptions: [...this.pushSubscriptions.values()],
+            hosts: [...this.hosts.values()].map(h => ({
+              ...h,
+              lastFilePreview: h.lastFilePreview ? this.sanitizeFilePreviewForState(h.hostId, h.lastFilePreview) : null,
+              commands: (h.commands ?? []).filter(c => c && (!c.expiresAt || now <= c.expiresAt)),
+              recentResults: (h.recentResults ?? []).slice(-15).map(r => {
+                if (
+                  r &&
+                  (r.dataBase64 ||
+                    Array.isArray(r.transcript) ||
+                    (typeof r.content === 'string' && r.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS))
+                ) {
+                  const { dataBase64, content, transcript, ...rest } = r
+                  return { ...rest, hasBlob: true }
+                }
+                return r
+              }),
+            })),
+            snapshots: [...this.snapshots.values()],
+            shares: [...this.shares.values()],
+            approvalLedger: [...this.approvalLedger.entries()],
+            sessionReadState: Object.fromEntries(this.sessionReadState),
+            enrollment: this.enrollment,
+          }
+          await writeFile(this.stateFile, JSON.stringify(payload), 'utf8')
+        } catch {
+          this._persistQueued = false
+          // best effort persistence
+        }
+      } while (this._persistQueued)
+    })().finally(() => {
+      this._persistInFlight = null
+    })
+    return this._persistInFlight
   }
 
   isOnline(host) {
@@ -2524,7 +2541,7 @@ export class HubCore {
     return out
   }
 
-  dispatchFastFsRequest(hostId, reqSpec = {}, { timeoutMs = 12_000 } = {}) {
+  dispatchFastFsRequest(hostId, reqSpec = {}, { timeoutMs = 12_000, signal = null } = {}) {
     const cleanHost = String(hostId ?? '').trim()
     const host = this.hosts.get(cleanHost)
     if (!cleanHost || !host) {
@@ -2540,6 +2557,14 @@ export class HubCore {
         ok: false,
         status: 503,
         meta: { ok: false, status: 503, error: `Host offline: ${cleanHost}` },
+        buffer: null,
+      })
+    }
+    if (signal?.aborted) {
+      return Promise.resolve({
+        ok: false,
+        status: 499,
+        meta: { ok: false, status: 499, error: 'Client closed connection' },
         buffer: null,
       })
     }
@@ -2561,9 +2586,22 @@ export class HubCore {
       createdAt: now,
     }
     return new Promise(resolve => {
-      const timer = setTimeout(() => {
+      let settled = false
+      let onAbort = null
+      const finish = payload => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (signal && onAbort) {
+          try {
+            signal.removeEventListener('abort', onAbort)
+          } catch {}
+        }
         this.pendingFsRequests.delete(reqId)
-        resolve({
+        resolve(payload)
+      }
+      const timer = setTimeout(() => {
+        finish({
           ok: false,
           status: 504,
           meta: { ok: false, status: 504, error: `等待电脑端响应文件流超时（${Math.round(timeoutMs / 1000)}s）` },
@@ -2571,6 +2609,17 @@ export class HubCore {
         })
       }, timeoutMs)
       timer.unref?.()
+      if (signal && typeof signal.addEventListener === 'function') {
+        onAbort = () => {
+          finish({
+            ok: false,
+            status: 499,
+            meta: { ok: false, status: 499, error: 'Client closed connection' },
+            buffer: null,
+          })
+        }
+        signal.addEventListener('abort', onAbort, { once: true })
+      }
       this.pendingFsRequests.set(reqId, {
         reqId,
         hostId: cleanHost,
@@ -2579,7 +2628,7 @@ export class HubCore {
         expiresAt: now + timeoutMs,
         dispatchedViaHb: false,
         timer,
-        resolve,
+        resolve: finish,
       })
       this.emitHostFsRequest(cleanHost, fsReq)
     })
@@ -2597,6 +2646,10 @@ export class HubCore {
     let streamDone = null
     const hasStream = Boolean(stream && (typeof stream.pipe === 'function' || Symbol.asyncIterator in stream))
     if (hasStream) {
+      // Guard against unhandled 'error' events on raw HTTP streams before/after pipeline attaches
+      if (typeof stream.on === 'function') {
+        stream.on('error', () => {})
+      }
       streamDone = new Promise(resolveDone => {
         let settled = false
         onStreamDone = () => {
@@ -2605,6 +2658,10 @@ export class HubCore {
           resolveDone()
         }
       })
+      if (typeof stream.once === 'function') {
+        stream.once('error', () => onStreamDone?.())
+        stream.once('aborted', () => onStreamDone?.())
+      }
     }
     entry.resolve({
       ok: meta?.ok !== false,
@@ -2614,6 +2671,6 @@ export class HubCore {
       stream: hasStream ? stream : null,
       onStreamDone,
     })
-    return { ok: true, reqId: cleanId, hostId: entry.hostId, streamDone }
+    return { ok: true, reqId: cleanId, hostId: entry.hostId, streamDone, onStreamDone }
   }
 }

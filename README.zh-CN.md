@@ -57,7 +57,7 @@
 - **出门在外两眼一抹黑**：下楼买咖啡、在地铁上或躺在沙发上时，想看一眼任务跑完没有、按住语音像发微信一样说一句补充指令、传一张手机截图，或者发现跑偏了立即叫停。
 - **多台电脑来回切**：公司一台 Mac、家里两台 Mac mini 都在跑任务，想在一个手机页面里统一看管。
 
-**DSH Remote Control** 把你电脑上正在跑的 AI 编程会话装进手机浏览器里（内置**微信同款「按住说话」语音转文字 + 智能中文标点**，支持 iOS 16.4+ 添加到主屏幕开启原生锁屏推送，支持中英文自动识别与一键切换）。
+**DSH Remote Control** 把你电脑上正在跑的 AI 编程会话装进手机浏览器里（内置**微信同款「按住说话」语音转文字 + 智能中文标点**、**`🔊 播报` 纯算法一键听回复（支持 `⚡ 重点` / `📖 全文` 切换与原地无损倍速）**，支持 iOS 16.4+ 添加到主屏幕开启原生锁屏推送，支持中英文自动识别与一键切换）。
 
 ---
 
@@ -197,6 +197,15 @@ docker run -d --name dsh-hub \
 
 <a id="最近版本更新记录"></a>
 ## 📅 最近版本更新记录
+
+<details>
+<summary><strong><code>2026-11-16 · 最新更新</code> — AI 回复一键语音播报（<code>🔊 播报</code>）、Cloud Run 流式加固 &amp; 多实例同步</strong></summary>
+
+- **零配置纯算法 AI 回复语音播报（`🔊 播报`）**：在每条 AI 回复底部的 `📋 复制全文` 右侧新增 **`🔊 播报`** 胶囊。内置 `< 5ms` 零大模型、零词表的纯算法 Markdown 语音清洗与抽句引擎（[`speech.js`](hub/web/src/utils/speech.js)），自动跳过代码块、表格、长路径、Commit 哈希与环境变量并口语化数字/费率/时间；支持 **`⚡ 重点`**（TextRank 自动提炼 30 秒结论）与 **`📖 全文`** 一键切换、优选系统高品质单嗓子不断气中英混读、按下 `🎤` 录音时自动静音防串音，以及**原地无损切换 `1x / 1.25x / 1.5x` 倍速**（基于 `onboundary` 分词游标 + 时间推算双兜底，切倍速直接从当前字往后念，绝不跳回开头）。
+- **Cloud Run 流式隧道断连自愈、多 `language_server` 仲裁 & 视频按需预载**：打通 `/fs/list|read|stream` 与 `/api/fs-tunnel` 的客户端断连 `AbortController` 信号透传与流关闭清理，杜绝手机端滑走/切后台残留僵尸流槽位；修复本机同时存在多个 Antigravity `language_server` / `agy --hub` 进程时旧轨迹摘要覆盖新消息的问题；聊天内嵌视频改为 `preload="none"` 避免多视频争抢带宽；优化 [`deploy-cloudrun.sh`](deploy-cloudrun.sh)（`--memory 1Gi --concurrency 200 --cpu-boost`）。
+- **版本更新记录折叠收纳 & 发布流水线防撞车**：将 README 历史版本记录全部收敛为单行 `<details>` 折叠抽屉，并为 `publish-npm.yml` 与 `docker-publish.yml` 增加 `concurrency` 串行锁与已发布版本幂等跳过保护。
+
+</details>
 
 <details>
 <summary><strong><code>2026-11-15 · v0.7.3</code> — 正式收录官方插件市场 &amp; OIDC 免密溯源发布</strong></summary>

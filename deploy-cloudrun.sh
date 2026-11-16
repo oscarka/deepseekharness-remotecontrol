@@ -39,6 +39,9 @@ gcloud run deploy "${SERVICE_NAME}" \
   --platform managed \
   --allow-unauthenticated \
   --max-instances 1 \
+  --memory 1Gi \
+  --concurrency 200 \
+  --cpu-boost \
   ${ENV_ARGS[@]+"${ENV_ARGS[@]}"}
 
 echo ""

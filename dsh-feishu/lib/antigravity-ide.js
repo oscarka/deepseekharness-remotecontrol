@@ -419,6 +419,7 @@ export function parseAntigravityTranscript(jsonlText, {
   liveLastUserInputStepIndex = null,
   liveStatus = '',
   liveModel = '',
+  liveLastModifiedMs = 0,
   hasLiveSummary = false,
   liveWaitingSteps = null,
   liveTrajectoryMeta = null,
@@ -461,7 +462,10 @@ export function parseAntigravityTranscript(jsonlText, {
   // When the user clicks "撤回" in Antigravity IDE and hasn't sent a replacement prompt yet,
   // `transcript.jsonl` on disk is not truncated yet, but LanguageServer's in-memory summary
   // immediately reflects the reverted `stepCount` and `lastUserInputStepIndex`.
-  if (liveStatus !== 'CASCADE_RUN_STATUS_RUNNING') {
+  // Guard against stale summaries from another LanguageServer instance whose `lastModifiedTime`
+  // is older than `transcript.jsonl` on disk.
+  const isSummaryOlderThanDisk = liveLastModifiedMs > 0 && mtimeMs > 0 && mtimeMs - liveLastModifiedMs > 5000
+  if (liveStatus !== 'CASCADE_RUN_STATUS_RUNNING' && !isSummaryOlderThanDisk) {
     if (typeof liveStepCount === 'number' && Number.isFinite(liveStepCount) && liveStepCount > 0) {
       while (
         lines.length > 0
@@ -1509,11 +1513,12 @@ export async function loadAntigravityIdeSessions({
         : null
       const liveStatus = String(liveSummary?.status || '')
       const liveModel = String(liveSummary?.planModel || '')
+      const liveLastModifiedMs = parseSummaryModifiedMs(liveSummary)
       const liveTitle = String(liveSummary?.summary || '').trim()
       const effectiveNativeTitle = nativeMeta?.title || liveTitle || ''
       const sessionId = `${AGY_IDE_PREFIX}${item.convId}`
       const customTitle = customTitles[sessionId] || customTitles[item.convId] || ''
-      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${maxMessages}:${customTitle}:${effectiveNativeTitle}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}:${liveModel}:${hasLiveSummary ? 1 : 0}:${waitingKey}`
+      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${maxMessages}:${customTitle}:${effectiveNativeTitle}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}:${liveModel}:${liveLastModifiedMs}:${hasLiveSummary ? 1 : 0}:${waitingKey}`
       const cached = sessionParseCache.get(item.convId)
       if (cached && cached.cacheKey === cacheKey && cached.session) {
         if (cached.session.isSubagent) continue
@@ -1570,6 +1575,7 @@ export async function loadAntigravityIdeSessions({
         liveLastUserInputStepIndex,
         liveStatus,
         liveModel,
+        liveLastModifiedMs,
         hasLiveSummary,
         liveWaitingSteps,
         liveTrajectoryMeta: liveTrajMeta,
@@ -1668,6 +1674,128 @@ let cachedLiveSummaries = new Map()
 let cachedLiveSummariesAt = 0
 const liveTrajectoryModelCache = new Map()
 
+function parseSummaryModifiedMs(sum) {
+  const candidates = [sum?.lastModifiedTime, sum?.trajectoryMetadata?.lastModifiedTime]
+  for (const raw of candidates) {
+    if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw
+    if (typeof raw === 'string' && raw.trim()) {
+      const parsed = Date.parse(raw)
+      if (Number.isFinite(parsed) && parsed > 0) return parsed
+    }
+    if (raw && typeof raw === 'object' && raw.seconds != null) {
+      const sec = Number(raw.seconds)
+      const nanos = Number(raw.nanos) || 0
+      if (Number.isFinite(sec) && sec > 0) {
+        return sec * 1000 + Math.floor(nanos / 1e6)
+      }
+    }
+  }
+  return 0
+}
+
+function isSummaryActive(sum) {
+  if (!sum || typeof sum !== 'object') return false
+  return (
+    sum.status === 'CASCADE_RUN_STATUS_RUNNING'
+    || sum.status === 'CASCADE_RUN_STATUS_WAITING_FOR_USER'
+    || (Array.isArray(sum.waitingSteps) && sum.waitingSteps.length > 0)
+  )
+}
+
+/**
+ * Deterministically rank two LanguageServer trajectory summary candidates for the same
+ * conversation ID across multiple running `language_server` / `agy --hub` instances.
+ * Returns > 0 when `a` is fresher/more authoritative than `b`, < 0 when `b` is better.
+ */
+export function compareTrajectoryCandidates(a, b) {
+  const sumA = a?.sum || a
+  const sumB = b?.sum || b
+  const activeA = isSummaryActive(sumA)
+  const activeB = isSummaryActive(sumB)
+  const stepsA = Number.isFinite(Number(sumA?.stepCount)) ? Number(sumA.stepCount) : -1
+  const stepsB = Number.isFinite(Number(sumB?.stepCount)) ? Number(sumB.stepCount) : -1
+  const modMsA = parseSummaryModifiedMs(sumA)
+  const modMsB = parseSummaryModifiedMs(sumB)
+
+  if (activeA !== activeB) {
+    if (activeA && (stepsA >= stepsB || modMsA >= modMsB)) return 1
+    if (activeB && (stepsB >= stepsA || modMsB >= modMsA)) return -1
+  }
+  if (modMsA > 0 && modMsB > 0 && modMsA !== modMsB) {
+    return modMsA - modMsB
+  }
+  if (stepsA !== stepsB) {
+    return stepsA - stepsB
+  }
+  const userIdxA = Number.isFinite(Number(sumA?.lastUserInputStepIndex)) ? Number(sumA.lastUserInputStepIndex) : -1
+  const userIdxB = Number.isFinite(Number(sumB?.lastUserInputStepIndex)) ? Number(sumB.lastUserInputStepIndex) : -1
+  if (userIdxA !== userIdxB) {
+    return userIdxA - userIdxB
+  }
+  if (activeA !== activeB) {
+    return activeA ? 1 : -1
+  }
+  const waitA = Array.isArray(sumA?.waitingSteps) ? sumA.waitingSteps.length : 0
+  const waitB = Array.isArray(sumB?.waitingSteps) ? sumB.waitingSteps.length : 0
+  if (waitA !== waitB) {
+    return waitA - waitB
+  }
+  const addrA = String(a?.hub?.address || '')
+  const addrB = String(b?.hub?.address || '')
+  return addrB.localeCompare(addrA)
+}
+
+async function fetchTrajectoryPlanModel(hub, cid, sum, fetchImpl) {
+  const stepKey = String(sum.lastUserInputStepIndex ?? 0)
+  const modelCacheKey = `${hub.address}:${cid}`
+  const cachedModelEntry = liveTrajectoryModelCache.get(modelCacheKey)
+  if (cachedModelEntry && cachedModelEntry.stepKey === stepKey && cachedModelEntry.planModel) {
+    return cachedModelEntry.planModel
+  }
+  if (sum.lastUserInputStepIndex === undefined) return ''
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 800)
+  timer.unref?.()
+  try {
+    const stepResp = await fetchImpl(
+      `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetCascadeTrajectorySteps`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-codeium-csrf-token': hub.csrfToken,
+        },
+        body: JSON.stringify({
+          cascadeId: cid,
+          stepOffset: Math.max(0, Number(sum.lastUserInputStepIndex) || 0),
+        }),
+        signal: controller.signal,
+      },
+    )
+    if (!stepResp?.ok) return ''
+    const stepData = await stepResp.json().catch(() => null)
+    const steps = Array.isArray(stepData?.steps) ? stepData.steps : []
+    for (let i = steps.length - 1; i >= 0; i -= 1) {
+      const pm = steps[i]?.userInput?.userConfig?.plannerConfig?.planModel
+        || steps[i]?.metadata?.generatorModel
+      if (pm) {
+        const foundModel = String(pm).trim()
+        liveTrajectoryModelCache.set(modelCacheKey, { stepKey, planModel: foundModel })
+        if (liveTrajectoryModelCache.size > 300) {
+          const oldest = liveTrajectoryModelCache.keys().next().value
+          liveTrajectoryModelCache.delete(oldest)
+        }
+        return foundModel
+      }
+    }
+  } catch {
+    // ignore step model lookup failure
+  } finally {
+    clearTimeout(timer)
+  }
+  return ''
+}
+
 async function loadLiveTrajectorySummaries({
   minFreshAt = 0,
   execImpl = execFileAsync,
@@ -1694,10 +1822,11 @@ async function loadLiveTrajectorySummaries({
   if (typeof fetchImpl !== 'function') return map
   try {
     const hubs = await discoverAntigravityHubInstances({ execImpl })
+    const bestByCid = new Map()
     await Promise.all(
       hubs.map(async hub => {
         const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), 900)
+        const timer = setTimeout(() => controller.abort(), 1400)
         timer.unref?.()
         try {
           const resp = await fetchImpl(
@@ -1717,50 +1846,11 @@ async function loadLiveTrajectorySummaries({
           const summaries = data?.trajectorySummaries
           if (!summaries || typeof summaries !== 'object') return
           for (const [cid, sum] of Object.entries(summaries)) {
-            if (cid && sum && typeof sum === 'object') {
-              const stepKey = String(sum.lastUserInputStepIndex ?? 0)
-              const cachedModelEntry = liveTrajectoryModelCache.get(cid)
-              if (cachedModelEntry && cachedModelEntry.stepKey === stepKey && cachedModelEntry.planModel) {
-                sum.planModel = cachedModelEntry.planModel
-              } else if (sum.lastUserInputStepIndex !== undefined) {
-                try {
-                  const stepResp = await fetchImpl(
-                    `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetCascadeTrajectorySteps`,
-                    {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'x-codeium-csrf-token': hub.csrfToken,
-                      },
-                      body: JSON.stringify({
-                        cascadeId: cid,
-                        stepOffset: Math.max(0, Number(sum.lastUserInputStepIndex) || 0),
-                      }),
-                      signal: controller.signal,
-                    },
-                  )
-                  if (stepResp?.ok) {
-                    const stepData = await stepResp.json().catch(() => null)
-                    const steps = Array.isArray(stepData?.steps) ? stepData.steps : []
-                    let foundModel = ''
-                    for (let i = steps.length - 1; i >= 0; i -= 1) {
-                      const pm = steps[i]?.userInput?.userConfig?.plannerConfig?.planModel
-                        || steps[i]?.metadata?.generatorModel
-                      if (pm) {
-                        foundModel = String(pm).trim()
-                        break
-                      }
-                    }
-                    if (foundModel) {
-                      sum.planModel = foundModel
-                      liveTrajectoryModelCache.set(cid, { stepKey, planModel: foundModel })
-                    }
-                  }
-                } catch {
-                  // ignore step model lookup failure
-                }
-              }
-              map.set(cid, sum)
+            if (!cid || !sum || typeof sum !== 'object') continue
+            const candidate = { hub, sum }
+            const existing = bestByCid.get(cid)
+            if (!existing || compareTrajectoryCandidates(candidate, existing) > 0) {
+              bestByCid.set(cid, candidate)
             }
           }
         } catch {
@@ -1770,6 +1860,21 @@ async function loadLiveTrajectorySummaries({
         }
       }),
     )
+
+    const modelLookups = []
+    for (const [cid, { hub, sum }] of bestByCid.entries()) {
+      map.set(cid, sum)
+      if (sum.lastUserInputStepIndex !== undefined) {
+        modelLookups.push(
+          fetchTrajectoryPlanModel(hub, cid, sum, fetchImpl).then(foundModel => {
+            if (foundModel) sum.planModel = foundModel
+          }),
+        )
+      }
+    }
+    if (modelLookups.length > 0) {
+      await Promise.all(modelLookups)
+    }
   } catch {
     // ignore discovery error
   }
@@ -2161,9 +2266,13 @@ async function probeHubsForTrajectory(hubs, rawConvId, fetchImpl) {
         ? data.trajectorySummaries
         : {}
       const trajectoryIds = Object.keys(summaries)
+      const targetSum = rawConvId && summaries[rawConvId] && typeof summaries[rawConvId] === 'object'
+        ? summaries[rawConvId]
+        : null
       probed.push({
         ...hub,
-        hasTargetTrajectory: Boolean(rawConvId && summaries[rawConvId]),
+        hasTargetTrajectory: Boolean(targetSum),
+        targetSummary: targetSum,
         trajectoryIds,
       })
     } catch {
@@ -2171,9 +2280,16 @@ async function probeHubsForTrajectory(hubs, rawConvId, fetchImpl) {
     }
   }
   if (probed.length === 0) {
-    return hubs.map(h => ({ ...h, hasTargetTrajectory: true, trajectoryIds: [] }))
+    return hubs.map(h => ({ ...h, hasTargetTrajectory: true, targetSummary: null, trajectoryIds: [] }))
   }
-  probed.sort((a, b) => Number(b.hasTargetTrajectory) - Number(a.hasTargetTrajectory))
+  probed.sort((a, b) => {
+    const hasDiff = Number(b.hasTargetTrajectory) - Number(a.hasTargetTrajectory)
+    if (hasDiff !== 0) return hasDiff
+    if (a.targetSummary && b.targetSummary) {
+      return compareTrajectoryCandidates({ hub: b, sum: b.targetSummary }, { hub: a, sum: a.targetSummary })
+    }
+    return 0
+  })
   return probed
 }
 
@@ -2207,9 +2323,13 @@ export async function executeAntigravityIdeAction(action, {
   if (type === 'approve' || type === 'deny') {
     const allow = type === 'approve'
     let reachedAnyLsHub = false
+    let sawConversationWithoutWaiting = false
     if (typeof fetchImpl === 'function') {
       try {
-        const hubs = await discoverAntigravityHubInstances({ execImpl, preferredCwd })
+        const rawHubs = await discoverAntigravityHubInstances({ execImpl, preferredCwd })
+        const hubs = rawConvId && rawHubs.length > 1
+          ? await probeHubsForTrajectory(rawHubs, rawConvId, fetchImpl)
+          : rawHubs
         for (const hub of hubs) {
           try {
             const sumResp = await fetchImpl(
@@ -2285,15 +2405,8 @@ export async function executeAntigravityIdeAction(action, {
             }
 
             if (hasConversationOnHub && !waitingEntry) {
-              cachedLiveSummariesAt = 0
-              return {
-                ok: true,
-                engine: 'connect-rpc-noop',
-                alreadySettled: true,
-                message: allow
-                  ? '✅ 该审批已在电脑端处理完毕，无需重复提交'
-                  : 'ℹ️ 该步骤已在电脑端执行完毕，无需拒绝',
-              }
+              sawConversationWithoutWaiting = true
+              continue
             }
 
             const stepIndex =
@@ -2432,13 +2545,15 @@ export async function executeAntigravityIdeAction(action, {
             // Try next hub instance
           }
         }
-        if (reachedAnyLsHub) {
+        if (sawConversationWithoutWaiting || reachedAnyLsHub) {
           cachedLiveSummariesAt = 0
           return {
             ok: true,
             engine: 'connect-rpc-noop',
             alreadySettled: true,
-            message: '✅ 该审批已在电脑端处理完毕，无需重复提交',
+            message: allow
+              ? '✅ 该审批已在电脑端处理完毕，无需重复提交'
+              : 'ℹ️ 该步骤已在电脑端执行完毕，无需拒绝',
           }
         }
       } catch {
@@ -2514,7 +2629,10 @@ export async function executeAntigravityIdeAction(action, {
 
   if (type === 'stop') {
     if (rawConvId && typeof fetchImpl === 'function') {
-      const hubs = await discoverAntigravityHubInstances({ execImpl, preferredCwd })
+      const rawHubs = await discoverAntigravityHubInstances({ execImpl, preferredCwd })
+      const hubs = rawHubs.length > 1
+        ? await probeHubsForTrajectory(rawHubs, rawConvId, fetchImpl)
+        : rawHubs
       for (const hub of hubs) {
         try {
           const resp = await fetchImpl(

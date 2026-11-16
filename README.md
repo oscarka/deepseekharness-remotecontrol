@@ -57,7 +57,7 @@ When you kick off a long refactoring, test suite, or deployment in **DeepSeek Ha
 - **No visibility on the go**: You want to check whether the task finished, hold-to-talk a quick voice instruction, attach a phone screenshot, or hit emergency stop while away from your desk.
 - **Multiple computers**: You have both an office Mac and home workstations running tasks and want one unified mobile view.
 
-**DSH Remote Control** puts all of your computers' AI coding sessions into a clean mobile web app (with **WeChat-style Hold-to-Talk voice input + smart punctuation**, iOS 16.4+ Home Screen lock-screen push notifications, and automatic English/Chinese UI detection).
+**DSH Remote Control** puts all of your computers' AI coding sessions into a clean mobile web app (with **WeChat-style Hold-to-Talk voice input + smart punctuation**, **1-tap `🔊 Listen` algorithmic reply playback (`⚡ Summary` / `📖 Full` + seamless mid-stream speed control)**, iOS 16.4+ Home Screen lock-screen push notifications, and automatic English/Chinese UI detection).
 
 ---
 
@@ -197,6 +197,15 @@ The background daemon automatically discovers local sessions across all 6 suppor
 
 <a id="whats-new"></a>
 ## 📅 What's New (Recent Releases)
+
+<details>
+<summary><strong><code>2026-11-16 · Latest</code> — 1-Tap Reply Voice Playback (<code>🔊 Listen</code>), Cloud Run Stream Hardening &amp; Multi-Hub Sync</strong></summary>
+
+- **Zero-Config Algorithmic Reply Voice Playback (`🔊 Listen`)**: Added a 1-tap **`🔊 Listen`** pill right beside **`📋 Copy Reply`** on every assistant message. Powered by a `< 5ms` zero-LLM, zero-dictionary pure-algorithmic Markdown-to-speech pipeline (`speech.js`) that strips code blocks, tables, file paths, commit hashes, and env vars while normalizing metrics, rates, and versions; includes **`⚡ Summary`** (TextRank extractive briefing) vs **`📖 Full`** denoised toggle, continuous single-voice bilingual reading, automatic mic-conflict stop when tapping `🎤`, and **in-place mid-sentence `1x / 1.25x / 1.5x` speed switching** (`onboundary` cursor + elapsed-time fallback, never restarting from word zero).
+- **Cloud Run Tunnel Abort Resilience, Multi-LanguageServer Arbitration & Lazy Video Preload**: Propagated client-disconnect `AbortController` signals across `/fs/list|read|stream` and `/api/fs-tunnel` so aborted mobile requests immediately release tunnel slots; added deterministic `lastModifiedTime` trajectory ranking across multiple concurrent Antigravity `language_server` / `agy --hub` instances; switched inline chat `<video>` cards to `preload="none"` to prevent multi-video bandwidth contention; and tuned `deploy-cloudrun.sh` (`--memory 1Gi --concurrency 200 --cpu-boost`).
+- **Collapsible Release History & CI Publish Serialization**: Converted README release history into compact 1-line `<details>` drawers and added GitHub Actions `concurrency` + npm registry conflict guards across `publish-npm.yml` and `docker-publish.yml`.
+
+</details>
 
 <details>
 <summary><strong><code>2026-11-15 · v0.7.3</code> — Official Marketplace Listing &amp; OIDC Provenance Publishing</strong></summary>
