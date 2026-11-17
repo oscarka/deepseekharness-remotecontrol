@@ -430,6 +430,8 @@ const EXACT_ZH_TO_EN = {
   '选择新建对话使用的 AI 模型': 'Select AI Model for New Conversation',
   '⬇️ 保存/分享视频': '⬇️ Save / Share Video',
   '⬇️ 保存/分享文件': '⬇️ Save / Share File',
+  '⬇️ 保存图片': '⬇️ Save Image',
+  '📥 松开手指即可保存或分享图片': '📥 Release finger to save or share image',
   '🌐 交互预览': '🌐 Live Preview',
   '⛶ 全屏体验': '⛶ Fullscreen',
   '🌐 预览': '🌐 Preview',

@@ -1053,10 +1053,19 @@ function renderInlineMarkdown(rawLine) {
 		return stash(`<span class="md-inline-img-card md-local-img-pending" data-local-img-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🖼️ ${cleanAlt || esc(baseName)} · 正在从电脑加载图片…（点此直接查看）</span></span>`);
 	});
 	safe = safe.replace(/\[((?:[^\[\]]|\[[^\]]*\])+)\]\(((?:file:\/\/\/?|\/Users\/|\/home\/|(?!https?:\/\/|mailto:|javascript:)[a-zA-Z0-9_.\-/~]+\.[a-zA-Z0-9]{1,8}(?:#L\d+(?:-L?\d+)?)?)[^)\n]*)\)/g, (_m, rawLabel, rawUrl) => {
-		const cleanLabel = String(rawLabel || "").replace(/^`+|`+$/g, "").trim();
+		let cleanLabel = String(rawLabel || "").replace(/^`+|`+$/g, "").trim();
 		const lineAnchorMatch = /#(L\d+(?:-L?\d+)?)$/i.exec(rawUrl);
 		const lineSuffix = lineAnchorMatch ? ` (${lineAnchorMatch[1]})` : "";
 		const cleanPath = String(rawUrl || "").replace(/^file:\/\//i, "").replace(/#L\d+(?:-L?\d+)?$/i, "").trim();
+		const baseName = cleanPath.split("/").filter(Boolean).pop() || "";
+		const stem = baseName.replace(/\.[a-z0-9]+$/i, "");
+		const dupMatch = /^([^:：]+)[:：]\s*(.+)$/.exec(cleanLabel);
+		if (dupMatch) {
+			const left = dupMatch[1].trim();
+			const right = dupMatch[2].trim();
+			const rightStem = right.replace(/\.[a-z0-9]+$/i, "");
+			if (left.toLowerCase() === rightStem.toLowerCase() || left.toLowerCase() === stem.toLowerCase() || left.toLowerCase() === baseName.toLowerCase() || /^(?:artifact|交付文档|walkthrough|implementation plan|task list)$/i.test(left)) cleanLabel = right;
+		}
 		const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, "%27");
 		const isWalkthrough = /walkthrough\.md$/i.test(cleanPath) || /^walkthrough$/i.test(cleanLabel);
 		const isPlan = /implementation_plan\.md$/i.test(cleanPath);
@@ -1064,14 +1073,15 @@ function renderInlineMarkdown(rawLine) {
 		const isVideo = /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i.test(cleanPath);
 		const isImg = /\.(png|jpe?g|webp|gif|svg|bmp|ico|avif|heic|heif)$/i.test(cleanPath);
 		const icon = isWalkthrough ? "📋" : isPlan ? "🗺️" : isHtml ? "🌐" : isVideo ? "🎬" : isImg ? "🖼️" : /\.blend$/i.test(cleanPath) ? "🧊" : "📄";
-		return stash(`<button type="button" class="md-file-chip${isWalkthrough || isPlan || isHtml ? " md-artifact-chip" : ""}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">${icon} ${cleanLabel}${lineSuffix}</button>`);
+		return stash(`<button type="button" class="md-file-chip${isWalkthrough || isPlan || isHtml ? " md-artifact-chip" : ""}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}"><span class="md-file-chip-icon">${icon}</span><span class="md-file-chip-label">${cleanLabel}${lineSuffix}</span></button>`);
 	});
+	safe = safe.replace(/(^|\s)(?:📋|📄|🗺️)\s*(?=(?:\*\*|__)?\u0000PH\d+\u0000)/g, "$1");
 	safe = safe.replace(/`([^`\n]+)`/g, (_m, code) => {
 		const trimmedCode = String(code || "").trim();
 		if (/^(?:file:\/\/\/?[^\s`]+|\/Users\/[^\s`]+|\/home\/[^\s`]+|~\/[^\s`]+|[a-zA-Z0-9_.\-]+(?:\/[a-zA-Z0-9_.\-]+)*)\.(?:html?|xhtml)$/i.test(trimmedCode)) {
 			const cleanPath = trimmedCode.replace(/^file:\/\//i, "");
 			const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, "%27");
-			return stash(`<button type="button" class="md-file-chip md-artifact-chip" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">🌐 ${code}</button>`);
+			return stash(`<button type="button" class="md-file-chip md-artifact-chip" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}"><span class="md-file-chip-icon">🌐</span><span class="md-file-chip-label">${code}</span></button>`);
 		}
 		return stash(`<code>${code}</code>`);
 	});
@@ -1216,8 +1226,29 @@ function renderMarkdown(rawText) {
 	if (cursor < text.length) chunks.push(renderMarkdownBlocks(text.slice(cursor)));
 	return chunks.join("");
 }
-function formatAssistantText(rawText) {
-	return renderMarkdown(rawText);
+function stripRedundantInjectedArtifactBlocks(rawText, artifacts = []) {
+	const text = String(rawText || "");
+	if (!text) return "";
+	const list = Array.isArray(artifacts) ? artifacts : [];
+	const cardPaths = new Set(list.map((a) => String(a?.path || "").replace(/^file:\/\//i, "").trim()).filter(Boolean));
+	const cardNames = new Set(list.map((a) => String(a?.name || "").trim().toLowerCase()).filter(Boolean));
+	const paragraphs = text.split(/\n{2,}/);
+	const injectedPattern = /^(?:📋\s*)?(?:\*\*)?\[[^\]]+\]\(file:\/\/([^)\n]+)\)(?:\*\*)?(?:\r?\n>\s*[^\r\n]+)*$/;
+	return paragraphs.filter((para, idx) => {
+		const trimmed = para.trim();
+		const m = injectedPattern.exec(trimmed);
+		if (!m) return true;
+		const targetPath = String(m[1] || "").replace(/^file:\/\//i, "").trim();
+		const baseName = (targetPath.split("/").filter(Boolean).pop() || "").toLowerCase();
+		if (cardPaths.has(targetPath) || baseName && cardNames.has(baseName)) return false;
+		if (baseName) {
+			if (paragraphs.some((other, oIdx) => oIdx !== idx && other.toLowerCase().includes(baseName))) return false;
+		}
+		return true;
+	}).join("\n\n").trim();
+}
+function formatAssistantText(rawText, artifacts = []) {
+	return renderMarkdown(stripRedundantInjectedArtifactBlocks(rawText, artifacts));
 }
 // hub/web/src/utils/html-sandbox.js
 function isHtmlFileName(nameOrPath = "") {
@@ -3079,6 +3110,8 @@ var EXACT_ZH_TO_EN = {
 	"选择新建对话使用的 AI 模型": "Select AI Model for New Conversation",
 	"⬇️ 保存/分享视频": "⬇️ Save / Share Video",
 	"⬇️ 保存/分享文件": "⬇️ Save / Share File",
+	"⬇️ 保存图片": "⬇️ Save Image",
+	"📥 松开手指即可保存或分享图片": "📥 Release finger to save or share image",
 	"🌐 交互预览": "🌐 Live Preview",
 	"⛶ 全屏体验": "⛶ Fullscreen",
 	"🌐 预览": "🌐 Preview",
@@ -6096,6 +6129,12 @@ function initHubController() {
 				} else tools = `<div class="tool-chips" style="margin-bottom:8px;">${toolItemsHtml}</div>`;
 			}
 			const msgArtifacts = Array.isArray(m.artifacts) ? m.artifacts.filter((a) => a && a.path) : [];
+			const resolveArtifactBadgeTitle = (art, isHtmlArt) => {
+				const rawT = String(art?.title || "").trim();
+				const nameStem = String(art?.name || "").replace(/\.[a-z0-9]+$/i, "").trim();
+				if (!rawT || rawT.toLowerCase() === nameStem.toLowerCase() || /^artifact$/i.test(rawT)) return art?.kind === "walkthrough" ? "Walkthrough" : isHtmlArt ? "HTML 网页" : "交付文档";
+				return rawT;
+			};
 			const artifactsCardHtml = msgArtifacts.length > 0 ? `
         <div class="agy-artifact-card-list">
           ${msgArtifacts.map((art) => {
@@ -6107,7 +6146,7 @@ function initHubController() {
                   <span class="agy-artifact-icon">${art.kind === "walkthrough" ? "📋" : art.kind === "plan" ? "🗺️" : art.kind === "task" ? "☑️" : isHtmlArt ? "🌐" : "📄"}</span>
                   <div class="agy-artifact-titles">
                     <div class="agy-artifact-title-row">
-                      <span class="agy-artifact-kind-pill">${esc(art.title || (art.kind === "walkthrough" ? "Walkthrough" : isHtmlArt ? "HTML 网页" : "Artifact"))}</span>
+                      <span class="agy-artifact-kind-pill">${esc(resolveArtifactBadgeTitle(art, isHtmlArt))}</span>
                       <span class="agy-artifact-name">${esc(art.name || "walkthrough.md")}</span>
                     </div>
                     ${art.summary ? `<div class="agy-artifact-summary">${esc(String(art.summary).replace(/\s+/g, " ").slice(0, 140))}</div>` : ""}
@@ -6122,7 +6161,8 @@ function initHubController() {
 			const cleanReplyText = m.text ? String(m.text).trim() : "";
 			if (cleanReplyText) lastRenderedAssistantTexts[msgIdx] = cleanReplyText;
 			const copyFooterHtml = cleanReplyText ? renderAssistantFooterHtml(s.id, msgIdx, cleanReplyText) : "";
-			const bodyHtml = cleanReplyText ? `<div class="md-body">${formatAssistantText(cleanReplyText)}</div>${copyFooterHtml}` : `<div style="font-size:12.5px;color:var(--muted);margin-top:4px;">⚙️ 正在思考与执行工具调用...</div>`;
+			const renderedMdHtml = cleanReplyText ? formatAssistantText(cleanReplyText, msgArtifacts) : "";
+			const bodyHtml = renderedMdHtml ? `<div class="md-body">${renderedMdHtml}</div>${copyFooterHtml}` : cleanReplyText && msgArtifacts.length > 0 ? `${copyFooterHtml}` : `<div style="font-size:12.5px;color:var(--muted);margin-top:4px;">⚙️ 正在思考与执行工具调用...</div>`;
 			return `<div class="bubble assistant">${thought}${tools}${bodyHtml}${artifactsCardHtml}</div>`;
 		}).join("");
 		const sessionArtifacts = Array.isArray(s.artifacts) ? s.artifacts.filter((a) => a && a.path) : [];
@@ -6135,10 +6175,13 @@ function initHubController() {
           ${sessionArtifacts.map((art) => {
 			const encArtPath = encodeURIComponent(art.path || "").replace(/'/g, "%27");
 			const isHtmlArt = isHtmlFileName(art.name || art.path || "");
+			const badgeIcon = art.kind === "walkthrough" ? "📋" : art.kind === "plan" ? "🗺️" : art.kind === "task" ? "☑️" : isHtmlArt ? "🌐" : "📄";
+			const rawT = String(art?.title || "").trim();
+			const nameStem = String(art?.name || "").replace(/\.[a-z0-9]+$/i, "").trim();
 			return `
             <div class="agy-file-row agy-artifact-row" style="cursor:pointer;" onclick="openChatFileLink('${encArtPath}')">
-              <span class="agy-artifact-row-icon">${art.kind === "walkthrough" ? "📋" : art.kind === "plan" ? "🗺️" : art.kind === "task" ? "☑️" : isHtmlArt ? "🌐" : "📄"}</span>
-              <span class="agy-artifact-kind-badge">${esc(art.title || (art.kind === "walkthrough" ? "Walkthrough" : isHtmlArt ? "HTML 网页" : "Artifact"))}</span>
+              <span class="agy-artifact-row-icon">${badgeIcon}</span>
+              <span class="agy-artifact-kind-badge">${esc(!rawT || rawT.toLowerCase() === nameStem.toLowerCase() || /^artifact$/i.test(rawT) ? art.kind === "walkthrough" ? "Walkthrough" : isHtmlArt ? "HTML 网页" : "交付文档" : rawT)}</span>
               <span class="agy-file-name" style="color:#f8fafc;font-weight:700;">${esc(art.name || "")}</span>
               <span class="agy-file-path" style="flex:1;">${esc(art.summary ? String(art.summary).replace(/\s+/g, " ").slice(0, 80) : art.name || "")}</span>
               <span class="agy-artifact-open-tag">${isHtmlArt ? "体验网页 ›" : "打开 ›"}</span>
@@ -6527,21 +6570,74 @@ function initHubController() {
 		if (composerSessionId === nextSessionId) return;
 		stopVoiceInput();
 		stopAssistantSpeech();
-		if (composerSessionId) persistComposerDraft(composerSessionId);
+		if (composerSessionId) {
+			persistComposerDraft(composerSessionId);
+			persistChatAttachmentsDraft(composerSessionId);
+		}
 		composerSessionId = nextSessionId || "";
 		input.value = readComposerDraft(composerSessionId);
 		input.style.height = "";
 		autoGrowComposer();
 		renderAttachmentStrip("chat");
-		if (String(input.value || "").trim().length > 0 && isWechatVoiceMode()) setWechatVoiceMode(false, false, false);
+		if ((String(input.value || "").trim().length > 0 || getAttachmentList("chat").length > 0) && isWechatVoiceMode()) setWechatVoiceMode(false, false, false);
 	}
 	const MAX_COMPOSER_ATTACHMENTS = 4;
-	const composerAttachments = {
-		chat: [],
-		newTask: []
-	};
-	function getAttachmentList(target = "chat") {
-		return target === "newTask" ? composerAttachments.newTask : composerAttachments.chat;
+	const chatAttachmentsBySession = /* @__PURE__ */ new Map();
+	const composerAttachments = { newTask: [] };
+	function composerAttachmentDraftKey(sessionId) {
+		return "dsh_attach_draft_v1_" + sessionId;
+	}
+	function resolveChatAttachmentSessionKey(explicitSessionId = "") {
+		return String(explicitSessionId || composerSessionId || activeSessionId || "_default");
+	}
+	function persistChatAttachmentsDraft(sessionId = "") {
+		const sid = resolveChatAttachmentSessionKey(sessionId);
+		if (!sid || sid === "_default") return;
+		const list = chatAttachmentsBySession.get(sid) || [];
+		try {
+			if (list.length > 0) {
+				const serializable = list.map((item) => ({
+					name: item.name || "screenshot.jpg",
+					mimeType: item.mimeType || "image/jpeg",
+					dataBase64: item.dataBase64 || "",
+					sizeBytes: Number(item.sizeBytes || 0)
+				}));
+				sessionStorage.setItem(composerAttachmentDraftKey(sid), JSON.stringify(serializable));
+			} else sessionStorage.removeItem(composerAttachmentDraftKey(sid));
+		} catch {}
+	}
+	function getAttachmentList(target = "chat", explicitSessionId = "") {
+		if (target === "newTask") return composerAttachments.newTask;
+		const sid = resolveChatAttachmentSessionKey(explicitSessionId);
+		if (!chatAttachmentsBySession.has(sid)) {
+			let restored = [];
+			if (sid !== "_default") try {
+				const raw = sessionStorage.getItem(composerAttachmentDraftKey(sid));
+				const parsed = raw ? JSON.parse(raw) : null;
+				if (Array.isArray(parsed)) restored = parsed.filter((item) => item && item.dataBase64).map((item) => {
+					const b64 = String(item.dataBase64 || "");
+					const mime = String(item.mimeType || "image/jpeg");
+					return {
+						name: item.name || "screenshot.jpg",
+						mimeType: mime,
+						dataBase64: b64,
+						sizeBytes: Number(item.sizeBytes || 0),
+						previewUrl: b64.startsWith("data:") ? b64 : `data:${mime};base64,${b64}`
+					};
+				});
+			} catch {
+				restored = [];
+			}
+			chatAttachmentsBySession.set(sid, restored);
+		}
+		return chatAttachmentsBySession.get(sid);
+	}
+	function clearChatAttachmentList(sessionId = "") {
+		const sid = resolveChatAttachmentSessionKey(sessionId);
+		chatAttachmentsBySession.set(sid, []);
+		try {
+			if (sid && sid !== "_default") sessionStorage.removeItem(composerAttachmentDraftKey(sid));
+		} catch {}
 	}
 	function triggerImagePicker(target = "chat") {
 		if (target === "chat") {
@@ -6589,6 +6685,7 @@ function initHubController() {
 	function removeComposerAttachment(target = "chat", index = 0) {
 		const list = getAttachmentList(target);
 		if (index >= 0 && index < list.length) list.splice(index, 1);
+		if (target === "chat") persistChatAttachmentsDraft();
 		renderAttachmentStrip(target);
 	}
 	async function addFilesToComposer(files, target = "chat") {
@@ -6616,6 +6713,7 @@ function initHubController() {
 		} catch (err) {
 			showToast("❌ 处理图片失败：" + (err?.message || err));
 		}
+		if (target === "chat") persistChatAttachmentsDraft();
 		renderAttachmentStrip(target);
 		if (addedCount > 0) showToast(`🖼️ 已添加 ${addedCount} 张截图（已自动优化至 ${formatBytes(totalSize)}）`);
 	}
@@ -6677,7 +6775,7 @@ function initHubController() {
 		else stopVoiceInput();
 		const input = document.getElementById("globalPromptInput");
 		const rawText = input ? input.value.trim() : "";
-		const pendingAttachments = composerAttachments.chat.slice();
+		const pendingAttachments = getAttachmentList("chat", activeSessionId).slice();
 		if (!rawText && pendingAttachments.length === 0 || !activeSessionId) return;
 		const found = findSessionGlobal(activeSessionId);
 		if (!found) return;
@@ -6690,7 +6788,8 @@ function initHubController() {
 		const text = rawText || "请查看我上传的截图并帮我分析处理。";
 		const optimisticText = pendingAttachments.length > 0 ? `${text}\n[🖼️ 已附带 ${pendingAttachments.length} 张截图]` : text;
 		if (input) input.value = "";
-		composerAttachments.chat = [];
+		clearChatAttachmentList(s.id);
+		if (composerSessionId && composerSessionId !== s.id) clearChatAttachmentList(composerSessionId);
 		renderAttachmentStrip("chat");
 		try {
 			localStorage.removeItem(composerDraftKey(composerSessionId || activeSessionId));
@@ -6754,9 +6853,11 @@ function initHubController() {
 				input.value = rawText;
 				autoGrowComposer();
 			}
-			if (pendingAttachments.length > 0 && composerAttachments.chat.length === 0) {
-				composerAttachments.chat = pendingAttachments;
-				renderAttachmentStrip("chat");
+			const curSessionList = getAttachmentList("chat", s.id);
+			if (pendingAttachments.length > 0 && curSessionList.length === 0) {
+				curSessionList.push(...pendingAttachments);
+				persistChatAttachmentsDraft(s.id);
+				if (activeSessionId === s.id) renderAttachmentStrip("chat");
 			}
 			return;
 		}
@@ -6783,9 +6884,11 @@ function initHubController() {
 								input.value = rawText;
 								autoGrowComposer();
 							}
-							if (pendingAttachments.length > 0 && composerAttachments.chat.length === 0) {
-								composerAttachments.chat = pendingAttachments;
-								renderAttachmentStrip("chat");
+							const curSessionList = getAttachmentList("chat", s.id);
+							if (pendingAttachments.length > 0 && curSessionList.length === 0) {
+								curSessionList.push(...pendingAttachments);
+								persistChatAttachmentsDraft(s.id);
+								if (activeSessionId === s.id) renderAttachmentStrip("chat");
 							}
 						}
 						scheduleFallbackStateSync();
@@ -7164,9 +7267,10 @@ function initHubController() {
                  ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl)}', '${esc(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
                </div>
              </div>` : kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-                 <img src="${imagePreviewSrc(preview, mt)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:52vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回目录重新点击文件加载';" />
-                 <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
-                   <span>${esc(formatBytes(preview.size))} · 长按图片可保存到相册</span>
+                 <img class="saveable-preview-img" src="${imagePreviewSrc(preview, mt)}" data-download-url="${esc(dlUrl || imagePreviewSrc(preview, mt))}" data-file-name="${esc(preview.name || "image.png")}" alt="${esc(preview.name)}" style="max-width:100%;max-height:52vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回目录重新点击文件加载';" />
+                 <div class="file-preview-meta-bar" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
+                   <span>${esc(formatBytes(preview.size))} · 长按或点按钮保存图片</span>
+                   <button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl || imagePreviewSrc(preview, mt))}', '${esc(preview.name || "image.png")}', this)">⬇️ 保存图片</button>
                    ${canToggleOrigImg ? `<button type="button" class="media-toolbar-pill" onclick="toggleOriginalPreviewImage('${esc(host.hostId)}', true)">${preview._origImage ? "⚡ 切回智能省流图" : "🔍 查看无损原图"}</button>` : ""}
                  </div>
                </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:32px 16px;background:#0f172a;color:#94a3b8;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
@@ -7728,11 +7832,11 @@ function initHubController() {
 					progState.received += u8.byteLength;
 				}
 			};
-			const res = await fetch(dlUrl, { headers: baseAuthHeaders });
+			const res = String(dlUrl || "").startsWith("data:") ? await fetch(dlUrl) : await fetch(dlUrl, { headers: baseAuthHeaders });
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			const firstCr = res.status === 206 ? parseContentRangeInfo(res.headers.get("content-range")) : null;
 			const totalBytes = firstCr?.total || Number(res.headers.get("content-length") || 0);
-			const mimeType = (res.headers.get("content-type") || "").split(";")[0].trim() || (/\.mp4$/i.test(safeName) ? "video/mp4" : /\.mov$/i.test(safeName) ? "video/quicktime" : /\.webm$/i.test(safeName) ? "video/webm" : "application/octet-stream");
+			const mimeType = (res.headers.get("content-type") || "").split(";")[0].trim() || (/\.png$/i.test(safeName) ? "image/png" : /\.(jpe?g)$/i.test(safeName) ? "image/jpeg" : /\.webp$/i.test(safeName) ? "image/webp" : /\.gif$/i.test(safeName) ? "image/gif" : /\.svg$/i.test(safeName) ? "image/svg+xml" : /\.mp4$/i.test(safeName) ? "video/mp4" : /\.mov$/i.test(safeName) ? "video/quicktime" : /\.webm$/i.test(safeName) ? "video/webm" : "application/octet-stream");
 			const allChunks = [];
 			const progState = {
 				received: 0,
@@ -7883,9 +7987,10 @@ function initHubController() {
                  ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl)}', '${esc(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
                </div>
              </div>` : kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-                 <img src="${imagePreviewSrc(preview, mt)}" alt="${esc(preview.name)}" style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回文件列表重新点击加载';" />
-                 <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
-                   <span>${esc(formatBytes(preview.size))} · 长按图片可保存到相册</span>
+                 <img class="saveable-preview-img" src="${imagePreviewSrc(preview, mt)}" data-download-url="${esc(dlUrl || imagePreviewSrc(preview, mt))}" data-file-name="${esc(preview.name || "image.png")}" alt="${esc(preview.name)}" style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回文件列表重新点击加载';" />
+                 <div class="file-preview-meta-bar" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
+                   <span>${esc(formatBytes(preview.size))} · 长按或点按钮保存图片</span>
+                   <button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl || imagePreviewSrc(preview, mt))}', '${esc(preview.name || "image.png")}', this)">⬇️ 保存图片</button>
                    ${canToggleOrigImg ? `<button type="button" class="media-toolbar-pill" onclick="toggleOriginalPreviewImage('${esc(host.hostId)}', false)">${preview._origImage ? "⚡ 切回智能省流图" : "🔍 查看无损原图"}</button>` : ""}
                  </div>
                </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:36px 16px;background:#0f172a;color:#94a3b8;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
@@ -9737,11 +9842,18 @@ function initHubController() {
 				}
 				return false;
 			};
+			let decided = false;
 			panel.addEventListener("touchstart", (event) => {
 				if (event.touches.length !== 1) return;
+				if (event.target && typeof event.target.closest === "function" && event.target.closest("img, video, iframe, pre, code, .file-preview-body")) {
+					tracking = false;
+					decided = false;
+					return;
+				}
 				if (panel.scrollTop > 0 || hasScrolledInner(event.target)) return;
 				const touch = event.touches[0];
 				tracking = true;
+				decided = false;
 				startX = touch.clientX;
 				startY = touch.clientY;
 				lastX = startX;
@@ -9755,19 +9867,26 @@ function initHubController() {
 				const dx = touch.clientX - startX;
 				lastX = touch.clientX;
 				lastY = touch.clientY;
-				if (dy <= 0) return;
-				if (Math.abs(dx) > dy * 1.2) {
-					tracking = false;
-					return;
+				if (!decided) {
+					if (Math.abs(dy) < 14 && Math.abs(dx) < 14) return;
+					if (dy <= 0 || Math.abs(dx) > dy * 1.1) {
+						tracking = false;
+						return;
+					}
+					decided = true;
+					panel.style.transition = "none";
+					panel.style.willChange = "transform";
 				}
+				if (dy <= 0) return;
 				if (event.cancelable) event.preventDefault();
-				panel.style.transition = "none";
-				panel.style.willChange = "transform";
 				panel.style.transform = `translateY(${dy}px)`;
 			}, { passive: false });
 			const finishSwipe = () => {
 				if (!tracking) return;
+				const wasDecided = decided;
 				tracking = false;
+				decided = false;
+				if (!wasDecided) return;
 				const dismiss = shouldDismissVerticalSwipe({
 					dy: Math.max(0, lastY - startY),
 					dx: lastX - startX,
@@ -9790,6 +9909,125 @@ function initHubController() {
 			panel.addEventListener("touchcancel", finishSwipe);
 		});
 	}
+	function setupStandaloneImageLongPressSave() {
+		if (typeof document === "undefined" || !document.addEventListener) return;
+		let holdImg = null;
+		let holdStartX = 0;
+		let holdStartY = 0;
+		let holdReady = false;
+		let holdTimer = null;
+		let readyFile = null;
+		let holdFileName = "image.png";
+		const inferImgMime = (name) => /\.jpe?g$/i.test(name) ? "image/jpeg" : /\.webp$/i.test(name) ? "image/webp" : /\.gif$/i.test(name) ? "image/gif" : "image/png";
+		const buildCanvasFallbackFile = (imgEl, safeName) => new Promise((resolve) => {
+			try {
+				const w = imgEl.naturalWidth || imgEl.width || 0;
+				const h = imgEl.naturalHeight || imgEl.height || 0;
+				if (!w || !h) return resolve(null);
+				const canvas = document.createElement("canvas");
+				canvas.width = w;
+				canvas.height = h;
+				const ctx = canvas.getContext("2d");
+				if (!ctx) return resolve(null);
+				ctx.drawImage(imgEl, 0, 0, w, h);
+				const mime = inferImgMime(safeName);
+				canvas.toBlob((blob) => {
+					canvas.width = 0;
+					canvas.height = 0;
+					if (!blob) return resolve(null);
+					resolve(new File([blob], safeName, { type: mime }));
+				}, mime, .95);
+			} catch {
+				resolve(null);
+			}
+		});
+		const prefetchShareableImageFile = async (imgEl, safeName) => {
+			const rawUrl = imgEl.getAttribute("data-download-url") || imgEl.currentSrc || imgEl.src || "";
+			if (!rawUrl) return null;
+			try {
+				const token = getToken();
+				const resp = rawUrl.startsWith("data:") ? await fetch(rawUrl) : await fetch(rawUrl, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+				if (resp.ok) {
+					const blob = await resp.blob();
+					const mime = blob.type && blob.type.startsWith("image/") ? blob.type : inferImgMime(safeName);
+					return new File([blob], safeName, { type: mime });
+				}
+			} catch {}
+			return buildCanvasFallbackFile(imgEl, safeName);
+		};
+		const cleanupHold = () => {
+			if (holdTimer) {
+				clearTimeout(holdTimer);
+				holdTimer = null;
+			}
+			if (holdImg) holdImg.style.transform = "";
+			holdImg = null;
+			holdReady = false;
+			readyFile = null;
+		};
+		document.addEventListener("touchstart", (event) => {
+			if (!isStandaloneApp() || event.touches.length !== 1) return;
+			if (typeof navigator === "undefined" || typeof navigator.share !== "function") return;
+			const target = event.target;
+			const img = target && typeof target.closest === "function" ? target.closest("img.saveable-preview-img, img.md-inline-img") : null;
+			if (!img) return;
+			cleanupHold();
+			const t = event.touches[0];
+			holdImg = img;
+			holdStartX = t.clientX;
+			holdStartY = t.clientY;
+			const rawName = img.getAttribute("data-file-name") || img.getAttribute("alt") || (img.src && !img.src.startsWith("data:") ? img.src.split("?")[0].split("/").pop() : "") || "image.png";
+			holdFileName = /\.(png|jpe?g|webp|gif)$/i.test(rawName) ? rawName : `${rawName}.png`;
+			prefetchShareableImageFile(img, holdFileName).then((file) => {
+				if (holdImg === img && file) readyFile = file;
+			});
+			holdTimer = setTimeout(() => {
+				holdTimer = null;
+				if (!holdImg) return;
+				holdReady = true;
+				holdImg.style.transition = "transform 0.14s ease";
+				holdImg.style.transform = "scale(0.975)";
+				try {
+					navigator.vibrate?.(12);
+				} catch {}
+				showToast("📥 松开手指即可保存或分享图片");
+			}, 450);
+		}, { passive: true });
+		document.addEventListener("touchmove", (event) => {
+			if (!holdImg) return;
+			if (event.touches.length !== 1) {
+				cleanupHold();
+				return;
+			}
+			const t = event.touches[0];
+			if (Math.hypot(t.clientX - holdStartX, t.clientY - holdStartY) > 12) cleanupHold();
+		}, { passive: true });
+		document.addEventListener("touchend", (event) => {
+			if (!holdImg) return;
+			const wasReady = holdReady;
+			const fileToShare = readyFile;
+			const nameToShare = holdFileName;
+			const targetImg = holdImg;
+			cleanupHold();
+			if (!wasReady) return;
+			if (event.cancelable) try {
+				event.preventDefault();
+			} catch {}
+			const openShare = async (f) => {
+				if (!f) return;
+				if (typeof navigator.canShare === "function" && !navigator.canShare({ files: [f] })) return;
+				try {
+					await navigator.share({
+						files: [f],
+						title: nameToShare
+					});
+				} catch {}
+			};
+			if (fileToShare) openShare(fileToShare);
+			else buildCanvasFallbackFile(targetImg, nameToShare).then(openShare);
+		}, { passive: false });
+		document.addEventListener("touchcancel", cleanupHold, { passive: true });
+	}
 	function maybeShowSwipeHint() {
 		if (!("ontouchstart" in window)) return;
 		try {
@@ -9803,6 +10041,7 @@ function initHubController() {
 	function setupOverlayGestures() {
 		setupChatSwipeBack();
 		setupSheetSwipeDismiss();
+		setupStandaloneImageLongPressSave();
 	}
 	function setupInstallHint() {
 		const el = document.getElementById("installHint");
@@ -10346,6 +10585,8 @@ function initHubController() {
 		shouldSendOnEnter,
 		onComposerKeydown,
 		switchComposerSession,
+		getAttachmentList,
+		clearChatAttachmentList,
 		triggerImagePicker,
 		onChatImageSelected,
 		onComposerPaste,

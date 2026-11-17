@@ -199,6 +199,15 @@ docker run -d --name dsh-hub \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-17 · v0.7.6</code> — 交付文档胶囊去重防截断、手机长按存图修复 &amp; 待发图片按会话隔离</strong></summary>
+
+- **交付文档胶囊去重与长文件名省略号修复（`v0.7.6`）**：修复 Antigravity IDE 自定义 `.md` 报告在对话中途重复注入 `📋 **[stem: stem.md]**` + 灰色引用块摘要、孤立 `📋` 断行以及长胶囊文字半字硬截断的问题（[`antigravity-ide.js`](dsh-feishu/lib/antigravity-ide.js) / [`markdown.ts`](hub/web/src/utils/markdown.ts) / [`app.css`](hub/web/src/styles/app.css)），同时前端内置兼容清洗（`stripRedundantInjectedArtifactBlocks`），即使远端旧守护进程尚未重启也能自动合并干净。
+- **手机端长按保存图片与防误选「`📎 引用`」修复（`v0.7.6`）**：修复抽屉下滑手势零死区抢占长按事件及 iOS 桌面主屏幕图标模式（Standalone PWA）屏蔽原生图片菜单并误选右上角 **`📎 引用`** 的问题（[`controller.js`](hub/web/src/controller.js) / [`app.css`](hub/web/src/styles/app.css)）——抽屉手势避让 `img` / `.file-preview-body` 并加 `14px` 死区，主屏幕模式支持长按 `450ms` 松手直接弹出系统原生保存/分享面板（同时提供一键 **`⬇️ 保存图片`** 按钮），并为面包屑与操作按钮加上 `user-select: none` 彻底杜绝误选文字。
+- **未发送图片附件按会话独立隔离（`v0.7.6`）**：将聊天待发送图片从全局共享数组升级为按 `sessionId` 独立映射 + `sessionStorage` 持久化草稿（[`controller.js`](hub/web/src/controller.js)），与文字草稿完全对齐——在 A 会话上传图片未发送时切换到 B 会话绝不串台，切回 A 会话时图片与文字草稿原样保留。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-17 · v0.7.5</code> — 手机原生语音识别精度跃升 &amp; 双端推送（iPhone + 飞书）高信噪比提纯</strong></summary>
 
 - **手机原生语音识别防截断与同音改字去重（`v0.7.5`）**：在零外部 API Key、零本地模型体积的前提下彻底修复手机系统语音识别（`SpeechRecognition` / `webkitSpeechRecognition`）的 4 项准度瓶颈（[`useVoiceInput.ts`](hub/web/src/hooks/useVoiceInput.ts) / [`controller.js`](hub/web/src/controller.js)）——移除松手后 `380ms` 强行掐断逻辑，改为监听到系统整句上下文同音字修正定稿（`isFinal: true`）或 `onend` 后 `60ms` 极速发送（仅保留 `1200ms` 防挂起兜底）；为 `mergeSpeechResults` 增加最长公共子序列对齐与多候选置信度择优（`maxAlternatives = 3`），兼容系统回溯修正前文同音字而不出现「错句 + 正句」重复拼接；将换气断流续接延迟从 `150–180ms` 压至 `25ms` 消除吞首字盲区；补齐连续听写直接点「发送」（`flushVoiceInputBeforeSend`）与连按两条语音时的尾音/标点自动收尾保护。

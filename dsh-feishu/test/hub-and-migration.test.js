@@ -5804,6 +5804,7 @@ test('v0.6.8: sandboxed mobile HTML live preview, relative mt asset rewriting, C
     .replace(/: 'th' \| 'td'/g, '')
     .replace(/: number/g, '')
     .replace(/: string/g, '')
+    .replace(/: any/g, '')
     .replace(/olItem!\[2\]/g, 'olItem[2]')
   const escFn = s =>
     String(s ?? '')

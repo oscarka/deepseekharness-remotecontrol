@@ -186,7 +186,7 @@ export function buildArtifactDescriptor(filePath, rawMeta = null) {
       ? 'Implementation Plan'
       : artifactType === 'task'
         ? 'Task List'
-        : name.replace(/\.(md|markdown)$/i, '')
+        : '交付文档'
   const summary = String(meta?.Summary || meta?.summary || '').replace(/\s+/g, ' ').trim().slice(0, 320)
   const requestFeedback = Boolean(meta?.RequestFeedback ?? meta?.requestFeedback)
   const userFacing = meta?.UserFacing !== undefined
@@ -684,20 +684,7 @@ export function parseAntigravityTranscript(jsonlText, {
         continue
       }
 
-      let asstText = cleanForChat(redactText(rawContent), 48000)
-      if (Array.isArray(artifacts) && artifacts.length > 0) {
-        const missingLinks = artifacts
-          .filter(art => art?.path && !asstText.includes(art.path) && !asstText.includes(art.name))
-          .map(art => {
-            const summaryLine = art.summary ? `\n> ${art.summary.replace(/\r?\n/g, ' ').slice(0, 180)}` : ''
-            return `📋 **[${art.title || 'Walkthrough'}: ${art.name}](file://${art.path})**${summaryLine}`
-          })
-        if (missingLinks.length > 0) {
-          asstText = asstText
-            ? `${asstText}\n\n${missingLinks.join('\n\n')}`
-            : missingLinks.join('\n\n')
-        }
-      }
+      const asstText = cleanForChat(redactText(rawContent), 48000)
       const thinkingText = cleanForChat(redactText(rawThinking), 8000)
       if (asstText) {
         lastOutput = asstText.slice(0, 600)
@@ -774,7 +761,7 @@ export function parseAntigravityTranscript(jsonlText, {
         index: transcript.length,
         role: 'assistant',
         text: asstText || toolDisplayLine,
-        isToolStepOnly: !asstText && tools.length > 0 && (!artifacts || artifacts.length === 0),
+        isToolStepOnly: !asstText && tools.length > 0,
         waitingForInput: isWaitingApproval,
         thinking: thinkingText,
         tools,
@@ -832,12 +819,7 @@ export function parseAntigravityTranscript(jsonlText, {
               if (!curArts.some(a => a.path === merged.path)) {
                 prevAsst.artifacts = [...curArts, merged]
               }
-              if (!String(prevAsst.text || '').includes(merged.path) && !String(prevAsst.text || '').includes(merged.name)) {
-                const summaryLine = merged.summary ? `\n> ${merged.summary.replace(/\r?\n/g, ' ').slice(0, 180)}` : ''
-                const linkLine = `📋 **[${merged.title || 'Walkthrough'}: ${merged.name}](file://${merged.path})**${summaryLine}`
-                prevAsst.text = prevAsst.isToolStepOnly ? linkLine : `${prevAsst.text}\n\n${linkLine}`
-                prevAsst.isToolStepOnly = false
-              }
+              prevAsst.isToolStepOnly = false
             }
           }
         }
@@ -1061,6 +1043,18 @@ export function parseAntigravityTranscript(jsonlText, {
     delete m._toolList
     delete m._artifactMap
     delete m._stepCount
+    if (m.role === 'assistant' && Array.isArray(m.artifacts) && m.artifacts.length > 0) {
+      const curText = String(m.text || '')
+      const missingLinks = m.artifacts
+        .filter(art => art?.path && !curText.includes(art.path))
+        .map(art => `[${art.name}](file://${art.path})`)
+      if (missingLinks.length > 0) {
+        m.text = m.isToolStepOnly || !curText
+          ? missingLinks.join('  ')
+          : `${curText}\n\n${missingLinks.join('  ')}`
+        m.isToolStepOnly = false
+      }
+    }
     m.index = mergedTranscript.indexOf(m)
   }
 

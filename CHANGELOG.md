@@ -2,6 +2,17 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.7.6] - 2026-11-17
+
+### Fixed
+
+- **交付文档胶囊去重与长文件名省略号修复（`dsh-feishu/lib/antigravity-ide.js` / `hub/web/src/utils/markdown.ts` / `hub/web/src/styles/app.css`）**：
+  - 修复自定义 `.md` 产物标题拼成 `stem: stem.md`、在每步工具层提前注入 `📋 **[...](...)**\n> summary` 导致正文自身已带文件链接时重复渲染两次，以及 `📋` 与行内胶囊拆行、Flex 容器未包内联省略层导致长文件名被半字硬裁切的问题；同时前端 `formatAssistantText` 新增兼容去重清洗，无需等待远端旧版守护进程升级即可立即生效。
+- **手机端长按保存图片失效与误选右上角「`📎 引用`」修复（`hub/web/src/controller.js` / `hub/web/src/styles/app.css`）**：
+  - 修复 `setupSheetSwipeDismiss` 无滑动死区导致手指微颤打断图片长按，以及 iOS 主屏幕独立应用模式（Standalone PWA）屏蔽 `<img>` 原生菜单并向最近可选文字回退选中 `📎 引用` 的问题；支持主屏幕模式长按图片 `450ms` 预取文件并在松手时直接唤起系统原生保存/分享面板，同步在图片预览栏新增一键 **`⬇️ 保存图片`** 按钮，并为工具栏/面包屑补齐 `user-select: none`。
+- **未发送上传图片跨会话串台与切回丢失修复（`hub/web/src/controller.js`）**：
+  - 将聊天输入框待发送图片由全局单数组改为按 `sessionId` 独立隔离（`chatAttachmentsBySession` + `sessionStorage` 草稿持久化），切换其他会话不再带走当前未发图片，切回原会话时图片与待发送文字完整保留。
+
 ## [0.7.5] - 2026-11-17
 
 ### Added

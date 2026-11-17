@@ -72,10 +72,27 @@ export function renderInlineMarkdown(rawLine: string): string {
   safe = safe.replace(
     /\[((?:[^\[\]]|\[[^\]]*\])+)\]\(((?:file:\/\/\/?|\/Users\/|\/home\/|(?!https?:\/\/|mailto:|javascript:)[a-zA-Z0-9_.\-/~]+\.[a-zA-Z0-9]{1,8}(?:#L\d+(?:-L?\d+)?)?)[^)\n]*)\)/g,
     (_m, rawLabel, rawUrl) => {
-      const cleanLabel = String(rawLabel || '').replace(/^`+|`+$/g, '').trim();
+      let cleanLabel = String(rawLabel || '').replace(/^`+|`+$/g, '').trim();
       const lineAnchorMatch = /#(L\d+(?:-L?\d+)?)$/i.exec(rawUrl);
       const lineSuffix = lineAnchorMatch ? ` (${lineAnchorMatch[1]})` : '';
       const cleanPath = String(rawUrl || '').replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim();
+      const baseName = cleanPath.split('/').filter(Boolean).pop() || '';
+      const stem = baseName.replace(/\.[a-z0-9]+$/i, '');
+      // 消除旧版 "final_report: final_report.md" / "Walkthrough: walkthrough.md" 重复前缀
+      const dupMatch = /^([^:：]+)[:：]\s*(.+)$/.exec(cleanLabel);
+      if (dupMatch) {
+        const left = dupMatch[1].trim();
+        const right = dupMatch[2].trim();
+        const rightStem = right.replace(/\.[a-z0-9]+$/i, '');
+        if (
+          left.toLowerCase() === rightStem.toLowerCase() ||
+          left.toLowerCase() === stem.toLowerCase() ||
+          left.toLowerCase() === baseName.toLowerCase() ||
+          /^(?:artifact|交付文档|walkthrough|implementation plan|task list)$/i.test(left)
+        ) {
+          cleanLabel = right;
+        }
+      }
       const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, '%27');
       const isWalkthrough = /walkthrough\.md$/i.test(cleanPath) || /^walkthrough$/i.test(cleanLabel);
       const isPlan = /implementation_plan\.md$/i.test(cleanPath);
@@ -97,10 +114,12 @@ export function renderInlineMarkdown(rawLine: string): string {
                   : '📄';
       const extraClass = isWalkthrough || isPlan || isHtml ? ' md-artifact-chip' : '';
       return stash(
-        `<button type="button" class="md-file-chip${extraClass}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">${icon} ${cleanLabel}${lineSuffix}</button>`
+        `<button type="button" class="md-file-chip${extraClass}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}"><span class="md-file-chip-icon">${icon}</span><span class="md-file-chip-label">${cleanLabel}${lineSuffix}</span></button>`
       );
     }
   );
+  // 若胶囊外侧紧邻旧版遗留的独立 "📋 " 图标前缀（胶囊自身已带图标），自动剥除以防图标单独折行悬空
+  safe = safe.replace(/(^|\s)(?:📋|📄|🗺️)\s*(?=(?:\*\*|__)?\u0000PH\d+\u0000)/g, '$1');
 
   // 3. 行内代码和普通网页链接先「藏起来」，避免里面的 * 或 _ 被当成加粗/斜体；若是本地 .html 文件路径则直接升级为可点预览胶囊
   safe = safe.replace(/`([^`\n]+)`/g, (_m, code) => {
@@ -113,7 +132,7 @@ export function renderInlineMarkdown(rawLine: string): string {
       const cleanPath = trimmedCode.replace(/^file:\/\//i, '');
       const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, '%27');
       return stash(
-        `<button type="button" class="md-file-chip md-artifact-chip" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}">🌐 ${code}</button>`
+        `<button type="button" class="md-file-chip md-artifact-chip" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')" title="${cleanPath}"><span class="md-file-chip-icon">🌐</span><span class="md-file-chip-label">${code}</span></button>`
       );
     }
     return stash(`<code>${code}</code>`);
@@ -302,7 +321,55 @@ export function renderMarkdown(rawText: string): string {
   return chunks.join('');
 }
 
-export function formatAssistantText(rawText: string): string {
-  return renderMarkdown(rawText);
+export function stripRedundantInjectedArtifactBlocks(
+  rawText: string,
+  artifacts: any = []
+): string {
+  const text = String(rawText || '');
+  if (!text) return '';
+  const list = Array.isArray(artifacts) ? artifacts : [];
+  const cardPaths = new Set(
+    list
+      .map(a => String(a?.path || '').replace(/^file:\/\//i, '').trim())
+      .filter(Boolean)
+  );
+  const cardNames = new Set(
+    list
+      .map(a => String(a?.name || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  const paragraphs = text.split(/\n{2,}/);
+  const injectedPattern =
+    /^(?:📋\s*)?(?:\*\*)?\[[^\]]+\]\(file:\/\/([^)\n]+)\)(?:\*\*)?(?:\r?\n>\s*[^\r\n]+)*$/;
+
+  const filtered = paragraphs.filter((para, idx) => {
+    const trimmed = para.trim();
+    const m = injectedPattern.exec(trimmed);
+    if (!m) return true;
+    const targetPath = String(m[1] || '').replace(/^file:\/\//i, '').trim();
+    const baseName = (targetPath.split('/').filter(Boolean).pop() || '').toLowerCase();
+    // 1) 底部已有结构化 .agy-artifact-card 卡片展示该文档与摘要时，剔除正文中间重复注入的孤立链接块
+    if (cardPaths.has(targetPath) || (baseName && cardNames.has(baseName))) {
+      return false;
+    }
+    // 2) 同一条消息后续自然段落已引用该文件名时（如「已整理在 [report.md](...) 中」），剔除前序步骤注入的重复块
+    if (baseName) {
+      const mentionedElsewhere = paragraphs.some(
+        (other, oIdx) => oIdx !== idx && other.toLowerCase().includes(baseName)
+      );
+      if (mentionedElsewhere) return false;
+    }
+    return true;
+  });
+
+  return filtered.join('\n\n').trim();
+}
+
+export function formatAssistantText(
+  rawText: string,
+  artifacts: any = []
+): string {
+  return renderMarkdown(stripRedundantInjectedArtifactBlocks(rawText, artifacts));
 }
 
