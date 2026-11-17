@@ -831,8 +831,10 @@ test('iPhone Home Screen PWA & W3C Web Push (RFC 8292 VAPID + RFC 8291 aes128gcm
   await new Promise(resolve => setTimeout(resolve, 20))
   assert.equal(interceptedPushes.length, 2)
   const approvalPush = JSON.parse(decryptWebPushPayload(interceptedPushes[1].init.body, iphoneEcdh, iphoneAuthSecret))
-  assert.match(approvalPush.title, /⏳ \[办公MacPro\] 待审批/)
+  assert.equal(approvalPush.title, '⏳ 需批准 · 部署生产环境')
   assert.match(approvalPush.body, /deploy-cloudrun\.sh/)
+  assert.doesNotMatch(approvalPush.body, /点击立即处理/)
+  assert.equal(approvalPush.tag, 'session-session-push-1')
   assert.equal(approvalPush.data.code, 'APV999')
 
   // Step 5b: Task transitions from running -> idle (completed) -> triggers automatic completion Web Push!
@@ -853,7 +855,8 @@ test('iPhone Home Screen PWA & W3C Web Push (RFC 8292 VAPID + RFC 8291 aes128gcm
   await new Promise(resolve => setTimeout(resolve, 20))
   assert.equal(interceptedPushes.length, 3)
   const donePush = JSON.parse(decryptWebPushPayload(interceptedPushes[2].init.body, iphoneEcdh, iphoneAuthSecret))
-  assert.match(donePush.title, /✅ \[办公MacPro\] 任务完成：部署生产环境/)
+  assert.equal(donePush.title, '✅ 部署生产环境')
+  assert.equal(donePush.tag, 'session-session-push-1')
   assert.match(donePush.body, /部署成功，服务已上线/)
 
   // 6. Verify SSE /api/events endpoint

@@ -30,9 +30,18 @@ let holdPauseBreakpoints: any = [];
 let holdSpokenText = '';
 let holdHadFatalError = false;
 let holdFinalizeTimer: any = null;
+let holdSettleTimer: any = null;
+let holdLastResultWasFinal = false;
+let holdLastResultAt: any = 0;
 let voicePauseTimer: any = null;
 let holdListenersBound = false;
 let activeHoldDeps: any = null;
+let dictationStopping = false;
+let activeDictationFlushHandler: any = null;
+let dictationFinalizeFn: any = null;
+let dictationFinalizeResolve: any = null;
+let dictationFinalizeTimer: any = null;
+let dictationSettleTimer: any = null;
 
 const CJK_CHAR_RE = /[\u4e00-\u9fa5]/;
 const PUNCT_OR_SPACE_RE = /[，。！？、；：,.!?;:\s…~～—\-()（）[\]【】"'“”‘’]/;
@@ -152,16 +161,123 @@ export function punctuateSpeechText(
   return stitched;
 }
 
+function pickBestAlternative(resultItem: any): string {
+  if (!resultItem) return '';
+  const alt0 = resultItem[0];
+  let bestText = String(alt0?.transcript || '');
+  let bestConf = Number(alt0?.confidence) || 0;
+  const maxCheck = Math.min(4, Math.max(Number(resultItem?.length) || 0, 4));
+  for (let k = 1; k < maxCheck; k += 1) {
+    const cand = resultItem[k];
+    if (!cand) continue;
+    const candText = String(cand?.transcript || '');
+    if (!candText.trim()) continue;
+    if (!bestText.trim()) {
+      bestText = candText;
+      bestConf = Number(cand?.confidence) || 0;
+      continue;
+    }
+    const candConf = Number(cand?.confidence) || 0;
+    if (Boolean(resultItem?.isFinal) && bestConf > 0 && candConf > bestConf + 0.01) {
+      bestText = candText;
+      bestConf = candConf;
+    }
+  }
+  return bestText;
+}
+
+export function areAllSpeechResultsFinal(results: any): boolean {
+  const total = results ? results.length : 0;
+  let hasAnyText = false;
+  for (let i = 0; i < total; i += 1) {
+    const seg = pickBestAlternative(results[i]);
+    if (!seg.trim()) continue;
+    hasAnyText = true;
+    if (!results[i]?.isFinal) {
+      return false;
+    }
+  }
+  return hasAnyText;
+}
+
+function commonPrefixLength(a: string, b: string): any {
+  const max = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < max && a[i] === b[i]) i += 1;
+  return i;
+}
+
+function longestCommonSubstringLength(a: string, b: string): any {
+  if (!a || !b) return 0;
+  const s1 = a.slice(0, 160);
+  const s2 = b.slice(0, 160);
+  const prev: any = new Array(s2.length + 1).fill(0);
+  let best = 0;
+  for (let i = 1; i <= s1.length; i += 1) {
+    for (let j = s2.length; j >= 1; j -= 1) {
+      if (s1[i - 1] === s2[j - 1]) {
+        prev[j] = prev[j - 1] + 1;
+        if (prev[j] > best) best = prev[j];
+      } else {
+        prev[j] = 0;
+      }
+    }
+  }
+  return best;
+}
+
+function longestCommonSubsequenceLength(a: string, b: string): any {
+  if (!a || !b) return 0;
+  const s1 = a.slice(0, 160);
+  const s2 = b.slice(0, 160);
+  const dp: any = new Array(s2.length + 1).fill(0);
+  for (let i = 1; i <= s1.length; i += 1) {
+    let prevDiag = 0;
+    for (let j = 1; j <= s2.length; j += 1) {
+      const temp = dp[j];
+      if (s1[i - 1] === s2[j - 1]) {
+        dp[j] = prevDiag + 1;
+      } else if (dp[j - 1] > dp[j]) {
+        dp[j] = dp[j - 1];
+      }
+      prevDiag = temp;
+    }
+  }
+  return dp[s2.length];
+}
+
+function isCumulativeReplacement(acc: string, seg: string, prevWasInterim: boolean): boolean {
+  const l1 = acc.length;
+  const l2 = seg.length;
+  if (l1 < 4 || l2 < 4 || l2 < l1 - 1) return false;
+  if (!prevWasInterim && l2 < l1 + 2) return false;
+  const segHead = seg.slice(0, Math.min(l2, l1 + 4));
+  const prefLen = commonPrefixLength(acc, segHead);
+  const subLen = longestCommonSubstringLength(acc, segHead);
+  if (prefLen < 3 && !(prefLen >= 2 && subLen >= 3) && subLen < 4) return false;
+  const lcsLen = longestCommonSubsequenceLength(acc, segHead);
+  if (lcsLen / l1 < 0.72) return false;
+  if (l2 <= l1 + 1) {
+    const tailMatches = acc[l1 - 1] === segHead[segHead.length - 1];
+    return (prefLen >= 2 && tailMatches) || subLen >= 5 || lcsLen / l1 >= 0.85;
+  }
+  return true;
+}
+
 export function mergeSpeechResults(results: any): string {
   const total = results ? results.length : 0;
   let acc = '';
+  let lastNonEmptyWasInterim = false;
   for (let i = 0; i < total; i += 1) {
-    const seg = String(results[i]?.[0]?.transcript || '');
+    const seg = pickBestAlternative(results[i]);
     if (!seg) continue;
     if (!acc) {
       acc = seg;
     } else if (seg.startsWith(acc)) {
       // 兼容移动端 WebKit / Android 在 continuous=true 下返回累积前缀片段，避免重复叠字
+      acc = seg;
+    } else if (isCumulativeReplacement(acc, seg, lastNonEmptyWasInterim)) {
+      // 兼容系统语音引擎在累积流中回溯修正前文同音字（如「轨迹流动」→「硅基流动的接口」），防止错句与正句重复拼接
       acc = seg;
     } else if (acc.endsWith(seg) && seg.length >= 2) {
       // 忽略完全相同的尾段回放
@@ -180,6 +296,7 @@ export function mergeSpeechResults(results: any): string {
         acc += smartSeparatorBetween(acc, seg) + seg;
       }
     }
+    lastNonEmptyWasInterim = results[i]?.isFinal === false;
   }
   return acc;
 }
@@ -321,7 +438,14 @@ export function setVoiceBtnRecording(btnId: string, recording: boolean): void {
 }
 
 export function isVoiceRecording(): boolean {
-  return Boolean(holdActive || holdStopping || voiceSessionActive || activeVoiceRecognition || activeVoiceBtnId);
+  return Boolean(
+    holdActive ||
+      holdStopping ||
+      dictationStopping ||
+      voiceSessionActive ||
+      activeVoiceRecognition ||
+      activeVoiceBtnId
+  );
 }
 
 export function isWechatVoiceMode(): boolean {
@@ -613,14 +737,31 @@ export function stopVoiceInput(): void {
   holdActive = false;
   holdStopping = false;
   holdFinalized = true;
+  dictationStopping = false;
+  activeDictationFlushHandler = null;
+  dictationFinalizeFn = null;
+  const pendingResolve = dictationFinalizeResolve;
+  dictationFinalizeResolve = null;
   detachHoldWindowListeners();
   if (voicePauseTimer) {
     clearTimeout(voicePauseTimer);
     voicePauseTimer = null;
   }
+  if (holdSettleTimer) {
+    clearTimeout(holdSettleTimer);
+    holdSettleTimer = null;
+  }
   if (holdFinalizeTimer) {
     clearTimeout(holdFinalizeTimer);
     holdFinalizeTimer = null;
+  }
+  if (dictationSettleTimer) {
+    clearTimeout(dictationSettleTimer);
+    dictationSettleTimer = null;
+  }
+  if (dictationFinalizeTimer) {
+    clearTimeout(dictationFinalizeTimer);
+    dictationFinalizeTimer = null;
   }
   if (voiceRestartTimer) {
     clearTimeout(voiceRestartTimer);
@@ -643,6 +784,9 @@ export function stopVoiceInput(): void {
 
   // 必须先解绑回调再调用 abort() + stop()，防止残留音频帧写回输入框或 iOS 麦克风红点常亮
   forceAbortActiveRecognition();
+  if (pendingResolve) {
+    pendingResolve();
+  }
 }
 
 function finalizeHoldSession(): void {
@@ -651,6 +795,10 @@ function finalizeHoldSession(): void {
   if (voicePauseTimer) {
     clearTimeout(voicePauseTimer);
     voicePauseTimer = null;
+  }
+  if (holdSettleTimer) {
+    clearTimeout(holdSettleTimer);
+    holdSettleTimer = null;
   }
   if (holdFinalizeTimer) {
     clearTimeout(holdFinalizeTimer);
@@ -756,6 +904,9 @@ export function startHoldVoice(startX: any, startY: any, deps?: VoiceControllerD
     return false;
   }
 
+  if (holdStopping && !holdFinalized) {
+    finalizeHoldSession();
+  }
   if (voiceSessionActive || activeVoiceRecognition || holdActive) {
     stopVoiceInput();
   }
@@ -773,6 +924,8 @@ export function startHoldVoice(startX: any, startY: any, deps?: VoiceControllerD
   holdPauseBreakpoints = [];
   holdSpokenText = '';
   holdHadFatalError = false;
+  holdLastResultWasFinal = false;
+  holdLastResultAt = 0;
   activeHoldDeps = deps || null;
   voiceSessionActive = true;
   activeVoiceInputId = 'globalPromptInput';
@@ -807,7 +960,7 @@ export function startHoldVoice(startX: any, startY: any, deps?: VoiceControllerD
       recognition.lang = resolvedLang;
       recognition.interimResults = true;
       recognition.continuous = true;
-      recognition.maxAlternatives = 1;
+      recognition.maxAlternatives = 3;
       try {
         recognition.unspokenPunctuation = true;
       } catch { }
@@ -823,6 +976,9 @@ export function startHoldVoice(startX: any, startY: any, deps?: VoiceControllerD
         if ((!holdActive && !holdStopping) || activeVoiceRecognition !== recognition) return;
         const utterance = mergeSpeechResults(event?.results);
         if (!utterance) return;
+        const allFinal = areAllSpeechResultsFinal(event?.results);
+        holdLastResultWasFinal = allFinal;
+        holdLastResultAt = Date.now();
         chunkProducedText = true;
         rapidEmptyEnds = 0;
         resetHoldWatchdog();
@@ -835,6 +991,21 @@ export function startHoldVoice(startX: any, startY: any, deps?: VoiceControllerD
           ? joinDraftAndSpeech(holdCommittedText, liveChunk)
           : liveChunk;
         updateWechatOverlayUI();
+
+        if (holdStopping) {
+          if (holdSettleTimer) {
+            clearTimeout(holdSettleTimer);
+            holdSettleTimer = null;
+          }
+          if (allFinal) {
+            // 系统语音引擎已给出整句级 isFinal 同音字修正定稿，给 60ms 收敛后立即发送，无需傻等硬超时
+            holdSettleTimer = setTimeout(() => {
+              holdSettleTimer = null;
+              finalizeHoldSession();
+            }, 60);
+          }
+          return;
+        }
 
         if (voicePauseTimer) {
           clearTimeout(voicePauseTimer);
@@ -920,12 +1091,13 @@ export function startHoldVoice(startX: any, startY: any, deps?: VoiceControllerD
         } else {
           rapidEmptyEnds = 0;
         }
+        const restartDelayMs = chunkProducedText ? 25 : 150;
         voiceRestartTimer = setTimeout(() => {
           voiceRestartTimer = null;
           if (voiceSessionActive && holdActive && !holdStopping) {
             startHoldRecognitionChunk(true);
           }
-        }, 150);
+        }, restartDelayMs);
       };
 
       recognition.start();
@@ -1020,7 +1192,8 @@ export function endHoldVoice(deps?: VoiceControllerDeps): void {
     return;
   }
 
-  // 松手后先调用 stop() 让系统把最后 0.2~0.3 秒尾音转写完再触发发送，同时设 380ms 硬上限防止 Safari 挂起
+  // 松手后先调用 stop() 让手机系统把最后尾音及整句语言模型同音字修正（isFinal，通常需 450~900ms）走完，
+  // 一旦收到 isFinal 或 onend 立即发送；仅当底层浏览器完全卡死时由 1200ms 兜底发送
   holdActive = false;
   holdStopping = true;
   voiceSessionActive = false;
@@ -1037,13 +1210,44 @@ export function endHoldVoice(deps?: VoiceControllerDeps): void {
       finalizeHoldSession();
       return;
     }
+    const alreadySettledBeforeLift =
+      holdLastResultWasFinal && holdLastResultAt > 0 && Date.now() - holdLastResultAt >= 450;
+    const maxFlushWaitMs = alreadySettledBeforeLift ? 450 : 1200;
     holdFinalizeTimer = setTimeout(() => {
       holdFinalizeTimer = null;
       finalizeHoldSession();
-    }, 380);
+    }, maxFlushWaitMs);
   } else {
     finalizeHoldSession();
   }
+}
+
+export function isDictationActiveFor(targetInputId = ''): boolean {
+  return Boolean(
+    voiceSessionActive &&
+      !holdActive &&
+      !holdStopping &&
+      activeVoiceRecognition &&
+      (!targetInputId || activeVoiceInputId === targetInputId)
+  );
+}
+
+export function flushVoiceInputBeforeSend(targetInputId = ''): any {
+  if (!isDictationActiveFor(targetInputId) || !activeDictationFlushHandler) {
+    stopVoiceInput();
+    return Promise.resolve();
+  }
+  return new Promise((resolve: any) => {
+    dictationFinalizeResolve = resolve;
+    const handler = activeDictationFlushHandler;
+    activeDictationFlushHandler = null;
+    handler(() => {
+      if (dictationFinalizeResolve === resolve) {
+        dictationFinalizeResolve = null;
+      }
+      resolve();
+    });
+  });
 }
 
 export function toggleVoiceInput(
@@ -1129,7 +1333,7 @@ export function toggleVoiceInput(
       recognition.interimResults = true;
       // 持续听写模式：说话中途停顿换气不会自动挂断，直到用户主动点击「⏹」或「发送」
       recognition.continuous = true;
-      recognition.maxAlternatives = 1;
+      recognition.maxAlternatives = 3;
       try {
         recognition.unspokenPunctuation = true;
       } catch { }
@@ -1138,26 +1342,112 @@ export function toggleVoiceInput(
       let chunkProducedText = false;
       let chunkFatalError = false;
       let chunkRawText = '';
+      let lastDictationWrittenValue = input.value || '';
+      let gotResultWhileStopping = false;
       const chunkPauseBreakpoints: any = [];
 
       activeVoiceRecognition = recognition;
+      activeDictationFlushHandler = (done: any): void => {
+        if (!activeVoiceRecognition || activeVoiceRecognition !== recognition) {
+          stopVoiceInput();
+          done();
+          return;
+        }
+        dictationStopping = true;
+        voiceSessionActive = false;
+        if (voicePauseTimer) {
+          clearTimeout(voicePauseTimer);
+          voicePauseTimer = null;
+        }
+        if (voiceRestartTimer) {
+          clearTimeout(voiceRestartTimer);
+          voiceRestartTimer = null;
+        }
+        if (voiceWatchdogTimer) {
+          clearTimeout(voiceWatchdogTimer);
+          voiceWatchdogTimer = null;
+        }
+        if (btnId) setVoiceBtnRecording(btnId, false);
+        hideVoiceHintBar(targetInputId);
+
+        let finished = false;
+        const finishFlush = (): void => {
+          if (finished) return;
+          finished = true;
+          dictationFinalizeFn = null;
+          activeDictationFlushHandler = null;
+          if (dictationSettleTimer) {
+            clearTimeout(dictationSettleTimer);
+            dictationSettleTimer = null;
+          }
+          if (dictationFinalizeTimer) {
+            clearTimeout(dictationFinalizeTimer);
+            dictationFinalizeTimer = null;
+          }
+          if (chunkRawText && (gotResultWhileStopping || input.value === lastDictationWrittenValue)) {
+            const finalPunct = punctuateSpeechText(chunkRawText, chunkPauseBreakpoints, {
+              showTrailingPause: false,
+              finalizeSentence: true,
+            });
+            input.value = isAutoRestart
+              ? joinDraftAndSpeech(committedBaseText, finalPunct)
+              : committedBaseText + finalPunct;
+            lastDictationWrittenValue = input.value;
+            notifyInputChanged();
+          }
+          stopVoiceInput();
+          done();
+        };
+        dictationFinalizeFn = finishFlush;
+        try {
+          recognition.stop();
+        } catch {
+          finishFlush();
+          return;
+        }
+        dictationFinalizeTimer = setTimeout(() => {
+          dictationFinalizeTimer = null;
+          finishFlush();
+        }, 950);
+      };
 
       recognition.onresult = (event: any) => {
-        if (!voiceSessionActive || activeVoiceRecognition !== recognition) return;
+        if ((!voiceSessionActive && !dictationStopping) || activeVoiceRecognition !== recognition) return;
         const utterance = mergeSpeechResults(event?.results);
         if (!utterance) return;
+        const allFinal = areAllSpeechResultsFinal(event?.results);
         chunkProducedText = true;
         rapidEmptyEnds = 0;
-        resetIdleWatchdog();
+        if (voiceSessionActive) {
+          resetIdleWatchdog();
+        }
         chunkRawText = utterance;
         const punctuated = punctuateSpeechText(chunkRawText, chunkPauseBreakpoints, {
           showTrailingPause: false,
-          finalizeSentence: false,
+          finalizeSentence: dictationStopping,
         });
         input.value = isAutoRestart
           ? joinDraftAndSpeech(committedBaseText, punctuated)
           : committedBaseText + punctuated;
+        lastDictationWrittenValue = input.value;
         notifyInputChanged();
+
+        if (dictationStopping) {
+          gotResultWhileStopping = true;
+          if (dictationSettleTimer) {
+            clearTimeout(dictationSettleTimer);
+            dictationSettleTimer = null;
+          }
+          if (allFinal) {
+            dictationSettleTimer = setTimeout(() => {
+              dictationSettleTimer = null;
+              if (dictationFinalizeFn) {
+                dictationFinalizeFn();
+              }
+            }, 60);
+          }
+          return;
+        }
 
         if (voicePauseTimer) {
           clearTimeout(voicePauseTimer);
@@ -1183,6 +1473,7 @@ export function toggleVoiceInput(
               input.value = isAutoRestart
                 ? joinDraftAndSpeech(committedBaseText, pausedPunct)
                 : committedBaseText + pausedPunct;
+              lastDictationWrittenValue = input.value;
               notifyInputChanged();
             }
           }, 650);
@@ -1232,6 +1523,12 @@ export function toggleVoiceInput(
 
       recognition.onend = () => {
         if (activeVoiceRecognition !== recognition) return;
+        if (dictationStopping) {
+          if (dictationFinalizeFn) {
+            dictationFinalizeFn();
+          }
+          return;
+        }
         activeVoiceRecognition = null;
         notifyInputChanged();
 
@@ -1254,12 +1551,13 @@ export function toggleVoiceInput(
         } else {
           rapidEmptyEnds = 0;
         }
+        const restartDelayMs = chunkProducedText ? 25 : 180;
         voiceRestartTimer = setTimeout(() => {
           voiceRestartTimer = null;
           if (voiceSessionActive) {
             startRecognitionChunk(true);
           }
-        }, 180);
+        }, restartDelayMs);
       };
 
       recognition.start();

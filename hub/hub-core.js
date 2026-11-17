@@ -2,6 +2,7 @@ import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { generateOrLoadVapidKeys, sendWebPushNotification } from './web-push.js'
+import { formatWebPushNotification, shouldSuppressTaskPush } from './push-formatter.js'
 
 const ONLINE_TTL_MS = 30 * 60_000
 const ACTIVE_HEARTBEAT_WINDOW_MS = 90_000
@@ -48,6 +49,7 @@ export class HubCore {
     this.pushSubscriptions = new Map()
     this.unsubscribedEndpoints = new Set()
     this.pushedApprovalCodes = new Set()
+    this.pendingApprovalPushTimers = new Map()
     this.pushedCompletionSigs = new Map()
     this.sessionReadState = new Map()
     this.hostTaskStates = new Map()
@@ -1111,28 +1113,51 @@ export class HubCore {
     }
   }
 
+  computeActionableBadgeCount(currentApprovalsCount = 0) {
+    let unreadCount = 0
+    for (const entry of this.sessionReadState.values()) {
+      if (entry?.unread) unreadCount += 1
+    }
+    return Math.max(1, Number(currentApprovalsCount || 0) + unreadCount)
+  }
+
   detectAndTriggerWebPush(hostId, hostName, bridgeState) {
     if (!bridgeState || typeof bridgeState !== 'object') return
     const approvals = Array.isArray(bridgeState.approvals) ? bridgeState.approvals : []
     const tasks = Array.isArray(bridgeState.tasks) ? bridgeState.tasks : []
+    const liveApprovalCodeSet = new Set(
+      approvals.map(a => String(a?.code || '').trim()).filter(Boolean),
+    )
 
-    // 1. Check for new pending approvals or selection questions
-    for (const app of approvals) {
-      if (!app?.code || this.pushedApprovalCodes.has(app.code)) continue
+    // Cancel any pending debounced approval push whose code already auto-settled on the computer
+    for (const [pendingKey, pendingObj] of this.pendingApprovalPushTimers.entries()) {
+      if (pendingObj.hostId === hostId && !liveApprovalCodeSet.has(pendingObj.code)) {
+        clearTimeout(pendingObj.timer)
+        this.pendingApprovalPushTimers.delete(pendingKey)
+      }
+    }
+
+    const pushApprovalNow = (app, matchedTask, activeApprovalsLen) => {
+      if (!app?.code || this.pushedApprovalCodes.has(app.code)) return
+      const ledger = this.approvalLedger.get(`${hostId}:${app.code}`)
+      if (ledger && (ledger.status === 'settling' || ledger.status === 'settled')) return
       this.pushedApprovalCodes.add(app.code)
       while (this.pushedApprovalCodes.size > 300) {
         this.pushedApprovalCodes.delete(this.pushedApprovalCodes.values().next().value)
       }
-      const isQuestion = app.kind === 'question' || Array.isArray(app.questions)
+      const formatted = formatWebPushNotification({
+        kind: 'approval',
+        hosts: [...this.hosts.values()],
+        hostId,
+        hostName,
+        task: matchedTask,
+        approval: app,
+      })
       void this.broadcastWebPush({
-        title: isQuestion
-          ? `💬 [${hostName}] 待你选择：${app.title || app.toolName}`
-          : `⏳ [${hostName}] 待审批：${app.title || app.toolName}`,
-        body: isQuestion
-          ? `${app.promptTitle || app.reason || '等待你做出选择'}（点击立即选择）`
-          : `工具 ${app.toolName}：${app.reason || '请求执行权限'}（点击立即处理）`,
-        tag: `approval-${app.code}`,
-        badgeCount: approvals.length,
+        title: formatted.title,
+        body: formatted.body,
+        tag: formatted.tag,
+        badgeCount: this.computeActionableBadgeCount(activeApprovalsLen),
         data: {
           type: 'approval',
           hostId,
@@ -1144,9 +1169,48 @@ export class HubCore {
       })
     }
 
-    // 2. Check for task completion or failure transitions
+    // 1. Check for new pending approvals or selection questions
+    for (const app of approvals) {
+      if (!app?.code || this.pushedApprovalCodes.has(app.code)) continue
+      const pendingKey = `${hostId}:${app.code}`
+      if (this.pendingApprovalPushTimers.has(pendingKey)) continue
+      const ledger = this.approvalLedger.get(pendingKey)
+      if (ledger && (ledger.status === 'settling' || ledger.status === 'settled')) continue
+      const matchedTask = tasks.find(t => t?.id === app.agentId) || null
+      if (matchedTask && shouldSuppressTaskPush(matchedTask)) continue
+
+      // Unconfirmed jsonl-tail approvals on Antigravity IDE may auto-settle on the desktop within ~1s;
+      // debounce 1.5s to verify it is genuinely waiting before buzzing the phone.
+      const needsConfirmDebounce =
+        app.harness === 'antigravity-ide' &&
+        matchedTask?.stateMeta &&
+        matchedTask.stateMeta.source !== 'ls-rpc'
+
+      if (needsConfirmDebounce) {
+        const timer = setTimeout(() => {
+          this.pendingApprovalPushTimers.delete(pendingKey)
+          const curHost = this.hosts.get(hostId)
+          const curApprovals = Array.isArray(curHost?.bridgeState?.approvals)
+            ? curHost.bridgeState.approvals
+            : []
+          const curApp = curApprovals.find(a => a?.code === app.code)
+          if (!curApp) return
+          const curTasks = Array.isArray(curHost?.bridgeState?.tasks)
+            ? curHost.bridgeState.tasks
+            : []
+          const curTask = curTasks.find(t => t?.id === curApp.agentId) || null
+          pushApprovalNow(curApp, curTask, curApprovals.length)
+        }, 1500)
+        timer.unref?.()
+        this.pendingApprovalPushTimers.set(pendingKey, { hostId, code: app.code, timer })
+      } else {
+        pushApprovalNow(app, matchedTask, approvals.length)
+      }
+    }
+
+    // 2. Check for task completion or failure transitions (filtering out background subagents & internal stubs)
     for (const task of tasks) {
-      if (!task?.id) continue
+      if (shouldSuppressTaskPush(task)) continue
       const key = `${hostId}:${task.id}`
       const prevStatus = this.hostTaskStates.get(key)
       const curStatus = String(task.status || 'unknown')
@@ -1159,7 +1223,8 @@ export class HubCore {
       this.hostTaskStates.set(key, effectiveStatus)
       if (!prevStatus || prevStatus === effectiveStatus) continue
 
-      if (prevStatus === 'running' && effectiveStatus === 'idle') {
+      const wasActiveTurn = prevStatus === 'running' || prevStatus === 'approval'
+      if (wasActiveTurn && effectiveStatus === 'idle') {
         if (task.turnState === 'interrupted') continue
         const completionSig = `${task.lastStepIndex ?? ''}:${task.lastConclusionAt || ''}:${String(task.lastOutput || '').slice(0, 80)}`
         if (completionSig && this.pushedCompletionSigs.get(key) === completionSig) continue
@@ -1174,11 +1239,18 @@ export class HubCore {
           sig: '',
           at: Number(task.lastConclusionAt) || Number(task.updatedAt) || this.now(),
         })
+        const formatted = formatWebPushNotification({
+          kind: 'completed',
+          hosts: [...this.hosts.values()],
+          hostId,
+          hostName,
+          task,
+        })
         void this.broadcastWebPush({
-          title: `✅ [${hostName}] 任务完成：${task.title}`,
-          body: task.lastOutput ? String(task.lastOutput).slice(0, 120) : '任务已执行完毕，点击查看结果或继续指令',
-          tag: `done-${task.id}`,
-          badgeCount: approvals.length + 1,
+          title: formatted.title,
+          body: formatted.body,
+          tag: formatted.tag,
+          badgeCount: this.computeActionableBadgeCount(approvals.length),
           data: {
             type: 'completed',
             hostId,
@@ -1188,11 +1260,18 @@ export class HubCore {
           },
         })
       } else if ((curStatus === 'error' || curStatus === 'failed') && prevStatus !== curStatus) {
+        const formatted = formatWebPushNotification({
+          kind: 'failed',
+          hosts: [...this.hosts.values()],
+          hostId,
+          hostName,
+          task,
+        })
         void this.broadcastWebPush({
-          title: `⚠️ [${hostName}] 任务异常：${task.title}`,
-          body: `状态：${task.statusLabel || curStatus}，点击打开控制台排查`,
-          tag: `fail-${task.id}`,
-          badgeCount: approvals.length + 1,
+          title: formatted.title,
+          body: formatted.body,
+          tag: formatted.tag,
+          badgeCount: this.computeActionableBadgeCount(approvals.length),
           data: {
             type: 'failed',
             hostId,

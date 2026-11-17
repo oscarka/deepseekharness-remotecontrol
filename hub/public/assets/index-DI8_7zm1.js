@@ -1378,9 +1378,18 @@ var holdPauseBreakpoints = [];
 var holdSpokenText = "";
 var holdHadFatalError = false;
 var holdFinalizeTimer = null;
+var holdSettleTimer = null;
+var holdLastResultWasFinal = false;
+var holdLastResultAt = 0;
 var voicePauseTimer = null;
 var holdListenersBound = false;
 var activeHoldDeps = null;
+var dictationStopping = false;
+var activeDictationFlushHandler = null;
+var dictationFinalizeFn = null;
+var dictationFinalizeResolve = null;
+var dictationFinalizeTimer = null;
+var dictationSettleTimer = null;
 var CJK_CHAR_RE = /[\u4e00-\u9fa5]/;
 var PUNCT_OR_SPACE_RE = /[，。！？、；：,.!?;:\s…~～—\-()（）[\]【】"'“”‘’]/;
 var LEADING_PARTICLE_RE = /^[的了着过吗呢吧啊呀呗嘛嘞啦]/;
@@ -1448,14 +1457,101 @@ function punctuateSpeechText(rawText, pauseBreakpoints = null, options = null) {
 	}
 	return stitched;
 }
+function pickBestAlternative(resultItem) {
+	if (!resultItem) return "";
+	const alt0 = resultItem[0];
+	let bestText = String(alt0?.transcript || "");
+	let bestConf = Number(alt0?.confidence) || 0;
+	const maxCheck = Math.min(4, Math.max(Number(resultItem?.length) || 0, 4));
+	for (let k = 1; k < maxCheck; k += 1) {
+		const cand = resultItem[k];
+		if (!cand) continue;
+		const candText = String(cand?.transcript || "");
+		if (!candText.trim()) continue;
+		if (!bestText.trim()) {
+			bestText = candText;
+			bestConf = Number(cand?.confidence) || 0;
+			continue;
+		}
+		const candConf = Number(cand?.confidence) || 0;
+		if (Boolean(resultItem?.isFinal) && bestConf > 0 && candConf > bestConf + .01) {
+			bestText = candText;
+			bestConf = candConf;
+		}
+	}
+	return bestText;
+}
+function areAllSpeechResultsFinal(results) {
+	const total = results ? results.length : 0;
+	let hasAnyText = false;
+	for (let i = 0; i < total; i += 1) {
+		if (!pickBestAlternative(results[i]).trim()) continue;
+		hasAnyText = true;
+		if (!results[i]?.isFinal) return false;
+	}
+	return hasAnyText;
+}
+function commonPrefixLength(a, b) {
+	const max = Math.min(a.length, b.length);
+	let i = 0;
+	while (i < max && a[i] === b[i]) i += 1;
+	return i;
+}
+function longestCommonSubstringLength(a, b) {
+	if (!a || !b) return 0;
+	const s1 = a.slice(0, 160);
+	const s2 = b.slice(0, 160);
+	const prev = new Array(s2.length + 1).fill(0);
+	let best = 0;
+	for (let i = 1; i <= s1.length; i += 1) for (let j = s2.length; j >= 1; j -= 1) if (s1[i - 1] === s2[j - 1]) {
+		prev[j] = prev[j - 1] + 1;
+		if (prev[j] > best) best = prev[j];
+	} else prev[j] = 0;
+	return best;
+}
+function longestCommonSubsequenceLength(a, b) {
+	if (!a || !b) return 0;
+	const s1 = a.slice(0, 160);
+	const s2 = b.slice(0, 160);
+	const dp = new Array(s2.length + 1).fill(0);
+	for (let i = 1; i <= s1.length; i += 1) {
+		let prevDiag = 0;
+		for (let j = 1; j <= s2.length; j += 1) {
+			const temp = dp[j];
+			if (s1[i - 1] === s2[j - 1]) dp[j] = prevDiag + 1;
+			else if (dp[j - 1] > dp[j]) dp[j] = dp[j - 1];
+			prevDiag = temp;
+		}
+	}
+	return dp[s2.length];
+}
+function isCumulativeReplacement(acc, seg, prevWasInterim) {
+	const l1 = acc.length;
+	const l2 = seg.length;
+	if (l1 < 4 || l2 < 4 || l2 < l1 - 1) return false;
+	if (!prevWasInterim && l2 < l1 + 2) return false;
+	const segHead = seg.slice(0, Math.min(l2, l1 + 4));
+	const prefLen = commonPrefixLength(acc, segHead);
+	const subLen = longestCommonSubstringLength(acc, segHead);
+	if (prefLen < 3 && !(prefLen >= 2 && subLen >= 3) && subLen < 4) return false;
+	const lcsLen = longestCommonSubsequenceLength(acc, segHead);
+	if (lcsLen / l1 < .72) return false;
+	if (l2 <= l1 + 1) {
+		const tailMatches = acc[l1 - 1] === segHead[segHead.length - 1];
+		return prefLen >= 2 && tailMatches || subLen >= 5 || lcsLen / l1 >= .85;
+	}
+	return true;
+}
 function mergeSpeechResults(results) {
 	const total = results ? results.length : 0;
 	let acc = "";
+	let lastNonEmptyWasInterim = false;
 	for (let i = 0; i < total; i += 1) {
-		const seg = String(results[i]?.[0]?.transcript || "");
+		const seg = pickBestAlternative(results[i]);
 		if (!seg) continue;
 		if (!acc) acc = seg;
 		else if (seg.startsWith(acc)) acc = seg;
+		else if (isCumulativeReplacement(acc, seg, lastNonEmptyWasInterim)) acc = seg;
 		else if (acc.endsWith(seg) && seg.length >= 2) {} else {
 			let overlap = 0;
 			const maxK = Math.min(acc.length, seg.length);
@@ -1466,6 +1562,7 @@ function mergeSpeechResults(results) {
 			if (overlap > 0) acc += seg.slice(overlap);
 			else acc += smartSeparatorBetween(acc, seg) + seg;
 		}
+		lastNonEmptyWasInterim = results[i]?.isFinal === false;
 	}
 	return acc;
 }
@@ -1561,7 +1658,7 @@ function setVoiceBtnRecording(btnId, recording) {
 	else btn.textContent = recording ? "⏹" : "🎤";
 }
 function isVoiceRecording() {
-	return Boolean(holdActive || holdStopping || voiceSessionActive || activeVoiceRecognition || activeVoiceBtnId);
+	return Boolean(holdActive || holdStopping || dictationStopping || voiceSessionActive || activeVoiceRecognition || activeVoiceBtnId);
 }
 function isWechatVoiceMode() {
 	return wechatVoiceMode;
@@ -1766,14 +1863,31 @@ function stopVoiceInput() {
 	holdActive = false;
 	holdStopping = false;
 	holdFinalized = true;
+	dictationStopping = false;
+	activeDictationFlushHandler = null;
+	dictationFinalizeFn = null;
+	const pendingResolve = dictationFinalizeResolve;
+	dictationFinalizeResolve = null;
 	detachHoldWindowListeners();
 	if (voicePauseTimer) {
 		clearTimeout(voicePauseTimer);
 		voicePauseTimer = null;
 	}
+	if (holdSettleTimer) {
+		clearTimeout(holdSettleTimer);
+		holdSettleTimer = null;
+	}
 	if (holdFinalizeTimer) {
 		clearTimeout(holdFinalizeTimer);
 		holdFinalizeTimer = null;
+	}
+	if (dictationSettleTimer) {
+		clearTimeout(dictationSettleTimer);
+		dictationSettleTimer = null;
+	}
+	if (dictationFinalizeTimer) {
+		clearTimeout(dictationFinalizeTimer);
+		dictationFinalizeTimer = null;
 	}
 	if (voiceRestartTimer) {
 		clearTimeout(voiceRestartTimer);
@@ -1792,6 +1906,7 @@ function stopVoiceInput() {
 	hideVoiceHintBar();
 	updateWechatOverlayUI();
 	forceAbortActiveRecognition();
+	if (pendingResolve) pendingResolve();
 }
 function finalizeHoldSession() {
 	if (holdFinalized) return;
@@ -1799,6 +1914,10 @@ function finalizeHoldSession() {
 	if (voicePauseTimer) {
 		clearTimeout(voicePauseTimer);
 		voicePauseTimer = null;
+	}
+	if (holdSettleTimer) {
+		clearTimeout(holdSettleTimer);
+		holdSettleTimer = null;
 	}
 	if (holdFinalizeTimer) {
 		clearTimeout(holdFinalizeTimer);
@@ -1867,6 +1986,7 @@ function startHoldVoice(startX, startY, deps) {
 		focusInputWithVisualPulse(input, "globalPromptInput", fallbackMsg, showToast);
 		return false;
 	}
+	if (holdStopping && !holdFinalized) finalizeHoldSession();
 	if (voiceSessionActive || activeVoiceRecognition || holdActive) stopVoiceInput();
 	const vh = Number(win?.innerHeight) || 844;
 	holdActive = true;
@@ -1881,6 +2001,8 @@ function startHoldVoice(startX, startY, deps) {
 	holdPauseBreakpoints = [];
 	holdSpokenText = "";
 	holdHadFatalError = false;
+	holdLastResultWasFinal = false;
+	holdLastResultAt = 0;
 	activeHoldDeps = deps || null;
 	voiceSessionActive = true;
 	activeVoiceInputId = "globalPromptInput";
@@ -1904,7 +2026,7 @@ function startHoldVoice(startX, startY, deps) {
 			recognition.lang = resolvedLang;
 			recognition.interimResults = true;
 			recognition.continuous = true;
-			recognition.maxAlternatives = 1;
+			recognition.maxAlternatives = 3;
 			try {
 				recognition.unspokenPunctuation = true;
 			} catch {}
@@ -1918,6 +2040,9 @@ function startHoldVoice(startX, startY, deps) {
 				if (!holdActive && !holdStopping || activeVoiceRecognition !== recognition) return;
 				const utterance = mergeSpeechResults(event?.results);
 				if (!utterance) return;
+				const allFinal = areAllSpeechResultsFinal(event?.results);
+				holdLastResultWasFinal = allFinal;
+				holdLastResultAt = Date.now();
 				chunkProducedText = true;
 				rapidEmptyEnds = 0;
 				resetHoldWatchdog();
@@ -1928,6 +2053,17 @@ function startHoldVoice(startX, startY, deps) {
 				});
 				holdSpokenText = isAutoRestart ? joinDraftAndSpeech(holdCommittedText, liveChunk) : liveChunk;
 				updateWechatOverlayUI();
+				if (holdStopping) {
+					if (holdSettleTimer) {
+						clearTimeout(holdSettleTimer);
+						holdSettleTimer = null;
+					}
+					if (allFinal) holdSettleTimer = setTimeout(() => {
+						holdSettleTimer = null;
+						finalizeHoldSession();
+					}, 60);
+					return;
+				}
 				if (voicePauseTimer) {
 					clearTimeout(voicePauseTimer);
 					voicePauseTimer = null;
@@ -1993,7 +2129,7 @@ function startHoldVoice(startX, startY, deps) {
 				voiceRestartTimer = setTimeout(() => {
 					voiceRestartTimer = null;
 					if (voiceSessionActive && holdActive && !holdStopping) startHoldRecognitionChunk(true);
-				}, 150);
+				}, chunkProducedText ? 25 : 150);
 			};
 			recognition.start();
 		} catch {
@@ -2069,11 +2205,30 @@ function endHoldVoice(deps) {
 			finalizeHoldSession();
 			return;
 		}
+		const maxFlushWaitMs = holdLastResultWasFinal && holdLastResultAt > 0 && Date.now() - holdLastResultAt >= 450 ? 450 : 1200;
 		holdFinalizeTimer = setTimeout(() => {
 			holdFinalizeTimer = null;
 			finalizeHoldSession();
-		}, 380);
+		}, maxFlushWaitMs);
 	} else finalizeHoldSession();
+}
+function isDictationActiveFor(targetInputId = "") {
+	return Boolean(voiceSessionActive && !holdActive && !holdStopping && activeVoiceRecognition && (!targetInputId || activeVoiceInputId === targetInputId));
+}
+function flushVoiceInputBeforeSend(targetInputId = "") {
+	if (!isDictationActiveFor(targetInputId) || !activeDictationFlushHandler) {
+		stopVoiceInput();
+		return Promise.resolve();
+	}
+	return new Promise((resolve) => {
+		dictationFinalizeResolve = resolve;
+		const handler = activeDictationFlushHandler;
+		activeDictationFlushHandler = null;
+		handler(() => {
+			if (dictationFinalizeResolve === resolve) dictationFinalizeResolve = null;
+			resolve();
+		});
+	});
 }
 function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoiceBtn", deps) {
 	const win = window;
@@ -2125,7 +2280,7 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 			recognition.lang = resolvedLang;
 			recognition.interimResults = true;
 			recognition.continuous = true;
-			recognition.maxAlternatives = 1;
+			recognition.maxAlternatives = 3;
 			try {
 				recognition.unspokenPunctuation = true;
 			} catch {}
@@ -2133,22 +2288,98 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 			let chunkProducedText = false;
 			let chunkFatalError = false;
 			let chunkRawText = "";
+			let lastDictationWrittenValue = input.value || "";
+			let gotResultWhileStopping = false;
 			const chunkPauseBreakpoints = [];
 			activeVoiceRecognition = recognition;
+			activeDictationFlushHandler = (done) => {
+				if (!activeVoiceRecognition || activeVoiceRecognition !== recognition) {
+					stopVoiceInput();
+					done();
+					return;
+				}
+				dictationStopping = true;
+				voiceSessionActive = false;
+				if (voicePauseTimer) {
+					clearTimeout(voicePauseTimer);
+					voicePauseTimer = null;
+				}
+				if (voiceRestartTimer) {
+					clearTimeout(voiceRestartTimer);
+					voiceRestartTimer = null;
+				}
+				if (voiceWatchdogTimer) {
+					clearTimeout(voiceWatchdogTimer);
+					voiceWatchdogTimer = null;
+				}
+				if (btnId) setVoiceBtnRecording(btnId, false);
+				hideVoiceHintBar(targetInputId);
+				let finished = false;
+				const finishFlush = () => {
+					if (finished) return;
+					finished = true;
+					dictationFinalizeFn = null;
+					activeDictationFlushHandler = null;
+					if (dictationSettleTimer) {
+						clearTimeout(dictationSettleTimer);
+						dictationSettleTimer = null;
+					}
+					if (dictationFinalizeTimer) {
+						clearTimeout(dictationFinalizeTimer);
+						dictationFinalizeTimer = null;
+					}
+					if (chunkRawText && (gotResultWhileStopping || input.value === lastDictationWrittenValue)) {
+						const finalPunct = punctuateSpeechText(chunkRawText, chunkPauseBreakpoints, {
+							showTrailingPause: false,
+							finalizeSentence: true
+						});
+						input.value = isAutoRestart ? joinDraftAndSpeech(committedBaseText, finalPunct) : committedBaseText + finalPunct;
+						lastDictationWrittenValue = input.value;
+						notifyInputChanged();
+					}
+					stopVoiceInput();
+					done();
+				};
+				dictationFinalizeFn = finishFlush;
+				try {
+					recognition.stop();
+				} catch {
+					finishFlush();
+					return;
+				}
+				dictationFinalizeTimer = setTimeout(() => {
+					dictationFinalizeTimer = null;
+					finishFlush();
+				}, 950);
+			};
 			recognition.onresult = (event) => {
-				if (!voiceSessionActive || activeVoiceRecognition !== recognition) return;
+				if (!voiceSessionActive && !dictationStopping || activeVoiceRecognition !== recognition) return;
 				const utterance = mergeSpeechResults(event?.results);
 				if (!utterance) return;
+				const allFinal = areAllSpeechResultsFinal(event?.results);
 				chunkProducedText = true;
 				rapidEmptyEnds = 0;
-				resetIdleWatchdog();
+				if (voiceSessionActive) resetIdleWatchdog();
 				chunkRawText = utterance;
 				const punctuated = punctuateSpeechText(chunkRawText, chunkPauseBreakpoints, {
 					showTrailingPause: false,
-					finalizeSentence: false
+					finalizeSentence: dictationStopping
 				});
 				input.value = isAutoRestart ? joinDraftAndSpeech(committedBaseText, punctuated) : committedBaseText + punctuated;
+				lastDictationWrittenValue = input.value;
 				notifyInputChanged();
+				if (dictationStopping) {
+					gotResultWhileStopping = true;
+					if (dictationSettleTimer) {
+						clearTimeout(dictationSettleTimer);
+						dictationSettleTimer = null;
+					}
+					if (allFinal) dictationSettleTimer = setTimeout(() => {
+						dictationSettleTimer = null;
+						if (dictationFinalizeFn) dictationFinalizeFn();
+					}, 60);
+					return;
+				}
 				if (voicePauseTimer) {
 					clearTimeout(voicePauseTimer);
 					voicePauseTimer = null;
@@ -2169,6 +2400,7 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 								finalizeSentence: false
 							});
 							input.value = isAutoRestart ? joinDraftAndSpeech(committedBaseText, pausedPunct) : committedBaseText + pausedPunct;
+							lastDictationWrittenValue = input.value;
 							notifyInputChanged();
 						}
 					}, 650);
@@ -2198,6 +2430,10 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 			};
 			recognition.onend = () => {
 				if (activeVoiceRecognition !== recognition) return;
+				if (dictationStopping) {
+					if (dictationFinalizeFn) dictationFinalizeFn();
+					return;
+				}
 				activeVoiceRecognition = null;
 				notifyInputChanged();
 				if (!voiceSessionActive || chunkFatalError) return;
@@ -2217,7 +2453,7 @@ function toggleVoiceInput(targetInputId = "globalPromptInput", btnId = "chatVoic
 				voiceRestartTimer = setTimeout(() => {
 					voiceRestartTimer = null;
 					if (voiceSessionActive) startRecognitionChunk(true);
-				}, 180);
+				}, chunkProducedText ? 25 : 180);
 			};
 			recognition.start();
 		} catch {
@@ -6437,7 +6673,8 @@ function initHubController() {
 		fetchState();
 	}
 	async function sendPromptToActiveSession() {
-		stopVoiceInput();
+		if (isDictationActiveFor("globalPromptInput")) await flushVoiceInputBeforeSend("globalPromptInput");
+		else stopVoiceInput();
 		const input = document.getElementById("globalPromptInput");
 		const rawText = input ? input.value.trim() : "";
 		const pendingAttachments = composerAttachments.chat.slice();
@@ -7900,7 +8137,8 @@ function initHubController() {
 		box.focus();
 	}
 	async function submitNewTask() {
-		stopVoiceInput();
+		if (isDictationActiveFor("newTaskInput")) await flushVoiceInputBeforeSend("newTaskInput");
+		else stopVoiceInput();
 		const inputEl = document.getElementById("newTaskInput");
 		const rawText = inputEl ? inputEl.value.trim() : "";
 		const pendingAttachments = composerAttachments.newTask.slice();

@@ -1958,7 +1958,8 @@ test('Antigravity background task mid-turn push suppression & persistent session
       bridgeState: { tasks: [finalSession], approvals: [] },
     })
     assert.equal(hub.pushHistory.length, 1)
-    assert.match(hub.pushHistory[0].title, /任务完成/)
+    assert.match(hub.pushHistory[0].title, /^✅ /)
+    assert.doesNotMatch(hub.pushHistory[0].title, /No2 Mac|任务完成/)
     assert.equal(hub.getFullState().sessionReadState[finalSession.id]?.unread, true)
 
     // If status briefly flaps running -> idle with the SAME conclusion, deduplication prevents duplicate push

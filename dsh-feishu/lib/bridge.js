@@ -4,6 +4,13 @@ import { basename, extname, resolve, sep } from 'node:path'
 import { parseCommand, splitFirstArg } from './commands.js'
 import { cleanForChat, safeError } from './redact.js'
 import {
+  cleanFeishuMarkdownLinks,
+  extractCleanApprovalPushContent,
+  extractCleanConclusionPushBody,
+  formatHumanToolLabel,
+  stripRedundantProjectPrefixForPush,
+} from '../../hub/push-formatter.js'
+import {
   consumePendingDshInteractionResponse,
   createNewAgentSession,
   deleteAgentSession,
@@ -242,11 +249,12 @@ export class FeishuBridge {
     if (approvals.length > 0) {
       elements.push({ tag: 'div', text: { tag: 'lark_md', content: `**待审批 ${approvals.length}**` } })
       for (const entry of approvals) {
+        const cleanApp = extractCleanApprovalPushContent(entry, { cwd: entry.cwd, maxChars: 160 })
         elements.push({
           tag: 'div',
           text: {
             tag: 'lark_md',
-            content: `⏳ **${escapeCard(entry.title || this.taskTitle(this.agents.get(entry.agentId)))}**\n${escapeCard(entry.toolName)} · ${escapeCard(cleanForChat(entry.reason || '未提供原因', 160))}`,
+            content: `⏳ **${escapeCard(entry.title || this.taskTitle(this.agents.get(entry.agentId)))}**\n${escapeCard(cleanForChat(cleanApp.body, 160))}`,
           },
         })
         elements.push({
@@ -326,7 +334,13 @@ export class FeishuBridge {
     if (this.disposed || this.notifying || !this.config.notify) return
     this.notifying = true
     try {
-      const live = this.agents.list()
+      const live = (this.agents.list() || []).filter(
+        agent =>
+          agent?.session?.header?.origin !== 'subagent' &&
+          agent?.session?.origin !== 'subagent' &&
+          agent?.origin !== 'subagent' &&
+          !agent?.isSubagent,
+      )
       const liveIds = new Set(live.map(agent => agent.id))
       for (const id of this.agentWatch.keys()) {
         if (!liveIds.has(id)) this.agentWatch.delete(id)
@@ -1246,6 +1260,7 @@ export class FeishuBridge {
     const completedPush = view.phase === 'completed'
     const failedPush = view.phase === 'failed'
     const failureStatus = view.status || agent.status
+    const cwd = cwdOf(agent)
     const reply = this.lastAssistantText(agent)
     const running = agent.status === 'running' || accepted
     const statusLine = accepted
@@ -1258,18 +1273,23 @@ export class FeishuBridge {
     const content = accepted
       ? '已发送，等待任务输出…'
       : reply
-      ? normalizeMarkdown(cleanForChat(reply, 2500))
+      ? normalizeMarkdown(cleanForChat(cleanFeishuMarkdownLinks(reply, cwd), 2500))
         .replace(/!\[[^\]]*\]\([^)\s]+\)/g, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim()
       : '暂无输出'
-    const elements = [
-      { tag: 'div', text: { tag: 'lark_md', content: `**${statusLine}**` } },
-      { tag: 'note', elements: [{ tag: 'plain_text', content: `${projectName(cwdOf(agent))} · ${relativeTime(this.lastActivity(agent), this.now())}` }] },
-      { tag: 'hr' },
-      { tag: 'div', text: { tag: 'lark_md', content: '**输出内容**' } },
-      cardOutput(content),
-    ]
+    const elements = []
+    if (!completedPush) {
+      elements.push({ tag: 'div', text: { tag: 'lark_md', content: `**${statusLine}**` } })
+    }
+    elements.push({
+      tag: 'note',
+      elements: [{ tag: 'plain_text', content: `${projectName(cwd)} · ${relativeTime(this.lastActivity(agent), this.now())}` }],
+    })
+    if (!completedPush && !failedPush) {
+      elements.push({ tag: 'hr' })
+    }
+    elements.push(...cardOutputElements(content, { rawReply: reply, cwd }))
     for (const image of media.images ?? []) {
       elements.push({ tag: 'img', img_key: image.imgKey, alt: { tag: 'plain_text', content: image.name }, mode: 'fit_horizontal', preview: true })
     }
@@ -1278,7 +1298,7 @@ export class FeishuBridge {
     }
     if (running) {
       elements.push(
-        { tag: 'note', elements: [{ tag: 'plain_text', content: accepted ? '指令已发送，正在执行。完成后这里会更新结果。' : '任务运行中，不能发新指令。完成后这里会出现输入框。' }] },
+        { tag: 'note', elements: [{ tag: 'plain_text', content: accepted ? '指令已发送，正在执行。完成后这里会更新结果。' : '任务运行中，完成后可在此直接回复。' }] },
         {
           tag: 'action',
           actions: [
@@ -1288,13 +1308,7 @@ export class FeishuBridge {
         },
       )
     } else {
-      const inputNote = completedPush
-        ? '任务已完成，在下面输入指令即可继续。'
-        : failedPush
-        ? '任务异常结束，可以输入指令重试。'
-        : '在下面输入指令，让它继续工作。'
       elements.push(
-        { tag: 'note', elements: [{ tag: 'plain_text', content: inputNote }] },
         {
           tag: 'form',
           name: `prompt_${agent.id}`,
@@ -1302,7 +1316,10 @@ export class FeishuBridge {
             {
               tag: 'input',
               name: 'prompt',
-              placeholder: { tag: 'plain_text', content: '例如：继续，把视频重新导出' },
+              placeholder: {
+                tag: 'plain_text',
+                content: failedPush ? '输入指令重试…' : '直接输入下一条指令继续…',
+              },
               max_length: 1000,
             },
             {
@@ -1397,16 +1414,25 @@ export class FeishuBridge {
   }
 
   approvalCard(entry, request) {
+    const cwd = cwdOf(request?.agent)
     const reason = reasonText(request?.displayReason || request?.reason) || '未提供原因'
+    const cleanApp = extractCleanApprovalPushContent(
+      {
+        toolName: entry.toolName,
+        reason,
+        commandLine: request?.commandLine || '',
+        cwd,
+      },
+      { cwd, maxChars: 280 },
+    )
     const title = this.taskTitle(request?.agent)
     return {
       config: { wide_screen_mode: true },
       header: { template: 'orange', title: { tag: 'plain_text', content: '⏳ 需要审批' } },
       elements: [
         { tag: 'div', text: { tag: 'lark_md', content: `**${escapeCard(title)}**` } },
-        { tag: 'note', elements: [{ tag: 'plain_text', content: `${entry.toolName} · ${projectName(cwdOf(request?.agent))}` }] },
-        { tag: 'div', text: { tag: 'lark_md', content: `**原因**\n${escapeCard(cleanForChat(reason, 500))}` } },
-        { tag: 'note', elements: [{ tag: 'plain_text', content: `${this.config.approvalTtlSeconds} 秒内有效，只批准这一次。` }] },
+        { tag: 'note', elements: [{ tag: 'plain_text', content: `${formatHumanToolLabel(entry.toolName)} · ${projectName(cwd)}` }] },
+        { tag: 'div', text: { tag: 'lark_md', content: escapeCard(cleanForChat(cleanApp.body, 320)) } },
         {
           tag: 'action',
           actions: [
@@ -1419,15 +1445,25 @@ export class FeishuBridge {
   }
 
   unboundApprovalCard(request) {
+    const cwd = cwdOf(request?.agent)
     const reason = reasonText(request?.displayReason || request?.reason) || '未提供原因'
+    const cleanApp = extractCleanApprovalPushContent(
+      {
+        toolName: request?.toolName ?? 'unknown',
+        reason,
+        commandLine: request?.commandLine || '',
+        cwd,
+      },
+      { cwd, maxChars: 280 },
+    )
     return {
       config: { wide_screen_mode: true },
       header: { template: 'orange', title: { tag: 'plain_text', content: '⏳ 等审批' } },
       elements: [
         { tag: 'div', text: { tag: 'lark_md', content: `**${escapeCard(this.taskTitle(request?.agent))}**` } },
-        { tag: 'note', elements: [{ tag: 'plain_text', content: `${request?.toolName ?? 'unknown'} · ${projectName(cwdOf(request?.agent))}` }] },
-        { tag: 'div', text: { tag: 'lark_md', content: `**原因**\n${escapeCard(cleanForChat(reason, 500))}` } },
-        { tag: 'note', elements: [{ tag: 'plain_text', content: '远程模式未开启，审批还留在 Web。想看任务就点详情；要在这里批准，先发「连接」。' }] },
+        { tag: 'note', elements: [{ tag: 'plain_text', content: `${formatHumanToolLabel(request?.toolName)} · ${projectName(cwd)}` }] },
+        { tag: 'div', text: { tag: 'lark_md', content: escapeCard(cleanForChat(cleanApp.body, 320)) } },
+        { tag: 'note', elements: [{ tag: 'plain_text', content: '远程模式未开启，可在网页处理，或发「连接」在此审批。' }] },
         {
           tag: 'action',
           actions: [
@@ -1683,12 +1719,14 @@ export class FeishuBridge {
   }
 
   taskTitle(agent) {
+    const proj = projectName(cwdOf(agent))
     const log = agent?.session?.log
     if (Array.isArray(log)) {
       for (let index = log.length - 1; index >= 0; index -= 1) {
         const event = log[index]
         if (event?.type !== 'session/title') continue
-        const title = oneLine(event.data?.title)
+        const raw = oneLine(event.data?.title)
+        const title = stripRedundantProjectPrefixForPush(raw, proj) || raw
         if (title) return trimTitle(title)
       }
     }
@@ -1700,7 +1738,8 @@ export class FeishuBridge {
     }
     for (const message of messages) {
       if (message?.role !== 'user') continue
-      const text = oneLine(contentText(message.content))
+      const raw = oneLine(contentText(message.content))
+      const text = stripRedundantProjectPrefixForPush(raw, proj) || raw
       if (text) return trimTitle(text)
     }
     return '空会话（未开始）'
@@ -2549,25 +2588,32 @@ function normalizeMarkdown(value) {
 }
 
 function summarize(value) {
-  const text = normalizeMarkdown(value)
-    .replace(/```[\s\S]*?```/g, ' [代码] ')
-    .replace(/^\s{0,3}(#{1,6}|[-*+]|\d+\.)\s+/gm, '')
-    .replace(/[*_`~]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return cleanForChat(text, 180) || '（没有可展示的输出）'
+  const clean = extractCleanConclusionPushBody(value, { maxChars: 170 })
+  return cleanForChat(clean, 180) || '（没有可展示的输出）'
 }
 
-function cardOutput(content) {
+function cardOutputElements(content, { rawReply = '', cwd = '' } = {}) {
   if (content.length <= 450) {
-    return { tag: 'div', text: { tag: 'lark_md', content } }
+    return [{ tag: 'div', text: { tag: 'lark_md', content } }]
   }
-  return {
-    tag: 'collapsible_panel',
-    expanded: false,
-    header: { title: { tag: 'plain_text', content: `输出较长（${content.length} 字），点这里展开` } },
-    elements: [{ tag: 'div', text: { tag: 'lark_md', content } }],
-  }
+  const summaryLine = cleanForChat(
+    extractCleanConclusionPushBody(rawReply || content, { cwd, maxChars: 190 }),
+    210,
+  )
+  return [
+    { tag: 'div', text: { tag: 'lark_md', content: summaryLine } },
+    {
+      tag: 'collapsible_panel',
+      expanded: false,
+      header: {
+        title: {
+          tag: 'plain_text',
+          content: `展开完整回复（${content.length} 字）`,
+        },
+      },
+      elements: [{ tag: 'div', text: { tag: 'lark_md', content } }],
+    },
+  ]
 }
 
 function cardButton(text, type, value) {

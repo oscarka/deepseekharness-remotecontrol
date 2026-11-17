@@ -199,6 +199,14 @@ docker run -d --name dsh-hub \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-17 · v0.7.5</code> — 手机原生语音识别精度跃升 &amp; 双端推送（iPhone + 飞书）高信噪比提纯</strong></summary>
+
+- **手机原生语音识别防截断与同音改字去重（`v0.7.5`）**：在零外部 API Key、零本地模型体积的前提下彻底修复手机系统语音识别（`SpeechRecognition` / `webkitSpeechRecognition`）的 4 项准度瓶颈（[`useVoiceInput.ts`](hub/web/src/hooks/useVoiceInput.ts) / [`controller.js`](hub/web/src/controller.js)）——移除松手后 `380ms` 强行掐断逻辑，改为监听到系统整句上下文同音字修正定稿（`isFinal: true`）或 `onend` 后 `60ms` 极速发送（仅保留 `1200ms` 防挂起兜底）；为 `mergeSpeechResults` 增加最长公共子序列对齐与多候选置信度择优（`maxAlternatives = 3`），兼容系统回溯修正前文同音字而不出现「错句 + 正句」重复拼接；将换气断流续接延迟从 `150–180ms` 压至 `25ms` 消除吞首字盲区；补齐连续听写直接点「发送」（`flushVoiceInputBeforeSend`）与连按两条语音时的尾音/标点自动收尾保护。
+- **iPhone 锁屏通知与飞书推送卡片高信噪比提纯（`v0.7.5`）**：新增零大模型共用推送提纯引擎（[`push-formatter.js`](hub/push-formatter.js)，同步接入 [`hub-core.js`](hub/hub-core.js) 与 [`bridge.js`](dsh-feishu/lib/bridge.js)）——单台电脑自动隐藏冗余机器全名（多机接入时采用 `办公·MBP · ` 极简消歧短名），自动剥除 Markdown 标记、代码块、`file://` 长路径、环境变量前缀、`run_command (BypassSandbox)` 内部代号与开场客套话，并智能保留句末追问；双端同步屏蔽后台子智能体（Subagent）通知、为未确认瞬态审批增加 `1.5s` 防闪断去抖、按 `session-<id>` 自动顶替同会话过期横幅、修复 `running → approval → idle` 完成漏推问题；飞书长回复推送卡片改为顶部直接展露 3 行核心结论 + 底部折叠完整正文。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-16 · v0.7.4</code> — AI 回复一键语音播报（<code>🔊 播报</code>）、Cloud Run 流式加固 &amp; 多实例同步</strong></summary>
 
 - **零配置纯算法 AI 回复语音播报（`v0.7.4`）**：在每条 AI 回复底部的 `📋 复制全文` 右侧新增 **`🔊 播报`** 胶囊。内置 `< 5ms` 零大模型、零词表的纯算法 Markdown 语音清洗与抽句引擎（[`speech.js`](hub/web/src/utils/speech.js)），自动跳过代码块、表格、长路径、Commit 哈希与环境变量并口语化数字/费率/时间；支持 **`⚡ 重点`**（TextRank 自动提炼 30 秒结论）与 **`📖 全文`** 一键切换、优选系统高品质单嗓子不断气中英混读、按下 `🎤` 录音时自动静音防串音，以及**原地无损切换 `1x / 1.25x / 1.5x` 倍速**（基于 `onboundary` 分词游标 + 时间推算双兜底，切倍速直接从当前字往后念，绝不跳回开头）。

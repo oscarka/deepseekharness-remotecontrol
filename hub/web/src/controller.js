@@ -38,6 +38,8 @@ import {
   hideVoiceHintBar,
   setVoiceBtnRecording,
   isVoiceRecording,
+  isDictationActiveFor,
+  flushVoiceInputBeforeSend,
   stopVoiceInput,
   toggleVoiceInput,
   initWechatVoiceMode,
@@ -2767,7 +2769,11 @@ export function initHubController() {
   }
 
   async function sendPromptToActiveSession() {
-    stopVoiceInput();
+    if (isDictationActiveFor('globalPromptInput')) {
+      await flushVoiceInputBeforeSend('globalPromptInput');
+    } else {
+      stopVoiceInput();
+    }
     const input = document.getElementById('globalPromptInput');
     const rawText = input ? input.value.trim() : '';
     const pendingAttachments = composerAttachments.chat.slice();
@@ -4553,7 +4559,11 @@ export function initHubController() {
   }
 
   async function submitNewTask() {
-    stopVoiceInput();
+    if (isDictationActiveFor('newTaskInput')) {
+      await flushVoiceInputBeforeSend('newTaskInput');
+    } else {
+      stopVoiceInput();
+    }
     const inputEl = document.getElementById('newTaskInput');
     const rawText = inputEl ? inputEl.value.trim() : '';
     const pendingAttachments = composerAttachments.newTask.slice();

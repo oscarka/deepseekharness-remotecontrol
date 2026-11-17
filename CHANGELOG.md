@@ -2,6 +2,18 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.7.5] - 2026-11-17
+
+### Added
+
+- **iPhone 锁屏通知与飞书推送卡片高信噪比提纯引擎（`hub/push-formatter.js` / `hub/hub-core.js` / `dsh-feishu/lib/bridge.js`）**：
+  - 单台电脑自动隐藏冗余机器全名（多机接入时智能消歧显示如 `办公·MBP · `），自动剥除会话标题重复项目/时间戳前缀、Markdown 标记、代码块、`file://` 长路径、环境变量前缀、`run_command (BypassSandbox)` 内部代号与开场客套话，并自动保留句末追问；双端屏蔽后台子智能体（Subagent）通知、为未确认瞬态审批增加 `1.5s` 防闪断去抖、按 `session-<id>` 自动顶替同会话过期横幅、修复 `running → approval → idle` 完成漏推问题；飞书长回复（`> 450` 字）推送卡片改为顶部直接露出 3 行核心结论 + 底部折叠完整正文。
+
+### Fixed
+
+- **手机原生语音识别防截断与同音改字去重（`hub/web/src/hooks/useVoiceInput.ts` / `controller.js`）**：
+  - 移除松手后 `380ms` 强行 `abort()` 截断逻辑，改为监听系统整句级同音字修正定稿（`isFinal: true`）或 `onend` 后 `60ms` 极速发送（保留 `1200ms` 防挂起兜底）；为 `mergeSpeechResults` 增加最长公共子序列对齐与多候选置信度择优（`maxAlternatives = 3`）防止系统回溯改字时错句与正句重复拼接；换气断流自动续接延迟由 `150–180ms` 压至 `25ms`；补齐连续听写直接点击「发送」（`flushVoiceInputBeforeSend`）与连按两条语音的尾音收尾保护。
+
 ## [0.7.4] - 2026-11-16
 
 ### Added
