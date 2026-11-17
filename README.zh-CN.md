@@ -199,6 +199,13 @@ docker run -d --name dsh-hub \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-17 · v0.7.7</code> — 修复已发送消息偶发残留在输入框草稿中的问题</strong></summary>
+
+- **已送达消息草稿自愈清理 &amp; iOS 输入法 / 5G 切后台防残影回写（`v0.7.7`）**：彻底根治已发出的消息在重新打开会话时偶发回到输入框的问题（[`controller.js`](hub/web/src/controller.js) / [`ChatStage.tsx`](hub/web/src/components/ChatStage.tsx)）——发送时同步收起手机输入法缓冲并加装 `lastSentComposerGuard` 拦截 iOS 系统键盘听写/拼音延迟回写；5G 切后台锁屏触发 `Load failed` 时先向服务端核验 `clientCmdId` 与对话尾部记录，已送达则绝不误回填；新增基于消息基线计数的 `reconcileDeliveredComposerDraft` 对账机制，自动清除跨端已发或旧版遗留在 `localStorage` 中的陈旧草稿，同时完整保留用户真正重打的同词未发草稿。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-17 · v0.7.6</code> — 交付文档胶囊去重防截断、手机长按存图修复 &amp; 待发图片按会话隔离</strong></summary>
 
 - **交付文档胶囊去重与长文件名省略号修复（`v0.7.6`）**：修复 Antigravity IDE 自定义 `.md` 报告在对话中途重复注入 `📋 **[stem: stem.md]**` + 灰色引用块摘要、孤立 `📋` 断行以及长胶囊文字半字硬截断的问题（[`antigravity-ide.js`](dsh-feishu/lib/antigravity-ide.js) / [`markdown.ts`](hub/web/src/utils/markdown.ts) / [`app.css`](hub/web/src/styles/app.css)），同时前端内置兼容清洗（`stripRedundantInjectedArtifactBlocks`），即使远端旧守护进程尚未重启也能自动合并干净。

@@ -2305,11 +2305,13 @@
     }
 
     @keyframes wechatWaveBounce {
+
       0%,
       100% {
         height: 6px;
         opacity: 0.65;
       }
+
       50% {
         height: 18px;
         opacity: 1;
@@ -2597,6 +2599,7 @@
       -webkit-overflow-scrolling: touch;
       min-width: 0;
     }
+
     .context-row-chips::-webkit-scrollbar {
       display: none;
     }
@@ -2666,6 +2669,7 @@
       -webkit-overflow-scrolling: touch;
       padding: 1px 0 3px;
     }
+
     .new-task-proj-scroll::-webkit-scrollbar {
       display: none;
     }
@@ -2809,6 +2813,7 @@
       margin-bottom: 12px;
       padding: 1px 0;
     }
+
     .new-task-quick-strip::-webkit-scrollbar {
       display: none;
     }

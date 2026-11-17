@@ -172,3 +172,33 @@ test('artifact-display 3: controller & CSS enforce per-session image attachment 
   assert.match(cssSrc, /\.breadcrumbs-bar[\s\S]*?-webkit-user-select:\s*none/)
 })
 
+test('artifact-display 4: sent messages never linger or reappear in composer input across iOS IME ghost commits, 5G Load failed drops, or legacy localStorage poisoning', async () => {
+  const ctrlSrc = await readFile(
+    new URL('../../hub/web/src/controller.js', import.meta.url),
+    'utf8',
+  )
+  const stageSrc = await readFile(
+    new URL('../../hub/web/src/components/ChatStage.tsx', import.meta.url),
+    'utf8',
+  )
+
+  // 1) Send button prevents focus-shift mousedown race on mobile keyboard
+  assert.match(stageSrc, /id="chatSendBtn"[\s\S]*?onMouseDown=\{e => \{\s*e\.preventDefault\(\);/)
+
+  // 2) sendPromptToActiveSession locks target session before await, blurs mobile IME, clears draft timer, and sets lastSentComposerGuard
+  assert.match(ctrlSrc, /const initialTargetSessionId = activeSessionId;/)
+  assert.match(ctrlSrc, /lastSentComposerGuard = \{/)
+  assert.match(ctrlSrc, /clearComposerDraft\(s\.id\);/)
+
+  // 3) Transport exception checks server state before restoring & tags error restores with fromErrorRestore + cmdId
+  assert.match(ctrlSrc, /hasCommandOrPromptDelivered\(/)
+  assert.match(ctrlSrc, /fromErrorRestore:\s*true/)
+
+  // 4) renderActiveChatStage reconciles delivered drafts before switchComposerSession
+  assert.match(
+    ctrlSrc,
+    /reconcileDeliveredComposerDraft\(s,\s*found\.host\);\s*\/\/[^\n]*\n\s*switchComposerSession\(s\.id\);/,
+  )
+})
+
+

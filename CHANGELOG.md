@@ -2,6 +2,15 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.7.7] - 2026-11-17
+
+### Fixed
+
+- **修复已发送消息偶发残留在输入框草稿中的问题（`hub/web/src/controller.js` / `hub/web/src/components/ChatStage.tsx`）**：
+  - 修复手机 5G 传图或发完即切后台/锁屏导致请求体虽已送达服务端执行、回包却被系统中断（`Load failed`）进而把已发文字误回填输入框并在 `visibilitychange` / `pagehide` 重新写入 `dsh_draft_v1_` 草稿的问题；
+  - 修复 iOS 系统键盘语音听写/中文输入法在未失焦状态下点「发送」后异步延迟回写缓冲文本及 `composerDraftTimer` 竞态的问题；
+  - 新增基于会话尾部消息基线计数的 `reconcileDeliveredComposerDraft` 自动对账清理（同步自动清除 `v0.7.6` 及更早版本已残留在手机 `localStorage` 里的旧消息草稿，同时保留用户真正重打的同词未发草稿）。
+
 ## [0.7.6] - 2026-11-17
 
 ### Fixed

@@ -192,6 +192,9 @@ export function ChatStage() {
               type="button"
               class="send-btn composer-send-btn"
               id="chatSendBtn"
+              onMouseDown={e => {
+                e.preventDefault();
+              }}
               onClick={() => (window as any).sendPromptToActiveSession?.()}
             >
               发送

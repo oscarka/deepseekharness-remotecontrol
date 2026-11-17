@@ -199,6 +199,13 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-17 · v0.7.7</code> — Eliminate Ghost Sent Drafts in Mobile Input Box</strong></summary>
+
+- **Self-Healing Sent Draft Reconciliation & iOS IME / 5G Drop Protection (`v0.7.7`)**: Fixed already-sent messages occasionally reappearing in `#globalPromptInput` when reopening a conversation (`controller.js` / `ChatStage.tsx`): added mobile touch `blur()` + `onMouseDown` focus guard + `lastSentComposerGuard` to block delayed iOS keyboard dictation / Pinyin IME ghost `input` commits after tapping **Send**; verified server delivery (`hasCommandOrPromptDelivered`) before restoring text on mobile 5G / lock-screen `Load failed` socket drops; and added wire-baseline `reconcileDeliveredComposerDraft` so both newly delivered prompts and legacy pre-`v0.7.7` stale `localStorage` drafts are purged automatically while preserving genuine repeat unsent drafts.
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-17 · v0.7.6</code> — Clean Artifact Chips, Mobile Image Long-Press Save &amp; Per-Session Image Drafts</strong></summary>
 
 - **Clean Artifact Chips & Legacy Duplicate Block Stripping (`v0.7.6`)**: Fixed custom `.md` deliverable rendering in Antigravity IDE transcripts (`dsh-feishu/lib/antigravity-ide.js` / `hub/web/src/utils/markdown.ts` / `app.css`) so custom report filenames no longer duplicate as `stem: stem.md` or inject orphan `📋` + duplicate blockquote summaries mid-turn before the assistant's own `[report.md](file://...)` link; added automatic frontend cleanup (`stripRedundantInjectedArtifactBlocks`) for payloads from older remote host daemons and fixed `.md-file-chip` CSS flex truncation so long filenames render clean `…` ellipses instead of clipping mid-character.

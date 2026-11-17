@@ -520,6 +520,9 @@ function ChatStage() {
 		type: "button",
 		class: "send-btn composer-send-btn",
 		id: "chatSendBtn",
+		onMouseDown: (e) => {
+			e.preventDefault();
+		},
 		onClick: () => window.sendPromptToActiveSession?.()
 	}, "发送")))), /* @__PURE__ */ k("div", {
 		class: "wechat-voice-overlay zone-send",
@@ -5966,6 +5969,7 @@ function initHubController() {
 			alertBar.style.display = "none";
 			alertBar.dataset.alertSig = "";
 		}
+		reconcileDeliveredComposerDraft(s, found.host);
 		switchComposerSession(s.id);
 		updateChatModelPill(s, found.host);
 		const composerKey = `${s.id}:${s.status}:${s.controlMode || ""}`;
@@ -6520,8 +6524,16 @@ function initHubController() {
 	}
 	let composerSessionId = "";
 	let composerDraftTimer = null;
+	let lastSentComposerGuard = {
+		sessionId: "",
+		text: "",
+		at: 0
+	};
 	function composerDraftKey(sessionId) {
 		return "dsh_draft_v1_" + sessionId;
+	}
+	function composerDraftMetaKey(sessionId) {
+		return "dsh_draft_meta_v1_" + sessionId;
 	}
 	function readComposerDraft(sessionId) {
 		if (!sessionId) return "";
@@ -6531,14 +6543,127 @@ function initHubController() {
 			return "";
 		}
 	}
+	function readComposerDraftMeta(sessionId) {
+		if (!sessionId) return null;
+		try {
+			const raw = localStorage.getItem(composerDraftMetaKey(sessionId));
+			return raw ? JSON.parse(raw) : null;
+		} catch {
+			return null;
+		}
+	}
+	function clearComposerDraft(sessionId) {
+		clearTimeout(composerDraftTimer);
+		composerDraftTimer = null;
+		if (!sessionId) return;
+		try {
+			localStorage.removeItem(composerDraftKey(sessionId));
+			localStorage.removeItem(composerDraftMetaKey(sessionId));
+		} catch {}
+	}
+	function computeSessionWireBaseline(sessionId, rawDraftText) {
+		const cleanText = String(rawDraftText || "").trim();
+		const found = sessionId ? findSessionGlobal(sessionId) : null;
+		const wireTr = Array.isArray(found?.session?._wireTranscript) ? found.session._wireTranscript : [];
+		return {
+			wireSameCount: cleanText ? wireTr.filter((m) => m && m.role === "user" && matchesOptimisticUserText(m.text, cleanText)).length : 0,
+			wireTotalCount: Number(found?.session?._wireTotalCount) || wireTr.length
+		};
+	}
+	function writeComposerDraftValue(sessionId, rawValue, metaOverrides = null) {
+		if (!sessionId) return;
+		const strVal = String(rawValue ?? "");
+		const trimmed = strVal.trim();
+		try {
+			if (!trimmed) {
+				localStorage.removeItem(composerDraftKey(sessionId));
+				localStorage.removeItem(composerDraftMetaKey(sessionId));
+				return;
+			}
+			localStorage.setItem(composerDraftKey(sessionId), strVal);
+			const prevMeta = readComposerDraftMeta(sessionId);
+			let meta;
+			if (metaOverrides && typeof metaOverrides === "object") meta = {
+				text: trimmed,
+				wireSameCount: Number(metaOverrides.wireSameCount ?? 0),
+				wireTotalCount: Number(metaOverrides.wireTotalCount ?? 0),
+				savedAt: Number(metaOverrides.savedAt || Date.now()),
+				fromErrorRestore: Boolean(metaOverrides.fromErrorRestore),
+				cmdId: String(metaOverrides.cmdId || "")
+			};
+			else if (prevMeta && prevMeta.text === trimmed && !prevMeta.fromErrorRestore) meta = prevMeta;
+			else {
+				const base = computeSessionWireBaseline(sessionId, trimmed);
+				meta = {
+					text: trimmed,
+					wireSameCount: base.wireSameCount,
+					wireTotalCount: base.wireTotalCount,
+					savedAt: Date.now(),
+					fromErrorRestore: false,
+					cmdId: ""
+				};
+			}
+			localStorage.setItem(composerDraftMetaKey(sessionId), JSON.stringify(meta));
+		} catch {}
+	}
 	function persistComposerDraft(sessionId = composerSessionId) {
 		if (!sessionId) return;
 		const input = document.getElementById("globalPromptInput");
 		if (!input) return;
-		try {
-			if (input.value.trim()) localStorage.setItem(composerDraftKey(sessionId), input.value);
-			else localStorage.removeItem(composerDraftKey(sessionId));
-		} catch {}
+		const val = String(input.value || "");
+		if (val.trim() && lastSentComposerGuard.sessionId === sessionId && Date.now() - lastSentComposerGuard.at < 2e3 && val.trim() === lastSentComposerGuard.text) {
+			input.value = "";
+			clearComposerDraft(sessionId);
+			return;
+		}
+		writeComposerDraftValue(sessionId, val);
+	}
+	function hasCommandOrPromptDelivered(session, host, cmdId, rawPromptText, baselineSameCount, baselineTotalCount) {
+		if (!session) return false;
+		if (cmdId && host) {
+			const inPending = (host.pendingCommands || []).some((c) => c && c.id === cmdId);
+			const inFlight = (host.inflightCommands || []).some((c) => c && c.id === cmdId);
+			const okRecent = (host.recentResults || []).some((r) => r && r.id === cmdId && r.ok !== false && !r.cancelled && !r.expired);
+			if (inPending || inFlight || okRecent) return true;
+		}
+		const cleanText = String(rawPromptText || "").trim();
+		if (!cleanText) return false;
+		const wireTr = Array.isArray(session._wireTranscript) ? session._wireTranscript : [];
+		return hasOptimisticSyncedToWire(wireTr, Number(session._wireTotalCount) || wireTr.length, {
+			text: cleanText,
+			rawText: cleanText,
+			baselineSameUserCount: typeof baselineSameCount === "number" ? baselineSameCount : 0,
+			baselineTotalCount: typeof baselineTotalCount === "number" ? baselineTotalCount : 0
+		});
+	}
+	function reconcileDeliveredComposerDraft(session, host) {
+		if (!session || !session.id) return;
+		const sid = session.id;
+		const draftVal = readComposerDraft(sid);
+		const trimmed = String(draftVal || "").trim();
+		if (!trimmed) return;
+		const meta = readComposerDraftMeta(sid);
+		let delivered = false;
+		if (meta && meta.text === trimmed) delivered = hasCommandOrPromptDelivered(session, host, meta.cmdId || "", trimmed, meta.wireSameCount, meta.wireTotalCount);
+		else {
+			const wireTr = Array.isArray(session._wireTranscript) ? session._wireTranscript : [];
+			const userMsgs = (expandedTranscriptBySession.get(sid)?.transcript?.length > wireTr.length ? expandedTranscriptBySession.get(sid).transcript : wireTr).filter((m) => m && m.role === "user");
+			const tailUserMsgs = userMsgs.slice(-2);
+			if (trimmed.length >= 2 && tailUserMsgs.some((m) => matchesOptimisticUserText(m.text, trimmed)) || trimmed.length >= 8 && userMsgs.some((m) => matchesOptimisticUserText(m.text, trimmed))) delivered = true;
+			else writeComposerDraftValue(sid, draftVal);
+		}
+		if (!delivered) return;
+		clearComposerDraft(sid);
+		if (meta?.fromErrorRestore) {
+			clearChatAttachmentList(sid);
+			if ((composerSessionId || activeSessionId) === sid) renderAttachmentStrip("chat");
+		}
+		const input = document.getElementById("globalPromptInput");
+		if (input && (composerSessionId === sid || activeSessionId === sid) && String(input.value || "").trim() === trimmed && (meta?.fromErrorRestore || typeof document !== "undefined" && document.activeElement !== input)) {
+			input.value = "";
+			input.style.height = "";
+			autoGrowComposer();
+		}
 	}
 	function autoGrowComposer(event) {
 		const input = document.getElementById("globalPromptInput");
@@ -6550,6 +6675,19 @@ function initHubController() {
 		input.style.overflowY = fullHeight > 132 ? "auto" : "hidden";
 	}
 	function onComposerInput(event) {
+		const input = document.getElementById("globalPromptInput");
+		const activeSid = composerSessionId || activeSessionId;
+		if (input && lastSentComposerGuard.sessionId && lastSentComposerGuard.sessionId === activeSid && Date.now() - lastSentComposerGuard.at < 2e3 && event?.inputType !== "insertFromPaste") {
+			const curVal = String(input.value || "").trim();
+			const unfocusedGhostCommit = typeof document !== "undefined" && document.activeElement && document.activeElement !== input && Boolean(curVal);
+			const exactEchoCommit = lastSentComposerGuard.text.length >= 2 && curVal === lastSentComposerGuard.text;
+			if (unfocusedGhostCommit || exactEchoCommit) {
+				input.value = "";
+				clearComposerDraft(activeSid);
+				autoGrowComposer();
+				return;
+			}
+		}
 		autoGrowComposer(event);
 		clearTimeout(composerDraftTimer);
 		composerDraftTimer = setTimeout(() => persistComposerDraft(), 250);
@@ -6771,13 +6909,21 @@ function initHubController() {
 		fetchState();
 	}
 	async function sendPromptToActiveSession() {
+		const initialTargetSessionId = activeSessionId;
 		if (isDictationActiveFor("globalPromptInput")) await flushVoiceInputBeforeSend("globalPromptInput");
 		else stopVoiceInput();
+		clearTimeout(composerDraftTimer);
+		composerDraftTimer = null;
 		const input = document.getElementById("globalPromptInput");
+		const targetSessionId = initialTargetSessionId || activeSessionId;
+		if (!targetSessionId) return;
+		if (input && composerUsesCoarsePointer() && typeof document !== "undefined" && document.activeElement === input && typeof input.blur === "function") try {
+			input.blur();
+		} catch {}
 		const rawText = input ? input.value.trim() : "";
-		const pendingAttachments = getAttachmentList("chat", activeSessionId).slice();
-		if (!rawText && pendingAttachments.length === 0 || !activeSessionId) return;
-		const found = findSessionGlobal(activeSessionId);
+		const pendingAttachments = getAttachmentList("chat", targetSessionId).slice();
+		if (!rawText && pendingAttachments.length === 0) return;
+		const found = findSessionGlobal(targetSessionId);
 		if (!found) return;
 		const { session: s, host } = found;
 		const canSteer = s.capabilities?.canSteer !== false && s.harness !== "claude";
@@ -6787,15 +6933,22 @@ function initHubController() {
 		}
 		const text = rawText || "请查看我上传的截图并帮我分析处理。";
 		const optimisticText = pendingAttachments.length > 0 ? `${text}\n[🖼️ 已附带 ${pendingAttachments.length} 张截图]` : text;
-		if (input) input.value = "";
+		lastSentComposerGuard = {
+			sessionId: s.id,
+			text: rawText || text,
+			at: Date.now()
+		};
+		if (input && (!composerSessionId || composerSessionId === s.id)) input.value = "";
 		clearChatAttachmentList(s.id);
-		if (composerSessionId && composerSessionId !== s.id) clearChatAttachmentList(composerSessionId);
+		clearComposerDraft(s.id);
+		if (composerSessionId && composerSessionId !== s.id) {
+			clearChatAttachmentList(composerSessionId);
+			clearComposerDraft(composerSessionId);
+		}
 		renderAttachmentStrip("chat");
-		try {
-			localStorage.removeItem(composerDraftKey(composerSessionId || activeSessionId));
-		} catch {}
 		autoGrowComposer();
 		if (consumeReturnToVoiceAfterSend()) setWechatVoiceMode(true, false, false);
+		const clientCmdId = `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 		const optMap = ensureOptimisticMsgsMap();
 		const wireTr = Array.isArray(s._wireTranscript) ? s._wireTranscript : [];
 		const probeOpt = {
@@ -6806,7 +6959,7 @@ function initHubController() {
 		const baselineTotalCount = Number(s._wireTotalCount) || wireTr.length;
 		const optEntry = {
 			id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-			cmdId: "",
+			cmdId: clientCmdId,
 			text: optimisticText,
 			rawText: text,
 			time: Date.now(),
@@ -6822,9 +6975,11 @@ function initHubController() {
 		const cmdType = s.status === "running" ? "steer" : "prompt";
 		if (Boolean(host && host.online !== false && host.activelyConnected !== false)) showToast(pendingAttachments.length > 0 ? `🖼️ 已发送截图与指令 (${pendingAttachments.length} 张)` : cmdType === "steer" ? "⚡ 已发送实时插话" : "📨 已发送指令");
 		let dispatchRes = null;
+		let transportException = false;
 		const chosenChatModel = selectedSessionModels[s.id] || "";
 		try {
 			dispatchRes = await dispatchHostCommand(s.hostId, {
+				id: clientCmdId,
 				type: cmdType,
 				agentId: s.id,
 				cwd: s.cwd || "",
@@ -6838,20 +6993,40 @@ function initHubController() {
 				})) } : {}
 			});
 		} catch (err) {
+			transportException = true;
 			dispatchRes = {
 				ok: false,
 				error: err?.message || "网络请求失败"
 			};
 		}
 		if (!dispatchRes || dispatchRes.ok === false) {
+			if (transportException) await fetchState({
+				silent: true,
+				forceFresh: true
+			}).catch(() => null);
+			const latestFound = findSessionGlobal(s.id);
+			if (latestFound && hasCommandOrPromptDelivered(latestFound.session, latestFound.host, clientCmdId, text, baselineSameUserCount, baselineTotalCount)) {
+				clearComposerDraft(s.id);
+				scheduleFallbackStateSync();
+				return;
+			}
 			optMap[s.id] = (optMap[s.id] || []).filter((item) => item.id !== optEntry.id);
 			persistOptimisticMsgsMap();
 			lastRenderedChatKey = "";
 			renderActiveChatStage();
 			showToast("❌ " + (dispatchRes?.error || "发送指令失败"));
-			if (input && !input.value.trim() && rawText) {
-				input.value = rawText;
-				autoGrowComposer();
+			if (rawText) {
+				writeComposerDraftValue(s.id, rawText, {
+					wireSameCount: baselineSameUserCount,
+					wireTotalCount: baselineTotalCount,
+					savedAt: Date.now(),
+					fromErrorRestore: true,
+					cmdId: clientCmdId
+				});
+				if (input && (composerSessionId === s.id || activeSessionId === s.id) && !input.value.trim()) {
+					input.value = rawText;
+					autoGrowComposer();
+				}
 			}
 			const curSessionList = getAttachmentList("chat", s.id);
 			if (pendingAttachments.length > 0 && curSessionList.length === 0) {
@@ -6862,7 +7037,7 @@ function initHubController() {
 			return;
 		}
 		if (dispatchRes.queued) showToast("⏳ 电脑当前休眠/离线，指令已排队（10分钟内上线自动执行，可随时取消）");
-		const cmdId = dispatchRes?.command?.id;
+		const cmdId = dispatchRes?.command?.id || clientCmdId;
 		if (cmdId) {
 			optEntry.cmdId = cmdId;
 			persistOptimisticMsgsMap();
@@ -6880,9 +7055,18 @@ function initHubController() {
 							lastRenderedChatKey = "";
 							renderActiveChatStage();
 							showToast("❌ " + (data.result.error || data.result.message || "发送失败"));
-							if (input && !input.value.trim() && rawText) {
-								input.value = rawText;
-								autoGrowComposer();
+							if (rawText) {
+								writeComposerDraftValue(s.id, rawText, {
+									wireSameCount: baselineSameUserCount,
+									wireTotalCount: baselineTotalCount,
+									savedAt: Date.now(),
+									fromErrorRestore: false,
+									cmdId: ""
+								});
+								if (input && (composerSessionId === s.id || activeSessionId === s.id) && !input.value.trim()) {
+									input.value = rawText;
+									autoGrowComposer();
+								}
 							}
 							const curSessionList = getAttachmentList("chat", s.id);
 							if (pendingAttachments.length > 0 && curSessionList.length === 0) {
@@ -10578,7 +10762,9 @@ function initHubController() {
 		dispatchHostCommand,
 		composerDraftKey,
 		readComposerDraft,
+		clearComposerDraft,
 		persistComposerDraft,
+		reconcileDeliveredComposerDraft,
 		autoGrowComposer,
 		onComposerInput,
 		composerUsesCoarsePointer,

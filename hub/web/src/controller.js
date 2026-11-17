@@ -708,11 +708,11 @@ export function initHubController() {
         const hydratedWire = hydratedWireTranscriptBySession.get(t.id);
         const wireTranscript =
           hydratedWire &&
-          Array.isArray(hydratedWire.transcript) &&
-          hydratedWire.transcript.length >= rawWireTranscript.length &&
-          t.status !== 'running' &&
-          t.status !== 'approval' &&
-          (!t.sessionRev || !hydratedWire.sessionRev || hydratedWire.sessionRev === t.sessionRev)
+            Array.isArray(hydratedWire.transcript) &&
+            hydratedWire.transcript.length >= rawWireTranscript.length &&
+            t.status !== 'running' &&
+            t.status !== 'approval' &&
+            (!t.sessionRev || !hydratedWire.sessionRev || hydratedWire.sessionRev === t.sessionRev)
             ? [...hydratedWire.transcript]
             : rawWireTranscript;
         const serverWireTotalCount = Math.max(
@@ -1570,10 +1570,10 @@ export function initHubController() {
       activeSpeechState.msgIdx === msgIdx;
     const speakControlsHtml = isSpeakingThis
       ? `<button type="button" class="assistant-copy-btn assistant-speak-btn speaking" onclick="stopAssistantSpeech()">⏹ 停止</button>` +
-        (activeSpeechState.hasDistinctSummary
-          ? `<button type="button" class="assistant-copy-btn assistant-speak-sub-btn" onclick="switchAssistantSpeechMode(${msgIdx})" title="切换重点摘要 / 完整去噪">${activeSpeechState.mode === 'concise' ? '⚡ 重点' : '📖 全文'}</button>`
-          : '') +
-        `<button type="button" class="assistant-copy-btn assistant-speak-sub-btn" onclick="cycleAssistantSpeechRate(${msgIdx})" title="切换播报倍速">${activeSpeechState.rate}x</button>`
+      (activeSpeechState.hasDistinctSummary
+        ? `<button type="button" class="assistant-copy-btn assistant-speak-sub-btn" onclick="switchAssistantSpeechMode(${msgIdx})" title="切换重点摘要 / 完整去噪">${activeSpeechState.mode === 'concise' ? '⚡ 重点' : '📖 全文'}</button>`
+        : '') +
+      `<button type="button" class="assistant-copy-btn assistant-speak-sub-btn" onclick="cycleAssistantSpeechRate(${msgIdx})" title="切换播报倍速">${activeSpeechState.rate}x</button>`
       : `<button type="button" class="assistant-copy-btn assistant-speak-btn" onclick="toggleSpeakAssistantReply(${msgIdx})">🔊 播报</button>`;
     return `<div class="assistant-copy-footer" data-footer-session-id="${esc(sessionId)}" data-footer-msg-idx="${msgIdx}"><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 复制全文</button>${speakControlsHtml}<span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span></div>`;
   }
@@ -1750,15 +1750,15 @@ export function initHubController() {
       activeSpeechState.msgIdx === msgIdx;
     const resumeOffset = isCurrentlySpeakingThis
       ? computeSpeechResumeOffset({
-          fullText: activeSpeechState.fullSpokenText,
-          docLang: activeSpeechState.docLang,
-          segmentBaseOffset: activeSpeechState.segmentBaseOffset,
-          segmentStartedAt: activeSpeechState.segmentStartedAt,
-          segmentRate: prevRate,
-          boundaryCharOffset: activeSpeechState.boundaryCharOffset,
-          boundaryUpdatedAt: activeSpeechState.boundaryUpdatedAt,
-          nowMs: Date.now(),
-        })
+        fullText: activeSpeechState.fullSpokenText,
+        docLang: activeSpeechState.docLang,
+        segmentBaseOffset: activeSpeechState.segmentBaseOffset,
+        segmentStartedAt: activeSpeechState.segmentStartedAt,
+        segmentRate: prevRate,
+        boundaryCharOffset: activeSpeechState.boundaryCharOffset,
+        boundaryUpdatedAt: activeSpeechState.boundaryUpdatedAt,
+        nowMs: Date.now(),
+      })
       : 0;
 
     const curIdx = SPEECH_RATES.indexOf(prevRate);
@@ -1852,6 +1852,9 @@ export function initHubController() {
       alertBar.style.display = 'none';
       alertBar.dataset.alertSig = '';
     }
+
+    // 先对齐清理已送达的陈旧草稿（如 5G 切后台假失败回填、跨端已发或历史残留），再切换草稿
+    reconcileDeliveredComposerDraft(s, found.host);
 
     // 切换会话时换回该会话的草稿（同一会话内绝不覆盖用户正在输入的内容）
     switchComposerSession(s.id);
@@ -2498,10 +2501,10 @@ export function initHubController() {
     const ctrl = canAbort ? new AbortController() : null;
     const timer = ctrl
       ? setTimeout(() => {
-          try {
-            ctrl.abort();
-          } catch { }
-        }, timeoutMs)
+        try {
+          ctrl.abort();
+        } catch { }
+      }, timeoutMs)
       : null;
     try {
       return await apiFetch(path, {
@@ -2540,12 +2543,17 @@ export function initHubController() {
     }
   }
 
-  // ---- 输入框：多行、自动增高、按会话存草稿 ----
+  // ---- 输入框：多行、自动增高、按会话存草稿（含已送达消息自愈去重与 iOS 键盘语音残影拦截） ----
   let composerSessionId = '';
   let composerDraftTimer = null;
+  let lastSentComposerGuard = { sessionId: '', text: '', at: 0 };
 
   function composerDraftKey(sessionId) {
     return 'dsh_draft_v1_' + sessionId;
+  }
+
+  function composerDraftMetaKey(sessionId) {
+    return 'dsh_draft_meta_v1_' + sessionId;
   }
 
   function readComposerDraft(sessionId) {
@@ -2553,15 +2561,174 @@ export function initHubController() {
     try { return localStorage.getItem(composerDraftKey(sessionId)) || ''; } catch { return ''; }
   }
 
+  function readComposerDraftMeta(sessionId) {
+    if (!sessionId) return null;
+    try {
+      const raw = localStorage.getItem(composerDraftMetaKey(sessionId));
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function clearComposerDraft(sessionId) {
+    clearTimeout(composerDraftTimer);
+    composerDraftTimer = null;
+    if (!sessionId) return;
+    try {
+      localStorage.removeItem(composerDraftKey(sessionId));
+      localStorage.removeItem(composerDraftMetaKey(sessionId));
+    } catch { }
+  }
+
+  function computeSessionWireBaseline(sessionId, rawDraftText) {
+    const cleanText = String(rawDraftText || '').trim();
+    const found = sessionId ? findSessionGlobal(sessionId) : null;
+    const wireTr = Array.isArray(found?.session?._wireTranscript) ? found.session._wireTranscript : [];
+    const wireSameCount = cleanText
+      ? wireTr.filter(m => m && m.role === 'user' && matchesOptimisticUserText(m.text, cleanText)).length
+      : 0;
+    const wireTotalCount = Number(found?.session?._wireTotalCount) || wireTr.length;
+    return { wireSameCount, wireTotalCount };
+  }
+
+  function writeComposerDraftValue(sessionId, rawValue, metaOverrides = null) {
+    if (!sessionId) return;
+    const strVal = String(rawValue ?? '');
+    const trimmed = strVal.trim();
+    try {
+      if (!trimmed) {
+        localStorage.removeItem(composerDraftKey(sessionId));
+        localStorage.removeItem(composerDraftMetaKey(sessionId));
+        return;
+      }
+      localStorage.setItem(composerDraftKey(sessionId), strVal);
+      const prevMeta = readComposerDraftMeta(sessionId);
+      let meta;
+      if (metaOverrides && typeof metaOverrides === 'object') {
+        meta = {
+          text: trimmed,
+          wireSameCount: Number(metaOverrides.wireSameCount ?? 0),
+          wireTotalCount: Number(metaOverrides.wireTotalCount ?? 0),
+          savedAt: Number(metaOverrides.savedAt || Date.now()),
+          fromErrorRestore: Boolean(metaOverrides.fromErrorRestore),
+          cmdId: String(metaOverrides.cmdId || ''),
+        };
+      } else if (prevMeta && prevMeta.text === trimmed && !prevMeta.fromErrorRestore) {
+        meta = prevMeta;
+      } else {
+        const base = computeSessionWireBaseline(sessionId, trimmed);
+        meta = {
+          text: trimmed,
+          wireSameCount: base.wireSameCount,
+          wireTotalCount: base.wireTotalCount,
+          savedAt: Date.now(),
+          fromErrorRestore: false,
+          cmdId: '',
+        };
+      }
+      localStorage.setItem(composerDraftMetaKey(sessionId), JSON.stringify(meta));
+    } catch { }
+  }
+
   function persistComposerDraft(sessionId = composerSessionId) {
     if (!sessionId) return;
     const input = document.getElementById('globalPromptInput');
     if (!input) return;
-    try {
-      // 只存用户真正写过的内容，空白不占空间
-      if (input.value.trim()) localStorage.setItem(composerDraftKey(sessionId), input.value);
-      else localStorage.removeItem(composerDraftKey(sessionId));
-    } catch { }
+    const val = String(input.value || '');
+    // 防止刚点完发送（如切换后台/触发 pagehide）把 iOS 输入法延迟回写的已发送旧句重新落盘
+    if (
+      val.trim() &&
+      lastSentComposerGuard.sessionId === sessionId &&
+      Date.now() - lastSentComposerGuard.at < 2000 &&
+      val.trim() === lastSentComposerGuard.text
+    ) {
+      input.value = '';
+      clearComposerDraft(sessionId);
+      return;
+    }
+    writeComposerDraftValue(sessionId, val);
+  }
+
+  function hasCommandOrPromptDelivered(session, host, cmdId, rawPromptText, baselineSameCount, baselineTotalCount) {
+    if (!session) return false;
+    if (cmdId && host) {
+      const inPending = (host.pendingCommands || []).some(c => c && c.id === cmdId);
+      const inFlight = (host.inflightCommands || []).some(c => c && c.id === cmdId);
+      const okRecent = (host.recentResults || []).some(
+        r => r && r.id === cmdId && r.ok !== false && !r.cancelled && !r.expired
+      );
+      if (inPending || inFlight || okRecent) return true;
+    }
+    const cleanText = String(rawPromptText || '').trim();
+    if (!cleanText) return false;
+    const wireTr = Array.isArray(session._wireTranscript) ? session._wireTranscript : [];
+    const wireTotal = Number(session._wireTotalCount) || wireTr.length;
+    return hasOptimisticSyncedToWire(wireTr, wireTotal, {
+      text: cleanText,
+      rawText: cleanText,
+      baselineSameUserCount: typeof baselineSameCount === 'number' ? baselineSameCount : 0,
+      baselineTotalCount: typeof baselineTotalCount === 'number' ? baselineTotalCount : 0,
+    });
+  }
+
+  function reconcileDeliveredComposerDraft(session, host) {
+    if (!session || !session.id) return;
+    const sid = session.id;
+    const draftVal = readComposerDraft(sid);
+    const trimmed = String(draftVal || '').trim();
+    if (!trimmed) return;
+
+    const meta = readComposerDraftMeta(sid);
+    let delivered = false;
+    if (meta && meta.text === trimmed) {
+      delivered = hasCommandOrPromptDelivered(
+        session,
+        host,
+        meta.cmdId || '',
+        trimmed,
+        meta.wireSameCount,
+        meta.wireTotalCount
+      );
+    } else {
+      // 兼容清理 v0.7.6 及更早版本遗留在手机 localStorage 中（无 meta 记录）且已出现在会话历史里的旧消息
+      const wireTr = Array.isArray(session._wireTranscript) ? session._wireTranscript : [];
+      const fullTr =
+        expandedTranscriptBySession.get(sid)?.transcript?.length > wireTr.length
+          ? expandedTranscriptBySession.get(sid).transcript
+          : wireTr;
+      const userMsgs = fullTr.filter(m => m && m.role === 'user');
+      const tailUserMsgs = userMsgs.slice(-2);
+      if (
+        (trimmed.length >= 2 && tailUserMsgs.some(m => matchesOptimisticUserText(m.text, trimmed))) ||
+        (trimmed.length >= 8 && userMsgs.some(m => matchesOptimisticUserText(m.text, trimmed)))
+      ) {
+        delivered = true;
+      } else {
+        writeComposerDraftValue(sid, draftVal);
+      }
+    }
+
+    if (!delivered) return;
+
+    clearComposerDraft(sid);
+    if (meta?.fromErrorRestore) {
+      clearChatAttachmentList(sid);
+      if ((composerSessionId || activeSessionId) === sid) {
+        renderAttachmentStrip('chat');
+      }
+    }
+    const input = document.getElementById('globalPromptInput');
+    if (
+      input &&
+      (composerSessionId === sid || activeSessionId === sid) &&
+      String(input.value || '').trim() === trimmed &&
+      (meta?.fromErrorRestore || (typeof document !== 'undefined' && document.activeElement !== input))
+    ) {
+      input.value = '';
+      input.style.height = '';
+      autoGrowComposer();
+    }
   }
 
   function autoGrowComposer(event) {
@@ -2582,6 +2749,30 @@ export function initHubController() {
   }
 
   function onComposerInput(event) {
+    const input = document.getElementById('globalPromptInput');
+    const activeSid = composerSessionId || activeSessionId;
+    if (
+      input &&
+      lastSentComposerGuard.sessionId &&
+      lastSentComposerGuard.sessionId === activeSid &&
+      Date.now() - lastSentComposerGuard.at < 2000 &&
+      event?.inputType !== 'insertFromPaste'
+    ) {
+      const curVal = String(input.value || '').trim();
+      const unfocusedGhostCommit =
+        typeof document !== 'undefined' &&
+        document.activeElement &&
+        document.activeElement !== input &&
+        Boolean(curVal);
+      const exactEchoCommit =
+        lastSentComposerGuard.text.length >= 2 && curVal === lastSentComposerGuard.text;
+      if (unfocusedGhostCommit || exactEchoCommit) {
+        input.value = '';
+        clearComposerDraft(activeSid);
+        autoGrowComposer();
+        return;
+      }
+    }
     autoGrowComposer(event);
     clearTimeout(composerDraftTimer);
     composerDraftTimer = setTimeout(() => persistComposerDraft(), 250);
@@ -2862,17 +3053,33 @@ export function initHubController() {
   }
 
   async function sendPromptToActiveSession() {
+    const initialTargetSessionId = activeSessionId;
     if (isDictationActiveFor('globalPromptInput')) {
       await flushVoiceInputBeforeSend('globalPromptInput');
     } else {
       stopVoiceInput();
     }
+    clearTimeout(composerDraftTimer);
+    composerDraftTimer = null;
     const input = document.getElementById('globalPromptInput');
+    const targetSessionId = initialTargetSessionId || activeSessionId;
+    if (!targetSessionId) return;
+    if (
+      input &&
+      composerUsesCoarsePointer() &&
+      typeof document !== 'undefined' &&
+      document.activeElement === input &&
+      typeof input.blur === 'function'
+    ) {
+      try {
+        input.blur();
+      } catch { }
+    }
     const rawText = input ? input.value.trim() : '';
-    const activeAttachments = getAttachmentList('chat', activeSessionId);
+    const activeAttachments = getAttachmentList('chat', targetSessionId);
     const pendingAttachments = activeAttachments.slice();
-    if ((!rawText && pendingAttachments.length === 0) || !activeSessionId) return;
-    const found = findSessionGlobal(activeSessionId);
+    if (!rawText && pendingAttachments.length === 0) return;
+    const found = findSessionGlobal(targetSessionId);
     if (!found) return;
     const { session: s, host } = found;
     const canSteer = s.capabilities?.canSteer !== false && s.harness !== 'claude';
@@ -2884,18 +3091,27 @@ export function initHubController() {
     const optimisticText = pendingAttachments.length > 0
       ? `${text}\n[🖼️ 已附带 ${pendingAttachments.length} 张截图]`
       : text;
-    if (input) input.value = '';
+    lastSentComposerGuard = {
+      sessionId: s.id,
+      text: rawText || text,
+      at: Date.now(),
+    };
+    if (input && (!composerSessionId || composerSessionId === s.id)) {
+      input.value = '';
+    }
     clearChatAttachmentList(s.id);
+    clearComposerDraft(s.id);
     if (composerSessionId && composerSessionId !== s.id) {
       clearChatAttachmentList(composerSessionId);
+      clearComposerDraft(composerSessionId);
     }
     renderAttachmentStrip('chat');
-    try { localStorage.removeItem(composerDraftKey(composerSessionId || activeSessionId)); } catch { }
     autoGrowComposer();
     if (consumeReturnToVoiceAfterSend()) {
       setWechatVoiceMode(true, false, false);
     }
 
+    const clientCmdId = `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const optMap = ensureOptimisticMsgsMap();
     const wireTr = Array.isArray(s._wireTranscript) ? s._wireTranscript : [];
     const probeOpt = { text: optimisticText, rawText: text };
@@ -2905,7 +3121,7 @@ export function initHubController() {
     const baselineTotalCount = Number(s._wireTotalCount) || wireTr.length;
     const optEntry = {
       id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      cmdId: '',
+      cmdId: clientCmdId,
       text: optimisticText,
       rawText: text,
       time: Date.now(),
@@ -2931,9 +3147,11 @@ export function initHubController() {
       );
     }
     let dispatchRes = null;
+    let transportException = false;
     const chosenChatModel = selectedSessionModels[s.id] || '';
     try {
       dispatchRes = await dispatchHostCommand(s.hostId, {
+        id: clientCmdId,
         type: cmdType,
         agentId: s.id,
         cwd: s.cwd || '',
@@ -2951,18 +3169,50 @@ export function initHubController() {
           : {}),
       });
     } catch (err) {
+      transportException = true;
       dispatchRes = { ok: false, error: err?.message || '网络请求失败' };
     }
 
     if (!dispatchRes || dispatchRes.ok === false) {
+      // 手机 5G 切换/切后台锁屏时，请求体往往已抵达服务端执行，但回包被系统中断（Load failed）：
+      // 先刷新核对一次服务端状态，若指令已在队列/已完成或已写入对话记录，则视为发送成功，绝不误回填输入框！
+      if (transportException) {
+        await fetchState({ silent: true, forceFresh: true }).catch(() => null);
+      }
+      const latestFound = findSessionGlobal(s.id);
+      if (
+        latestFound &&
+        hasCommandOrPromptDelivered(
+          latestFound.session,
+          latestFound.host,
+          clientCmdId,
+          text,
+          baselineSameUserCount,
+          baselineTotalCount
+        )
+      ) {
+        clearComposerDraft(s.id);
+        scheduleFallbackStateSync();
+        return;
+      }
+
       optMap[s.id] = (optMap[s.id] || []).filter(item => item.id !== optEntry.id);
       persistOptimisticMsgsMap();
       lastRenderedChatKey = '';
       renderActiveChatStage();
       showToast('❌ ' + (dispatchRes?.error || '发送指令失败'));
-      if (input && !input.value.trim() && rawText) {
-        input.value = rawText;
-        autoGrowComposer();
+      if (rawText) {
+        writeComposerDraftValue(s.id, rawText, {
+          wireSameCount: baselineSameUserCount,
+          wireTotalCount: baselineTotalCount,
+          savedAt: Date.now(),
+          fromErrorRestore: true,
+          cmdId: clientCmdId,
+        });
+        if (input && (composerSessionId === s.id || activeSessionId === s.id) && !input.value.trim()) {
+          input.value = rawText;
+          autoGrowComposer();
+        }
       }
       const curSessionList = getAttachmentList('chat', s.id);
       if (pendingAttachments.length > 0 && curSessionList.length === 0) {
@@ -2977,7 +3227,7 @@ export function initHubController() {
       showToast('⏳ 电脑当前休眠/离线，指令已排队（10分钟内上线自动执行，可随时取消）');
     }
 
-    const cmdId = dispatchRes?.command?.id;
+    const cmdId = dispatchRes?.command?.id || clientCmdId;
     if (cmdId) {
       optEntry.cmdId = cmdId;
       persistOptimisticMsgsMap();
@@ -2999,9 +3249,18 @@ export function initHubController() {
                 lastRenderedChatKey = '';
                 renderActiveChatStage();
                 showToast('❌ ' + (data.result.error || data.result.message || '发送失败'));
-                if (input && !input.value.trim() && rawText) {
-                  input.value = rawText;
-                  autoGrowComposer();
+                if (rawText) {
+                  writeComposerDraftValue(s.id, rawText, {
+                    wireSameCount: baselineSameUserCount,
+                    wireTotalCount: baselineTotalCount,
+                    savedAt: Date.now(),
+                    fromErrorRestore: false,
+                    cmdId: '',
+                  });
+                  if (input && (composerSessionId === s.id || activeSessionId === s.id) && !input.value.trim()) {
+                    input.value = rawText;
+                    autoGrowComposer();
+                  }
                 }
                 const curSessionList = getAttachmentList('chat', s.id);
                 if (pendingAttachments.length > 0 && curSessionList.length === 0) {
@@ -3463,15 +3722,15 @@ export function initHubController() {
       const videoMetaUi = kind === 'video' ? describeVideoPreviewStatus(preview) : null;
       const htmlSrcdocAttr = isHtml && !rawHtmlMode
         ? escapeSrcdocAttr(
-            buildSandboxedHtmlSrcdoc(preview.content || '', {
-              hostId: host.hostId,
-              relPath: preview.relPath || preview.name || '',
-              cwd: fileProjectCwd || found.session?.cwd || '',
-              agentId: preview.agentId || found.session?.id || '',
-              mediaTicket: mt,
-              origin: typeof location !== 'undefined' ? location.origin : '',
-            })
-          )
+          buildSandboxedHtmlSrcdoc(preview.content || '', {
+            hostId: host.hostId,
+            relPath: preview.relPath || preview.name || '',
+            cwd: fileProjectCwd || found.session?.cwd || '',
+            agentId: preview.agentId || found.session?.id || '',
+            mediaTicket: mt,
+            origin: typeof location !== 'undefined' ? location.origin : '',
+          })
+        )
         : '';
       const previewBodyHtml = kind === 'video'
         ? `<div class="file-preview-body" style="padding:16px 12px;background:#0f172a;min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
@@ -3691,7 +3950,7 @@ export function initHubController() {
       videoEl.src = nextSrc;
       try {
         videoEl.load();
-      } catch {}
+      } catch { }
     }
   }
 
@@ -3706,7 +3965,7 @@ export function initHubController() {
         videoEl.src = nextSrc;
         try {
           videoEl.load();
-        } catch {}
+        } catch { }
         return;
       }
     }
@@ -3729,7 +3988,7 @@ export function initHubController() {
         if (freshMt) u.searchParams.set('mt', freshMt);
         dlHref = `${u.pathname}?${u.searchParams.toString()}`;
       }
-    } catch {}
+    } catch { }
     const tip = document.createElement('div');
     tip.style.cssText = 'font-size:12px;color:#fca5a5;text-align:center;padding:6px 10px;line-height:1.5;';
     tip.textContent = '⚠️ 当前无法直接在线解码此视频（若该电脑端版本较旧，可在设置页点一键升级守护进程），可点下方保存原片观看';
@@ -4354,15 +4613,15 @@ export function initHubController() {
       const videoMetaUi = kind === 'video' ? describeVideoPreviewStatus(preview) : null;
       const htmlSrcdocAttr = isHtml && !rawHtmlMode
         ? escapeSrcdocAttr(
-            buildSandboxedHtmlSrcdoc(preview.content || '', {
-              hostId: host.hostId,
-              relPath: preview.relPath || preview.name || '',
-              cwd: fileProjectCwd || firstSession?.cwd || '',
-              agentId: preview.agentId || agentId || '',
-              mediaTicket: mt,
-              origin: typeof location !== 'undefined' ? location.origin : '',
-            })
-          )
+          buildSandboxedHtmlSrcdoc(preview.content || '', {
+            hostId: host.hostId,
+            relPath: preview.relPath || preview.name || '',
+            cwd: fileProjectCwd || firstSession?.cwd || '',
+            agentId: preview.agentId || agentId || '',
+            mediaTicket: mt,
+            origin: typeof location !== 'undefined' ? location.origin : '',
+          })
+        )
         : '';
       const previewBodyHtml = kind === 'video'
         ? `<div class="file-preview-body" style="padding:18px 14px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
@@ -5410,21 +5669,21 @@ export function initHubController() {
                         <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">${renderHarnessBadgeHtml('dsh', 'inline')} DSH · ✅ 远控+审批</span>
                         <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">${renderHarnessBadgeHtml('antigravity-ide', 'inline')} Antigravity · ✅ 远控+审批</span>
                         ${(h.bridgeState?.harnesses || []).map(ad => {
-                          const canApproveNow = Boolean(ad.capabilities?.canApprove || ad.id === 'codex' || ad.id === 'workbuddy');
-                          const isObserveAdapter = ad.capabilities?.canPrompt === false || ad.id === 'doubao';
-                          const statusTag = !ad.installed && !ad.hasBinary
-                            ? '⚪ 未安装'
-                            : isObserveAdapter
-                              ? '👀 仅观测'
-                              : ad.hasBinary
-                                ? (canApproveNow ? '✅ 远控+审批' : '🔵 看会话/发指令')
-                                : '👀 观察模式';
-                          return `
+        const canApproveNow = Boolean(ad.capabilities?.canApprove || ad.id === 'codex' || ad.id === 'workbuddy');
+        const isObserveAdapter = ad.capabilities?.canPrompt === false || ad.id === 'doubao';
+        const statusTag = !ad.installed && !ad.hasBinary
+          ? '⚪ 未安装'
+          : isObserveAdapter
+            ? '👀 仅观测'
+            : ad.hasBinary
+              ? (canApproveNow ? '✅ 远控+审批' : '🔵 看会话/发指令')
+              : '👀 观察模式';
+        return `
                           <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">
                             ${renderHarnessBadgeHtml(ad.id, 'inline')} ${esc(ad.label || ad.id)} · ${statusTag}
                           </span>
                         `;
-                        }).join('')}
+      }).join('')}
                       </div>
 
                       <div style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
@@ -7279,7 +7538,9 @@ export function initHubController() {
     dispatchHostCommand,
     composerDraftKey,
     readComposerDraft,
+    clearComposerDraft,
     persistComposerDraft,
+    reconcileDeliveredComposerDraft,
     autoGrowComposer,
     onComposerInput,
     composerUsesCoarsePointer,
