@@ -201,6 +201,13 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.4</code> — Two-Stage Pull-to-Refresh &amp; Deep-Pull Force App Update for Home Screen PWAs</strong></summary>
+
+- **Two-Stage Elastic Pull-to-Refresh &amp; Force-Update Gesture (`v0.8.4`)**: Added native-feel 2-stage pull-down physics to `#mainViewport` (`App.tsx` / `app.css` / `controller.js`) tailored for iOS Home Screen standalone PWAs that lack a browser URL bar: **light pull (`>= 58px`)** syncs live sessions &amp; SSE state, while **deep pull (`>= 128px`)** triggers haptic feedback, purges local `CacheStorage` (preserving Web Push subscriptions), updates the Service Worker, and reloads the latest frontend bundle immediately; also added a 1-tap `🔄 Force Update App` button in Settings and `WindowClient.navigate` auto-rescue in `/sw.js` (`server.js`).
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.3</code> — SW Auto-Upgrade Fix, 4s/30fps Cross-Ocean HLS, Remote Folder Browser &amp; New Workspace Creator, Bilingual Triage Deck &amp; iOS Chat Paint/Swipe Fixes</strong></summary>
 
 - **Service Worker Instant Rollover &amp; Cross-Ocean 4s/30fps HLS Tuning (`v0.8.3`)**: Embedded dynamic `dsh-app-shell-v1-<uiBuild>` versioning in `/sw.js` (`hub/server.js`) and fixed `initialUiBuild` DOM bundle hash detection (`controller.js`) so mobile Safari / Home Screen PWAs never remain pinned on stale pre-upgrade bundles; tuned `hls-streamer.js` to `4s` segments with `-fpsmax 30` (`~400 KB` per 4s segment, 3× cross-ocean playback buffer headroom on 60fps high-bitrate renders).

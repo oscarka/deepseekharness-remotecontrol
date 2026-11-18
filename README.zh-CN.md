@@ -201,6 +201,13 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.4</code> — 主屏幕 PWA 二段式下拉刷新 &amp; 使劲深拉一键清缓存强制升新版</strong></summary>
+
+- **二段式阻尼下拉刷新与深拉强制更新前端（`v0.8.4`）**：专为 iOS「添加到主屏幕」后无浏览器地址栏刷新按钮的场景打造（[`App.tsx`](hub/web/src/App.tsx) / [`app.css`](hub/web/src/styles/app.css) / [`controller.js`](hub/web/src/controller.js)）——在列表顶部**轻拉（`>= 58px`）** 即时刷新最新会话与实时连接，**使劲深拉（`>= 128px`）** 触发高亮胶囊与震动反馈，松手一键清空本地旧应用壳缓存并强制重载最新前端版本（全程保留锁屏推送订阅不丢失）；同时在设置页底部提供 `🔄 强制刷新前端版本` 按钮，并在 `/sw.js` 激活时通过 `WindowClient.navigate` 自动救活旧版主屏幕窗口（[`server.js`](hub/server.js)）。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.3</code> — 修复 SW 锁旧包、跨洋 4s/30fps HLS 防卡顿、新建任务支持选目录/建新工作区、滑卡全英文 &amp; iOS 会话秒显与手势返回修复</strong></summary>
 
 - **Service Worker 自动换壳与跨洋 60 帧视频 HLS 零卡顿调优（`v0.8.3`）**：为 `/sw.js` 嵌入动态构建号 `dsh-app-shell-v1-<uiBuild>`（[`server.js`](hub/server.js)）并修正前端实际脚本哈希识别与 `?_r=` 破缓存升级（[`controller.js`](hub/web/src/controller.js)），彻底解决 iOS Safari / 主屏幕 PWA 升级后被锁在旧前端包的问题；将 [`hls-streamer.js`](dsh-feishu/lib/hls-streamer.js) 调优为 `4 秒` 切片 + `-fpsmax 30` 手机预览限帧（单片 `~400 KB` 即可支撑 `4.0 秒` 播放，跨洋传输省去一半握手开销、3 倍缓冲富余零卡顿）。

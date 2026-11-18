@@ -210,6 +210,11 @@ export function App() {
         {/* 左栏主面板 */}
         <div class="primary-pane">
           <TopBar />
+          <div class="pull-refresh-slot" id="pullRefreshSlot" aria-hidden="true">
+            <div class="pull-refresh-pill" id="pullRefreshPill">
+              <span id="pullRefreshLabel">↓ 下拉刷新状态</span>
+            </div>
+          </div>
           <main class="main-viewport" id="mainViewport"></main>
           <BottomTabs />
           <TriageDeck />

@@ -529,12 +529,62 @@
     }
 
     /* ==================== 4. 微信 / Claude 风格极简通栏列表 ==================== */
+    .pull-refresh-slot {
+      height: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--subtle);
+      border-bottom: 0 solid var(--border);
+      flex-shrink: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .pull-refresh-slot.active {
+      border-bottom-width: 1px;
+    }
+
+    .pull-refresh-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+      transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+      white-space: nowrap;
+      max-width: 92%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .pull-refresh-pill.stage-1 {
+      color: var(--primary);
+      border-color: rgba(37, 99, 235, 0.35);
+      background: var(--primary-soft);
+    }
+
+    .pull-refresh-pill.stage-2 {
+      color: #ffffff;
+      background: linear-gradient(135deg, #2563eb, #4f46e5);
+      border-color: #2563eb;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
+      transform: scale(1.03);
+    }
+
     .main-viewport {
       flex: 1;
       overflow-y: auto;
       overflow-x: hidden;
       background: var(--surface);
-      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
     }
 
     .file-loading-dot {

@@ -6810,11 +6810,23 @@ export function initHubController() {
             </div>
           </div>
 
-          <div
-            style="text-align:center;padding:8px 12px 18px;font-size:11.5px;color:var(--muted);cursor:pointer;user-select:none;"
-            onclick="copyCodeText('${encodeURIComponent(`DSH Hub v${buildInfo.version || '0.2.0'} (${buildInfo.uiBuild || 'dev'}) · started ${buildInfo.startedAt ? new Date(buildInfo.startedAt).toISOString() : ''}`)}', '📋 版本信息已复制')"
-          >
-            DSH 远控总控台 v${esc(buildInfo.version || '0.2.0')} · 构建 <code>${esc(buildInfo.uiBuild || 'dev')}</code>${buildInfo.startedAt ? ' · 云端启动于 ' + formatTime(buildInfo.startedAt) : ''}
+          <div style="text-align:center;padding:8px 12px 20px;">
+            <div style="margin-bottom:10px;">
+              <button
+                type="button"
+                class="pill-action-btn"
+                style="font-size:12px;padding:6px 14px;"
+                onclick="forceHardUpgradeReload()"
+              >
+                🔄 强制刷新前端版本（清缓存重载）
+              </button>
+            </div>
+            <div
+              style="font-size:11.5px;color:var(--muted);cursor:pointer;user-select:none;"
+              onclick="copyCodeText('${encodeURIComponent(`DSH Hub v${buildInfo.version || '0.2.0'} (${buildInfo.uiBuild || 'dev'}) · started ${buildInfo.startedAt ? new Date(buildInfo.startedAt).toISOString() : ''}`)}', '📋 版本信息已复制')"
+            >
+              DSH 远控总控台 v${esc(buildInfo.version || '0.2.0')} · 构建 <code>${esc(buildInfo.uiBuild || 'dev')}</code>${buildInfo.startedAt ? ' · 云端启动于 ' + formatTime(buildInfo.startedAt) : ''}
+            </div>
           </div>
         </div>
       `;
@@ -7931,10 +7943,154 @@ export function initHubController() {
     setTimeout(() => showToast('💡 提示：从左边缘向右滑，即可返回会话列表'), 600);
   }
 
+  async function forceHardUpgradeReload() {
+    showToast(langPref === 'en' ? '🚀 Clearing cache & loading latest version…' : '🚀 正在清理旧缓存并拉取最新版本…');
+    try {
+      sessionStorage.removeItem('dsh_reloaded_ui_build');
+    } catch { }
+    try {
+      if (typeof caches !== 'undefined' && caches && typeof caches.keys === 'function') {
+        const keys = await caches.keys();
+        await Promise.all(keys.map(k => caches.delete(k)));
+      }
+    } catch { }
+    try {
+      if (typeof navigator !== 'undefined' && navigator.serviceWorker?.getRegistrations) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map(r => r.update().catch(() => { })));
+      }
+    } catch { }
+    reloadWithFreshAppShell('');
+  }
+
+  function setupMainViewportPullRefresh() {
+    const vp = document.getElementById('mainViewport');
+    const slot = document.getElementById('pullRefreshSlot');
+    const pill = document.getElementById('pullRefreshPill');
+    const label = document.getElementById('pullRefreshLabel');
+    if (!vp || !slot || !pill || !label) return;
+
+    const STAGE1_DY = 58;
+    const STAGE2_DY = 128; // 使劲深拉阈值：清缓存强制更新前端
+    let tracking = false;
+    let pulling = false;
+    let startX = 0;
+    let startY = 0;
+    let currentDy = 0;
+    let lastStage = 0;
+
+    const collapseSlot = () => {
+      slot.style.transition = 'height 0.22s cubic-bezier(0.22, 1, 0.36, 1)';
+      slot.style.height = '0px';
+      slot.classList.remove('active');
+      pill.classList.remove('stage-1', 'stage-2');
+      lastStage = 0;
+    };
+
+    vp.addEventListener('touchstart', (event) => {
+      if (event.touches.length !== 1) return;
+      if (vp.scrollTop > 2) return;
+      if (document.body.classList.contains('mobile-chat-open')) return;
+      if (document.querySelector('.sheet-backdrop.open, #triageDeckOverlay.open')) return;
+      const t = event.touches[0];
+      tracking = true;
+      pulling = false;
+      startX = t.clientX;
+      startY = t.clientY;
+      currentDy = 0;
+      lastStage = 0;
+    }, { passive: true });
+
+    vp.addEventListener('touchmove', (event) => {
+      if (!tracking) return;
+      if (event.touches.length !== 1) {
+        tracking = false;
+        if (pulling) collapseSlot();
+        return;
+      }
+      const t = event.touches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      if (!pulling) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        if (dy <= 0 || vp.scrollTop > 2 || Math.abs(dy) < Math.abs(dx) * 1.25) {
+          tracking = false;
+          return;
+        }
+        pulling = true;
+        slot.style.transition = 'none';
+        slot.classList.add('active');
+      }
+      currentDy = Math.max(0, dy);
+      if (currentDy > 0 && event.cancelable) {
+        event.preventDefault();
+      }
+      const visualH = Math.min(92, Math.round(Math.pow(currentDy, 0.78) * 1.95));
+      slot.style.height = `${visualH}px`;
+
+      const en = langPref === 'en';
+      const nextStage = currentDy >= STAGE2_DY ? 2 : currentDy >= STAGE1_DY ? 1 : 0;
+      if (nextStage !== lastStage) {
+        if (nextStage === 1 && lastStage === 0) {
+          try { navigator.vibrate?.(10); } catch { }
+        } else if (nextStage === 2) {
+          try { navigator.vibrate?.([14, 28, 18]); } catch { }
+        }
+        lastStage = nextStage;
+      }
+      pill.classList.toggle('stage-1', nextStage === 1);
+      pill.classList.toggle('stage-2', nextStage === 2);
+      if (nextStage === 2) {
+        label.textContent = en
+          ? '⚡ Release to force-update app (clear cache)'
+          : '⚡ 松手强制更新前端版本（清缓存重载）';
+      } else if (nextStage === 1) {
+        label.textContent = en
+          ? '↻ Release to refresh · Pull harder to force update'
+          : '↻ 松手刷新状态 · 继续使劲拉强制升新版';
+      } else {
+        label.textContent = en
+          ? '↓ Pull to refresh · Pull harder to force update'
+          : '↓ 下拉刷新 · 使劲深拉可强制更新前端';
+      }
+    }, { passive: false });
+
+    const finishPull = () => {
+      if (!tracking) return;
+      tracking = false;
+      if (!pulling) return;
+      pulling = false;
+      const en = langPref === 'en';
+      if (currentDy >= STAGE2_DY) {
+        slot.style.transition = 'height 0.16s ease';
+        slot.style.height = '48px';
+        label.textContent = en ? '🚀 Updating to latest build…' : '🚀 正在清理缓存并加载最新版…';
+        void forceHardUpgradeReload();
+        return;
+      }
+      if (currentDy >= STAGE1_DY) {
+        slot.style.transition = 'height 0.16s ease';
+        slot.style.height = '42px';
+        label.textContent = en ? '↻ Syncing latest sessions…' : '↻ 正在同步最新状态…';
+        try {
+          navigator.serviceWorker?.getRegistration?.().then(r => r?.update?.()).catch(() => { });
+        } catch { }
+        manualReconnectNow();
+        setTimeout(collapseSlot, 480);
+        return;
+      }
+      collapseSlot();
+    };
+
+    vp.addEventListener('touchend', finishPull);
+    vp.addEventListener('touchcancel', finishPull);
+  }
+
   function setupOverlayGestures() {
     setupChatSwipeBack();
     setupSheetSwipeDismiss();
     setupStandaloneImageLongPressSave();
+    setupMainViewportPullRefresh();
   }
 
   // ==================== 15b. 「添加到主屏幕」提示 ====================
@@ -8799,6 +8955,7 @@ export function initHubController() {
     flushPendingDeepLink,
     setConnectionBanner,
     manualReconnectNow,
+    forceHardUpgradeReload,
     applyHubState,
     getHubState: () => hubState,
     fetchState,

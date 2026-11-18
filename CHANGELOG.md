@@ -2,6 +2,14 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.4] - 2026-11-18
+
+### Added
+
+- **主屏幕 PWA 二段式下拉刷新与深拉强制清缓存升新版手势（`hub/web/src/App.tsx` / `hub/web/src/styles/app.css` / `hub/web/src/controller.js` / `hub/server.js`）**：
+  - 针对 iOS 添加到主屏幕后无地址栏刷新按钮的痛点，在主列表顶部新增二段式阻尼下拉交互：**轻拉（`>= 58px`）** 同步最新会话状态与实时流，**使劲深拉（`>= 128px`）** 触发震动反馈并一键清空全部本地 `CacheStorage` 强制拉取最新前端构建版本（同时完整保留 iOS Web Push 锁屏推送订阅）；
+  - 在「设备与设置」底部版本栏同步增加 `🔄 强制刷新前端版本（清缓存重载）` 按钮，并在 `/sw.js` `activate` 清理旧壳缓存时主动调用 `WindowClient.navigate` 救活历史旧版窗口。
+
 ## [0.8.3] - 2026-11-18
 
 ### Added
