@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { createCipheriv, randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
@@ -290,7 +291,7 @@ export class HubAgent {
       try {
         entry.abortController?.abort()
         entry.nodeStream?.destroy?.()
-      } catch {}
+      } catch { }
     }
     this.inflightFsUploads.clear()
     if (this.followUpTimer) {
@@ -502,8 +503,18 @@ export class HubAgent {
     return result
   }
 
+  expandUserPath(rawPath = '') {
+    const trimmed = String(rawPath || '').trim()
+    if (!trimmed) return ''
+    if (trimmed === '~') return homedir()
+    if (trimmed.startsWith('~/') || trimmed.startsWith('~\\')) {
+      return join(homedir(), trimmed.slice(2))
+    }
+    return trimmed
+  }
+
   resolveFsRootCwd(cwd = '', agentId = '') {
-    const explicit = String(cwd || '').trim()
+    const explicit = this.expandUserPath(cwd)
     if (explicit) return explicit
     const targetId = String(agentId || '').trim()
     if (targetId) {
@@ -617,10 +628,10 @@ export class HubAgent {
       this.inflightFsUploads.delete(cleanId)
       try {
         inflight.abortController?.abort()
-      } catch {}
+      } catch { }
       try {
         inflight.nodeStream?.destroy?.()
-      } catch {}
+      } catch { }
     }
   }
 
@@ -722,24 +733,24 @@ export class HubAgent {
       const streamRes =
         op === 'hls_segment'
           ? await prepareWorkspaceHlsRequest(rootCwd, String(fsReq.path || ''), {
-              item: String(fsReq.segment || ''),
-              raw: Boolean(fsReq.raw),
-              dshHome: this.config?.dshHome || '',
-              extraRoots: this.resolveExtraArtifactRoots(),
-              execImpl: this.execImpl,
-            })
+            item: String(fsReq.segment || ''),
+            raw: Boolean(fsReq.raw),
+            dshHome: this.config?.dshHome || '',
+            extraRoots: this.resolveExtraArtifactRoots(),
+            execImpl: this.execImpl,
+          })
           : await openWorkspaceFileStream(rootCwd, String(fsReq.path || ''), {
-              rangeHeader: String(fsReq.rangeHeader || ''),
-              ifNoneMatch: String(fsReq.ifNoneMatch || ''),
-              thumb: Boolean(fsReq.thumb),
-              transcode: Boolean(fsReq.transcode),
-              fastPreview: Boolean(fsReq.fastPreview),
-              download: Boolean(fsReq.download),
-              raw: Boolean(fsReq.raw),
-              dshHome: this.config?.dshHome || '',
-              extraRoots: this.resolveExtraArtifactRoots(),
-              execImpl: this.execImpl,
-            })
+            rangeHeader: String(fsReq.rangeHeader || ''),
+            ifNoneMatch: String(fsReq.ifNoneMatch || ''),
+            thumb: Boolean(fsReq.thumb),
+            transcode: Boolean(fsReq.transcode),
+            fastPreview: Boolean(fsReq.fastPreview),
+            download: Boolean(fsReq.download),
+            raw: Boolean(fsReq.raw),
+            dshHome: this.config?.dshHome || '',
+            extraRoots: this.resolveExtraArtifactRoots(),
+            execImpl: this.execImpl,
+          })
       if (this.abortedFsReqIds.has(reqId)) return
       const { buffer, createBodyStream, ...metaRest } = streamRes
       const metaHeader = Buffer.from(
@@ -821,12 +832,12 @@ export class HubAgent {
   computeBridgeStateSig(bridgeState = {}) {
     const tasksSig = Array.isArray(bridgeState.tasks)
       ? bridgeState.tasks
-          .map(t => {
-            const tr = Array.isArray(t.transcript) ? t.transcript : []
-            const last = tr.at(-1)
-            return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${(t.lastOutput || '').slice(0, 120)}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}:${(t.artifacts || []).length}:${t.model || ''}:${t.pendingApproval?.code || ''}`
-          })
-          .join('|')
+        .map(t => {
+          const tr = Array.isArray(t.transcript) ? t.transcript : []
+          const last = tr.at(-1)
+          return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${(t.lastOutput || '').slice(0, 120)}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}:${(t.artifacts || []).length}:${t.model || ''}:${t.pendingApproval?.code || ''}`
+        })
+        .join('|')
       : ''
     const appSig = Array.isArray(bridgeState.approvals)
       ? bridgeState.approvals.map(a => `${a.code}:${a.promptTitle || ''}:${a.reason || ''}`).join('|')
@@ -1082,35 +1093,35 @@ export class HubAgent {
         : await this.collectPrewarmedWalkthroughs(bridgeState.tasks)
       const hbPayload = isLiteHeartbeat
         ? {
-            hostId: this.config.hostId,
-            hostName: this.config.hostName,
-            platform: process.platform,
-            arch: process.arch,
-            identity,
-            syncMeta,
-            liteHeartbeat: true,
-            bridgeStateSig,
-            expectedTaskCount: bridgeState.taskCount,
-            liveApprovalCodes: (bridgeState.approvals || [])
-              .map(a => String(a?.code || '').trim().toUpperCase())
-              .filter(Boolean),
-            systemTelemetry: bridgeState.systemTelemetry,
-            commandResults: resultsToSend,
-          }
+          hostId: this.config.hostId,
+          hostName: this.config.hostName,
+          platform: process.platform,
+          arch: process.arch,
+          identity,
+          syncMeta,
+          liteHeartbeat: true,
+          bridgeStateSig,
+          expectedTaskCount: bridgeState.taskCount,
+          liveApprovalCodes: (bridgeState.approvals || [])
+            .map(a => String(a?.code || '').trim().toUpperCase())
+            .filter(Boolean),
+          systemTelemetry: bridgeState.systemTelemetry,
+          commandResults: resultsToSend,
+        }
         : {
-            hostId: this.config.hostId,
-            hostName: this.config.hostName,
-            platform: process.platform,
-            arch: process.arch,
-            identity,
-            syncMeta,
-            dshStats,
-            bridgeState,
-            bridgeStateSig,
-            commandResults: resultsToSend,
-            pushSubscriptionsBackup: this.cachedPushSubscriptions,
-            ...(prewarmedFiles.length > 0 ? { prewarmedFiles } : {}),
-          }
+          hostId: this.config.hostId,
+          hostName: this.config.hostName,
+          platform: process.platform,
+          arch: process.arch,
+          identity,
+          syncMeta,
+          dshStats,
+          bridgeState,
+          bridgeStateSig,
+          commandResults: resultsToSend,
+          pushSubscriptionsBackup: this.cachedPushSubscriptions,
+          ...(prewarmedFiles.length > 0 ? { prewarmedFiles } : {}),
+        }
       const rawBody = JSON.stringify(hbPayload)
       const shouldGzip = this.fetch === globalThis.fetch && rawBody.length > 2048
       const reqBody = shouldGzip ? gzipSync(Buffer.from(rawBody, 'utf8')) : rawBody
@@ -1926,7 +1937,20 @@ export class HubAgent {
           }
         }
         case 'new_session': {
-          const newCwd = cmd.cwd || this.config?.defaultWorkspace || process.cwd()
+          const explicitCwd = this.expandUserPath(cmd.cwd)
+          if (explicitCwd) {
+            try {
+              await mkdir(explicitCwd, { recursive: true })
+            } catch (err) {
+              if (cmd.createDir) {
+                return {
+                  ok: false,
+                  error: `无法创建工作区目录 (${explicitCwd}): ${err?.message || '权限不足或路径非法'}`,
+                }
+              }
+            }
+          }
+          const newCwd = explicitCwd || this.config?.defaultWorkspace || process.cwd()
           let effectivePrompt = String(cmd.prompt || cmd.text || '').trim()
           let imagePaths = []
           let savedFiles = []
@@ -1954,7 +1978,7 @@ export class HubAgent {
                 type: 'new_session',
                 title: cmd.title,
                 prompt: effectivePrompt,
-                cwd: cmd.cwd,
+                cwd: explicitCwd || cmd.cwd,
                 model: requestedNewModel,
                 imagePaths,
               },
@@ -1976,7 +2000,7 @@ export class HubAgent {
             const extNewRes = await extAdapter.createSession({
               title: cmd.title,
               prompt: effectivePrompt,
-              cwd: cmd.cwd,
+              cwd: explicitCwd || cmd.cwd,
               model: requestedNewModel,
               imagePaths,
               execImpl: this.execImpl,
@@ -1994,6 +2018,7 @@ export class HubAgent {
           }
           const bridgeNewRes = await this.bridge.executeHubCommand({
             ...cmd,
+            cwd: explicitCwd || cmd.cwd,
             prompt: effectivePrompt,
             text: effectivePrompt,
           })

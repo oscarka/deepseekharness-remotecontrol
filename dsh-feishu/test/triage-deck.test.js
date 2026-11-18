@@ -9,6 +9,7 @@ import {
   extractSessionChangedFiles,
   buildTriageCardViewModel,
 } from '../../hub/web/src/triage-deck.js';
+import { translateZhStringToEn } from '../../hub/web/src/utils/i18n.js';
 
 test('triage-deck 1: isTriageEligibleSession filters strictly to pending approvals and unread conclusions', () => {
   assert.equal(isTriageEligibleSession(null), false);
@@ -98,6 +99,23 @@ test('triage-deck 3: extractSessionChangedFiles supports real line counts, tool-
   assert.equal(withDiff.files.length, 2);
   assert.equal(withDiff.totalAdd, 44);
   assert.equal(withDiff.totalDel, 5);
+
+  // Case A2: HubCore additions/deletions format + no-count files must not show misleading +0 -0
+  const hubCoreDiff = extractSessionChangedFiles({
+    changedFiles: [
+      { path: 'hub/server.js', additions: 18, deletions: 4 },
+      { path: 'hub/hub-core.js', additions: 7, deletions: 2 },
+    ],
+  });
+  assert.equal(hubCoreDiff.hasLineCounts, true);
+  assert.equal(hubCoreDiff.totalAdd, 25);
+  assert.equal(hubCoreDiff.totalDel, 6);
+
+  const noCountsDiff = extractSessionChangedFiles({
+    changedFiles: [{ path: 'hub/server.js' }, { path: 'hub/hub-core.js' }],
+  });
+  assert.equal(noCountsDiff.files.length, 2);
+  assert.equal(noCountsDiff.hasLineCounts, false, 'Must not render +0 -0 when line counts are omitted');
 
   // Case B: Fallback from Claude/DSH transcript toolCalls
   const fromTools = extractSessionChangedFiles({
@@ -247,6 +265,75 @@ test('triage-deck 6: compiled production web bundle includes subtle 4-grid entry
   assert.ok(jsBundle.includes('triageDeckOverlay'), 'Compiled JS must mount TriageDeck overlay');
   assert.ok(jsBundle.includes('triageBackToListBtn'), 'Compiled JS must include switch-back button to List Mode');
   assert.ok(jsBundle.includes('列表模式'), 'Compiled JS must label the switch-back button clearly');
+  assert.ok(jsBundle.includes('triageModalScrollBody'), 'Compiled JS must mount dedicated scrollable modal body');
+  assert.ok(jsBundle.includes('triageModalExpandBtn'), 'Compiled JS must mount fullscreen stretch button');
   assert.ok(cssBundle.includes('.triage-grid-entry-btn'), 'Compiled CSS must style the 4-grid square entry button');
   assert.ok(cssBundle.includes('.dsh-triage-overlay'), 'Compiled CSS must style the isolated triage deck overlay');
+  assert.ok(cssBundle.includes('.dsh-triage-sheet-grabber'), 'Compiled CSS must style the sheet upward-stretch grabber');
+
+  const srcCss = await readFile(new URL('../../hub/web/src/styles/triage-deck.css', import.meta.url), 'utf8');
+  const overlaySrcMatch = /\.dsh-triage-overlay\s*\{([^}]+)\}/.exec(srcCss);
+  assert.ok(overlaySrcMatch, '.dsh-triage-overlay rule must exist in triage-deck.css');
+  assert.ok(
+    !overlaySrcMatch[1].includes('touch-action: none'),
+    '.dsh-triage-overlay must NOT set touch-action: none (which blocks iOS Safari modal scrolling)'
+  );
+});
+
+test('triage-deck 7: full English mode (lang="en") localizes options, subtitles, custom prompts, and tooltips without leftover Chinese chrome', () => {
+  assert.equal(translateZhStringToEn('滑卡批阅模式'), 'Swipe Triage Mode');
+  assert.equal(translateZhStringToEn('☰ 列表模式'), '☰ List View');
+  assert.equal(translateZhStringToEn('📨 已发送新方案指令'), '📨 Sent new instructions');
+
+  const cmdEn = buildTriageCardViewModel(
+    {
+      id: 'agy-en-1',
+      hostId: 'host-air',
+      harness: 'antigravity-ide',
+      title: 'Fix auth timeout',
+      project: 'hub',
+      status: 'approval',
+      transcript: [{ role: 'user', text: 'Run unit tests' }],
+      approvalObj: {
+        code: 'APP_EN',
+        toolName: 'run_command',
+        commandLine: 'rm -rf dist/',
+        options: [
+          { index: 1, label: '1. 本次允许执行' },
+          { index: 2, label: "本对话内始终允许 'rm'" },
+          { index: 4, label: '不执行' },
+        ],
+      },
+    },
+    { 'host-air': 'Air' },
+    'en'
+  );
+  assert.equal(cmdEn.sub, 'Air · hub · High-Risk Approval');
+  assert.equal(cmdEn.options[0].label, '1. Allow this time');
+  assert.equal(cmdEn.options[1].label, "2. Always allow 'rm' in this chat");
+  assert.equal(cmdEn.customLabel, '3. Skip & tell AI what to do instead…');
+  assert.ok(cmdEn.cmdReason.startsWith('⚠️ High-Risk Guard'));
+
+  const concEn = buildTriageCardViewModel(
+    {
+      id: 'dsh-en-2',
+      hostId: 'host-air',
+      harness: 'dsh',
+      title: 'Weekly summary',
+      project: 'ops',
+      status: 'idle',
+      hasUnreadConclusion: true,
+      transcript: [
+        { role: 'user', text: 'Summarize metrics' },
+        { role: 'assistant', text: 'All 42 endpoints are healthy.' },
+      ],
+    },
+    { 'host-air': 'Air' },
+    'en'
+  );
+  assert.equal(concEn.sub, 'Air · ops · Completed');
+  assert.ok(concEn.headline.startsWith('✅ Ready to review:'));
+  assert.equal(concEn.options[0].label, '1. Mark as Read & Archive');
+  assert.equal(concEn.options[0].shortBtn, 'Mark as Read');
+  assert.equal(concEn.customLabel, '2. Follow up / Request changes…');
 });

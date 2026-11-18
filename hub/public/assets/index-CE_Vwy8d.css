@@ -189,12 +189,14 @@
       display: flex;
       flex-direction: column;
       transform: translateX(100%);
-      transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+      transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
       min-width: 0;
+      pointer-events: none;
     }
 
     .chat-fullscreen.open {
       transform: translateX(0);
+      pointer-events: auto;
     }
 
     @media (min-width: 769px) {
@@ -205,6 +207,7 @@
         transform: none !important;
         transition: none;
         z-index: 10;
+        pointer-events: auto;
       }
 
       body.DesktopSplitMode .back-btn {
@@ -1009,13 +1012,22 @@
 
     .chat-messages {
       flex: 1;
+      min-height: 0;
       overflow-y: auto;
       padding: 18px 16px;
       display: flex;
       flex-direction: column;
       gap: 18px;
-      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
+      overscroll-behavior-y: contain;
+      transform: translateZ(0);
       position: relative;
+    }
+
+    .chat-messages pre,
+    .chat-messages code,
+    .chat-messages table {
+      touch-action: pan-x pan-y;
     }
 
     /* 往上翻旧消息时不强行拉回底部，只浮出「最新消息」提示 */

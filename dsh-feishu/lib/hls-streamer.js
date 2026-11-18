@@ -7,7 +7,7 @@ import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 
-export const HLS_SEG_SECONDS = 2
+export const HLS_SEG_SECONDS = 4
 export const DEFAULT_HLS_CACHE_TTL_MS = 2 * 60 * 60 * 1000 // 2 hours idle TTL
 export const DEFAULT_HLS_CACHE_MAX_BYTES = 512 * 1024 * 1024 // 512 MiB cap
 export const DEFAULT_HLS_CACHE_MAX_ENTRIES = 24
@@ -330,16 +330,18 @@ function buildFfmpegHlsArgs({ realFile, dirPath, mode, startSeg = 0, encoderKind
       ? [
           '-vf',
           vf,
+          '-fpsmax',
+          '30',
           '-c:v',
           'h264_videotoolbox',
           '-profile:v',
           'main',
           '-b:v',
-          '1100k',
+          '850k',
           '-maxrate',
-          '1450k',
+          '1150k',
           '-bufsize',
-          '2900k',
+          '2300k',
           '-allow_sw',
           '1',
           '-force_key_frames',
@@ -348,6 +350,8 @@ function buildFfmpegHlsArgs({ realFile, dirPath, mode, startSeg = 0, encoderKind
       : [
           '-vf',
           vf,
+          '-fpsmax',
+          '30',
           '-c:v',
           'libx264',
           '-preset',
@@ -357,11 +361,11 @@ function buildFfmpegHlsArgs({ realFile, dirPath, mode, startSeg = 0, encoderKind
           '-pix_fmt',
           'yuv420p',
           '-crf',
-          '26',
+          '27',
           '-maxrate',
-          '1350k',
+          '1000k',
           '-bufsize',
-          '2700k',
+          '2000k',
           '-sc_threshold',
           '0',
           '-force_key_frames',
@@ -537,7 +541,7 @@ async function getOrCreateHlsSession(
   const useCopy = shouldUseLosslessHlsCopy(info, videoProbe, durationSec, raw)
   const mode = useCopy ? 'copy' : 'pv720'
   const hash = createHash('sha1')
-    .update(`${realFile}:${info.size}:${Math.round(info.mtimeMs)}:${mode}:hlsv1`)
+    .update(`${realFile}:${info.size}:${Math.round(info.mtimeMs)}:${mode}:hlsv2-${HLS_SEG_SECONDS}s`)
     .digest('hex')
     .slice(0, 24)
 

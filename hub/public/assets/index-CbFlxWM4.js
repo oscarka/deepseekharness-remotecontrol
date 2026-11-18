@@ -652,14 +652,27 @@ function Sheets() {
 	})), /* @__PURE__ */ k("div", { class: "new-task-context-row" }, /* @__PURE__ */ k("span", { class: "context-row-label" }, "⚡ 执行引擎"), /* @__PURE__ */ k("div", {
 		class: "context-row-chips",
 		id: "newTaskHarnessChips"
-	}))), /* @__PURE__ */ k("div", { class: "new-task-proj-section" }, /* @__PURE__ */ k("div", { class: "new-task-proj-header" }, /* @__PURE__ */ k("span", { class: "proj-header-title" }, "📁 项目工作区"), /* @__PURE__ */ k("button", {
+	}))), /* @__PURE__ */ k("div", { class: "new-task-proj-section" }, /* @__PURE__ */ k("div", { class: "new-task-proj-header" }, /* @__PURE__ */ k("span", { class: "proj-header-title" }, "📁 项目工作区"), /* @__PURE__ */ k("div", { style: "display:flex;align-items:center;gap:6px;flex-wrap:nowrap;" }, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "proj-header-more-btn",
+		id: "newTaskBrowseDirBtn",
+		onClick: () => window.openNewTaskProjectPickerSheet?.("browse")
+	}, "📂 选择目录"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "proj-header-more-btn",
+		id: "newTaskCreateWsBtn",
+		onClick: () => window.openNewTaskProjectPickerSheet?.("create")
+	}, "＋ 新工作区"), /* @__PURE__ */ k("button", {
 		type: "button",
 		class: "proj-header-more-btn",
 		id: "newTaskProjMoreBtn",
-		onClick: () => window.openNewTaskProjectPickerSheet?.()
-	}, "全部 ▾")), /* @__PURE__ */ k("div", {
+		onClick: () => window.openNewTaskProjectPickerSheet?.("recent")
+	}, "全部 ▾"))), /* @__PURE__ */ k("div", {
 		class: "new-task-proj-scroll",
 		id: "newTaskProjectChips"
+	}), /* @__PURE__ */ k("div", {
+		id: "newTaskSelectedPathBar",
+		style: "margin-top:5px;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
 	})), /* @__PURE__ */ k("div", { class: "new-task-card-wrap" }, /* @__PURE__ */ k("div", {
 		class: "composer-attachments-strip",
 		id: "newTaskAttachmentsStrip",
@@ -741,21 +754,51 @@ function Sheets() {
 		class: "sheet-backdrop",
 		id: "newTaskProjectPickerSheet",
 		onClick: closeIfBackdrop("newTaskProjectPickerSheet")
-	}, /* @__PURE__ */ k("div", { class: "sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", { class: "sheet-title" }, /* @__PURE__ */ k("span", null, "📁 选择项目文件夹"), /* @__PURE__ */ k("button", {
+	}, /* @__PURE__ */ k("div", {
+		class: "sheet-panel",
+		style: "max-height:82dvh;display:flex;flex-direction:column;"
+	}, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", {
+		class: "sheet-title",
+		style: "margin-bottom:10px;"
+	}, /* @__PURE__ */ k("span", { id: "newTaskPickerSheetTitle" }, "📁 选择目录或新建工作区"), /* @__PURE__ */ k("button", {
 		type: "button",
 		style: "border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;",
 		onClick: () => window.closeSheet?.("newTaskProjectPickerSheet")
-	}, "✕")), /* @__PURE__ */ k("div", { style: "padding:0 2px 10px;" }, /* @__PURE__ */ k("input", {
+	}, "✕")), /* @__PURE__ */ k("div", {
+		id: "newTaskPickerModeTabs",
+		style: "display:flex;gap:6px;padding:3px;background:var(--subtle);border-radius:10px;margin-bottom:10px;"
+	}, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "theme-seg-btn",
+		id: "newTaskTabRecent",
+		style: "flex:1;padding:6px 8px;font-size:12.5px;",
+		onClick: () => window.switchNewTaskPickerMode?.("recent")
+	}, "🕒 已有工作区"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "theme-seg-btn",
+		id: "newTaskTabBrowse",
+		style: "flex:1;padding:6px 8px;font-size:12.5px;",
+		onClick: () => window.switchNewTaskPickerMode?.("browse")
+	}, "📂 选择目录"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "theme-seg-btn",
+		id: "newTaskTabCreate",
+		style: "flex:1;padding:6px 8px;font-size:12.5px;",
+		onClick: () => window.switchNewTaskPickerMode?.("create")
+	}, "✨ 新工作区")), /* @__PURE__ */ k("div", {
+		id: "newTaskPickerSearchWrap",
+		style: "padding:0 2px 8px;"
+	}, /* @__PURE__ */ k("input", {
 		type: "text",
 		class: "auth-input",
 		id: "newTaskProjectSearchInput",
 		placeholder: "搜索项目名称或路径...",
-		style: "margin:0 0 10px;",
+		style: "margin:0;",
 		onInput: (e) => window.filterNewTaskProjects?.(e.target.value)
 	})), /* @__PURE__ */ k("div", {
 		class: "host-options-list",
 		id: "newTaskProjectPickerBody",
-		style: "max-height:50vh;overflow-y:auto;"
+		style: "flex:1;max-height:56vh;overflow-y:auto;"
 	}))), /* @__PURE__ */ k("div", {
 		class: "sheet-backdrop",
 		id: "taskActionSheet",
@@ -3748,7 +3791,21 @@ var EXACT_ZH_TO_EN = {
 	"⏳ 正在从云端拉取完整未截断全文…": "⏳ Fetching full untruncated reply…",
 	"💬 进入完整对话上下文 ›": "💬 Open Full Conversation ›",
 	"📨 已发送新方案指令": "📨 Sent new instructions",
-	"当前浏览器环境不支持语音听写，请直接键盘输入": "Speech dictation is unavailable in this browser; please type instead"
+	"当前浏览器环境不支持语音听写，请直接键盘输入": "Speech dictation is unavailable in this browser; please type instead",
+	"📂 选择目录": "📂 Browse Folder",
+	"＋ 新工作区": "＋ New Workspace",
+	"✨ 新工作区": "✨ New Workspace",
+	"🕒 已有工作区": "🕒 Recent",
+	"📁 选择目录或新建工作区": "📁 Browse Folder or New Workspace",
+	"✓ 选定此目录作为工作区": "✓ Select This Folder",
+	"⬆️ 返回上一级目录": "⬆️ Parent Folder",
+	"✨ 创建并选定新工作区": "✨ Create & Select Workspace",
+	"📂 父级目录（新文件夹将建在此目录下）": "📂 Parent Directory",
+	"📝 新项目文件夹名称（或直接填完整路径）": "📝 New Folder Name (or full path)",
+	"例如：my-new-app 或 ~/projects/demo": "e.g. my-new-app or ~/projects/demo",
+	"更改父目录…": "Change parent…",
+	"正在读取电脑目录…": "Loading remote directory…",
+	"此目录下暂无子文件夹": "No subfolders in this directory"
 };
 var REGEX_ZH_TO_EN = [
 	[/^🌐 (.+)$/, (_, title) => `🌐 ${title === "对话内 HTML 交互预览" ? "Inline HTML Live Preview" : title}`],
@@ -3759,6 +3816,9 @@ var REGEX_ZH_TO_EN = [
 	[/^🎬 (.+) · ⚡ P2P 极速直连 · 零缓冲秒播$/, "🎬 $1 · ⚡ P2P Direct Zero-Buffer"],
 	[/^🎬 (.+) · ⚡ HLS 切片秒播 · 抗弱网零卡死$/, "🎬 $1 · ⚡ Adaptive HLS Instant Stream"],
 	[/^🎬 (.+) · 无损原画 HLS 切片流$/, "🎬 $1 · Lossless HLS Original Stream"],
+	[/^📍 当前工作区：(.+)$/, "📍 Workspace: $1"],
+	[/^📍 将创建新工作区：(.+)$/, "📍 Will create workspace: $1"],
+	[/^✨ 新建：(.+)$/, "✨ New: $1"],
 	[/^🎬 (.+) · ⚡ 720p 极速秒看流 · 拖动秒播$/, "🎬 $1 · ⚡ 720p Fast Preview Stream"],
 	[/^🎬 (.+) · 智能 H\.264 兼容流 · 拖动秒播$/, "🎬 $1 · Smart H.264 Compat Stream"],
 	[/^🎬 (.+) · 无损快启重封装 · 拖动秒播$/, "🎬 $1 · Fast-Start Lossless Remux"],
@@ -5749,6 +5809,8 @@ function createTriageDeckController(deps) {
 	const isEn = () => curLang() === "en";
 	function syncStaticChromeLang() {
 		const en = isEn();
+		const overlay = document.getElementById("triageDeckOverlay");
+		if (overlay) overlay.setAttribute("aria-label", en ? "Swipe Triage Mode" : "滑卡批阅模式");
 		const titleSpan = document.getElementById("triageCenterTitleText");
 		if (titleSpan) titleSpan.textContent = en ? "Swipe Triage" : "滑卡批阅";
 		const backBtn = document.getElementById("triageBackToListBtn");
@@ -6922,6 +6984,12 @@ function createTriageDeckController(deps) {
 		getPendingCount: () => getOrderedActiveCards().length,
 		onStateUpdated: () => {
 			if (isOpen) render({ force: false });
+		},
+		onLangChanged: () => {
+			lastRenderedSig = "";
+			syncStaticChromeLang();
+			updateUndoBtnDom();
+			if (isOpen) render({ force: true });
 		}
 	};
 }
@@ -6932,13 +7000,15 @@ function initHubController() {
 	const queryPairCode = (urlParams.get("pair") || "").trim();
 	let pendingDeepLinkHostId = (urlParams.get("host") || "").trim();
 	let pendingDeepLinkTaskId = (urlParams.get("task") || urlParams.get("session") || "").trim();
-	if (queryToken || queryPairCode || pendingDeepLinkHostId || pendingDeepLinkTaskId) {
+	const hasRecoveryParam = urlParams.has("_r");
+	if (queryToken || queryPairCode || pendingDeepLinkHostId || pendingDeepLinkTaskId || hasRecoveryParam) {
 		if (queryToken) localStorage.setItem("dsh_hub_token", queryToken);
 		urlParams.delete("token");
 		urlParams.delete("pair");
 		urlParams.delete("host");
 		urlParams.delete("task");
 		urlParams.delete("session");
+		urlParams.delete("_r");
 		const cleanSearch = urlParams.toString();
 		const cleanUrl = location.pathname + (cleanSearch ? "?" + cleanSearch : "") + location.hash;
 		try {
@@ -7456,6 +7526,7 @@ function initHubController() {
 		lastRenderedStripKey = "";
 		lastRenderedListKey = "";
 		lastRenderedSettingsKey = "";
+		triageCtrl?.onLangChanged?.();
 		renderAll();
 		applyLangToDom(document.body, langPref);
 	}
@@ -8197,6 +8268,34 @@ function initHubController() {
 		renderProjectStrip();
 		renderSessionList();
 	}
+	let chatPaintSyncTimer = null;
+	function scheduleChatPaintAndScrollSync(targetSessionId) {
+		const flushOnce = () => {
+			if (activeSessionId !== targetSessionId) return;
+			const box = document.getElementById("chatMessages");
+			if (!box) return;
+			const maxTop = Math.max(0, box.scrollHeight - box.clientHeight);
+			box.scrollTop = maxTop;
+			if (maxTop > 1) {
+				box.scrollTop = maxTop - 1;
+				box.scrollTop = maxTop;
+			} else {
+				box.style.transform = "translateZ(0.01px)";
+				box.offsetHeight;
+				box.style.transform = "translateZ(0)";
+			}
+			setScrollBottomVisible(false);
+		};
+		if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => {
+			flushOnce();
+			requestAnimationFrame(flushOnce);
+		});
+		if (chatPaintSyncTimer) clearTimeout(chatPaintSyncTimer);
+		chatPaintSyncTimer = setTimeout(() => {
+			chatPaintSyncTimer = null;
+			flushOnce();
+		}, 265);
+	}
 	function openChat(sessionId) {
 		const found = findSessionGlobal(sessionId);
 		if (!found) return;
@@ -8211,10 +8310,18 @@ function initHubController() {
 		} catch {}
 		syncSessionReadToServer(activeSessionId, found.session.conclusionSig || "", readTs);
 		clearHomeScreenAppBadge();
-		document.getElementById("chatFullscreen").classList.add("open");
+		const chatEl = document.getElementById("chatFullscreen");
+		if (chatEl) {
+			chatEl.style.transition = "";
+			chatEl.style.transform = "";
+			chatEl.style.willChange = "";
+			chatEl.style.boxShadow = "";
+			chatEl.classList.add("open");
+		}
 		document.body.classList.add("mobile-chat-open");
 		lastRenderedChatKey = "";
 		renderActiveChatStage(found);
+		scheduleChatPaintAndScrollSync(found.session.id);
 		if (found.session._wireTruncated && !expandedTranscriptBySession.has(found.session.id)) hydrateColdSessionTranscript(found.session.hostId, found.session.id, found.session.sessionRev || "");
 		const box = document.getElementById("chatMessages");
 		if (box && box.scrollHeight - box.scrollTop - box.clientHeight >= 120) setScrollBottomVisible(true);
@@ -9098,8 +9205,11 @@ function initHubController() {
 		} catch {} finally {
 			hydratingWireSessionIds.delete(sessionId);
 			if (activeSessionId === sessionId || triageCtrl?.isOpen()) {
+				const box = document.getElementById("chatMessages");
+				const wasNearBottom = !box || box.scrollHeight - box.scrollTop - box.clientHeight < 140;
 				lastRenderedChatKey = "";
 				renderAll();
+				if (activeSessionId === sessionId && wasNearBottom) scheduleChatPaintAndScrollSync(sessionId);
 			}
 		}
 	}
@@ -11278,13 +11388,21 @@ function initHubController() {
           </button>
         `).join("");
 		const projects = getHostProjects(hosts.find((h) => h.hostId === newTaskHostId));
-		if (!projects.some((p) => p.cwd === newTaskCwd) && projects[0]) newTaskCwd = projects[0].cwd;
+		if (!newTaskCwd && projects[0]) {
+			newTaskCwd = projects[0].cwd;
+			newTaskCustomIsNew = false;
+		}
 		const moreBtn = document.getElementById("newTaskProjMoreBtn");
 		if (moreBtn) moreBtn.textContent = `全部 (${projects.length}) ▾`;
 		const projChips = document.getElementById("newTaskProjectChips");
 		if (projChips) {
-			projChips.innerHTML = projects.map((p) => `
-          <button type="button" class="new-task-proj-pill ${p.cwd === newTaskCwd ? "selected" : ""}" title="${esc$1(p.name)} (${esc$1(p.cwd)})" onclick="selectNewTaskProject('${esc$1(p.cwd)}')">
+			const isKnownProj = projects.some((p) => p.cwd === newTaskCwd);
+			projChips.innerHTML = (newTaskCwd && !isKnownProj ? (() => {
+				const folderLabel = newTaskCwd.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || newTaskCwd;
+				const prefix = newTaskCustomIsNew ? `✨ 新建：${folderLabel}` : `📂 ${folderLabel}`;
+				return `<button type="button" class="new-task-proj-pill selected" title="${esc$1(newTaskCwd)}" onclick="selectNewTaskProject('${esc$1(newTaskCwd)}', ${newTaskCustomIsNew ? "true" : "false"})">${esc$1(prefix)}</button>`;
+			})() : "") + projects.map((p) => `
+          <button type="button" class="new-task-proj-pill ${p.cwd === newTaskCwd ? "selected" : ""}" title="${esc$1(p.name)} (${esc$1(p.cwd)})" onclick="selectNewTaskProject('${esc$1(p.cwd)}', false)">
             📁 ${esc$1(formatCompactProjectLabel(p.name))}
           </button>
         `).join("");
@@ -11295,39 +11413,259 @@ function initHubController() {
 				behavior: "smooth"
 			}), 50);
 		}
+		const pathBar = document.getElementById("newTaskSelectedPathBar");
+		if (pathBar) pathBar.textContent = newTaskCwd ? newTaskCustomIsNew ? `📍 将创建新工作区：${newTaskCwd}` : `📍 当前工作区：${newTaskCwd}` : "";
 		updateNewTaskModelPill();
+		if (langPref === "en") applyLangToDom(document.getElementById("newTaskSheet"), langPref);
 	}
 	let newTaskProjectSearchQuery = "";
-	function openNewTaskProjectPickerSheet() {
+	let newTaskPickerMode = "recent";
+	let newTaskBrowseDir = "";
+	let newTaskBrowseLoading = false;
+	let newTaskBrowseError = "";
+	let newTaskBrowseEntries = [];
+	let newTaskBrowseReqSeq = 0;
+	let newTaskCreateParentDir = "";
+	let newTaskCreateFolderName = "";
+	let newTaskCustomIsNew = false;
+	function inferHostHomeDir(host, projects = []) {
+		const candidates = [...(projects || []).map((p) => p.cwd).filter(Boolean), ...(host?.bridgeState?.workspaces || []).map((w) => w?.cwd).filter(Boolean)];
+		for (const c of candidates) {
+			const unixHome = /^(\/(?:Users|home)\/[^/]+)/.exec(c);
+			if (unixHome) return unixHome[1];
+			const winHome = /^([A-Za-z]:\\Users\\[^\\]+)/i.exec(c);
+			if (winHome) return winHome[1];
+		}
+		if (candidates[0]) {
+			const clean = candidates[0].replace(/[/\\]+$/, "");
+			const idx = Math.max(clean.lastIndexOf("/"), clean.lastIndexOf("\\"));
+			if (idx > 0) return clean.slice(0, idx);
+			return clean;
+		}
+		return "~";
+	}
+	function computeParentDirPath(dirPath = "") {
+		const clean = String(dirPath || "").replace(/[/\\]+$/, "");
+		if (!clean || clean === "/" || clean === "~" || /^[A-Za-z]:$/i.test(clean)) return "";
+		const sepChar = clean.includes("\\") ? "\\" : "/";
+		const idx = clean.lastIndexOf(sepChar);
+		if (idx < 0) return "";
+		if (idx === 0) return "/";
+		const parent = clean.slice(0, idx);
+		if (/^[A-Za-z]:$/i.test(parent)) return parent + "\\";
+		return parent;
+	}
+	function joinRemotePath(baseDir = "", childName = "", homeFallback = "~") {
+		const rawChild = String(childName || "").trim();
+		if (!rawChild) return String(baseDir || "").trim();
+		if (rawChild.startsWith("/") || /^[A-Za-z]:[/\\]/.test(rawChild)) return rawChild.replace(/[/\\]+$/, "") || "/";
+		if (rawChild === "~" || rawChild.startsWith("~/") || rawChild.startsWith("~\\")) {
+			if (homeFallback && homeFallback !== "~") {
+				const sepChar = homeFallback.includes("\\") ? "\\" : "/";
+				const rest = rawChild.slice(2).replace(/^[/\\]+/, "");
+				return rest ? `${homeFallback.replace(/[/\\]+$/, "")}${sepChar}${rest}` : homeFallback;
+			}
+			return rawChild;
+		}
+		const base = String(baseDir || homeFallback || "~").replace(/[/\\]+$/, "");
+		const sepChar = base.includes("\\") ? "\\" : "/";
+		return base === "/" ? `/${rawChild}` : `${base}${sepChar}${rawChild}`;
+	}
+	async function browseNewTaskDir(targetDir) {
+		const host = (hubState.hosts || []).find((h) => h.hostId === newTaskHostId);
+		if (!host) return;
+		const projects = getHostProjects(host);
+		const dirToLoad = String(targetDir || "").trim() || newTaskBrowseDir || inferHostHomeDir(host, projects);
+		newTaskBrowseDir = dirToLoad;
+		newTaskBrowseLoading = true;
+		newTaskBrowseError = "";
+		const seq = ++newTaskBrowseReqSeq;
+		renderNewTaskProjectPickerList();
+		try {
+			const qp = new URLSearchParams({
+				cwd: dirToLoad,
+				path: ""
+			});
+			const res = await apiFetch(`/api/hosts/${encodeURIComponent(host.hostId)}/fs/list?${qp.toString()}`);
+			const data = await res.json().catch(() => ({}));
+			if (seq !== newTaskBrowseReqSeq) return;
+			if (!res.ok || data?.ok === false) {
+				newTaskBrowseError = data?.error || `读取目录失败 (HTTP ${res.status})`;
+				newTaskBrowseEntries = [];
+			} else {
+				if (data.rootCwd) newTaskBrowseDir = data.rootCwd;
+				newTaskCreateParentDir = newTaskBrowseDir;
+				newTaskBrowseEntries = Array.isArray(data.entries) ? data.entries.filter((e) => e && e.isDirectory) : [];
+			}
+		} catch (err) {
+			if (seq !== newTaskBrowseReqSeq) return;
+			newTaskBrowseError = err?.message || "读取目录失败";
+			newTaskBrowseEntries = [];
+		} finally {
+			if (seq === newTaskBrowseReqSeq) {
+				newTaskBrowseLoading = false;
+				renderNewTaskProjectPickerList();
+			}
+		}
+	}
+	function switchNewTaskPickerMode(mode = "recent") {
+		newTaskPickerMode = mode === "browse" || mode === "create" ? mode : "recent";
+		const host = (hubState.hosts || []).find((h) => h.hostId === newTaskHostId);
+		const homeGuess = inferHostHomeDir(host, getHostProjects(host));
+		if (!newTaskBrowseDir) newTaskBrowseDir = homeGuess;
+		if (!newTaskCreateParentDir) newTaskCreateParentDir = newTaskBrowseDir || homeGuess;
+		document.getElementById("newTaskTabRecent")?.classList.toggle("active", newTaskPickerMode === "recent");
+		document.getElementById("newTaskTabBrowse")?.classList.toggle("active", newTaskPickerMode === "browse");
+		document.getElementById("newTaskTabCreate")?.classList.toggle("active", newTaskPickerMode === "create");
+		const searchWrap = document.getElementById("newTaskPickerSearchWrap");
+		if (searchWrap) searchWrap.style.display = newTaskPickerMode === "recent" ? "block" : "none";
+		if (newTaskPickerMode === "browse") {
+			browseNewTaskDir(newTaskBrowseDir);
+			return;
+		}
+		renderNewTaskProjectPickerList();
+		if (newTaskPickerMode === "create") setTimeout(() => document.getElementById("newTaskNewWsNameInput")?.focus(), 100);
+	}
+	function openNewTaskProjectPickerSheet(initialMode = "recent") {
 		newTaskProjectSearchQuery = "";
 		const input = document.getElementById("newTaskProjectSearchInput");
 		if (input) input.value = "";
-		renderNewTaskProjectPickerList();
 		openSheet("newTaskProjectPickerSheet");
-		if (input) setTimeout(() => input.focus(), 150);
+		switchNewTaskPickerMode(initialMode);
+		if (initialMode === "recent" && input && !window.matchMedia?.("(max-width: 768px)")?.matches) setTimeout(() => input.focus(), 150);
 	}
 	function filterNewTaskProjects(query) {
 		newTaskProjectSearchQuery = String(query || "").trim().toLowerCase();
 		renderNewTaskProjectPickerList();
 	}
+	function selectBrowsedNewTaskDir(dirPath) {
+		const clean = String(dirPath || newTaskBrowseDir || "").trim();
+		if (!clean) return;
+		newTaskCwd = clean;
+		newTaskCustomIsNew = false;
+		renderNewTaskForm();
+		closeSheet("newTaskProjectPickerSheet");
+	}
+	function openCreateUnderCurrentBrowseDir() {
+		if (newTaskBrowseDir) newTaskCreateParentDir = newTaskBrowseDir;
+		switchNewTaskPickerMode("create");
+	}
+	function onNewWorkspaceInput(val) {
+		newTaskCreateFolderName = String(val || "");
+		const host = (hubState.hosts || []).find((h) => h.hostId === newTaskHostId);
+		const homeGuess = inferHostHomeDir(host, getHostProjects(host));
+		const targetPath = joinRemotePath(newTaskCreateParentDir || homeGuess, newTaskCreateFolderName, homeGuess);
+		const previewEl = document.getElementById("newTaskCreateResolvedPreview");
+		if (previewEl) previewEl.textContent = newTaskCreateFolderName.trim() ? langPref === "en" ? `📍 Will create workspace: ${targetPath}` : `📍 将创建新工作区：${targetPath}` : langPref === "en" ? `📍 Parent: ${newTaskCreateParentDir || homeGuess}` : `📍 父目录：${newTaskCreateParentDir || homeGuess}`;
+	}
+	function confirmCreateNewWorkspace() {
+		const raw = String(newTaskCreateFolderName || document.getElementById("newTaskNewWsNameInput")?.value || "").trim();
+		if (!raw) {
+			showToast(langPref === "en" ? "⚠️ Please enter a new folder name or path" : "⚠️ 请输入新工作区文件夹名称或路径");
+			document.getElementById("newTaskNewWsNameInput")?.focus();
+			return;
+		}
+		const host = (hubState.hosts || []).find((h) => h.hostId === newTaskHostId);
+		const homeGuess = inferHostHomeDir(host, getHostProjects(host));
+		newTaskCwd = joinRemotePath(newTaskCreateParentDir || homeGuess, raw, homeGuess);
+		newTaskCustomIsNew = true;
+		newTaskCreateFolderName = "";
+		renderNewTaskForm();
+		closeSheet("newTaskProjectPickerSheet");
+	}
 	function renderNewTaskProjectPickerList() {
 		const body = document.getElementById("newTaskProjectPickerBody");
 		if (!body) return;
-		const projects = getHostProjects((hubState.hosts || []).find((h) => h.hostId === newTaskHostId));
+		const host = (hubState.hosts || []).find((h) => h.hostId === newTaskHostId);
+		const projects = getHostProjects(host);
+		const homeGuess = inferHostHomeDir(host, projects);
+		if (newTaskPickerMode === "browse") {
+			const curDir = newTaskBrowseDir || homeGuess;
+			const parentDir = computeParentDirPath(curDir);
+			body.innerHTML = `
+        <div style="padding:10px 12px;background:var(--subtle);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;">
+          <div style="font-size:11.5px;color:var(--muted);word-break:break-all;margin-bottom:8px;">📂 ${esc$1(curDir)}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="pill-action-btn primary" style="flex:1;justify-content:center;padding:7px 12px;font-size:12.5px;" onclick="selectBrowsedNewTaskDir('${esc$1(curDir)}')">✓ 选定此目录作为工作区</button>
+            <button type="button" class="pill-action-btn" style="padding:7px 10px;font-size:12.5px;" onclick="openCreateUnderCurrentBrowseDir()">＋ 新工作区</button>
+          </div>
+        </div>
+        ${parentDir ? `
+          <div class="host-option" onclick="browseNewTaskDir('${esc$1(parentDir)}')">
+            <div style="font-size:13px;font-weight:600;color:var(--primary);">⬆️ 返回上一级目录</div>
+            <span style="font-size:11px;color:var(--muted);margin-left:auto;max-width:52%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc$1(parentDir)}</span>
+          </div>
+        ` : ""}
+        ${newTaskBrowseLoading ? fileLoadingSpinnerHtml("正在读取电脑目录…") : newTaskBrowseError ? `
+          <div style="padding:18px 12px;text-align:center;color:#dc2626;font-size:12.5px;">⚠️ ${esc$1(newTaskBrowseError)}</div>
+        ` : newTaskBrowseEntries.length === 0 ? `
+          <div style="padding:20px 12px;text-align:center;color:var(--muted);font-size:12.5px;">此目录下暂无子文件夹</div>
+        ` : newTaskBrowseEntries.map((dir) => {
+				return `
+            <div class="host-option" onclick="browseNewTaskDir('${esc$1(joinRemotePath(curDir, dir.name, homeGuess))}')">
+              <div style="min-width:0;flex:1;display:flex;align-items:center;gap:8px;">
+                <span>📁</span>
+                <span style="font-size:13.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc$1(dir.name)}</span>
+              </div>
+              <span style="font-size:12px;color:var(--muted);">›</span>
+            </div>
+          `;
+			}).join("")}
+      `;
+			if (langPref === "en") applyLangToDom(body, langPref);
+			return;
+		}
+		if (newTaskPickerMode === "create") {
+			const parentDir = newTaskCreateParentDir || homeGuess;
+			const previewTarget = newTaskCreateFolderName.trim() ? `📍 将创建新工作区：${joinRemotePath(parentDir, newTaskCreateFolderName, homeGuess)}` : `📍 父目录：${parentDir}`;
+			body.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:12px;padding:4px 2px 8px;">
+          <div style="padding:10px 12px;background:var(--subtle);border:1px solid var(--border);border-radius:12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;">
+              <span style="font-size:12px;font-weight:600;color:var(--text-secondary);">📂 父级目录（新文件夹将建在此目录下）</span>
+              <button type="button" class="proj-header-more-btn" onclick="switchNewTaskPickerMode('browse')">更改父目录…</button>
+            </div>
+            <div style="font-size:12px;color:var(--text);word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc$1(parentDir)}</div>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;">📝 新项目文件夹名称（或直接填完整路径）</div>
+            <input
+              type="text"
+              class="auth-input"
+              id="newTaskNewWsNameInput"
+              value="${esc$1(newTaskCreateFolderName)}"
+              placeholder="例如：my-new-app 或 ~/projects/demo"
+              style="margin:0;"
+              oninput="onNewWorkspaceInput(this.value)"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();confirmCreateNewWorkspace();}"
+            />
+            <div id="newTaskCreateResolvedPreview" style="margin-top:8px;font-size:11.5px;color:var(--primary);word-break:break-all;">${esc$1(previewTarget)}</div>
+          </div>
+          <button type="button" class="primary-block-btn" onclick="confirmCreateNewWorkspace()">✨ 创建并选定新工作区</button>
+        </div>
+      `;
+			if (langPref === "en") applyLangToDom(body, langPref);
+			return;
+		}
 		const q = newTaskProjectSearchQuery;
 		const filtered = projects.filter((p) => !q || p.name.toLowerCase().includes(q) || p.cwd.toLowerCase().includes(q));
 		if (filtered.length === 0) {
 			body.innerHTML = `
-        <div style="padding:24px 12px;text-align:center;color:var(--muted);font-size:13px;">
-          未找到匹配的项目文件夹
+        <div style="padding:20px 12px;text-align:center;color:var(--muted);font-size:13px;">
+          <div style="margin-bottom:12px;">未找到匹配的项目文件夹</div>
+          <div style="display:flex;gap:8px;justify-content:center;">
+            <button type="button" class="pill-action-btn" onclick="switchNewTaskPickerMode('browse')">📂 选择目录</button>
+            <button type="button" class="pill-action-btn primary" onclick="switchNewTaskPickerMode('create')">＋ 新工作区</button>
+          </div>
         </div>
       `;
+			if (langPref === "en") applyLangToDom(body, langPref);
 			return;
 		}
 		body.innerHTML = filtered.map((p) => {
 			const isSel = p.cwd === newTaskCwd;
 			return `
-        <div class="host-option ${isSel ? "selected" : ""}" onclick="selectNewTaskProject('${esc$1(p.cwd)}'); closeSheet('newTaskProjectPickerSheet');">
+        <div class="host-option ${isSel ? "selected" : ""}" onclick="selectNewTaskProject('${esc$1(p.cwd)}', false); closeSheet('newTaskProjectPickerSheet');">
           <div style="min-width:0;flex:1;">
             <div style="font-size:13.5px;font-weight:700;color:var(--text);">📁 ${esc$1(p.name)}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc$1(p.cwd)}</div>
@@ -11336,10 +11674,14 @@ function initHubController() {
         </div>
       `;
 		}).join("");
+		if (langPref === "en") applyLangToDom(body, langPref);
 	}
 	function selectNewTaskHost(id) {
 		newTaskHostId = id;
 		newTaskCwd = "";
+		newTaskCustomIsNew = false;
+		newTaskBrowseDir = "";
+		newTaskCreateParentDir = "";
 		renderNewTaskForm();
 	}
 	function selectNewTaskHarness(h) {
@@ -11347,8 +11689,9 @@ function initHubController() {
 		newTaskModel = "";
 		renderNewTaskForm();
 	}
-	function selectNewTaskProject(cwd) {
+	function selectNewTaskProject(cwd, isNew = false) {
 		newTaskCwd = cwd;
+		newTaskCustomIsNew = Boolean(isNew);
 		renderNewTaskForm();
 	}
 	function fillQuickPrompt(text) {
@@ -11382,6 +11725,7 @@ function initHubController() {
 				type: "new_session",
 				harness: newTaskHarness,
 				cwd: newTaskCwd,
+				...newTaskCustomIsNew ? { createDir: true } : {},
 				title: text.slice(0, 28),
 				prompt: text,
 				...newTaskModel ? { model: newTaskModel } : {},
@@ -12848,26 +13192,34 @@ function initHubController() {
 	function setupChatSwipeBack() {
 		const chat = document.getElementById("chatFullscreen");
 		if (!chat) return;
-		const EDGE = 30;
 		let tracking = false;
 		let decided = null;
+		let swipeDir = 0;
 		let startX = 0;
 		let startY = 0;
 		let lastX = 0;
 		let lastY = 0;
 		let startedAt = 0;
 		let width = 0;
+		let startedNearRightEdge = false;
 		const resetChatStyle = () => {
 			chat.style.transition = "";
 			chat.style.transform = "";
 			chat.style.willChange = "";
 			chat.style.boxShadow = "";
 		};
-		const isHorizontallyScrollable = (target) => {
+		const isInteractiveSwipeExcluded = (target) => {
+			if (!target || typeof target.closest !== "function") return false;
+			return Boolean(target.closest("textarea, input, select, video, audio, #wechatHoldBtn, [data-no-back-swipe]"));
+		};
+		const canScrollHorizontally = (target, dx) => {
 			let node = target;
 			while (node && node !== chat && node.nodeType === 1) {
 				const overflowX = window.getComputedStyle(node).overflowX;
-				if (/(auto|scroll)/.test(overflowX) && node.scrollWidth > node.clientWidth + 4) return true;
+				if (/(auto|scroll)/.test(overflowX) && node.scrollWidth > node.clientWidth + 4) {
+					if (dx > 0 && node.scrollLeft > 2) return true;
+					if (dx < 0 && node.scrollLeft + node.clientWidth < node.scrollWidth - 2) return true;
+				}
 				node = node.parentElement;
 			}
 			return false;
@@ -12876,18 +13228,24 @@ function initHubController() {
 			if (event.touches.length !== 1) return;
 			if (!document.body.classList.contains("mobile-chat-open")) return;
 			if (document.body.classList.contains("DesktopSplitMode")) return;
+			if (document.querySelector(".sheet-backdrop.open, #triageDeckOverlay.open")) return;
+			if (isInteractiveSwipeExcluded(event.target)) return;
 			const touch = event.touches[0];
 			const rect = chat.getBoundingClientRect();
-			if (touch.clientX - rect.left > EDGE) return;
-			if (isHorizontallyScrollable(event.target)) return;
+			width = chat.offsetWidth || rect.width || window.innerWidth || 375;
+			const baseLeft = document.body.classList.contains("DesktopSplitMode") ? rect.left : 0;
+			const relX = touch.clientX - baseLeft;
+			const inLeftOrCenterZone = relX <= Math.max(180, width * .75);
+			startedNearRightEdge = relX >= width - 48;
+			if (!inLeftOrCenterZone && !startedNearRightEdge) return;
 			tracking = true;
 			decided = null;
+			swipeDir = 0;
 			startX = touch.clientX;
 			startY = touch.clientY;
 			lastX = startX;
 			lastY = startY;
 			startedAt = Date.now();
-			width = rect.width || window.innerWidth;
 		}, { passive: true });
 		chat.addEventListener("touchmove", (event) => {
 			if (!tracking) return;
@@ -12897,35 +13255,40 @@ function initHubController() {
 			lastX = touch.clientX;
 			lastY = touch.clientY;
 			if (decided === null) {
-				if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-				decided = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.2;
+				if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+				const isRightwardBack = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.25 && !canScrollHorizontally(event.target, dx);
+				const isRightEdgeLeftSwipe = startedNearRightEdge && dx < 0 && Math.abs(dx) > Math.abs(dy) * 1.35 && !canScrollHorizontally(event.target, dx);
+				decided = isRightwardBack || isRightEdgeLeftSwipe;
 				if (!decided) {
 					tracking = false;
 					return;
 				}
+				swipeDir = isRightwardBack ? 1 : -1;
 				chat.style.transition = "none";
 				chat.style.willChange = "transform";
 			}
-			if (dx <= 0) return;
+			const effDx = swipeDir === 1 ? Math.max(0, dx) : Math.max(0, -dx);
+			if (effDx <= 0) return;
 			if (event.cancelable) event.preventDefault();
-			chat.style.transform = `translateX(${Math.min(dx, width)}px)`;
+			chat.style.transform = `translateX(${Math.min(effDx, width)}px)`;
 			chat.style.boxShadow = "-10px 0 30px rgba(15, 23, 42, 0.16)";
 		}, { passive: false });
 		const finishSwipe = () => {
 			if (!tracking) return;
 			tracking = false;
-			const dismiss = shouldDismissHorizontalSwipe({
-				dx: Math.max(0, lastX - startX),
-				dy: Math.abs(lastY - startY),
+			const rawDelta = swipeDir === -1 ? startX - lastX : lastX - startX;
+			const dx = Math.max(0, rawDelta);
+			const dy = Math.abs(lastY - startY);
+			if (decided === true && shouldDismissHorizontalSwipe({
+				dx,
+				dy,
 				width,
 				durationMs: Date.now() - startedAt
-			});
-			chat.style.transition = "transform 0.24s cubic-bezier(0.22, 1, 0.36, 1)";
-			if (dismiss) {
-				chat.style.transform = `translateX(${width}px)`;
+			})) {
+				resetChatStyle();
 				closeMobileChat();
-				setTimeout(resetChatStyle, 260);
 			} else {
+				chat.style.transition = "transform 0.24s cubic-bezier(0.22, 1, 0.36, 1)";
 				chat.style.transform = "translateX(0px)";
 				setTimeout(resetChatStyle, 280);
 			}
@@ -13297,6 +13660,9 @@ function initHubController() {
 					pendingDeepLinkTaskId = String(agentId || "").trim();
 					fetchState();
 				}
+			} else if (msg && msg.type === "DSH_SW_UPDATED") {
+				const nextBuild = String(msg.uiBuild || "").trim();
+				if (nextBuild && nextBuild !== "dev" && initialUiBuild && nextBuild !== initialUiBuild) triggerAppShellUpgradeReload(nextBuild);
 			}
 		});
 		if (typeof navigator.serviceWorker.register === "function" && typeof window !== "undefined" && window.location && (window.location.protocol === "https:" || window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) setTimeout(() => {
@@ -13313,7 +13679,20 @@ function initHubController() {
 			banner.style.display = "flex";
 		} else banner.style.display = "none";
 	}
-	let initialUiBuild = "";
+	function detectLoadedBundleBuild() {
+		if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return "";
+		try {
+			const scripts = document.querySelectorAll("script[src]");
+			for (const sc of scripts) {
+				const src = sc.getAttribute("src") || "";
+				const m = /\/assets\/index-([A-Za-z0-9_-]+)\.js/.exec(src);
+				if (m && m[1]) return m[1];
+			}
+		} catch {}
+		return "";
+	}
+	let initialUiBuild = detectLoadedBundleBuild();
+	const bootedFromHashedBundle = Boolean(initialUiBuild);
 	let lastSavedStateCacheAt = 0;
 	function saveCachedHubStateSnapshot(state) {
 		const now = Date.now();
@@ -13385,25 +13764,53 @@ function initHubController() {
 		return null;
 	}
 	let pendingBackgroundUiReload = false;
+	let pendingTargetUiBuild = "";
 	function hasActiveUserInputInProgress() {
 		if (typeof document === "undefined") return false;
+		if (isVoiceRecording()) return true;
 		const chatInput = document.getElementById("globalPromptInput");
 		if (chatInput && String(chatInput.value || "").trim().length > 0) return true;
-		const newInput = document.getElementById("newTaskPromptInput");
+		const newInput = document.getElementById("newTaskInput") || document.getElementById("newTaskPromptInput");
 		if (newInput && String(newInput.value || "").trim().length > 0) return true;
 		return false;
+	}
+	function reloadWithFreshAppShell(targetBuild = "") {
+		if (typeof window === "undefined" || !window.location) return;
+		if (targetBuild) try {
+			if (sessionStorage.getItem("dsh_reloaded_ui_build") === targetBuild) return;
+			sessionStorage.setItem("dsh_reloaded_ui_build", targetBuild);
+		} catch {}
+		closeSSE();
+		try {
+			const nextUrl = new URL(window.location.href);
+			nextUrl.searchParams.set("_r", String(Date.now()));
+			window.location.replace(nextUrl.toString());
+			return;
+		} catch {}
+		if (typeof window.location.reload === "function") window.location.reload();
+	}
+	function triggerAppShellUpgradeReload(nextBuild) {
+		if (!nextBuild || nextBuild === "dev") return;
+		pendingTargetUiBuild = nextBuild;
+		if (!hasActiveUserInputInProgress()) {
+			reloadWithFreshAppShell(nextBuild);
+			return;
+		}
+		pendingBackgroundUiReload = true;
 	}
 	function applyHubState(nextState, { skipCache = false } = {}) {
 		const incomingBuild = String(nextState?.build?.uiBuild || "").trim();
 		if (incomingBuild && incomingBuild !== "dev") {
 			if (!initialUiBuild) initialUiBuild = incomingBuild;
 			else if (initialUiBuild !== incomingBuild) {
+				const staleBootMismatch = bootedFromHashedBundle;
 				initialUiBuild = incomingBuild;
-				if (typeof document !== "undefined" && document.visibilityState === "hidden" && !hasActiveUserInputInProgress() && typeof window !== "undefined" && window.location && typeof window.location.reload === "function") {
-					closeSSE();
-					window.location.reload();
+				const isHidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+				if ((staleBootMismatch || isHidden) && !hasActiveUserInputInProgress()) {
+					reloadWithFreshAppShell(incomingBuild);
 					return;
 				}
+				pendingTargetUiBuild = incomingBuild;
 				pendingBackgroundUiReload = true;
 			}
 		}
@@ -13815,6 +14222,12 @@ function initHubController() {
 		selectNewTaskHarness,
 		selectNewTaskProject,
 		openNewTaskProjectPickerSheet,
+		switchNewTaskPickerMode,
+		browseNewTaskDir,
+		selectBrowsedNewTaskDir,
+		openCreateUnderCurrentBrowseDir,
+		onNewWorkspaceInput,
+		confirmCreateNewWorkspace,
 		filterNewTaskProjects,
 		fillQuickPrompt,
 		submitNewTask,
@@ -14104,10 +14517,9 @@ function initHubController() {
 	}
 	if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => {
 		if (document.visibilityState === "visible") resumeForegroundSync();
-		else if (document.visibilityState === "hidden" && pendingBackgroundUiReload && !hasActiveUserInputInProgress() && typeof window !== "undefined" && window.location && typeof window.location.reload === "function") {
+		else if (document.visibilityState === "hidden" && pendingBackgroundUiReload && !hasActiveUserInputInProgress()) {
 			pendingBackgroundUiReload = false;
-			closeSSE();
-			window.location.reload();
+			reloadWithFreshAppShell(pendingTargetUiBuild);
 		}
 	});
 	if (typeof window !== "undefined") {

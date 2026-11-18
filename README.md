@@ -201,6 +201,14 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.3</code> — SW Auto-Upgrade Fix, 4s/30fps Cross-Ocean HLS, Remote Folder Browser &amp; New Workspace Creator, Bilingual Triage Deck &amp; iOS Chat Paint/Swipe Fixes</strong></summary>
+
+- **Service Worker Instant Rollover &amp; Cross-Ocean 4s/30fps HLS Tuning (`v0.8.3`)**: Embedded dynamic `dsh-app-shell-v1-<uiBuild>` versioning in `/sw.js` (`hub/server.js`) and fixed `initialUiBuild` DOM bundle hash detection (`controller.js`) so mobile Safari / Home Screen PWAs never remain pinned on stale pre-upgrade bundles; tuned `hls-streamer.js` to `4s` segments with `-fpsmax 30` (`~400 KB` per 4s segment, 3× cross-ocean playback buffer headroom on 60fps high-bitrate renders).
+- **Remote Directory Browser, New Workspace Creator, Full English Triage Deck &amp; iOS Chat Polish (`v0.8.3`)**: Added `📂 Browse Folder` and `＋ New Workspace` tabs to the New Task modal (`Sheets.tsx` / `controller.js` / `hub-agent.js` with `~` expansion and automatic `mkdir -p`), shipped full English localization across the Swipe Triage Deck (`triage-deck.js`), restored reliable in-session back-swipe gestures across both left/center rightward drag and right-edge inward swipe, and eliminated iOS WebKit offscreen blank-scroll-tile rendering on session open (`app.css` / `controller.js`).
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.2</code> — Industry-Standard HLS Segmented Video Streaming (<code>m3u8</code> + <code>2s .ts</code> + Cross-Platform <code>hls.js</code> &amp; Auto Cache GC)</strong></summary>
 
 - **Standard HLS Video Streaming Engine &amp; Automatic Cache Garbage Collection (`v0.8.2`)**: Replaced single-file whole-MP4 preview re-encoding with an industry-standard **RFC 8216 HLS (`index.m3u8` + atomic `2s .ts` segments)** pipeline (`dsh-feishu/lib/hls-streamer.js` / `hub/server.js` / `hub/web/src/utils/hlsPlayer.js`): parses exact ISO BMFF `mvhd` duration in `< 1ms` to serve a complete `#EXT-X-ENDLIST` VOD timeline upfront, streams `-c:v copy` losslessly on lightweight compatible H.264 files or progressive `720p` segments (`~300 KB` per 2s, first segment ready in `< 300ms` with on-demand `-ss` seek-anywhere restarting and `25s` idle encoder auto-stop) on multi-hundred-MB high-bitrate renders; plays natively in iOS/macOS Safari with lazy on-demand `hls.js` MSE support for Windows/Linux/Android/Chrome/Feishu WebViews and automatic `/fs/stream` fallback for older hosts; adds `X-Accel-Buffering: no` across Host SSE &amp; media routes plus automatic `~/.dsh/cache/hls` cleanup (`2h` idle TTL, `512 MiB` / `24`-folder cap, and `10m` background sweeps).

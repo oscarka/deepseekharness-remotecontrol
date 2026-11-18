@@ -499,7 +499,7 @@ export function createHubServer({
       return {
         status: 200,
         headers: { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'no-store' },
-        body: renderServiceWorkerJs(),
+        body: renderServiceWorkerJs(buildInfo),
       }
     }
 
@@ -1804,9 +1804,12 @@ export function createHubServer({
   return { server, hub, dispatchRequest, fetchAdapter }
 }
 
-function renderServiceWorkerJs() {
-  return `// DSH Self-Hosted PWA, Instant App-Shell Cache & iOS 16.4+ Web Push Service Worker
-const SHELL_CACHE = 'dsh-app-shell-v1';
+function renderServiceWorkerJs(buildInfo = {}) {
+  const swBuildTag = String(buildInfo?.uiBuild || buildInfo?.version || 'dev').replace(/[^A-Za-z0-9_.-]/g, '') || 'dev'
+  const shellCacheName = `dsh-app-shell-v1-${swBuildTag}`
+  return `// DSH Self-Hosted PWA, Instant App-Shell Cache & iOS 16.4+ Web Push Service Worker (${swBuildTag})
+const SHELL_CACHE = ${JSON.stringify(shellCacheName)};
+const SW_UI_BUILD = ${JSON.stringify(swBuildTag)};
 
 function extractBundleAssets(htmlText) {
   const urls = [];
@@ -1875,12 +1878,26 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
   event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      caches.keys().then(names =>
-        Promise.all(names.filter(n => n.startsWith('dsh-app-shell-') && n !== SHELL_CACHE).map(n => caches.delete(n)))
-      ).catch(() => {}),
-    ])
+    (async () => {
+      await self.clients.claim();
+      let purgedOld = false;
+      try {
+        const names = await caches.keys();
+        const stale = names.filter(n => n.startsWith('dsh-app-shell-') && n !== SHELL_CACHE);
+        if (stale.length > 0) {
+          purgedOld = true;
+          await Promise.all(stale.map(n => caches.delete(n)));
+        }
+      } catch {}
+      if (purgedOld) {
+        try {
+          const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+          for (const client of allClients) {
+            client.postMessage({ type: 'DSH_SW_UPDATED', uiBuild: SW_UI_BUILD });
+          }
+        } catch {}
+      }
+    })()
   );
 });
 

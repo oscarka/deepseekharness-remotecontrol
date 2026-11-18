@@ -51,20 +51,42 @@ export function Sheets() {
             </div>
           </div>
 
-          {/* 2. 项目文件夹单行横滑，绝不平铺18个 */}
+          {/* 2. 项目文件夹单行横滑 + 浏览任意目录 + 新建工作区 */}
           <div class="new-task-proj-section">
             <div class="new-task-proj-header">
               <span class="proj-header-title">📁 项目工作区</span>
-              <button
-                type="button"
-                class="proj-header-more-btn"
-                id="newTaskProjMoreBtn"
-                onClick={() => (window as any).openNewTaskProjectPickerSheet?.()}
-              >
-                全部 ▾
-              </button>
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:nowrap;">
+                <button
+                  type="button"
+                  class="proj-header-more-btn"
+                  id="newTaskBrowseDirBtn"
+                  onClick={() => (window as any).openNewTaskProjectPickerSheet?.('browse')}
+                >
+                  📂 选择目录
+                </button>
+                <button
+                  type="button"
+                  class="proj-header-more-btn"
+                  id="newTaskCreateWsBtn"
+                  onClick={() => (window as any).openNewTaskProjectPickerSheet?.('create')}
+                >
+                  ＋ 新工作区
+                </button>
+                <button
+                  type="button"
+                  class="proj-header-more-btn"
+                  id="newTaskProjMoreBtn"
+                  onClick={() => (window as any).openNewTaskProjectPickerSheet?.('recent')}
+                >
+                  全部 ▾
+                </button>
+              </div>
             </div>
             <div class="new-task-proj-scroll" id="newTaskProjectChips"></div>
+            <div
+              id="newTaskSelectedPathBar"
+              style="margin-top:5px;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+            ></div>
           </div>
 
           {/* 3. 核心视觉主角：宽敞输入卡片 + 内置底栏工具栏 */}
@@ -191,16 +213,16 @@ export function Sheets() {
         </div>
       </div>
 
-      {/* 抽屉 2-b：项目文件夹完整选择抽屉（当项目很多时点全部唤起） */}
+      {/* 抽屉 2-b：项目文件夹选择 / 远程目录浏览 / 新建工作区抽屉 */}
       <div
         class="sheet-backdrop"
         id="newTaskProjectPickerSheet"
         onClick={closeIfBackdrop('newTaskProjectPickerSheet')}
       >
-        <div class="sheet-panel">
+        <div class="sheet-panel" style="max-height:82dvh;display:flex;flex-direction:column;">
           <div class="sheet-handle"></div>
-          <div class="sheet-title">
-            <span>📁 选择项目文件夹</span>
+          <div class="sheet-title" style="margin-bottom:10px;">
+            <span id="newTaskPickerSheetTitle">📁 选择目录或新建工作区</span>
             <button
               type="button"
               style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;"
@@ -209,17 +231,53 @@ export function Sheets() {
               ✕
             </button>
           </div>
-          <div style="padding:0 2px 10px;">
+          <div
+            id="newTaskPickerModeTabs"
+            style="display:flex;gap:6px;padding:3px;background:var(--subtle);border-radius:10px;margin-bottom:10px;"
+          >
+            <button
+              type="button"
+              class="theme-seg-btn"
+              id="newTaskTabRecent"
+              style="flex:1;padding:6px 8px;font-size:12.5px;"
+              onClick={() => (window as any).switchNewTaskPickerMode?.('recent')}
+            >
+              🕒 已有工作区
+            </button>
+            <button
+              type="button"
+              class="theme-seg-btn"
+              id="newTaskTabBrowse"
+              style="flex:1;padding:6px 8px;font-size:12.5px;"
+              onClick={() => (window as any).switchNewTaskPickerMode?.('browse')}
+            >
+              📂 选择目录
+            </button>
+            <button
+              type="button"
+              class="theme-seg-btn"
+              id="newTaskTabCreate"
+              style="flex:1;padding:6px 8px;font-size:12.5px;"
+              onClick={() => (window as any).switchNewTaskPickerMode?.('create')}
+            >
+              ✨ 新工作区
+            </button>
+          </div>
+          <div id="newTaskPickerSearchWrap" style="padding:0 2px 8px;">
             <input
               type="text"
               class="auth-input"
               id="newTaskProjectSearchInput"
               placeholder="搜索项目名称或路径..."
-              style="margin:0 0 10px;"
+              style="margin:0;"
               onInput={e => (window as any).filterNewTaskProjects?.((e.target as any).value)}
             />
           </div>
-          <div class="host-options-list" id="newTaskProjectPickerBody" style="max-height:50vh;overflow-y:auto;"></div>
+          <div
+            class="host-options-list"
+            id="newTaskProjectPickerBody"
+            style="flex:1;max-height:56vh;overflow-y:auto;"
+          ></div>
         </div>
       </div>
 

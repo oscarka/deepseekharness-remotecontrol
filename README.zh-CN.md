@@ -201,6 +201,14 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.3</code> — 修复 SW 锁旧包、跨洋 4s/30fps HLS 防卡顿、新建任务支持选目录/建新工作区、滑卡全英文 &amp; iOS 会话秒显与手势返回修复</strong></summary>
+
+- **Service Worker 自动换壳与跨洋 60 帧视频 HLS 零卡顿调优（`v0.8.3`）**：为 `/sw.js` 嵌入动态构建号 `dsh-app-shell-v1-<uiBuild>`（[`server.js`](hub/server.js)）并修正前端实际脚本哈希识别与 `?_r=` 破缓存升级（[`controller.js`](hub/web/src/controller.js)），彻底解决 iOS Safari / 主屏幕 PWA 升级后被锁在旧前端包的问题；将 [`hls-streamer.js`](dsh-feishu/lib/hls-streamer.js) 调优为 `4 秒` 切片 + `-fpsmax 30` 手机预览限帧（单片 `~400 KB` 即可支撑 `4.0 秒` 播放，跨洋传输省去一半握手开销、3 倍缓冲富余零卡顿）。
+- **新建任务选目录/建新工作区、四宫格滑卡全英文、会话手势返回 &amp; iOS 空白瓦片修复（`v0.8.3`）**：在新建任务面板新增 `📂 选择目录`（远程电脑目录树逐级浏览选定）与 `＋ 新工作区`（输入新目录名自动展开 `~` 并 `mkdir -p` 创建）（[`Sheets.tsx`](hub/web/src/components/Sheets.tsx) / [`controller.js`](hub/web/src/controller.js) / [`hub-agent.js`](dsh-feishu/lib/hub-agent.js)）；完善四宫格滑卡批阅全英文模式（[`triage-deck.js`](hub/web/src/triage-deck.js)）；恢复会话详情页顺滑手势后退（兼容左侧/中区右滑拖回与右边缘左滑返回）并根治 iOS WebKit 点开会话因离屏滚动层裁切导致需轻触才出内容的空白问题（[`app.css`](hub/web/src/styles/app.css)）。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.2</code> — 全面升级行业标准 HLS 切片视频流（<code>m3u8</code> + <code>2s .ts</code> + 全平台 <code>hls.js</code> &amp; 本地缓存自动清理）</strong></summary>
 
 - **行业标准 HLS 切片流媒体引擎与缓存自动回收（`v0.8.2`）**：摒弃单文件整片重压等待方案，全面切换至工业级 **RFC 8216 HLS（`index.m3u8` + `2 秒 .ts` 原子切片）** 流架构（[`hls-streamer.js`](dsh-feishu/lib/hls-streamer.js) / [`server.js`](hub/server.js) / [`hlsPlayer.js`](hub/web/src/utils/hlsPlayer.js)）——毫秒级解析 MP4 `mvhd` 真实总时长直出完整 VOD 进度条，低码率兼容片源直接 `-c:v copy` 零重编码秒切，百 MB 级高码率渲染成片按 `2 秒` 一片（仅约 `300 KB`）边播边切（首片 `< 300ms` 就绪、支持任意拖动进度条按需跳切与停止观看 `25s` 自动停编码释放 CPU）；苹果 Safari 原生直读，Windows / Linux / 安卓 / Chrome / 飞书 WebView 按需懒加载内置 `hls.js` 播放，旧版守护进程自动无感回退 `/fs/stream`；全链路补齐 Host SSE 与媒体流 `X-Accel-Buffering: no` 反代零缓冲头，并内置 `~/.dsh/cache/hls` 自动垃圾回收（`2 小时` 空闲过期、`512 MiB` / `24` 目录上限与每 `10 分钟` 后台巡检自动清扫）。

@@ -38,19 +38,19 @@ npm run build
 
 if [[ "${SKIP_TESTS}" != "1" ]]; then
   echo "=== 2. 执行回归单测 (可加 --fast 跳过) ==="
-  npm test
+  env -u PUBLIC_URL npm test
 fi
 
 TMP_TAR="$(mktemp /tmp/dsh-hub-deploy-XXXXXX.tar.gz)"
 trap 'rm -f "${TMP_TAR}"' EXIT
 
-COPYFILE_DISABLE=1 tar --exclude='.DS_Store' -czf "${TMP_TAR}" \
+COPYFILE_DISABLE=1 tar --no-xattrs --exclude='.DS_Store' -czf "${TMP_TAR}" \
   package.json icon.svg connect-host.sh \
   hub/server.js hub/hub-core.js hub/delta-state.js hub/push-formatter.js hub/web-push.js hub/public
 
 REMOTE_CMD="sudo mkdir -p '${REMOTE_DIR}' && \
 sudo find '${REMOTE_DIR}/hub/public/assets' -type f -mtime +7 -delete 2>/dev/null || true && \
-sudo tar -xzf /tmp/dsh-hub-deploy.tar.gz -C '${REMOTE_DIR}' && \
+sudo tar --warning=no-unknown-keyword -xzf /tmp/dsh-hub-deploy.tar.gz -C '${REMOTE_DIR}' && \
 sudo chown -R ${SERVICE_NAME}:${SERVICE_NAME} '${REMOTE_DIR}' 2>/dev/null || true && \
 sudo rm -f /tmp/dsh-hub-deploy.tar.gz && \
 sudo systemctl restart '${SERVICE_NAME}' && \

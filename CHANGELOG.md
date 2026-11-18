@@ -2,6 +2,20 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.3] - 2026-11-18
+
+### Added
+
+- **新建远程任务支持远程目录树浏览与一键新建工作区文件夹（`hub/web/src/components/Sheets.tsx` / `hub/web/src/controller.js` / `dsh-feishu/lib/hub-agent.js`）**：
+  - 在新建任务工作区栏新增 `📂 选择目录` 与 `＋ 新工作区` 双入口，支持逐级浏览远程电脑目录树并选定任意文件夹作为工作区，或指定父目录创建全新项目文件夹（`~` 自动展开、启动任务前自动 `mkdir -p` 创建目录）。
+
+### Fixed
+
+- **修复 `sw.js` 静态缓存名与 `initialUiBuild` 导致手机端卡在旧版前端包的锁死问题（`hub/server.js` / `hub/web/src/controller.js`）**：`/sw.js` 现动态嵌入当前构建号 `dsh-app-shell-v1-<uiBuild>` 并在激活清理旧壳后通知客户端，前端改为从实际加载的 `<script src="/assets/index-*.js">` 读取构建号并通过 `?_r=` 无感刷新切换新版。
+- **跨洋 1080p60 超高码率视频 HLS 零卡顿调优（`dsh-feishu/lib/hls-streamer.js`）**：将 HLS 切片步长优化为 `4s` 并增设手机预览 `-fpsmax 30` 限帧（单片约 `400 KB` 即可提供 `4.0 秒` 播放缓冲，减少 50% 跨洋请求握手开销）。
+- **补齐滑卡批阅模式（`Triage Deck`）全英文界面本地化联动（`hub/web/src/triage-deck.js` / `hub/web/src/components/TriageDeck.tsx` / `hub/web/src/controller.js`）**。
+- **修复手机会话详情页手势侧滑返回失灵与首次打开空白需轻触才渲染的问题（`hub/web/src/controller.js` / `hub/web/src/styles/app.css`）**：放宽会话右滑返回起手热区并支持右边缘左滑返回，移除导致 iOS WebKit 离屏图层瓦片空白的遗留 `-webkit-overflow-scrolling: touch` 并增补滑入动画完成后的强制瓦片刷新。
+
 ## [0.8.2] - 2026-11-18
 
 ### Added
