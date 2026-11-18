@@ -41,7 +41,7 @@ export function appendMediaAuth(rawUrl: string, mediaTicket = ''): string {
   let tk = '';
   try {
     tk = localStorage.getItem('dsh_hub_token') || '';
-  } catch {}
+  } catch { }
   if (!tk) return rawUrl;
   const sep = rawUrl.includes('?') ? '&' : '?';
   return `${rawUrl}${sep}token=${encodeURIComponent(tk)}`;

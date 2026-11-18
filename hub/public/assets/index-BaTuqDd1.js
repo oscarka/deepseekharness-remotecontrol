@@ -4156,7 +4156,87 @@ function verbalizeTokenUnified(rawToken, prevCtx = "", nextCtx = "", docLang = "
 	}
 	const jsRuntime = /^([A-Z][a-zA-Z0-9]{1,8})\.js$/.exec(t);
 	if (jsRuntime) return `${jsRuntime[1]} JS`;
-	if (t.includes("/") || /\.[a-zA-Z][a-zA-Z0-9]{0,5}$/.test(t)) {
+	const htmlTag = /^<\/?([a-zA-Z][a-zA-Z0-9:-]*)(?:\s[\s\S]*)?\/?>$/.exec(t);
+	if (htmlTag) {
+		const tagName = htmlTag[1];
+		if (/标签|元素|组件|\b(?:tag|element)\b/i.test(ctx)) return tagName;
+		return lang === "zh" ? `${tagName}标签` : `the ${tagName} tag`;
+	}
+	const KNOWN_FILE_EXTS = /* @__PURE__ */ new Set([
+		".js",
+		".mjs",
+		".cjs",
+		".ts",
+		".tsx",
+		".jsx",
+		".py",
+		".go",
+		".rs",
+		".java",
+		".c",
+		".cpp",
+		".h",
+		".hpp",
+		".cs",
+		".rb",
+		".php",
+		".swift",
+		".kt",
+		".sh",
+		".bash",
+		".zsh",
+		".yml",
+		".yaml",
+		".json",
+		".jsonl",
+		".toml",
+		".ini",
+		".env",
+		".md",
+		".mdx",
+		".txt",
+		".rst",
+		".pdf",
+		".html",
+		".htm",
+		".css",
+		".scss",
+		".sql",
+		".mp4",
+		".mov",
+		".m4v",
+		".webm",
+		".mkv",
+		".avi",
+		".jpg",
+		".jpeg",
+		".png",
+		".gif",
+		".webp",
+		".svg",
+		".heic",
+		".ico",
+		".mp3",
+		".m4a",
+		".wav",
+		".aac",
+		".ogg",
+		".zip",
+		".tar",
+		".gz",
+		".tgz",
+		".dmg",
+		".pkg",
+		".plist",
+		".db",
+		".sqlite",
+		".lock",
+		".wasm",
+		".vue",
+		".svelte"
+	]);
+	const tokenExt = extOf(t);
+	if (t.includes("/") || KNOWN_FILE_EXTS.has(tokenExt)) {
 		if (/^[A-Za-z0-9_-]+\/$/.test(t)) return t.slice(0, -1);
 		const homeMatch = /^~\/([A-Za-z0-9_-]+)$/.exec(t);
 		if (homeMatch) {
@@ -4184,11 +4264,21 @@ function verbalizeTokenUnified(rawToken, prevCtx = "", nextCtx = "", docLang = "
 		if (contextHasMimeKind(ctx, mime.kind)) return "";
 		return mime.label || (lang === "zh" ? "对应文件" : "that file");
 	}
-	if (/^[a-zA-Z_$][\w$]*\(\)$/.test(t)) {
-		const fnName = t.slice(0, -2);
+	if (/^[a-zA-Z_$][\w$]*\([^)]*\)$/.test(t)) {
+		const fnName = t.slice(0, t.indexOf("("));
 		if (fnName.length <= 7 && splitIdentifierSubwords(fnName).length === 1) return fnName;
 		if (/函数|方法|\b(?:function|helper|method|handler)\b/i.test(ctx)) return "";
 		return lang === "zh" ? "内部函数" : "an internal helper";
+	}
+	if (/^[a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)+\([^)]*\)$/.test(t)) {
+		if (/函数|方法|调用|\b(?:function|helper|method|call)\b/i.test(ctx)) return "";
+		return lang === "zh" ? "对应方法" : "that method call";
+	}
+	if (/^[a-zA-Z_$][\w$]*\.[a-zA-Z_$][\w$]*$/.test(t)) {
+		const [objName, propName] = t.split(".");
+		if (objName.length <= 6 && propName.length <= 6 && splitIdentifierSubwords(propName).length === 1) return `${objName} ${propName}`;
+		if (/属性|字段|状态|\b(?:property|field|state)\b/i.test(ctx)) return "";
+		return lang === "zh" ? "对应属性" : "that property";
 	}
 	const letters = (t.match(/[a-zA-Z]/g) || []).length;
 	const vowels = (t.match(/[aeiouyAEIOUY]/g) || []).length;
@@ -4210,7 +4300,7 @@ function verbalizeTokenUnified(rawToken, prevCtx = "", nextCtx = "", docLang = "
 		return lang === "zh" ? "内部模块" : "an internal handler";
 	}
 	if (letters >= 5 && vowelRatio < .15) return "";
-	return t;
+	return t.replace(/[<>{}[\]\\|^=]+/g, " ").replace(/\s{2,}/g, " ").trim();
 }
 function normalizeNSWUnified(input) {
 	let s = String(input || "");
@@ -4287,7 +4377,10 @@ function cleanInlineUnified(rawLine, docLang) {
 		if (/^[:：里中上下内外的]/.test(after)) return ` ${trimmed} `;
 		return localZh ? `，${trimmed}，` : `, ${trimmed}, `;
 	});
-	line = line.replace(/`{3,}([^`]+)`{3,}/g, (_m, inner) => inner.replace(/`/g, "").trim());
+	line = line.replace(/`{3,}([^`]+)`{3,}/g, (m, inner, offset, full) => {
+		const res = verbalizeTokenUnified(inner.replace(/`/g, "").trim(), full.slice(Math.max(0, offset - 16), offset), full.slice(offset + m.length, offset + m.length + 16), docLang);
+		return stash(res, res === "");
+	});
 	line = line.replace(/`([^`]+)`/g, (m, code, offset, full) => {
 		const res = verbalizeTokenUnified(code, full.slice(Math.max(0, offset - 16), offset), full.slice(offset + m.length, offset + m.length + 16), docLang);
 		return stash(res, res === "");
@@ -4301,6 +4394,7 @@ function cleanInlineUnified(rawLine, docLang) {
 		const res = verbalizeTokenUnified(p1, full.slice(Math.max(0, offset - 14), offset), full.slice(offset + m.length, offset + m.length + 14), docLang);
 		return lead + stash(res, res === "");
 	});
+	line = line.replace(/<\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s[^<>]*)?\/?>/g, " ");
 	if (docLang === "zh") line = line.replace(/[a-zA-Z_][a-zA-Z0-9_./:-]{2,}/g, (m, offset, full) => {
 		if (m.includes("") || m.includes("")) return m;
 		const res = verbalizeTokenUnified(m, full.slice(Math.max(0, offset - 12), offset), full.slice(offset + m.length, offset + m.length + 12), docLang);
@@ -4320,7 +4414,7 @@ function cleanInlineUnified(rawLine, docLang) {
 		"④": "第四，"
 	};
 	line = line.replace(/[①②③④]/g, (m) => circledMap[m] || "");
-	line = line.replace(EMOJI_RE, "").replace(/\*|`/g, "").replace(/[「」『』“”"]/g, " ").replace(/——/g, "，").replace(/\s*—\s*/g, ", ").replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, "$1$2").replace(/\s+([,.;:!?])/g, "$1").replace(/\s*([，。！？；：、])\s*/g, "$1").replace(/[，、]{2,}/g, "，").replace(/[，、；]+([：。！？；])/g, "$1").replace(/([：。！？；])[，、]+/g, "$1").replace(/\s{2,}/g, " ").replace(/^[,;:\s，、；：]+/, "").trim();
+	line = line.replace(EMOJI_RE, "").replace(/\*|`/g, "").replace(/[<>{}[\]\\|^=]+/g, " ").replace(/[「」『』“”"]/g, " ").replace(/——/g, "，").replace(/\s*—\s*/g, ", ").replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, "$1$2").replace(/\s+([,.;:!?])/g, "$1").replace(/\s*([，。！？；：、])\s*/g, "$1").replace(/[，、]{2,}/g, "，").replace(/[，、；]+([：。！？；])/g, "$1").replace(/([：。！？；])[，、]+/g, "$1").replace(/\s{2,}/g, " ").replace(/^[,;:\s，、；：]+/, "").trim();
 	return line;
 }
 function ensurePunctUnified(s, docLang) {
@@ -4330,12 +4424,84 @@ function ensurePunctUnified(s, docLang) {
 	if (!/[.!?。！？]$/.test(out)) out += localZh ? "。" : ".";
 	return out;
 }
+function formatCodeFenceLangLabel(rawLang, docLang) {
+	const k = String(rawLang || "").trim().toLowerCase();
+	if (!k) return "";
+	return docLang === "zh" ? {
+		py: "Python",
+		python: "Python",
+		js: "JavaScript",
+		javascript: "JavaScript",
+		mjs: "JavaScript",
+		cjs: "JavaScript",
+		jsx: "React",
+		ts: "TypeScript",
+		typescript: "TypeScript",
+		tsx: "React",
+		sh: "终端命令",
+		bash: "终端命令",
+		zsh: "终端命令",
+		shell: "终端命令",
+		console: "终端命令",
+		html: "HTML",
+		css: "样式",
+		scss: "样式",
+		sql: "SQL",
+		json: "配置",
+		yaml: "配置",
+		yml: "配置",
+		toml: "配置",
+		go: "Go",
+		rs: "Rust",
+		rust: "Rust",
+		java: "Java",
+		swift: "Swift"
+	}[k] || "" : {
+		py: "Python",
+		python: "Python",
+		js: "JavaScript",
+		javascript: "JavaScript",
+		mjs: "JavaScript",
+		cjs: "JavaScript",
+		jsx: "React",
+		ts: "TypeScript",
+		typescript: "TypeScript",
+		tsx: "TypeScript",
+		sh: "shell",
+		bash: "shell",
+		zsh: "shell",
+		shell: "shell",
+		html: "HTML",
+		css: "CSS",
+		scss: "SCSS",
+		sql: "SQL",
+		json: "JSON",
+		yaml: "YAML",
+		yml: "YAML",
+		toml: "TOML",
+		go: "Go",
+		rs: "Rust",
+		rust: "Rust",
+		java: "Java",
+		swift: "Swift"
+	}[k] || "";
+}
+function formatCodeFenceSpeechSummary(fenceState, docLang) {
+	const lineCount = Math.max(0, Number(fenceState?.lineCount || 0));
+	const langLabel = formatCodeFenceLangLabel(fenceState?.lang || "", docLang);
+	if (docLang === "zh") {
+		if (lineCount >= 4) return langLabel ? `这里附了一段代码，共${lineCount}行${langLabel}。` : `这里附了一段代码，共${lineCount}行。`;
+		return "这里附了一段代码。";
+	}
+	if (lineCount >= 4) return langLabel ? `I've included a ${lineCount}-line ${langLabel} snippet below.` : `I've included a ${lineCount}-line code snippet below.`;
+	return "I've included a short code snippet below.";
+}
 function parseUnifiedMarkdownForSpeech(rawMarkdown) {
 	const docLang = detectSpeechLang(rawMarkdown);
 	const lines = String(rawMarkdown || "").split(/\r?\n/);
 	const blocks = [];
-	let inCodeFence = false;
-	let lastWasCode = false;
+	let fenceState = null;
+	let lastCodeLangLabel = null;
 	let tableRows = [];
 	let seenFirstParagraph = false;
 	let justSawHeading = false;
@@ -4349,30 +4515,45 @@ function parseUnifiedMarkdownForSpeech(rawMarkdown) {
 		});
 		tableRows = [];
 	};
+	const flushCodeFence = () => {
+		if (!fenceState) return;
+		const finished = fenceState;
+		fenceState = null;
+		const curLangLabel = formatCodeFenceLangLabel(finished.lang || "", docLang);
+		if (lastCodeLangLabel === null || curLangLabel && curLangLabel !== lastCodeLangLabel) {
+			blocks.push({
+				type: "code_summary",
+				text: formatCodeFenceSpeechSummary(finished, docLang)
+			});
+			lastCodeLangLabel = curLangLabel || "";
+		}
+	};
 	for (const rawLine of lines) {
 		const trimmed = rawLine.trim();
-		if (/^`{3,}/.test(trimmed)) {
-			flushTable();
-			if (!inCodeFence) {
-				inCodeFence = true;
-				if (!lastWasCode) {
-					blocks.push({
-						type: "code_summary",
-						text: docLang === "zh" ? "这里附了一段代码。" : "I've included a short code snippet below."
-					});
-					lastWasCode = true;
-				}
-			} else inCodeFence = false;
+		if (fenceState) {
+			if (new RegExp(`^\\${fenceState.char}{${fenceState.len},}\\s*$`).test(trimmed)) flushCodeFence();
+			else if (trimmed) fenceState.lineCount += 1;
 			continue;
 		}
-		if (inCodeFence) continue;
+		const openFence = /^(`{3,}|~{3,})(.*)$/.exec(trimmed);
+		if (openFence && !(openFence[1][0] === "`" && openFence[2].includes("`"))) {
+			flushTable();
+			const infoToken = openFence[2].trim().split(/\s+/)[0] || "";
+			fenceState = {
+				char: openFence[1][0],
+				len: openFence[1].length,
+				lang: infoToken,
+				lineCount: 0
+			};
+			continue;
+		}
 		if (/^\|.*\|$/.test(trimmed)) {
 			tableRows.push(trimmed);
 			continue;
 		}
 		flushTable();
 		if (!trimmed || /^---+$/.test(trimmed) || /^<details|^<\/details|^!\[/.test(trimmed)) continue;
-		lastWasCode = false;
+		lastCodeLangLabel = null;
 		const headingMatch = /^(#{1,6})\s+(.+)$/.exec(trimmed);
 		if (headingMatch) {
 			const cleaned = cleanInlineUnified(headingMatch[2], docLang).replace(/^[一二三四五六七八九十\d]+[、.．)\s]+/, "").trim();
@@ -4386,7 +4567,7 @@ function parseUnifiedMarkdownForSpeech(rawMarkdown) {
 			continue;
 		}
 		const listNumMatch = /^(\d+)\.\s+(.+)$/.exec(trimmed);
-		let body = listNumMatch ? listNumMatch[2] : trimmed.replace(/^[-*>]\s+/, "");
+		let body = listNumMatch ? listNumMatch[2] : trimmed.replace(/^(?:[-*>•+]\s+)+/, "").replace(/^\[[ xX]\]\s+/, "");
 		if (listNumMatch) {
 			const n = Number(listNumMatch[1]);
 			body = `${docLang === "zh" && hasCjk(body) ? n <= 9 ? `第${DIGIT_ZH[String(n)]}，` : `第${n}，` : `${EN_ORDINALS[n] || `Item ${n},`} `}${body}`;
@@ -4404,6 +4585,7 @@ function parseUnifiedMarkdownForSpeech(rawMarkdown) {
 		});
 		justSawHeading = false;
 	}
+	flushCodeFence();
 	flushTable();
 	for (let i = blocks.length - 1; i >= 0; i--) if (blocks[i].type === "paragraph") {
 		blocks[i].isTail = true;
@@ -4568,17 +4750,51 @@ function pickBestBrowserVoice(voices, docLang = "zh") {
 		return score(b) - score(a);
 	})[0];
 }
+function subdivideLongSpeechSentence(part, maxSec, maxChars) {
+	const s = String(part || "").trim();
+	if (!s) return [];
+	if (estimateSpokenSeconds(s) <= maxSec && s.length <= maxChars) return [s];
+	const semiParts = s.split(/(?<=[；;：:])\s*/).filter(Boolean);
+	const stage1 = semiParts.length > 1 ? semiParts : [s];
+	const out = [];
+	for (const item of stage1) {
+		if (estimateSpokenSeconds(item) <= maxSec && item.length <= maxChars) {
+			out.push(item);
+			continue;
+		}
+		const commaParts = item.split(/(?<=[，,、])\s*/).filter(Boolean);
+		let cur = "";
+		for (const cp of commaParts) {
+			const candidate = cur ? `${cur} ${cp}`.replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, "$1$2") : cp;
+			if (cur && (estimateSpokenSeconds(candidate) > maxSec || candidate.length > maxChars)) {
+				out.push(cur.trim());
+				cur = cp;
+			} else cur = candidate;
+		}
+		if (cur.trim()) out.push(cur.trim());
+	}
+	return out.length ? out : [s];
+}
 function splitIntoContinuousBrowserChunks(text, isAppleWebKit = false) {
 	const clean = String(text || "").trim();
 	if (!clean) return [];
-	if (isAppleWebKit || clean.length <= 260) return [clean];
-	const parts = clean.split(/(?<=[。！？.!?])\s*/).filter(Boolean);
+	const langSwitches = (clean.match(/[\u4e00-\u9fa5]\s*[A-Za-z]|[A-Za-z]\s*[\u4e00-\u9fa5]/g) || []).length;
+	if (isAppleWebKit && clean.length <= 520 && langSwitches < 10) return [clean];
+	if (!isAppleWebKit && estimateSpokenSeconds(clean) <= 11 && clean.length <= 160) return [clean];
+	const maxSec = isAppleWebKit ? 30 : 11;
+	const maxChars = isAppleWebKit ? 200 : 160;
+	const rawSentences = clean.split(/(?<=[。！？.!?\n])\s*/).filter(Boolean);
+	const parts = [];
+	for (const rs of rawSentences) parts.push(...subdivideLongSpeechSentence(rs, maxSec, maxChars));
 	const chunks = [];
 	let buf = "";
-	for (const p of parts) if (buf && buf.length + p.length > 240) {
-		chunks.push(buf.trim());
-		buf = p;
-	} else buf = buf ? `${buf} ${p}`.replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, "$1$2") : p;
+	for (const p of parts) {
+		const candidate = buf ? `${buf} ${p}`.replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, "$1$2") : p;
+		if (buf && (estimateSpokenSeconds(candidate) > maxSec || candidate.length > maxChars)) {
+			chunks.push(buf.trim());
+			buf = p;
+		} else buf = candidate;
+	}
 	if (buf.trim()) chunks.push(buf.trim());
 	return chunks.length ? chunks : [clean];
 }
@@ -6056,7 +6272,7 @@ function initHubController() {
 		playing: false,
 		sessionId: "",
 		msgIdx: -1,
-		mode: typeof localStorage !== "undefined" && localStorage.getItem("dsh_tts_mode") === "full" ? "full" : "concise",
+		mode: typeof localStorage !== "undefined" && localStorage.getItem("dsh_tts_mode_v2") === "concise" ? "concise" : "full",
 		rate: (() => {
 			const saved = typeof localStorage !== "undefined" ? Number(localStorage.getItem("dsh_tts_rate")) : 1;
 			return SPEECH_RATES.includes(saved) ? saved : 1;
@@ -6069,16 +6285,55 @@ function initHubController() {
 		segmentRate: 1,
 		boundaryCharOffset: -1,
 		boundaryUpdatedAt: 0,
-		runId: 0
+		runId: 0,
+		pinnedUtterances: [],
+		watchdogTimer: null,
+		handoffTimer: null,
+		wakeLock: null
 	};
-	if (typeof window !== "undefined" && window.speechSynthesis) try {
-		window.speechSynthesis.getVoices();
-		window.speechSynthesis.addEventListener?.("voiceschanged", () => {
+	if (typeof window !== "undefined") {
+		window.__dshPinnedUtterances = activeSpeechState.pinnedUtterances;
+		if (window.speechSynthesis) try {
+			window.speechSynthesis.getVoices();
+			window.speechSynthesis.addEventListener?.("voiceschanged", () => {
+				try {
+					window.speechSynthesis.getVoices();
+				} catch {}
+			});
+		} catch {}
+	}
+	function releaseSpeechRuntimeHandles() {
+		if (activeSpeechState.handoffTimer) {
+			clearTimeout(activeSpeechState.handoffTimer);
+			activeSpeechState.handoffTimer = null;
+		}
+		if (activeSpeechState.watchdogTimer) {
+			clearInterval(activeSpeechState.watchdogTimer);
+			activeSpeechState.watchdogTimer = null;
+		}
+		activeSpeechState.pinnedUtterances.length = 0;
+		if (typeof window !== "undefined") window.__dshPinnedUtterances = activeSpeechState.pinnedUtterances;
+		if (activeSpeechState.wakeLock) {
+			const wl = activeSpeechState.wakeLock;
+			activeSpeechState.wakeLock = null;
 			try {
-				window.speechSynthesis.getVoices();
+				wl.release?.()?.catch?.(() => {});
 			} catch {}
-		});
-	} catch {}
+		}
+	}
+	async function acquireSpeechWakeLock(expectedRunId) {
+		if (typeof navigator === "undefined" || !navigator.wakeLock?.request) return;
+		try {
+			const wl = await navigator.wakeLock.request("screen");
+			if (!activeSpeechState.playing || activeSpeechState.runId !== expectedRunId) {
+				try {
+					await wl.release?.();
+				} catch {}
+				return;
+			}
+			activeSpeechState.wakeLock = wl;
+		} catch {}
+	}
 	function renderAssistantFooterHtml(sessionId, msgIdx, cleanReplyText) {
 		const speakControlsHtml = activeSpeechState.playing && activeSpeechState.sessionId === sessionId && activeSpeechState.msgIdx === msgIdx ? `<button type="button" class="assistant-copy-btn assistant-speak-btn speaking" onclick="stopAssistantSpeech()">⏹ 停止</button>` + (activeSpeechState.hasDistinctSummary ? `<button type="button" class="assistant-copy-btn assistant-speak-sub-btn" onclick="switchAssistantSpeechMode(${msgIdx})" title="切换重点摘要 / 完整去噪">${activeSpeechState.mode === "concise" ? "⚡ 重点" : "📖 全文"}</button>` : "") + `<button type="button" class="assistant-copy-btn assistant-speak-sub-btn" onclick="cycleAssistantSpeechRate(${msgIdx})" title="切换播报倍速">${activeSpeechState.rate}x</button>` : `<button type="button" class="assistant-copy-btn assistant-speak-btn" onclick="toggleSpeakAssistantReply(${msgIdx})">🔊 播报</button>`;
 		return `<div class="assistant-copy-footer" data-footer-session-id="${esc(sessionId)}" data-footer-msg-idx="${msgIdx}"><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 复制全文</button>${speakControlsHtml}<span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span></div>`;
@@ -6109,12 +6364,13 @@ function initHubController() {
 		activeSpeechState.segmentStartedAt = 0;
 		activeSpeechState.boundaryCharOffset = -1;
 		activeSpeechState.boundaryUpdatedAt = 0;
+		releaseSpeechRuntimeHandles();
 		try {
-			window.speechSynthesis?.cancel();
+			if (window.speechSynthesis && (window.speechSynthesis.speaking || window.speechSynthesis.pending || window.speechSynthesis.paused)) window.speechSynthesis.cancel();
 		} catch {}
 		if (wasPlaying) syncSpeechFooterDom();
 	}
-	function startAssistantSpeech(msgIdx, { startOffset = 0 } = {}) {
+	function startAssistantSpeech(msgIdx, { startOffset = 0, _recoveryDepth = 0 } = {}) {
 		if (typeof window === "undefined" || !window.speechSynthesis || typeof SpeechSynthesisUtterance === "undefined") {
 			showToast("⚠️ 当前浏览器暂不支持系统语音播报");
 			return;
@@ -6135,8 +6391,11 @@ function initHubController() {
 		const remainingText = effectiveOffset > 0 && effectiveOffset < fullSpokenText.length ? fullSpokenText.slice(effectiveOffset) : fullSpokenText;
 		const actualBaseOffset = effectiveOffset > 0 && effectiveOffset < fullSpokenText.length ? effectiveOffset : 0;
 		const myRunId = ++activeSpeechState.runId;
-		try {
-			window.speechSynthesis.cancel();
+		releaseSpeechRuntimeHandles();
+		const synth = window.speechSynthesis;
+		const wasSynthBusy = Boolean(synth.speaking || synth.pending || synth.paused);
+		if (wasSynthBusy) try {
+			synth.cancel();
 		} catch {}
 		const nowMs = Date.now();
 		activeSpeechState.playing = true;
@@ -6151,45 +6410,160 @@ function initHubController() {
 		activeSpeechState.boundaryCharOffset = -1;
 		activeSpeechState.boundaryUpdatedAt = 0;
 		syncSpeechFooterDom();
-		const chosenVoice = pickBestBrowserVoice(window.speechSynthesis.getVoices() || [], prepared.docLang);
-		const chunks = splitIntoContinuousBrowserChunks(remainingText, isIosDevice() || /AppleWebKit/i.test(navigator.userAgent || "") && !/Chrome|Chromium|Edg/i.test(navigator.userAgent || ""));
+		acquireSpeechWakeLock(myRunId);
+		const chosenVoice = pickBestBrowserVoice(synth.getVoices() || [], prepared.docLang);
+		const isAppleWebKit = isIosDevice() || /AppleWebKit/i.test(navigator.userAgent || "") && !/Chrome|Chromium|Edg/i.test(navigator.userAgent || "");
+		const chunks = splitIntoContinuousBrowserChunks(remainingText, isAppleWebKit);
 		let runningChunkOffset = actualBaseOffset;
-		chunks.forEach((chunkText, idx) => {
-			const thisChunkBase = runningChunkOffset;
+		const chunkDescriptors = chunks.map((chunkText) => {
 			const posInFull = fullSpokenText.indexOf(chunkText, runningChunkOffset);
-			const resolvedChunkBase = posInFull >= 0 ? posInFull : thisChunkBase;
+			const resolvedChunkBase = posInFull >= 0 ? posInFull : runningChunkOffset;
 			runningChunkOffset = resolvedChunkBase + chunkText.length;
-			const u = new SpeechSynthesisUtterance(chunkText);
+			return {
+				text: chunkText,
+				baseOffset: resolvedChunkBase
+			};
+		});
+		let currentChunkIdx = -1;
+		let currentAdvanceFn = null;
+		let lastChunkStartAt = Date.now();
+		let lastSynthBusyAt = Date.now();
+		let errorSkipCount = 0;
+		const finishSpeechPlayback = () => {
+			if (activeSpeechState.runId !== myRunId) return;
+			activeSpeechState.playing = false;
+			activeSpeechState.sessionId = "";
+			activeSpeechState.msgIdx = -1;
+			releaseSpeechRuntimeHandles();
+			syncSpeechFooterDom();
+		};
+		const findNextSentenceOffset = (fromCharOffset) => {
+			const tail = fullSpokenText.slice(Math.max(0, fromCharOffset));
+			const m = /[。！？.!?\n]+\s*/.exec(tail);
+			if (!m) return -1;
+			const candidate = Math.max(0, fromCharOffset) + m.index + m[0].length;
+			return candidate < fullSpokenText.length - 2 ? candidate : -1;
+		};
+		const speakChunkAt = (idx) => {
+			if (activeSpeechState.runId !== myRunId || !activeSpeechState.playing) return;
+			if (idx >= chunkDescriptors.length) {
+				finishSpeechPlayback();
+				return;
+			}
+			currentChunkIdx = idx;
+			const desc = chunkDescriptors[idx];
+			const chunkNow = Date.now();
+			lastChunkStartAt = chunkNow;
+			lastSynthBusyAt = chunkNow;
+			activeSpeechState.segmentBaseOffset = desc.baseOffset;
+			activeSpeechState.segmentStartedAt = chunkNow;
+			activeSpeechState.segmentRate = activeSpeechState.rate;
+			activeSpeechState.boundaryCharOffset = desc.baseOffset;
+			activeSpeechState.boundaryUpdatedAt = chunkNow;
+			const u = new SpeechSynthesisUtterance(desc.text);
+			activeSpeechState.pinnedUtterances.push(u);
+			window.__dshPinnedUtterances = activeSpeechState.pinnedUtterances;
 			u.lang = chosenVoice?.lang || (prepared.docLang === "en" ? "en-US" : "zh-CN");
 			if (chosenVoice) u.voice = chosenVoice;
 			u.rate = activeSpeechState.rate;
-			if (idx === 0) u.onstart = () => {
+			let settled = false;
+			const unpinUtterance = () => {
+				const pos = activeSpeechState.pinnedUtterances.indexOf(u);
+				if (pos >= 0) activeSpeechState.pinnedUtterances.splice(pos, 1);
+			};
+			const advanceToNext = () => {
+				if (settled || activeSpeechState.runId !== myRunId) return;
+				settled = true;
+				currentAdvanceFn = null;
+				unpinUtterance();
+				if (idx + 1 < chunkDescriptors.length) speakChunkAt(idx + 1);
+				else finishSpeechPlayback();
+			};
+			currentAdvanceFn = advanceToNext;
+			u.onstart = () => {
 				if (activeSpeechState.runId !== myRunId) return;
-				activeSpeechState.segmentStartedAt = Date.now();
+				const t = Date.now();
+				lastChunkStartAt = t;
+				lastSynthBusyAt = t;
+				activeSpeechState.segmentStartedAt = t;
 			};
 			u.onboundary = (ev) => {
 				if (activeSpeechState.runId !== myRunId) return;
+				const t = Date.now();
+				lastSynthBusyAt = t;
 				if (ev && typeof ev.charIndex === "number" && ev.charIndex >= 0) {
-					activeSpeechState.boundaryCharOffset = resolvedChunkBase + ev.charIndex;
-					activeSpeechState.boundaryUpdatedAt = Date.now();
+					activeSpeechState.boundaryCharOffset = desc.baseOffset + ev.charIndex;
+					activeSpeechState.boundaryUpdatedAt = t;
 				}
 			};
-			if (idx === chunks.length - 1) u.onend = () => {
-				if (activeSpeechState.runId !== myRunId) return;
-				activeSpeechState.playing = false;
-				activeSpeechState.sessionId = "";
-				activeSpeechState.msgIdx = -1;
-				syncSpeechFooterDom();
+			u.onend = () => {
+				advanceToNext();
 			};
-			u.onerror = () => {
-				if (activeSpeechState.runId !== myRunId) return;
-				activeSpeechState.playing = false;
-				activeSpeechState.sessionId = "";
-				activeSpeechState.msgIdx = -1;
-				syncSpeechFooterDom();
+			u.onerror = (ev) => {
+				if (settled || activeSpeechState.runId !== myRunId) return;
+				settled = true;
+				currentAdvanceFn = null;
+				unpinUtterance();
+				const errCode = String(ev?.error || "").toLowerCase();
+				if (errCode === "not-allowed" || errCode === "service-not-allowed") {
+					finishSpeechPlayback();
+					return;
+				}
+				if (errorSkipCount < 3 && idx + 1 < chunkDescriptors.length) {
+					errorSkipCount += 1;
+					speakChunkAt(idx + 1);
+					return;
+				}
+				if (_recoveryDepth < 2 && chunkDescriptors.length === 1) {
+					const approxOffset = computeSpeechResumeOffset({
+						fullText: fullSpokenText,
+						docLang: prepared.docLang,
+						segmentBaseOffset: activeSpeechState.segmentBaseOffset,
+						segmentStartedAt: activeSpeechState.segmentStartedAt,
+						segmentRate: activeSpeechState.segmentRate,
+						boundaryCharOffset: activeSpeechState.boundaryCharOffset,
+						boundaryUpdatedAt: activeSpeechState.boundaryUpdatedAt,
+						nowMs: Date.now()
+					});
+					const nextSentenceOffset = findNextSentenceOffset(Math.max(approxOffset, desc.baseOffset + 6));
+					if (nextSentenceOffset > desc.baseOffset) {
+						startAssistantSpeech(msgIdx, {
+							startOffset: nextSentenceOffset,
+							_recoveryDepth: _recoveryDepth + 1
+						});
+						return;
+					}
+				}
+				finishSpeechPlayback();
 			};
-			window.speechSynthesis.speak(u);
-		});
+			try {
+				if (synth.paused) synth.resume();
+			} catch {}
+			synth.speak(u);
+		};
+		activeSpeechState.watchdogTimer = setInterval(() => {
+			if (activeSpeechState.runId !== myRunId || !activeSpeechState.playing) {
+				clearInterval(activeSpeechState.watchdogTimer);
+				activeSpeechState.watchdogTimer = null;
+				return;
+			}
+			try {
+				if (synth.paused) synth.resume();
+				if (synth.speaking || synth.pending) {
+					lastSynthBusyAt = Date.now();
+					return;
+				}
+				if (currentChunkIdx >= 0 && Date.now() - Math.max(lastChunkStartAt, lastSynthBusyAt) > 1600) {
+					if (typeof currentAdvanceFn === "function") currentAdvanceFn();
+					else finishSpeechPlayback();
+				}
+			} catch {}
+		}, 900);
+		if (wasSynthBusy && isAppleWebKit) activeSpeechState.handoffTimer = setTimeout(() => {
+			activeSpeechState.handoffTimer = null;
+			speakChunkAt(0);
+		}, 30);
+		else speakChunkAt(0);
 	}
 	function toggleSpeakAssistantReply(msgIdx) {
 		if (activeSpeechState.playing && activeSpeechState.sessionId === (activeSessionId || "") && activeSpeechState.msgIdx === msgIdx) {
@@ -6201,7 +6575,7 @@ function initHubController() {
 	function switchAssistantSpeechMode(msgIdx) {
 		activeSpeechState.mode = activeSpeechState.mode === "concise" ? "full" : "concise";
 		try {
-			localStorage.setItem("dsh_tts_mode", activeSpeechState.mode);
+			localStorage.setItem("dsh_tts_mode_v2", activeSpeechState.mode);
 		} catch {}
 		if (activeSpeechState.playing && activeSpeechState.msgIdx === msgIdx) startAssistantSpeech(msgIdx, { startOffset: 0 });
 		else syncSpeechFooterDom();

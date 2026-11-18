@@ -2,6 +2,16 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.7.9] - 2026-11-18
+
+### Fixed
+
+- **修复语音播报（`🔊 播报`）朗读带代码的 AI 回复时中途自动停掉的问题（`hub/web/src/utils/speech.js` / `hub/web/src/controller.js`）**：
+  - 将活跃 `SpeechSynthesisUtterance` 实例存入全局强引用池 `window.__dshPinnedUtterances`，防止后台 SSE 状态更新触发浏览器 JS 垃圾回收（GC）导致播报半截哑火；
+  - 将一次性批量入队改为逐句接力串联（`speakChunkAt`）+ `900ms` 防假死看门狗（自动恢复 `paused` 挂起与漏触发 `onend`）+ 单句合成异常自动跳过续读，并对中英高频切换的代码解释在 iOS WebKit 上按句切分、在 Chromium / WebView 上限制单片 `<= 11s` 彻底避开 15 秒超时掐断；
+  - 按 CommonMark §4.5 规范重写代码块围栏配对（核对反引号长度并放行单行 ```` ```html``` ```` 行内代码），杜绝嵌套代码块或代码内模板字符串反引号把后半篇正文吞掉（4 行以上代码块自动口语化提示行数与语言）；清理 `<video>` 等尖括号与 `{ } [ ] | =` 符号防止触发系统 TTS SSML 解析中断，并修复 `video.src` / `res.ok` 被误判为文件后缀的问题；
+  - 默认播报模式切换为 **`📖 全文`**（`dsh_tts_mode_v2`，保留一键切换 **`⚡ 重点`** 摘要），并在播报期间持有 `navigator.wakeLock` 防止手机 30 秒自动息屏挂起语音。
+
 ## [0.7.8] - 2026-11-18
 
 ### Added

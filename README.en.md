@@ -199,6 +199,13 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-18 · v0.7.9</code> — Uninterrupted Speech Playback on Code Replies (<code>🔊 Listen</code> Anti-GC &amp; CommonMark Fence Fix)</strong></summary>
+
+- **Uninterrupted End-to-End Voice Playback on Code-Heavy Replies (`v0.7.9`)**: Eliminated 4 root causes where `🔊 Listen` stopped mid-reply on AI coding explanations (`speech.js` / `controller.js`): pinned active `SpeechSynthesisUtterance` instances in `window.__dshPinnedUtterances` with sequential 1-by-1 sentence chaining, a `900ms` wedged-pause/dropped-`onend` watchdog, and mid-chunk error skip recovery so JS garbage collection and iOS `AVSpeechSynthesizer` bilingual switches never cut playback off mid-sentence; upgraded Markdown code-fence parsing to CommonMark §4.5 (`fenceLen` + info-string backtick check) so nested ```` ```` ```` blocks, template literals, and inline ```` ```html``` ```` spans never swallow trailing prose (summarizing multi-line blocks cleanly with line count &amp; language); stripped raw `<tag>` / `{}` / `|` SSML-breaking brackets and fixed `obj.prop` (`video.src`) file misclassification while capping Chromium chunks at `<= 11s` to avoid the 15s neural TTS cutoff; switched default mode to **`📖 Full`** (`dsh_tts_mode_v2`) and held `navigator.wakeLock` while speaking.
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.7.8</code> — Zero-Dependency WebRTC P2P Video Acceleration &amp; Small-Chunk Cloud Run Pipeline</strong></summary>
 
 - **Zero-Dependency WebRTC `RTCDataChannel` P2P Media Acceleration (`v0.7.8`)**: Added a pure-Node.js WebRTC `RTCDataChannel` engine (`dsh-feishu/lib/webrtc-p2p.js`: ICE LAN/Tailscale + STUN `srflx` UDP hole-punching, DTLS 1.2 `ECDHE-ECDSA-AES128-GCM-SHA256` with RFC 7627 `extended_master_secret`, and SCTP CRC-32c + sliding-window `SACK` retransmission — zero npm dependencies) paired with a browser `RTCPeerConnection` pool (`webrtcMedia.js`) signaled over `POST /api/hosts/:hostId/fs/rtc-offer`. Mobile `<video>` previews (`⚡ P2P Direct · Zero-Buffer`) and lossless **`⬇️ Save / Share Video`** downloads bypass cross-ocean Cloud Run relays whenever direct LAN/Tailscale/NAT UDP connectivity succeeds, falling back automatically within `1.5s` when UDP is blocked.

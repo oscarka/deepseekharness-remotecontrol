@@ -1536,13 +1536,13 @@ export function initHubController() {
     await copyAssistantReply(keys[0], btnEl);
   }
 
-  // ---- AI 回复纯算法语音播报（单嗓子不断气直读 + 重点摘要 / 全文去噪 + 原地无损倍速切换） ----
+  // ---- AI 回复纯算法语音播报（全局防 GC 保活 + 按句接力防超时断流 + 全文默认 / 重点切换 + 原地无损倍速） ----
   const SPEECH_RATES = [1, 1.25, 1.5];
   const activeSpeechState = {
     playing: false,
     sessionId: '',
     msgIdx: -1,
-    mode: (typeof localStorage !== 'undefined' && localStorage.getItem('dsh_tts_mode') === 'full') ? 'full' : 'concise',
+    mode: (typeof localStorage !== 'undefined' && localStorage.getItem('dsh_tts_mode_v2') === 'concise') ? 'concise' : 'full',
     rate: (() => {
       const saved = typeof localStorage !== 'undefined' ? Number(localStorage.getItem('dsh_tts_rate')) : 1;
       return SPEECH_RATES.includes(saved) ? saved : 1;
@@ -1556,14 +1556,55 @@ export function initHubController() {
     boundaryCharOffset: -1,
     boundaryUpdatedAt: 0,
     runId: 0,
+    pinnedUtterances: [],
+    watchdogTimer: null,
+    handoffTimer: null,
+    wakeLock: null,
   };
 
-  if (typeof window !== 'undefined' && window.speechSynthesis) {
+  if (typeof window !== 'undefined') {
+    window.__dshPinnedUtterances = activeSpeechState.pinnedUtterances;
+    if (window.speechSynthesis) {
+      try {
+        window.speechSynthesis.getVoices();
+        window.speechSynthesis.addEventListener?.('voiceschanged', () => {
+          try { window.speechSynthesis.getVoices(); } catch { }
+        });
+      } catch { }
+    }
+  }
+
+  function releaseSpeechRuntimeHandles() {
+    if (activeSpeechState.handoffTimer) {
+      clearTimeout(activeSpeechState.handoffTimer);
+      activeSpeechState.handoffTimer = null;
+    }
+    if (activeSpeechState.watchdogTimer) {
+      clearInterval(activeSpeechState.watchdogTimer);
+      activeSpeechState.watchdogTimer = null;
+    }
+    activeSpeechState.pinnedUtterances.length = 0;
+    if (typeof window !== 'undefined') {
+      window.__dshPinnedUtterances = activeSpeechState.pinnedUtterances;
+    }
+    if (activeSpeechState.wakeLock) {
+      const wl = activeSpeechState.wakeLock;
+      activeSpeechState.wakeLock = null;
+      try {
+        void wl.release?.()?.catch?.(() => { });
+      } catch { }
+    }
+  }
+
+  async function acquireSpeechWakeLock(expectedRunId) {
+    if (typeof navigator === 'undefined' || !navigator.wakeLock?.request) return;
     try {
-      window.speechSynthesis.getVoices();
-      window.speechSynthesis.addEventListener?.('voiceschanged', () => {
-        try { window.speechSynthesis.getVoices(); } catch { }
-      });
+      const wl = await navigator.wakeLock.request('screen');
+      if (!activeSpeechState.playing || activeSpeechState.runId !== expectedRunId) {
+        try { await wl.release?.(); } catch { }
+        return;
+      }
+      activeSpeechState.wakeLock = wl;
     } catch { }
   }
 
@@ -1611,15 +1652,18 @@ export function initHubController() {
     activeSpeechState.segmentStartedAt = 0;
     activeSpeechState.boundaryCharOffset = -1;
     activeSpeechState.boundaryUpdatedAt = 0;
+    releaseSpeechRuntimeHandles();
     try {
-      window.speechSynthesis?.cancel();
+      if (window.speechSynthesis && (window.speechSynthesis.speaking || window.speechSynthesis.pending || window.speechSynthesis.paused)) {
+        window.speechSynthesis.cancel();
+      }
     } catch { }
     if (wasPlaying) {
       syncSpeechFooterDom();
     }
   }
 
-  function startAssistantSpeech(msgIdx, { startOffset = 0 } = {}) {
+  function startAssistantSpeech(msgIdx, { startOffset = 0, _recoveryDepth = 0 } = {}) {
     if (typeof window === 'undefined' || !window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') {
       showToast('⚠️ 当前浏览器暂不支持系统语音播报');
       return;
@@ -1653,9 +1697,15 @@ export function initHubController() {
     const actualBaseOffset = (effectiveOffset > 0 && effectiveOffset < fullSpokenText.length) ? effectiveOffset : 0;
 
     const myRunId = ++activeSpeechState.runId;
-    try {
-      window.speechSynthesis.cancel();
-    } catch { }
+    releaseSpeechRuntimeHandles();
+
+    const synth = window.speechSynthesis;
+    const wasSynthBusy = Boolean(synth.speaking || synth.pending || synth.paused);
+    if (wasSynthBusy) {
+      try {
+        synth.cancel();
+      } catch { }
+    }
 
     const nowMs = Date.now();
     activeSpeechState.playing = true;
@@ -1670,56 +1720,187 @@ export function initHubController() {
     activeSpeechState.boundaryCharOffset = -1;
     activeSpeechState.boundaryUpdatedAt = 0;
     syncSpeechFooterDom();
+    void acquireSpeechWakeLock(myRunId);
 
-    const voices = window.speechSynthesis.getVoices() || [];
+    const voices = synth.getVoices() || [];
     const chosenVoice = pickBestBrowserVoice(voices, prepared.docLang);
     const isAppleWebKit = isIosDevice() || (/AppleWebKit/i.test(navigator.userAgent || '') && !/Chrome|Chromium|Edg/i.test(navigator.userAgent || ''));
     const chunks = splitIntoContinuousBrowserChunks(remainingText, isAppleWebKit);
 
     let runningChunkOffset = actualBaseOffset;
-    chunks.forEach((chunkText, idx) => {
-      const thisChunkBase = runningChunkOffset;
+    const chunkDescriptors = chunks.map(chunkText => {
       const posInFull = fullSpokenText.indexOf(chunkText, runningChunkOffset);
-      const resolvedChunkBase = posInFull >= 0 ? posInFull : thisChunkBase;
+      const resolvedChunkBase = posInFull >= 0 ? posInFull : runningChunkOffset;
       runningChunkOffset = resolvedChunkBase + chunkText.length;
+      return { text: chunkText, baseOffset: resolvedChunkBase };
+    });
 
-      const u = new SpeechSynthesisUtterance(chunkText);
+    let currentChunkIdx = -1;
+    let currentAdvanceFn = null;
+    let lastChunkStartAt = Date.now();
+    let lastSynthBusyAt = Date.now();
+    let errorSkipCount = 0;
+
+    const finishSpeechPlayback = () => {
+      if (activeSpeechState.runId !== myRunId) return;
+      activeSpeechState.playing = false;
+      activeSpeechState.sessionId = '';
+      activeSpeechState.msgIdx = -1;
+      releaseSpeechRuntimeHandles();
+      syncSpeechFooterDom();
+    };
+
+    const findNextSentenceOffset = fromCharOffset => {
+      const tail = fullSpokenText.slice(Math.max(0, fromCharOffset));
+      const m = /[。！？.!?\n]+\s*/.exec(tail);
+      if (!m) return -1;
+      const candidate = Math.max(0, fromCharOffset) + m.index + m[0].length;
+      return candidate < fullSpokenText.length - 2 ? candidate : -1;
+    };
+
+    const speakChunkAt = idx => {
+      if (activeSpeechState.runId !== myRunId || !activeSpeechState.playing) return;
+      if (idx >= chunkDescriptors.length) {
+        finishSpeechPlayback();
+        return;
+      }
+
+      currentChunkIdx = idx;
+      const desc = chunkDescriptors[idx];
+      const chunkNow = Date.now();
+      lastChunkStartAt = chunkNow;
+      lastSynthBusyAt = chunkNow;
+      activeSpeechState.segmentBaseOffset = desc.baseOffset;
+      activeSpeechState.segmentStartedAt = chunkNow;
+      activeSpeechState.segmentRate = activeSpeechState.rate;
+      activeSpeechState.boundaryCharOffset = desc.baseOffset;
+      activeSpeechState.boundaryUpdatedAt = chunkNow;
+
+      const u = new SpeechSynthesisUtterance(desc.text);
+      // Pin strong reference on window/state so JSC (iOS Safari) & V8 (Chromium) GC never collect active utterances mid-sentence!
+      activeSpeechState.pinnedUtterances.push(u);
+      window.__dshPinnedUtterances = activeSpeechState.pinnedUtterances;
+
       u.lang = chosenVoice?.lang || (prepared.docLang === 'en' ? 'en-US' : 'zh-CN');
       if (chosenVoice) {
         u.voice = chosenVoice;
       }
       u.rate = activeSpeechState.rate;
-      if (idx === 0) {
-        u.onstart = () => {
-          if (activeSpeechState.runId !== myRunId) return;
-          activeSpeechState.segmentStartedAt = Date.now();
-        };
-      }
-      u.onboundary = ev => {
-        if (activeSpeechState.runId !== myRunId) return;
-        if (ev && typeof ev.charIndex === 'number' && ev.charIndex >= 0) {
-          activeSpeechState.boundaryCharOffset = resolvedChunkBase + ev.charIndex;
-          activeSpeechState.boundaryUpdatedAt = Date.now();
+
+      let settled = false;
+      const unpinUtterance = () => {
+        const pos = activeSpeechState.pinnedUtterances.indexOf(u);
+        if (pos >= 0) activeSpeechState.pinnedUtterances.splice(pos, 1);
+      };
+      const advanceToNext = () => {
+        if (settled || activeSpeechState.runId !== myRunId) return;
+        settled = true;
+        currentAdvanceFn = null;
+        unpinUtterance();
+        if (idx + 1 < chunkDescriptors.length) {
+          speakChunkAt(idx + 1);
+        } else {
+          finishSpeechPlayback();
         }
       };
-      if (idx === chunks.length - 1) {
-        u.onend = () => {
-          if (activeSpeechState.runId !== myRunId) return;
-          activeSpeechState.playing = false;
-          activeSpeechState.sessionId = '';
-          activeSpeechState.msgIdx = -1;
-          syncSpeechFooterDom();
-        };
-      }
-      u.onerror = () => {
+      currentAdvanceFn = advanceToNext;
+
+      u.onstart = () => {
         if (activeSpeechState.runId !== myRunId) return;
-        activeSpeechState.playing = false;
-        activeSpeechState.sessionId = '';
-        activeSpeechState.msgIdx = -1;
-        syncSpeechFooterDom();
+        const t = Date.now();
+        lastChunkStartAt = t;
+        lastSynthBusyAt = t;
+        activeSpeechState.segmentStartedAt = t;
       };
-      window.speechSynthesis.speak(u);
-    });
+      u.onboundary = ev => {
+        if (activeSpeechState.runId !== myRunId) return;
+        const t = Date.now();
+        lastSynthBusyAt = t;
+        if (ev && typeof ev.charIndex === 'number' && ev.charIndex >= 0) {
+          activeSpeechState.boundaryCharOffset = desc.baseOffset + ev.charIndex;
+          activeSpeechState.boundaryUpdatedAt = t;
+        }
+      };
+      u.onend = () => {
+        advanceToNext();
+      };
+      u.onerror = ev => {
+        if (settled || activeSpeechState.runId !== myRunId) return;
+        settled = true;
+        currentAdvanceFn = null;
+        unpinUtterance();
+        const errCode = String(ev?.error || '').toLowerCase();
+        if (errCode === 'not-allowed' || errCode === 'service-not-allowed') {
+          finishSpeechPlayback();
+          return;
+        }
+        // Auto-skip past a choked phrase/chunk instead of abruptly dying halfway through a code explanation
+        if (errorSkipCount < 3 && idx + 1 < chunkDescriptors.length) {
+          errorSkipCount += 1;
+          speakChunkAt(idx + 1);
+          return;
+        }
+        if (_recoveryDepth < 2 && chunkDescriptors.length === 1) {
+          const approxOffset = computeSpeechResumeOffset({
+            fullText: fullSpokenText,
+            docLang: prepared.docLang,
+            segmentBaseOffset: activeSpeechState.segmentBaseOffset,
+            segmentStartedAt: activeSpeechState.segmentStartedAt,
+            segmentRate: activeSpeechState.segmentRate,
+            boundaryCharOffset: activeSpeechState.boundaryCharOffset,
+            boundaryUpdatedAt: activeSpeechState.boundaryUpdatedAt,
+            nowMs: Date.now(),
+          });
+          const nextSentenceOffset = findNextSentenceOffset(Math.max(approxOffset, desc.baseOffset + 6));
+          if (nextSentenceOffset > desc.baseOffset) {
+            startAssistantSpeech(msgIdx, { startOffset: nextSentenceOffset, _recoveryDepth: _recoveryDepth + 1 });
+            return;
+          }
+        }
+        finishSpeechPlayback();
+      };
+
+      try {
+        if (synth.paused) synth.resume();
+      } catch { }
+      synth.speak(u);
+    };
+
+    // Keepalive & silent-onend watchdog: un-pause wedged audio ducking and advance if WebKit/Blink drops `onend`
+    activeSpeechState.watchdogTimer = setInterval(() => {
+      if (activeSpeechState.runId !== myRunId || !activeSpeechState.playing) {
+        clearInterval(activeSpeechState.watchdogTimer);
+        activeSpeechState.watchdogTimer = null;
+        return;
+      }
+      try {
+        if (synth.paused) {
+          synth.resume();
+        }
+        if (synth.speaking || synth.pending) {
+          lastSynthBusyAt = Date.now();
+          return;
+        }
+        if (currentChunkIdx >= 0 && Date.now() - Math.max(lastChunkStartAt, lastSynthBusyAt) > 1600) {
+          if (typeof currentAdvanceFn === 'function') {
+            currentAdvanceFn();
+          } else {
+            finishSpeechPlayback();
+          }
+        }
+      } catch { }
+    }, 900);
+
+    // Fresh user tap (`!wasSynthBusy`) MUST call `synth.speak` synchronously to unlock iOS Safari audio;
+    // when cancelling an already-speaking utterance, give WebKit 30ms to settle its async `stopSpeaking` IPC.
+    if (wasSynthBusy && isAppleWebKit) {
+      activeSpeechState.handoffTimer = setTimeout(() => {
+        activeSpeechState.handoffTimer = null;
+        speakChunkAt(0);
+      }, 30);
+    } else {
+      speakChunkAt(0);
+    }
   }
 
   function toggleSpeakAssistantReply(msgIdx) {
@@ -1737,7 +1918,7 @@ export function initHubController() {
   function switchAssistantSpeechMode(msgIdx) {
     activeSpeechState.mode = activeSpeechState.mode === 'concise' ? 'full' : 'concise';
     try {
-      localStorage.setItem('dsh_tts_mode', activeSpeechState.mode);
+      localStorage.setItem('dsh_tts_mode_v2', activeSpeechState.mode);
     } catch { }
     if (activeSpeechState.playing && activeSpeechState.msgIdx === msgIdx) {
       startAssistantSpeech(msgIdx, { startOffset: 0 });

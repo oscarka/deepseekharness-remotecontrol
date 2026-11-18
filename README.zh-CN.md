@@ -199,6 +199,13 @@ docker run -d --name dsh-hub \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-18 · v0.7.9</code> — 修复带代码的 AI 回复语音播报中途断停（防 GC 保活 &amp; 代码块围栏精准配对）</strong></summary>
+
+- **带代码的 AI 回复从头到尾不断流完整播报（`v0.7.9`）**：根治 `🔊 播报` 在朗读代码类长回复时中途自动停掉的 4 项问题（[`speech.js`](hub/web/src/utils/speech.js) / [`controller.js`](hub/web/src/controller.js)）——将活跃 `SpeechSynthesisUtterance` 挂入全局强引用池（`window.__dshPinnedUtterances`）防止后台 SSE 刷新触发浏览器 GC 回收导致半句哑火，并改为按句单条接力串联 + `900ms` 防假死看门狗 + 单句异常自动跳过续读；按 CommonMark §4.5 规范升级代码围栏配对（校验反引号数量与行内三反引号 ```` ```html``` ````），彻底杜绝嵌套代码块或代码内模板字符串吃掉后半篇中文总结（多行代码块自动播报「这里附了一段代码，共 N 行某某语言」）；剥除 `<video>` 等尖括号/花括号防止呛死系统 SSML 语音内核，修正 `video.src` 等对象属性被误读为视频文件的问题，并将 Chromium 单片时长压至 `<= 11s` 避开 15 秒超时断流；默认模式改为 **`📖 全文`**（仍可一键切换 **`⚡ 重点`**）并补齐播报期间 `WakeLock` 防息屏锁。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.7.8</code> — 零外部依赖 WebRTC P2P 视频直连加速 &amp; Cloud Run 小分片防超时流水线</strong></summary>
 
 - **零外部依赖 WebRTC `RTCDataChannel` 点对点媒体直连引擎（`v0.7.8`）**：基于 Node.js 原生内置模块手写完整 WebRTC 服务端协议栈（[`webrtc-p2p.js`](dsh-feishu/lib/webrtc-p2p.js)：ICE 局域网 / Tailscale / STUN `srflx` UDP 打洞 + DTLS 1.2 `ECDHE-ECDSA-AES128-GCM-SHA256` 含 RFC 7627 `extended_master_secret` + SCTP CRC-32c 与滑动窗口 `SACK` 丢包重传，零 npm 运行时依赖，老机器免重装依赖直接生效），配合前端按机器复用的连接池（[`webrtcMedia.js`](hub/web/src/utils/webrtcMedia.js)）与 `/fs/rtc-offer` 信令交换；手机看视频（`⚡ P2P 极速直连 · 零缓冲秒播`）与点击 **`⬇️ 保存/分享视频`** 自动优先走手机 ⇄ Mac 直连通道，跨网严格对称 NAT 打不通时 `1.5s` 内无感回退 HTTP 小分片流水线。

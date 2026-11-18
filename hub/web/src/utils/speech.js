@@ -174,8 +174,25 @@ export function verbalizeTokenUnified(rawToken, prevCtx = '', nextCtx = '', docL
   const jsRuntime = /^([A-Z][a-zA-Z0-9]{1,8})\.js$/.exec(t);
   if (jsRuntime) return `${jsRuntime[1]} JS`;
 
-  // 10. File path, API route, or filename (extension must start with letter so `Qwen2.5` is never treated as a file!)
-  if (t.includes('/') || /\.[a-zA-Z][a-zA-Z0-9]{0,5}$/.test(t)) {
+  // 9b. HTML / JSX tag (`<video>`, `<iframe sandbox="...">`, `</div>`) — strip raw `< >` so SSML/TTS parsers never choke!
+  const htmlTag = /^<\/?([a-zA-Z][a-zA-Z0-9:-]*)(?:\s[\s\S]*)?\/?>$/.exec(t);
+  if (htmlTag) {
+    const tagName = htmlTag[1];
+    if (/标签|元素|组件|\b(?:tag|element)\b/i.test(ctx)) return tagName;
+    return lang === 'zh' ? `${tagName}标签` : `the ${tagName} tag`;
+  }
+
+  // 10. File path, API route, or filename (only match real file extensions when there is no `/` so `video.src` / `res.ok` is not misread as a file)
+  const KNOWN_FILE_EXTS = new Set([
+    '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.py', '.go', '.rs', '.java', '.c', '.cpp', '.h', '.hpp',
+    '.cs', '.rb', '.php', '.swift', '.kt', '.sh', '.bash', '.zsh', '.yml', '.yaml', '.json', '.jsonl',
+    '.toml', '.ini', '.env', '.md', '.mdx', '.txt', '.rst', '.pdf', '.html', '.htm', '.css', '.scss',
+    '.sql', '.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi', '.jpg', '.jpeg', '.png', '.gif', '.webp',
+    '.svg', '.heic', '.ico', '.mp3', '.m4a', '.wav', '.aac', '.ogg', '.zip', '.tar', '.gz', '.tgz',
+    '.dmg', '.pkg', '.plist', '.db', '.sqlite', '.lock', '.wasm', '.vue', '.svelte',
+  ]);
+  const tokenExt = extOf(t);
+  if (t.includes('/') || KNOWN_FILE_EXTS.has(tokenExt)) {
     if (/^[A-Za-z0-9_-]+\/$/.test(t)) return t.slice(0, -1);
     const homeMatch = /^~\/([A-Za-z0-9_-]+)$/.exec(t);
     if (homeMatch) {
@@ -208,12 +225,24 @@ export function verbalizeTokenUnified(rawToken, prevCtx = '', nextCtx = '', docL
     return mime.label || (lang === 'zh' ? '对应文件' : 'that file');
   }
 
-  // 11. Function call `open()`, `probeVideoCompatibility()`
-  if (/^[a-zA-Z_$][\w$]*\(\)$/.test(t)) {
-    const fnName = t.slice(0, -2);
+  // 11. Function / method call `open()`, `probeVideoCompatibility()`, `window.speechSynthesis.speak(u)`
+  if (/^[a-zA-Z_$][\w$]*\([^)]*\)$/.test(t)) {
+    const fnName = t.slice(0, t.indexOf('('));
     if (fnName.length <= 7 && splitIdentifierSubwords(fnName).length === 1) return fnName;
     if (/函数|方法|\b(?:function|helper|method|handler)\b/i.test(ctx)) return '';
     return lang === 'zh' ? '内部函数' : 'an internal helper';
+  }
+  if (/^[a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*)+\([^)]*\)$/.test(t)) {
+    if (/函数|方法|调用|\b(?:function|helper|method|call)\b/i.test(ctx)) return '';
+    return lang === 'zh' ? '对应方法' : 'that method call';
+  }
+  if (/^[a-zA-Z_$][\w$]*\.[a-zA-Z_$][\w$]*$/.test(t)) {
+    const [objName, propName] = t.split('.');
+    if (objName.length <= 6 && propName.length <= 6 && splitIdentifierSubwords(propName).length === 1) {
+      return `${objName} ${propName}`;
+    }
+    if (/属性|字段|状态|\b(?:property|field|state)\b/i.test(ctx)) return '';
+    return lang === 'zh' ? '对应属性' : 'that property';
   }
 
   // 12. General identifier morphology
@@ -242,7 +271,8 @@ export function verbalizeTokenUnified(rawToken, prevCtx = '', nextCtx = '', docL
   }
 
   if (letters >= 5 && vowelRatio < 0.15) return '';
-  return t;
+  const sanitized = t.replace(/[<>{}[\]\\|^=]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  return sanitized;
 }
 
 export function normalizeNSWUnified(input) {
@@ -365,7 +395,13 @@ function cleanInlineUnified(rawLine, docLang) {
   });
 
   // 3. Multi-backtick inline snippet ```` ```code``` ````
-  line = line.replace(/`{3,}([^`]+)`{3,}/g, (_m, inner) => inner.replace(/`/g, '').trim());
+  line = line.replace(/`{3,}([^`]+)`{3,}/g, (m, inner, offset, full) => {
+    const cleanInner = inner.replace(/`/g, '').trim();
+    const prev = full.slice(Math.max(0, offset - 16), offset);
+    const next = full.slice(offset + m.length, offset + m.length + 16);
+    const res = verbalizeTokenUnified(cleanInner, prev, next, docLang);
+    return stash(res, res === '');
+  });
 
   // 4. Inline code `` `...` ``
   line = line.replace(/`([^`]+)`/g, (m, code, offset, full) => {
@@ -388,6 +424,9 @@ function cleanInlineUnified(rawLine, docLang) {
     return lead + stash(res, res === '');
   });
 
+  // 5b. Strip inline HTML tags (`<summary>`, `</summary>`, `<br/>`, `<kbd>`) before token screening
+  line = line.replace(/<\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s[^<>]*)?\/?>/g, ' ');
+
   // 6. In Chinese-dominant prose, also screen bare technical tokens (`Node.js`, hex hashes, `UV_THREADPOOL_SIZE=4`)
   if (docLang === 'zh') {
     line = line.replace(/[a-zA-Z_][a-zA-Z0-9_./:-]{2,}/g, (m, offset, full) => {
@@ -408,13 +447,14 @@ function cleanInlineUnified(rawLine, docLang) {
     return `${slot.val}${locSuffix || ''}`;
   });
 
-  // 8. NSW + formatting cleanup
+  // 8. NSW + formatting cleanup (ensure zero raw `< > { } [ ] \ | ^ =` code symbols reach OS TTS)
   line = normalizeNSWUnified(line);
   const circledMap = { '①': '第一，', '②': '第二，', '③': '第三，', '④': '第四，' };
   line = line.replace(/[①②③④]/g, m => circledMap[m] || '');
   line = line
     .replace(EMOJI_RE, '')
     .replace(/\*|`/g, '')
+    .replace(/[<>{}[\]\\|^=]+/g, ' ')
     .replace(/[「」『』“”"]/g, ' ')
     .replace(/——/g, '，')
     .replace(/\s*—\s*/g, ', ')
@@ -444,12 +484,53 @@ function ensurePunctUnified(s, docLang) {
   return out;
 }
 
+function formatCodeFenceLangLabel(rawLang, docLang) {
+  const k = String(rawLang || '').trim().toLowerCase();
+  if (!k) return '';
+  const mapZh = {
+    py: 'Python', python: 'Python',
+    js: 'JavaScript', javascript: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript', jsx: 'React',
+    ts: 'TypeScript', typescript: 'TypeScript', tsx: 'React',
+    sh: '终端命令', bash: '终端命令', zsh: '终端命令', shell: '终端命令', console: '终端命令',
+    html: 'HTML', css: '样式', scss: '样式', sql: 'SQL',
+    json: '配置', yaml: '配置', yml: '配置', toml: '配置',
+    go: 'Go', rs: 'Rust', rust: 'Rust', java: 'Java', swift: 'Swift',
+  };
+  const mapEn = {
+    py: 'Python', python: 'Python',
+    js: 'JavaScript', javascript: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript', jsx: 'React',
+    ts: 'TypeScript', typescript: 'TypeScript', tsx: 'TypeScript',
+    sh: 'shell', bash: 'shell', zsh: 'shell', shell: 'shell',
+    html: 'HTML', css: 'CSS', scss: 'SCSS', sql: 'SQL',
+    json: 'JSON', yaml: 'YAML', yml: 'YAML', toml: 'TOML',
+    go: 'Go', rs: 'Rust', rust: 'Rust', java: 'Java', swift: 'Swift',
+  };
+  return docLang === 'zh' ? (mapZh[k] || '') : (mapEn[k] || '');
+}
+
+function formatCodeFenceSpeechSummary(fenceState, docLang) {
+  const lineCount = Math.max(0, Number(fenceState?.lineCount || 0));
+  const langLabel = formatCodeFenceLangLabel(fenceState?.lang || '', docLang);
+  if (docLang === 'zh') {
+    if (lineCount >= 4) {
+      return langLabel ? `这里附了一段代码，共${lineCount}行${langLabel}。` : `这里附了一段代码，共${lineCount}行。`;
+    }
+    return '这里附了一段代码。';
+  }
+  if (lineCount >= 4) {
+    return langLabel
+      ? `I've included a ${lineCount}-line ${langLabel} snippet below.`
+      : `I've included a ${lineCount}-line code snippet below.`;
+  }
+  return "I've included a short code snippet below.";
+}
+
 export function parseUnifiedMarkdownForSpeech(rawMarkdown) {
   const docLang = detectSpeechLang(rawMarkdown);
   const lines = String(rawMarkdown || '').split(/\r?\n/);
   const blocks = [];
-  let inCodeFence = false;
-  let lastWasCode = false;
+  let fenceState = null;
+  let lastCodeLangLabel = null;
   let tableRows = [];
   let seenFirstParagraph = false;
   let justSawHeading = false;
@@ -465,25 +546,46 @@ export function parseUnifiedMarkdownForSpeech(rawMarkdown) {
     tableRows = [];
   };
 
+  const flushCodeFence = () => {
+    if (!fenceState) return;
+    const finished = fenceState;
+    fenceState = null;
+    const curLangLabel = formatCodeFenceLangLabel(finished.lang || '', docLang);
+    if (lastCodeLangLabel === null || (curLangLabel && curLangLabel !== lastCodeLangLabel)) {
+      blocks.push({
+        type: 'code_summary',
+        text: formatCodeFenceSpeechSummary(finished, docLang),
+      });
+      lastCodeLangLabel = curLangLabel || '';
+    }
+  };
+
   for (const rawLine of lines) {
     const trimmed = rawLine.trim();
-    if (/^`{3,}/.test(trimmed)) {
-      flushTable();
-      if (!inCodeFence) {
-        inCodeFence = true;
-        if (!lastWasCode) {
-          blocks.push({
-            type: 'code_summary',
-            text: docLang === 'zh' ? '这里附了一段代码。' : "I've included a short code snippet below.",
-          });
-          lastWasCode = true;
-        }
+    if (fenceState) {
+      // CommonMark §4.5: closing code fence must use >= opening fence length of same char and NO info string!
+      const closeRe = new RegExp(`^\\${fenceState.char}{${fenceState.len},}\\s*$`);
+      if (closeRe.test(trimmed)) {
+        flushCodeFence();
       } else {
-        inCodeFence = false;
+        if (trimmed) fenceState.lineCount += 1;
       }
       continue;
     }
-    if (inCodeFence) continue;
+
+    const openFence = /^(`{3,}|~{3,})(.*)$/.exec(trimmed);
+    // CommonMark §4.5: backtick fence info string cannot contain backticks (single-line ```foo``` is inline code!)
+    if (openFence && !(openFence[1][0] === '`' && openFence[2].includes('`'))) {
+      flushTable();
+      const infoToken = openFence[2].trim().split(/\s+/)[0] || '';
+      fenceState = {
+        char: openFence[1][0],
+        len: openFence[1].length,
+        lang: infoToken,
+        lineCount: 0,
+      };
+      continue;
+    }
 
     if (/^\|.*\|$/.test(trimmed)) {
       tableRows.push(trimmed);
@@ -494,7 +596,7 @@ export function parseUnifiedMarkdownForSpeech(rawMarkdown) {
     if (!trimmed || /^---+$/.test(trimmed) || /^<details|^<\/details|^!\[/.test(trimmed)) {
       continue;
     }
-    lastWasCode = false;
+    lastCodeLangLabel = null;
 
     const headingMatch = /^(#{1,6})\s+(.+)$/.exec(trimmed);
     if (headingMatch) {
@@ -509,7 +611,9 @@ export function parseUnifiedMarkdownForSpeech(rawMarkdown) {
     }
 
     const listNumMatch = /^(\d+)\.\s+(.+)$/.exec(trimmed);
-    let body = listNumMatch ? listNumMatch[2] : trimmed.replace(/^[-*>]\s+/, '');
+    let body = listNumMatch
+      ? listNumMatch[2]
+      : trimmed.replace(/^(?:[-*>•+]\s+)+/, '').replace(/^\[[ xX]\]\s+/, '');
     if (listNumMatch) {
       const n = Number(listNumMatch[1]);
       const useZhOrd = docLang === 'zh' && hasCjk(body);
@@ -533,6 +637,7 @@ export function parseUnifiedMarkdownForSpeech(rawMarkdown) {
     });
     justSawHeading = false;
   }
+  flushCodeFence();
   flushTable();
 
   for (let i = blocks.length - 1; i >= 0; i--) {
@@ -736,23 +841,68 @@ export function pickBestBrowserVoice(voices, docLang = 'zh') {
   })[0];
 }
 
+function subdivideLongSpeechSentence(part, maxSec, maxChars) {
+  const s = String(part || '').trim();
+  if (!s) return [];
+  if (estimateSpokenSeconds(s) <= maxSec && s.length <= maxChars) return [s];
+
+  const semiParts = s.split(/(?<=[；;：:])\s*/).filter(Boolean);
+  const stage1 = semiParts.length > 1 ? semiParts : [s];
+  const out = [];
+  for (const item of stage1) {
+    if (estimateSpokenSeconds(item) <= maxSec && item.length <= maxChars) {
+      out.push(item);
+      continue;
+    }
+    const commaParts = item.split(/(?<=[，,、])\s*/).filter(Boolean);
+    let cur = '';
+    for (const cp of commaParts) {
+      const candidate = cur ? `${cur} ${cp}`.replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2') : cp;
+      if (cur && (estimateSpokenSeconds(candidate) > maxSec || candidate.length > maxChars)) {
+        out.push(cur.trim());
+        cur = cp;
+      } else {
+        cur = candidate;
+      }
+    }
+    if (cur.trim()) out.push(cur.trim());
+  }
+  return out.length ? out : [s];
+}
+
 export function splitIntoContinuousBrowserChunks(text, isAppleWebKit = false) {
   const clean = String(text || '').trim();
   if (!clean) return [];
-  // On iOS / macOS Safari WebKit, a single utterance plays continuously from start to finish with zero gaps.
-  if (isAppleWebKit || clean.length <= 260) {
+
+  const langSwitches = (clean.match(/[\u4e00-\u9fa5]\s*[A-Za-z]|[A-Za-z]\s*[\u4e00-\u9fa5]/g) || []).length;
+  // On Apple WebKit, moderate single-language prose plays seamlessly in 1 utterance;
+  // for very long replies or code-heavy bilingual replies (10+ ZH<->EN switches), split at sentence boundaries so AVSpeechSynthesizer never stalls midway.
+  if (isAppleWebKit && clean.length <= 520 && langSwitches < 10) {
     return [clean];
   }
-  // On desktop Chromium, split long text only at major sentence boundaries (~240 chars) to avoid Chrome's 15s watchdog freeze.
-  const parts = clean.split(/(?<=[。！？.!?])\s*/).filter(Boolean);
+  if (!isAppleWebKit && estimateSpokenSeconds(clean) <= 11 && clean.length <= 160) {
+    return [clean];
+  }
+
+  // Chromium online neural voices hard-cut utterances around ~14-15s (~55 Chinese chars!); keep Chromium <= 11s and WebKit long/bilingual <= 30s.
+  const maxSec = isAppleWebKit ? 30 : 11;
+  const maxChars = isAppleWebKit ? 200 : 160;
+
+  const rawSentences = clean.split(/(?<=[。！？.!?\n])\s*/).filter(Boolean);
+  const parts = [];
+  for (const rs of rawSentences) {
+    parts.push(...subdivideLongSpeechSentence(rs, maxSec, maxChars));
+  }
+
   const chunks = [];
   let buf = '';
   for (const p of parts) {
-    if (buf && buf.length + p.length > 240) {
+    const candidate = buf ? `${buf} ${p}`.replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2') : p;
+    if (buf && (estimateSpokenSeconds(candidate) > maxSec || candidate.length > maxChars)) {
       chunks.push(buf.trim());
       buf = p;
     } else {
-      buf = buf ? `${buf} ${p}`.replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2') : p;
+      buf = candidate;
     }
   }
   if (buf.trim()) chunks.push(buf.trim());

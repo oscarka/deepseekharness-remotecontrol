@@ -19,14 +19,12 @@ export function renderInlineMarkdown(rawLine: string): string {
     if (/^(https?:\/\/|data:(?:image|video)\/)/i.test(trimmedSrc)) {
       if (isVideoMedia) {
         return stash(
-          `<span class="md-inline-video-card"><video class="md-inline-video" src="${trimmedSrc}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video>${
-            cleanAlt ? `<span class="md-inline-img-cap">🎬 ${cleanAlt}</span>` : ''
+          `<span class="md-inline-video-card"><video class="md-inline-video" src="${trimmedSrc}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video>${cleanAlt ? `<span class="md-inline-img-cap">🎬 ${cleanAlt}</span>` : ''
           }</span>`
         );
       }
       return stash(
-        `<span class="md-inline-img-card"><img class="md-inline-img" src="${trimmedSrc}" alt="${cleanAlt}" loading="lazy" />${
-          cleanAlt ? `<span class="md-inline-img-cap">${cleanAlt}</span>` : ''
+        `<span class="md-inline-img-card"><img class="md-inline-img" src="${trimmedSrc}" alt="${cleanAlt}" loading="lazy" />${cleanAlt ? `<span class="md-inline-img-cap">${cleanAlt}</span>` : ''
         }</span>`
       );
     }
@@ -39,14 +37,12 @@ export function renderInlineMarkdown(rawLine: string): string {
           : '';
       if (cachedVideoSrc) {
         return stash(
-          `<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="none" onplay="window.maybeAccelerateVideoViaP2p && window.maybeAccelerateVideoViaP2p(this)" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${
-            cleanAlt || esc(baseName)
+          `<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="none" onplay="window.maybeAccelerateVideoViaP2p && window.maybeAccelerateVideoViaP2p(this)" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${cleanAlt || esc(baseName)
           } · 点此打开大屏预览</span></span>`
         );
       }
       return stash(
-        `<span class="md-inline-video-card md-local-video-pending" data-local-video-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🎬 ${
-          cleanAlt || esc(baseName)
+        `<span class="md-inline-video-card md-local-video-pending" data-local-video-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🎬 ${cleanAlt || esc(baseName)
         } · 正在连接视频流…（点此打开播放器）</span></span>`
       );
     }
@@ -56,14 +52,12 @@ export function renderInlineMarkdown(rawLine: string): string {
         : '';
     if (cachedSrc) {
       return stash(
-        `<span class="md-inline-img-card" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><img class="md-inline-img" src="${cachedSrc}" alt="${cleanAlt || esc(baseName)}" />${
-          cleanAlt ? `<span class="md-inline-img-cap">🖼️ ${cleanAlt}</span>` : ''
+        `<span class="md-inline-img-card" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><img class="md-inline-img" src="${cachedSrc}" alt="${cleanAlt || esc(baseName)}" />${cleanAlt ? `<span class="md-inline-img-cap">🖼️ ${cleanAlt}</span>` : ''
         }</span>`
       );
     }
     return stash(
-      `<span class="md-inline-img-card md-local-img-pending" data-local-img-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🖼️ ${
-        cleanAlt || esc(baseName)
+      `<span class="md-inline-img-card md-local-img-pending" data-local-img-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🖼️ ${cleanAlt || esc(baseName)
       } · 正在从电脑加载图片…（点此直接查看）</span></span>`
     );
   });
@@ -223,8 +217,8 @@ export function renderMarkdownBlocks(rawBlock: string): string {
         `<div class="md-table-wrap"><table><thead><tr>${headerCells
           .map((cell, index) => cellHtml('th', cell, index))
           .join('')}</tr></thead><tbody>${bodyRows
-          .map(row => `<tr>${headerCells.map((_h, index) => cellHtml('td', row[index] || '', index)).join('')}</tr>`)
-          .join('')}</tbody></table></div>`
+            .map(row => `<tr>${headerCells.map((_h, index) => cellHtml('td', row[index] || '', index)).join('')}</tr>`)
+            .join('')}</tbody></table></div>`
       );
       continue;
     }
