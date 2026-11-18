@@ -2525,7 +2525,7 @@ export function initHubController() {
         <div class="agy-files-changed-card agy-session-artifacts-card">
           <div class="agy-session-artifacts-header">
             <span>📋 AI 交付文档 / Walkthrough (${sessionArtifacts.length})</span>
-            <span style="font-size:11px;color:#94a3b8;">点击直接预览全文与配图</span>
+            <span class="agy-session-artifacts-hint">点击直接预览全文与配图</span>
           </div>
           ${sessionArtifacts.map(art => {
       const encArtPath = encodeURIComponent(art.path || '').replace(/'/g, '%27');
@@ -2536,12 +2536,14 @@ export function initHubController() {
       const badgeTitle = (!rawT || rawT.toLowerCase() === nameStem.toLowerCase() || /^artifact$/i.test(rawT))
         ? (art.kind === 'walkthrough' ? 'Walkthrough' : isHtmlArt ? 'HTML 网页' : '交付文档')
         : rawT;
+      const summaryText = art.summary ? String(art.summary).replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+      const hasDistinctSummary = Boolean(summaryText && summaryText.toLowerCase() !== String(art.name || '').trim().toLowerCase());
       return `
-            <div class="agy-file-row agy-artifact-row" style="cursor:pointer;" onclick="openChatFileLink('${encArtPath}')">
+            <div class="agy-file-row agy-artifact-row${hasDistinctSummary ? ' has-summary' : ''}" style="cursor:pointer;" onclick="openChatFileLink('${encArtPath}')">
               <span class="agy-artifact-row-icon">${badgeIcon}</span>
               <span class="agy-artifact-kind-badge">${esc(badgeTitle)}</span>
-              <span class="agy-file-name" style="color:#f8fafc;font-weight:700;">${esc(art.name || '')}</span>
-              <span class="agy-file-path" style="flex:1;">${esc(art.summary ? String(art.summary).replace(/\s+/g, ' ').slice(0, 80) : (art.name || ''))}</span>
+              <span class="agy-file-name">${esc(art.name || '')}</span>
+              ${hasDistinctSummary ? `<span class="agy-file-path">${esc(summaryText)}</span>` : ''}
               <span class="agy-artifact-open-tag">${isHtmlArt ? '体验网页 ›' : '打开 ›'}</span>
             </div>
           `;
@@ -4201,7 +4203,7 @@ export function initHubController() {
              </div>`
         : kind === 'image'
           ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-                 <img class="saveable-preview-img" src="${imagePreviewSrc(preview, mt)}" data-download-url="${esc(dlUrl || imagePreviewSrc(preview, mt))}" data-file-name="${esc(preview.name || 'image.png')}" alt="${esc(preview.name)}" style="max-width:100%;max-height:52vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回目录重新点击文件加载';" />
+                 <img class="saveable-preview-img drawer-preview-img" src="${imagePreviewSrc(preview, mt)}" data-download-url="${esc(dlUrl || imagePreviewSrc(preview, mt))}" data-file-name="${esc(preview.name || 'image.png')}" alt="${esc(preview.name)}" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回目录重新点击文件加载';" />
                  <div class="file-preview-meta-bar" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
                    <span>${esc(formatBytes(preview.size))} · 长按或点按钮保存图片</span>
                    <button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl || imagePreviewSrc(preview, mt))}', '${esc(preview.name || 'image.png')}', this)">⬇️ 保存图片</button>
@@ -4217,7 +4219,7 @@ export function initHubController() {
                  </div>`
             : (isHtml && !rawHtmlMode)
               ? `<div class="file-preview-body html-sandbox-preview" style="padding:0;background:#ffffff;min-height:420px;">
-                   <iframe title="${esc(preview.name || 'HTML Preview')}" sandbox="allow-scripts allow-forms allow-modals allow-popups" referrerpolicy="no-referrer" srcdoc="${htmlSrcdocAttr}" style="width:100%;height:62vh;min-height:420px;border:none;background:#ffffff;display:block;"></iframe>
+                   <iframe class="drawer-preview-iframe" title="${esc(preview.name || 'HTML Preview')}" sandbox="allow-scripts allow-forms allow-modals allow-popups" referrerpolicy="no-referrer" srcdoc="${htmlSrcdocAttr}"></iframe>
                  </div>`
               : (isMarkdown && !rawMdMode)
                 ? `<div class="file-preview-body walkthrough-md-preview md-body" style="padding:16px 14px;background:var(--card-bg, #ffffff);color:var(--text, #0f172a);min-height:340px;overflow-x:auto;">
@@ -7574,10 +7576,36 @@ export function initHubController() {
   // ==================== 15. 手势返回 / 浮层历史栈（体验增强） ====================
   // 打开二级页面或抽屉时写入一条 history，使系统返回键、Safari 侧滑、
   // 手势右滑都能「退回上一层」，而不是直接退出整个网页。
+  let lastSheetDragEndAt = 0;
+
+  function setFileSheetExpanded(expanded) {
+    const panel = document.querySelector('#inChatFileSheet .sheet-panel');
+    if (!panel) return;
+    const isExp = Boolean(expanded);
+    panel.classList.toggle('sheet-expanded', isExp);
+    const btn = document.getElementById('inChatFileExpandBtn');
+    if (btn) {
+      btn.textContent = isExp ? '⤡' : '⤢';
+      const label = tr(isExp ? '收起高度' : '展开显示更多');
+      btn.title = label;
+      btn.setAttribute('aria-label', label);
+    }
+  }
+
+  function toggleFileSheetExpanded() {
+    if (Date.now() - lastSheetDragEndAt < 260) return;
+    const panel = document.querySelector('#inChatFileSheet .sheet-panel');
+    if (!panel) return;
+    setFileSheetExpanded(!panel.classList.contains('sheet-expanded'));
+  }
+
   function rawCloseSheet(id) {
     if (id === 'newTaskSheet') stopVoiceInput();
     document.getElementById(id)?.classList.remove('open');
-    if (id === 'inChatFileSheet') document.body.classList.remove('mobile-file-open');
+    if (id === 'inChatFileSheet') {
+      document.body.classList.remove('mobile-file-open');
+      setFileSheetExpanded(false);
+    }
   }
 
   // 同一种浮层只登记一次：重复打开（例如刷新抽屉内容）不应多压一条历史
@@ -7864,16 +7892,23 @@ export function initHubController() {
     document.querySelectorAll('.sheet-backdrop').forEach(backdrop => {
       const panel = backdrop.querySelector('.sheet-panel');
       if (!panel) return;
+      const expandable = panel.dataset.expandable === '1' || backdrop.id === 'inChatFileSheet';
       let tracking = false;
       let startX = 0;
       let startY = 0;
       let lastX = 0;
       let lastY = 0;
       let startedAt = 0;
+      let dragMode = null; // 'expand' | 'dismiss'
+      let startExpanded = false;
+      let startH = 0;
+      let defaultH = 0;
+      let expandedH = 0;
 
       const resetPanelStyle = () => {
         panel.style.transition = '';
         panel.style.transform = '';
+        panel.style.height = '';
         panel.style.willChange = '';
       };
 
@@ -7892,25 +7927,42 @@ export function initHubController() {
 
       panel.addEventListener('touchstart', (event) => {
         if (event.touches.length !== 1) return;
+        const onChromeHandle = Boolean(
+          expandable &&
+          event.target &&
+          typeof event.target.closest === 'function' &&
+          event.target.closest('.sheet-drag-zone, .sheet-handle, .sheet-title, .breadcrumbs-bar')
+        );
         // 绝不拦截图片、视频、HTML 预览或代码区域上的手势，保证手机长按保存图片与双指缩放 100% 可用
         if (
+          !onChromeHandle &&
           event.target &&
           typeof event.target.closest === 'function' &&
           event.target.closest('img, video, iframe, pre, code, .file-preview-body')
         ) {
           tracking = false;
           decided = false;
+          dragMode = null;
           return;
         }
-        if (panel.scrollTop > 0 || hasScrolledInner(event.target)) return;
+        if (!onChromeHandle && (panel.scrollTop > 0 || hasScrolledInner(event.target))) return;
         const touch = event.touches[0];
         tracking = true;
         decided = false;
+        dragMode = null;
         startX = touch.clientX;
         startY = touch.clientY;
         lastX = startX;
         lastY = startY;
         startedAt = Date.now();
+        if (expandable) {
+          const vh = window.innerHeight || document.documentElement.clientHeight || 800;
+          const safeTop = parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--safe-top')) || 0;
+          defaultH = Math.round(vh * 0.80);
+          expandedH = Math.max(defaultH + 40, Math.round(vh * 0.97 - safeTop));
+          startExpanded = panel.classList.contains('sheet-expanded');
+          startH = Math.round(panel.getBoundingClientRect().height) || (startExpanded ? expandedH : defaultH);
+        }
       }, { passive: true });
 
       panel.addEventListener('touchmove', (event) => {
@@ -7921,14 +7973,41 @@ export function initHubController() {
         lastX = touch.clientX;
         lastY = touch.clientY;
         if (!decided) {
-          if (Math.abs(dy) < 14 && Math.abs(dx) < 14) return;
-          if (dy <= 0 || Math.abs(dx) > dy * 1.1) {
+          const threshold = expandable ? 10 : 14;
+          if (Math.abs(dy) < threshold && Math.abs(dx) < threshold) return;
+          if (Math.abs(dx) > Math.abs(dy) * 1.15) {
             tracking = false;
             return;
           }
-          decided = true;
-          panel.style.transition = 'none';
-          panel.style.willChange = 'transform';
+          if (dy < 0) {
+            if (!expandable) {
+              tracking = false;
+              return;
+            }
+            dragMode = 'expand';
+            decided = true;
+            panel.style.transition = 'none';
+            panel.style.willChange = 'height';
+          } else {
+            dragMode = expandable && startExpanded ? 'expand' : 'dismiss';
+            decided = true;
+            panel.style.transition = 'none';
+            panel.style.willChange = dragMode === 'expand' ? 'height, transform' : 'transform';
+          }
+        }
+        if (dragMode === 'expand') {
+          if (event.cancelable) event.preventDefault();
+          const rawNextH = startH - dy;
+          if (rawNextH >= defaultH) {
+            const clampedH = Math.min(expandedH, rawNextH);
+            panel.style.height = `${clampedH}px`;
+            panel.style.transform = '';
+          } else {
+            const overflowDown = defaultH - rawNextH;
+            panel.style.height = `${defaultH}px`;
+            panel.style.transform = `translateY(${overflowDown}px)`;
+          }
+          return;
         }
         if (dy <= 0) return;
         if (event.cancelable) event.preventDefault();
@@ -7938,16 +8017,54 @@ export function initHubController() {
       const finishSwipe = () => {
         if (!tracking) return;
         const wasDecided = decided;
+        const mode = dragMode;
         tracking = false;
         decided = false;
+        dragMode = null;
         if (!wasDecided) return;
-        const dy = Math.max(0, lastY - startY);
+        const dy = lastY - startY;
         const dx = lastX - startX;
+        const durationMs = Math.max(1, Date.now() - startedAt);
+        const vy = dy / durationMs;
+
+        if (mode === 'expand') {
+          lastSheetDragEndAt = Date.now();
+          if (!startExpanded) {
+            const shouldExpand = dy <= -32 || vy <= -0.28;
+            panel.style.transition = '';
+            panel.style.height = '';
+            panel.style.transform = '';
+            panel.style.willChange = '';
+            setFileSheetExpanded(shouldExpand);
+            return;
+          }
+          const rawEndH = startH - dy;
+          const overflowDown = Math.max(0, defaultH - rawEndH);
+          const shouldDismiss = overflowDown >= 110 || (dy >= 230 && vy >= 0.72);
+          if (shouldDismiss) {
+            panel.style.transition = 'transform 0.2s cubic-bezier(0.22, 1, 0.36, 1)';
+            panel.style.transform = `translateY(${panel.offsetHeight || 600}px)`;
+            setTimeout(() => {
+              closeSheet(backdrop.id);
+              resetPanelStyle();
+            }, 190);
+            return;
+          }
+          const shouldCollapse = dy >= 36 || vy >= 0.30;
+          panel.style.transition = '';
+          panel.style.height = '';
+          panel.style.transform = '';
+          panel.style.willChange = '';
+          setFileSheetExpanded(!shouldCollapse);
+          return;
+        }
+
+        const downDy = Math.max(0, dy);
         const dismiss = shouldDismissVerticalSwipe({
-          dy,
+          dy: downDy,
           dx,
           height: panel.offsetHeight,
-          durationMs: Date.now() - startedAt,
+          durationMs,
         });
         panel.style.transition = 'transform 0.2s cubic-bezier(0.22, 1, 0.36, 1)';
         if (dismiss) {
@@ -9116,6 +9233,8 @@ export function initHubController() {
     rawCloseChat,
     closeMobileChat,
     closeMobileFile,
+    setFileSheetExpanded,
+    toggleFileSheetExpanded,
     selectAgyApprovalOption,
     submitAgyApproval,
     copyAssistantReply,

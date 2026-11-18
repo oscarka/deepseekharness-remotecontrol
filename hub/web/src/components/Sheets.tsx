@@ -296,7 +296,7 @@ export function Sheets() {
         </div>
       </div>
 
-      {/* 抽屉 4：聊天页内「📂 项目文件速览抽屉」 */}
+      {/* 抽屉 4：聊天页内「📂 项目文件速览抽屉」（支持上拉手柄展开至近全屏 / 下拉收起或关闭） */}
       <div
         class="sheet-backdrop"
         id="inChatFileSheet"
@@ -304,23 +304,48 @@ export function Sheets() {
       >
         <div
           class="sheet-panel"
-          style="padding-left:0;padding-right:0;padding-bottom:0;height:82dvh;display:flex;flex-direction:column;"
+          data-expandable="1"
         >
-          <div class="sheet-handle"></div>
+          <div
+            class="sheet-drag-zone"
+            title="上拉或点击展开更多"
+            onClick={() => (window as any).toggleFileSheetExpanded?.()}
+          >
+            <div class="sheet-handle"></div>
+          </div>
           <div
             class="sheet-title"
-            style="padding:0 16px 8px;margin:0;border-bottom:1px solid var(--border);"
+            style="padding:0 14px 9px;margin:0;border-bottom:1px solid var(--border);gap:8px;"
           >
-            <span id="inChatFileTitle">📂 当前项目文件速览</span>
-            <button
-              type="button"
-              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;"
-              onClick={() => (window as any).closeMobileFile?.()}
+            <span
+              id="inChatFileTitle"
+              style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;"
             >
-              ✕
-            </button>
+              📂 当前项目文件速览
+            </span>
+            <div class="sheet-title-actions">
+              <button
+                type="button"
+                id="inChatFileExpandBtn"
+                class="sheet-icon-btn"
+                title="展开显示更多"
+                aria-label="展开显示更多"
+                onClick={() => (window as any).toggleFileSheetExpanded?.()}
+              >
+                ⤢
+              </button>
+              <button
+                type="button"
+                class="sheet-icon-btn"
+                title="关闭"
+                aria-label="关闭"
+                onClick={() => (window as any).closeMobileFile?.()}
+              >
+                ✕
+              </button>
+            </div>
           </div>
-          <div id="inChatFileBody" style="flex:1;overflow-y:auto;"></div>
+          <div id="inChatFileBody" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;"></div>
         </div>
       </div>
 

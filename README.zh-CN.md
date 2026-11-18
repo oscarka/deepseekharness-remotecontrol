@@ -201,6 +201,14 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-19 · v0.8.9</code> — 交付文档/改动文件卡片主题配色与排版重构 &amp; 文件预览抽屉手动上拉展开近全屏</strong></summary>
+
+- **交付文档与改动文件卡片浅/深色自适应重构（`v0.8.9`）**：移除 `.agy-session-artifacts-card` 与 `.agy-files-changed-card` 硬编码的纯黑 `#18181b` 底色与整行等宽字体（[`app.css`](hub/web/src/styles/app.css) / [`controller.js`](hub/web/src/controller.js)），改用自适应浅/深色语义变量与系统原生无衬线字体（仅 `+302 -165` 改动数保留等宽对齐），并修复长文件名重复显示及挤掉右侧 `体验网页 ›` / `打开 ›` 标签的裁切 Bug。
+- **文件预览抽屉支持手动上拉展开显示更多（`v0.8.9`）**：为 `#inChatFileSheet`（[`Sheets.tsx`](hub/web/src/components/Sheets.tsx) / [`controller.js`](hub/web/src/controller.js)）新增原生双挡位上拉手势（`80dvh` ↔ `97dvh - safe-top`）——按住顶部横条/标题栏**向上拉**（或轻点横条 / 右上角 `⤢` 按钮）即可平滑展开至近全屏，图片/视频/HTML/代码预览高度同步放大；展开后中度下拉回弹回默认高度、继续下拉关闭抽屉。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.8</code> — 发前防丢件箱（WAL）&amp; 严禁选图/上传中途后台自动重载</strong></summary>
 
 - **带图消息防丢件箱（WAL）与上传防打断保护（`v0.8.8`）**：移除 `/sw.js` 激活时的强制 `client.navigate()` 刷新（[`server.js`](hub/server.js)），并在 [`controller.js`](hub/web/src/controller.js) 中严禁在**会话打开中、系统相册选图中、带有待发截图或上传请求未完成**时触发后台版本重载；新增 `dsh_inflight_outbox_v1` 预写式发件箱并将带图上传超时延长至 `45s`——点击发送后仅在服务端真正返回 `200 OK` 后才销账并提示已发送，若中途遭遇切后台重载或断网中断，重进后自动将文字与截图无损还原回输入框。

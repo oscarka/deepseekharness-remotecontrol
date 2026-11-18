@@ -201,6 +201,14 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-19 · v0.8.9</code> — Theme-Aware Artifact/Diff Cards &amp; Drag-Up Expandable File Preview Drawer</strong></summary>
+
+- **Theme-Aware Artifact &amp; Changed-Files Cards (`v0.8.9`)**: Replaced hardcoded dark `#18181b` card backgrounds and full-row monospace styling in `.agy-session-artifacts-card` and `.agy-files-changed-card` (`app.css` / `controller.js`) with adaptive light/dark theme variables and native sans-serif typography (reserving tabular monospace strictly for `+add -del` diff counts), while fixing flex ellipsis so long filenames never clip the right-aligned `Live Preview ›` / `Open ›` tags.
+- **Drag-Up Expandable File Preview Drawer (`v0.8.9`)**: Upgraded `#inChatFileSheet` (`Sheets.tsx` / `controller.js` / `app.css`) with native iOS-style two-detent dragging (`80dvh` ↔ `97dvh - safe-top`): drag the top handle/header **up** (or tap the handle / `⤢` button) to expand nearly full-screen with taller image, video, HTML, and code viewports, and drag down moderately to collapse or pull further to dismiss.
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.8</code> — Zero-Loss Image/Prompt Outbox WAL &amp; Anti-Mid-Upload Reload Guard</strong></summary>
 
 - **Zero-Loss Outbox WAL &amp; Anti-Interruption Reload Guard (`v0.8.8`)**: Removed unconditional `client.navigate()` from `/sw.js` (`hub/server.js`) and hardened `hasActiveUserInputInProgress` (`controller.js`) so background bundle updates never reload an open chat session, active iOS Photo Picker, attached screenshots, or in-flight upload; added a write-ahead outbox (`dsh_inflight_outbox_v1`), raised multi-image upload timeout from `15s` to `45s`, and automatically restores both text and screenshots if a page reload or crash interrupts an upload before server acknowledgment.

@@ -441,6 +441,12 @@ const EXACT_ZH_TO_EN = {
   '重新加载网页': 'Reload Webpage',
   'HTML 网页': 'HTML Page',
   '体验网页 ›': 'Live Preview ›',
+  '打开 ›': 'Open ›',
+  '交付文档': 'Artifact',
+  '点击直接预览全文与配图': 'Tap to preview full doc & media',
+  '上拉或点击展开更多': 'Drag up or tap to expand',
+  '展开显示更多': 'Expand drawer',
+  '收起高度': 'Collapse drawer',
   '📲 已缓存 · 再点存入相册/文件': '📲 Ready · Tap to Save',
   '⏳ 准备中…': '⏳ Preparing…',
   '✨ 切回智能兼容秒播': '✨ Back to Smart Stream',
@@ -710,6 +716,7 @@ export function translateZhStringToEn(raw) {
     ['📋 手机免密登录链接已复制', '📋 Direct phone login link copied'],
     ['📋 一行接入命令已复制！到电脑终端粘贴回车即可', '📋 1-line command copied! Paste and run in your terminal'],
     ['📋 本地仓库接入命令已复制', '📋 Local repo command copied'],
+    ['AI 交付文档 / Walkthrough', 'AI Artifacts / Walkthrough'],
   ];
   for (const [zhSub, enSub] of compoundPairs) {
     if (out.includes(zhSub)) {

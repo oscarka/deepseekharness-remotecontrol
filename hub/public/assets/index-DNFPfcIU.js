@@ -812,17 +812,33 @@ function Sheets() {
 		onClick: closeIfBackdrop("inChatFileSheet")
 	}, /* @__PURE__ */ k("div", {
 		class: "sheet-panel",
-		style: "padding-left:0;padding-right:0;padding-bottom:0;height:82dvh;display:flex;flex-direction:column;"
-	}, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", {
+		"data-expandable": "1"
+	}, /* @__PURE__ */ k("div", {
+		class: "sheet-drag-zone",
+		title: "上拉或点击展开更多",
+		onClick: () => window.toggleFileSheetExpanded?.()
+	}, /* @__PURE__ */ k("div", { class: "sheet-handle" })), /* @__PURE__ */ k("div", {
 		class: "sheet-title",
-		style: "padding:0 16px 8px;margin:0;border-bottom:1px solid var(--border);"
-	}, /* @__PURE__ */ k("span", { id: "inChatFileTitle" }, "📂 当前项目文件速览"), /* @__PURE__ */ k("button", {
+		style: "padding:0 14px 9px;margin:0;border-bottom:1px solid var(--border);gap:8px;"
+	}, /* @__PURE__ */ k("span", {
+		id: "inChatFileTitle",
+		style: "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;"
+	}, "📂 当前项目文件速览"), /* @__PURE__ */ k("div", { class: "sheet-title-actions" }, /* @__PURE__ */ k("button", {
 		type: "button",
-		style: "border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;",
+		id: "inChatFileExpandBtn",
+		class: "sheet-icon-btn",
+		title: "展开显示更多",
+		"aria-label": "展开显示更多",
+		onClick: () => window.toggleFileSheetExpanded?.()
+	}, "⤢"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "sheet-icon-btn",
+		title: "关闭",
+		"aria-label": "关闭",
 		onClick: () => window.closeMobileFile?.()
-	}, "✕")), /* @__PURE__ */ k("div", {
+	}, "✕"))), /* @__PURE__ */ k("div", {
 		id: "inChatFileBody",
-		style: "flex:1;overflow-y:auto;"
+		style: "flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;"
 	}))), /* @__PURE__ */ k("div", {
 		class: "sheet-backdrop",
 		id: "mobileSettingsSheet",
@@ -3751,6 +3767,12 @@ var EXACT_ZH_TO_EN = {
 	"重新加载网页": "Reload Webpage",
 	"HTML 网页": "HTML Page",
 	"体验网页 ›": "Live Preview ›",
+	"打开 ›": "Open ›",
+	"交付文档": "Artifact",
+	"点击直接预览全文与配图": "Tap to preview full doc & media",
+	"上拉或点击展开更多": "Drag up or tap to expand",
+	"展开显示更多": "Expand drawer",
+	"收起高度": "Collapse drawer",
 	"📲 已缓存 · 再点存入相册/文件": "📲 Ready · Tap to Save",
 	"⏳ 准备中…": "⏳ Preparing…",
 	"✨ 切回智能兼容秒播": "✨ Back to Smart Stream",
@@ -3997,7 +4019,8 @@ function translateZhStringToEn(raw) {
 		["📋 已复制到剪贴板", "📋 Copied to clipboard"],
 		["📋 手机免密登录链接已复制", "📋 Direct phone login link copied"],
 		["📋 一行接入命令已复制！到电脑终端粘贴回车即可", "📋 1-line command copied! Paste and run in your terminal"],
-		["📋 本地仓库接入命令已复制", "📋 Local repo command copied"]
+		["📋 本地仓库接入命令已复制", "📋 Local repo command copied"],
+		["AI 交付文档 / Walkthrough", "AI Artifacts / Walkthrough"]
 	]) if (out.includes(zhSub)) out = out.split(zhSub).join(enSub);
 	return out;
 }
@@ -9008,7 +9031,7 @@ function initHubController() {
         <div class="agy-files-changed-card agy-session-artifacts-card">
           <div class="agy-session-artifacts-header">
             <span>📋 AI 交付文档 / Walkthrough (${sessionArtifacts.length})</span>
-            <span style="font-size:11px;color:#94a3b8;">点击直接预览全文与配图</span>
+            <span class="agy-session-artifacts-hint">点击直接预览全文与配图</span>
           </div>
           ${sessionArtifacts.map((art) => {
 			const encArtPath = encodeURIComponent(art.path || "").replace(/'/g, "%27");
@@ -9016,12 +9039,15 @@ function initHubController() {
 			const badgeIcon = art.kind === "walkthrough" ? "📋" : art.kind === "plan" ? "🗺️" : art.kind === "task" ? "☑️" : isHtmlArt ? "🌐" : "📄";
 			const rawT = String(art?.title || "").trim();
 			const nameStem = String(art?.name || "").replace(/\.[a-z0-9]+$/i, "").trim();
+			const badgeTitle = !rawT || rawT.toLowerCase() === nameStem.toLowerCase() || /^artifact$/i.test(rawT) ? art.kind === "walkthrough" ? "Walkthrough" : isHtmlArt ? "HTML 网页" : "交付文档" : rawT;
+			const summaryText = art.summary ? String(art.summary).replace(/\s+/g, " ").trim().slice(0, 80) : "";
+			const hasDistinctSummary = Boolean(summaryText && summaryText.toLowerCase() !== String(art.name || "").trim().toLowerCase());
 			return `
-            <div class="agy-file-row agy-artifact-row" style="cursor:pointer;" onclick="openChatFileLink('${encArtPath}')">
+            <div class="agy-file-row agy-artifact-row${hasDistinctSummary ? " has-summary" : ""}" style="cursor:pointer;" onclick="openChatFileLink('${encArtPath}')">
               <span class="agy-artifact-row-icon">${badgeIcon}</span>
-              <span class="agy-artifact-kind-badge">${esc$1(!rawT || rawT.toLowerCase() === nameStem.toLowerCase() || /^artifact$/i.test(rawT) ? art.kind === "walkthrough" ? "Walkthrough" : isHtmlArt ? "HTML 网页" : "交付文档" : rawT)}</span>
-              <span class="agy-file-name" style="color:#f8fafc;font-weight:700;">${esc$1(art.name || "")}</span>
-              <span class="agy-file-path" style="flex:1;">${esc$1(art.summary ? String(art.summary).replace(/\s+/g, " ").slice(0, 80) : art.name || "")}</span>
+              <span class="agy-artifact-kind-badge">${esc$1(badgeTitle)}</span>
+              <span class="agy-file-name">${esc$1(art.name || "")}</span>
+              ${hasDistinctSummary ? `<span class="agy-file-path">${esc$1(summaryText)}</span>` : ""}
               <span class="agy-artifact-open-tag">${isHtmlArt ? "体验网页 ›" : "打开 ›"}</span>
             </div>
           `;
@@ -10339,7 +10365,7 @@ function initHubController() {
                  ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl)}', '${esc$1(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
                </div>
              </div>` : kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-                 <img class="saveable-preview-img" src="${imagePreviewSrc(preview, mt)}" data-download-url="${esc$1(dlUrl || imagePreviewSrc(preview, mt))}" data-file-name="${esc$1(preview.name || "image.png")}" alt="${esc$1(preview.name)}" style="max-width:100%;max-height:52vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回目录重新点击文件加载';" />
+                 <img class="saveable-preview-img drawer-preview-img" src="${imagePreviewSrc(preview, mt)}" data-download-url="${esc$1(dlUrl || imagePreviewSrc(preview, mt))}" data-file-name="${esc$1(preview.name || "image.png")}" alt="${esc$1(preview.name)}" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回目录重新点击文件加载';" />
                  <div class="file-preview-meta-bar" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
                    <span>${esc$1(formatBytes(preview.size))} · 长按或点按钮保存图片</span>
                    <button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl || imagePreviewSrc(preview, mt))}', '${esc$1(preview.name || "image.png")}', this)">⬇️ 保存图片</button>
@@ -10351,7 +10377,7 @@ function initHubController() {
                    <div style="font-size:12.5px;">二进制文件（${esc$1(formatBytes(preview.size))}），不支持直接文本预览</div>
                    ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl)}', '${esc$1(preview.name || "file")}', this)">⬇️ 保存/分享文件</button>` : ""}
                  </div>` : isHtml && !rawHtmlMode ? `<div class="file-preview-body html-sandbox-preview" style="padding:0;background:#ffffff;min-height:420px;">
-                   <iframe title="${esc$1(preview.name || "HTML Preview")}" sandbox="allow-scripts allow-forms allow-modals allow-popups" referrerpolicy="no-referrer" srcdoc="${htmlSrcdocAttr}" style="width:100%;height:62vh;min-height:420px;border:none;background:#ffffff;display:block;"></iframe>
+                   <iframe class="drawer-preview-iframe" title="${esc$1(preview.name || "HTML Preview")}" sandbox="allow-scripts allow-forms allow-modals allow-popups" referrerpolicy="no-referrer" srcdoc="${htmlSrcdocAttr}"></iframe>
                  </div>` : isMarkdown && !rawMdMode ? `<div class="file-preview-body walkthrough-md-preview md-body" style="padding:16px 14px;background:var(--card-bg, #ffffff);color:var(--text, #0f172a);min-height:340px;overflow-x:auto;">
                      ${formatAssistantText(preview.content || "")}
                    </div>` : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
@@ -13218,10 +13244,33 @@ function initHubController() {
 		};
 		setTimeout(pollUpgrade, 2e3);
 	}
+	let lastSheetDragEndAt = 0;
+	function setFileSheetExpanded(expanded) {
+		const panel = document.querySelector("#inChatFileSheet .sheet-panel");
+		if (!panel) return;
+		const isExp = Boolean(expanded);
+		panel.classList.toggle("sheet-expanded", isExp);
+		const btn = document.getElementById("inChatFileExpandBtn");
+		if (btn) {
+			btn.textContent = isExp ? "⤡" : "⤢";
+			const label = tr(isExp ? "收起高度" : "展开显示更多");
+			btn.title = label;
+			btn.setAttribute("aria-label", label);
+		}
+	}
+	function toggleFileSheetExpanded() {
+		if (Date.now() - lastSheetDragEndAt < 260) return;
+		const panel = document.querySelector("#inChatFileSheet .sheet-panel");
+		if (!panel) return;
+		setFileSheetExpanded(!panel.classList.contains("sheet-expanded"));
+	}
 	function rawCloseSheet(id) {
 		if (id === "newTaskSheet") stopVoiceInput();
 		document.getElementById(id)?.classList.remove("open");
-		if (id === "inChatFileSheet") document.body.classList.remove("mobile-file-open");
+		if (id === "inChatFileSheet") {
+			document.body.classList.remove("mobile-file-open");
+			setFileSheetExpanded(false);
+		}
 	}
 	function trackOverlay(kind, closeFn) {
 		if (overlayStack.some((item) => item.kind === kind)) return;
@@ -13474,15 +13523,22 @@ function initHubController() {
 		document.querySelectorAll(".sheet-backdrop").forEach((backdrop) => {
 			const panel = backdrop.querySelector(".sheet-panel");
 			if (!panel) return;
+			const expandable = panel.dataset.expandable === "1" || backdrop.id === "inChatFileSheet";
 			let tracking = false;
 			let startX = 0;
 			let startY = 0;
 			let lastX = 0;
 			let lastY = 0;
 			let startedAt = 0;
+			let dragMode = null;
+			let startExpanded = false;
+			let startH = 0;
+			let defaultH = 0;
+			let expandedH = 0;
 			const resetPanelStyle = () => {
 				panel.style.transition = "";
 				panel.style.transform = "";
+				panel.style.height = "";
 				panel.style.willChange = "";
 			};
 			const hasScrolledInner = (target) => {
@@ -13497,20 +13553,31 @@ function initHubController() {
 			let decided = false;
 			panel.addEventListener("touchstart", (event) => {
 				if (event.touches.length !== 1) return;
-				if (event.target && typeof event.target.closest === "function" && event.target.closest("img, video, iframe, pre, code, .file-preview-body")) {
+				const onChromeHandle = Boolean(expandable && event.target && typeof event.target.closest === "function" && event.target.closest(".sheet-drag-zone, .sheet-handle, .sheet-title, .breadcrumbs-bar"));
+				if (!onChromeHandle && event.target && typeof event.target.closest === "function" && event.target.closest("img, video, iframe, pre, code, .file-preview-body")) {
 					tracking = false;
 					decided = false;
+					dragMode = null;
 					return;
 				}
-				if (panel.scrollTop > 0 || hasScrolledInner(event.target)) return;
+				if (!onChromeHandle && (panel.scrollTop > 0 || hasScrolledInner(event.target))) return;
 				const touch = event.touches[0];
 				tracking = true;
 				decided = false;
+				dragMode = null;
 				startX = touch.clientX;
 				startY = touch.clientY;
 				lastX = startX;
 				lastY = startY;
 				startedAt = Date.now();
+				if (expandable) {
+					const vh = window.innerHeight || document.documentElement.clientHeight || 800;
+					const safeTop = parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue("--safe-top")) || 0;
+					defaultH = Math.round(vh * .8);
+					expandedH = Math.max(defaultH + 40, Math.round(vh * .97 - safeTop));
+					startExpanded = panel.classList.contains("sheet-expanded");
+					startH = Math.round(panel.getBoundingClientRect().height) || (startExpanded ? expandedH : defaultH);
+				}
 			}, { passive: true });
 			panel.addEventListener("touchmove", (event) => {
 				if (!tracking) return;
@@ -13520,14 +13587,41 @@ function initHubController() {
 				lastX = touch.clientX;
 				lastY = touch.clientY;
 				if (!decided) {
-					if (Math.abs(dy) < 14 && Math.abs(dx) < 14) return;
-					if (dy <= 0 || Math.abs(dx) > dy * 1.1) {
+					const threshold = expandable ? 10 : 14;
+					if (Math.abs(dy) < threshold && Math.abs(dx) < threshold) return;
+					if (Math.abs(dx) > Math.abs(dy) * 1.15) {
 						tracking = false;
 						return;
 					}
-					decided = true;
-					panel.style.transition = "none";
-					panel.style.willChange = "transform";
+					if (dy < 0) {
+						if (!expandable) {
+							tracking = false;
+							return;
+						}
+						dragMode = "expand";
+						decided = true;
+						panel.style.transition = "none";
+						panel.style.willChange = "height";
+					} else {
+						dragMode = expandable && startExpanded ? "expand" : "dismiss";
+						decided = true;
+						panel.style.transition = "none";
+						panel.style.willChange = dragMode === "expand" ? "height, transform" : "transform";
+					}
+				}
+				if (dragMode === "expand") {
+					if (event.cancelable) event.preventDefault();
+					const rawNextH = startH - dy;
+					if (rawNextH >= defaultH) {
+						const clampedH = Math.min(expandedH, rawNextH);
+						panel.style.height = `${clampedH}px`;
+						panel.style.transform = "";
+					} else {
+						const overflowDown = defaultH - rawNextH;
+						panel.style.height = `${defaultH}px`;
+						panel.style.transform = `translateY(${overflowDown}px)`;
+					}
+					return;
 				}
 				if (dy <= 0) return;
 				if (event.cancelable) event.preventDefault();
@@ -13536,14 +13630,49 @@ function initHubController() {
 			const finishSwipe = () => {
 				if (!tracking) return;
 				const wasDecided = decided;
+				const mode = dragMode;
 				tracking = false;
 				decided = false;
+				dragMode = null;
 				if (!wasDecided) return;
+				const dy = lastY - startY;
+				const dx = lastX - startX;
+				const durationMs = Math.max(1, Date.now() - startedAt);
+				const vy = dy / durationMs;
+				if (mode === "expand") {
+					lastSheetDragEndAt = Date.now();
+					if (!startExpanded) {
+						const shouldExpand = dy <= -32 || vy <= -.28;
+						panel.style.transition = "";
+						panel.style.height = "";
+						panel.style.transform = "";
+						panel.style.willChange = "";
+						setFileSheetExpanded(shouldExpand);
+						return;
+					}
+					const rawEndH = startH - dy;
+					if (Math.max(0, defaultH - rawEndH) >= 110 || dy >= 230 && vy >= .72) {
+						panel.style.transition = "transform 0.2s cubic-bezier(0.22, 1, 0.36, 1)";
+						panel.style.transform = `translateY(${panel.offsetHeight || 600}px)`;
+						setTimeout(() => {
+							closeSheet(backdrop.id);
+							resetPanelStyle();
+						}, 190);
+						return;
+					}
+					const shouldCollapse = dy >= 36 || vy >= .3;
+					panel.style.transition = "";
+					panel.style.height = "";
+					panel.style.transform = "";
+					panel.style.willChange = "";
+					setFileSheetExpanded(!shouldCollapse);
+					return;
+				}
 				const dismiss = shouldDismissVerticalSwipe({
-					dy: Math.max(0, lastY - startY),
-					dx: lastX - startX,
+					dy: Math.max(0, dy),
+					dx,
 					height: panel.offsetHeight,
-					durationMs: Date.now() - startedAt
+					durationMs
 				});
 				panel.style.transition = "transform 0.2s cubic-bezier(0.22, 1, 0.36, 1)";
 				if (dismiss) {
@@ -14563,6 +14692,8 @@ function initHubController() {
 		rawCloseChat,
 		closeMobileChat,
 		closeMobileFile,
+		setFileSheetExpanded,
+		toggleFileSheetExpanded,
 		selectAgyApprovalOption,
 		submitAgyApproval,
 		copyAssistantReply,

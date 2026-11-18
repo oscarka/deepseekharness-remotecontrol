@@ -2,6 +2,18 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.9] - 2026-11-19
+
+### Changed & Fixed
+
+- **重构会话底部「AI 交付文档 / Walkthrough」与「Files With Changes」卡片的浅/深色自适应配色、字体排版与防截断布局（`hub/web/src/styles/app.css` / `hub/web/src/controller.js`）**：
+  - 移除此前硬编码的纯黑 `#18181b` 背景与 `#f8fafc` 行内亮字，全面改用主题语义变量（`--surface` / `--surface-2` / `--border` / `--text` / `--primary-soft`），使浅色模式下卡片自然融入聊天流、深色模式下自动切换高对比深色风格；
+  - 将整行强迫等宽字体调整为系统原生无衬线字体，仅在 `+302 -165` 改动统计列保留 `tabular-nums` 等宽对齐；
+  - 修复长文件名重复渲染与 `flex-shrink: 0` 无省略导致的右侧 `体验网页 ›` / `打开 ›` 被裁切出屏问题，确保右侧操作提示始终完整对齐显示。
+- **文件预览抽屉支持「手动上拉手柄展开至近全屏」与一键展开/收起（`hub/web/src/components/Sheets.tsx` / `hub/web/src/controller.js` / `hub/web/src/styles/app.css`）**：
+  - 为 `#inChatFileSheet` 顶部手柄条与标题栏新增实时跟手**上拉展开**手势（`80dvh` ↔ `97dvh - safe-top`），支持展开态中度下拉回弹回默认高度、继续大幅下拉顺滑关闭，并新增手柄单击与右上角 `⤢` / `⤡` 按钮一键切换；
+  - 抽屉展开至近全屏时，内嵌图片（`54dvh -> 76dvh`）、视频（`54dvh -> 74dvh`）与 HTML 预览（`62dvh -> 82dvh`）同步放大，代码与目录列表同步多显示近 20% 可视区域。
+
 ## [0.8.8] - 2026-11-18
 
 ### Fixed
