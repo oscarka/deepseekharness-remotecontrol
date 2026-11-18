@@ -15,6 +15,25 @@
   <style>#app:not(:empty) + #dshBootSplash { display: none !important; }</style>
   <script>
     (function () {
+      // Parallel HTTP/2 bootstrap: start fetching /api/state?lite=1 at T=0ms simultaneously with
+      // downloading index-*.js & index-*.css instead of waiting sequentially for JS parse!
+      try {
+        var _tk = localStorage.getItem('dsh_hub_token');
+        var _sp = new URLSearchParams(location.search);
+        if (_tk && !_sp.get('token') && !_sp.get('pair')) {
+          window.__dshPreloadState = {
+            token: _tk,
+            startedAt: Date.now(),
+            promise: fetch('/api/state?lite=1', {
+              headers: { 'authorization': 'Bearer ' + _tk, 'x-hub-token': _tk }
+            }).then(function (r) {
+              if (r.status === 401) return { __status: 401 };
+              if (!r.ok) return null;
+              return r.json().then(function (d) { return { __status: 200, data: d }; });
+            }).catch(function () { return null; })
+          };
+        }
+      } catch (e) {}
       function recoverAssetFailure() {
         try {
           var last = Number(sessionStorage.getItem('dsh_boot_retry_ts') || 0);
@@ -49,7 +68,7 @@
       }, 6500);
     })();
   </script>
-  <script type="module" crossorigin src="/assets/index-D51Gu7Mz.js"></script>
+  <script type="module" crossorigin src="/assets/index-CRLinNiU.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/index-BpYSubIv.css">
 </head>
 <body class="PhoneFrameMode">

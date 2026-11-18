@@ -1,18 +1,44 @@
 import { createServer } from 'node:http'
 import { timingSafeEqual } from 'node:crypto'
 import { accessSync, constants, existsSync, readFileSync } from 'node:fs'
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { createGzip, gunzipSync, gzip, constants as zlibConstants } from 'node:zlib'
+import { brotliCompressSync, createGzip, gunzipSync, gzip, gzipSync, constants as zlibConstants } from 'node:zlib'
 import { HubCore } from './hub-core.js'
 import { captureStateDigest, buildStateDelta } from './delta-state.js'
 
 const gzipAsync = promisify(gzip)
+
+const staticAssetMemCache = new Map()
+
+async function readStaticTextPrecompressed(filePath) {
+  const st = await stat(filePath)
+  const cached = staticAssetMemCache.get(filePath)
+  if (cached && cached.mtimeMs === st.mtimeMs) {
+    return cached
+  }
+  const rawBuf = await readFile(filePath)
+  const text = rawBuf.toString('utf8')
+  const gzBuf = rawBuf.length > 512 ? gzipSync(rawBuf, { level: 9 }) : null
+  const brBuf =
+    rawBuf.length > 512
+      ? brotliCompressSync(rawBuf, {
+          params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 6 },
+        })
+      : null
+  const entry = { mtimeMs: st.mtimeMs, rawBuf, gzBuf, brBuf, text }
+  if (staticAssetMemCache.size > 32) {
+    const oldestKey = staticAssetMemCache.keys().next().value
+    if (oldestKey) staticAssetMemCache.delete(oldestKey)
+  }
+  staticAssetMemCache.set(filePath, entry)
+  return entry
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const INDEX_HTML_PATH = join(__dirname, 'public', 'index.html')
@@ -25,9 +51,9 @@ export function resolveClientIp(
   remoteAddress = '',
   {
     trustProxy = process.env.TRUST_PROXY === '1' ||
-      process.env.TRUST_PROXY === 'true' ||
-      Boolean(process.env.K_SERVICE) ||
-      Boolean(process.env.RAILWAY_ENVIRONMENT),
+    process.env.TRUST_PROXY === 'true' ||
+    Boolean(process.env.K_SERVICE) ||
+    Boolean(process.env.RAILWAY_ENVIRONMENT),
   } = {},
 ) {
   const cleanSocket = String(remoteAddress || '')
@@ -277,13 +303,18 @@ export function createHubServer({
     }
 
     if (readMethod === 'GET' && (pathname === '/' || pathname === '/index.html')) {
-      const html = await readFile(INDEX_HTML_PATH, 'utf8')
-      const m = /assets\/index-([A-Za-z0-9_-]+)\.js/.exec(html)
+      const entry = await readStaticTextPrecompressed(INDEX_HTML_PATH)
+      const m = /assets\/index-([A-Za-z0-9_-]+)\.js/.exec(entry.text)
       if (m?.[1]) buildInfo.uiBuild = m[1]
       return {
         status: 200,
-        headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
-        body: html,
+        headers: {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+          vary: 'Accept-Encoding',
+        },
+        body: entry.text,
+        precompressed: entry,
       }
     }
 
@@ -314,14 +345,16 @@ export function createHubServer({
       try {
         const assetPath = join(assetsDir, rel)
         if (isTextAsset) {
-          const body = await readFile(assetPath, 'utf8')
+          const entry = await readStaticTextPrecompressed(assetPath)
           return {
             status: 200,
             headers: {
               'content-type': contentType,
               'cache-control': 'public, max-age=31536000, immutable',
+              vary: 'Accept-Encoding',
             },
-            body,
+            body: entry.text,
+            precompressed: entry,
           }
         }
         const buf = await readFile(assetPath)
@@ -355,7 +388,7 @@ export function createHubServer({
                 body,
               }
             }
-          } catch {}
+          } catch { }
         }
         return {
           status: 404,
@@ -434,7 +467,7 @@ export function createHubServer({
             },
             buffer: method === 'HEAD' ? Buffer.alloc(0) : buf,
           }
-        } catch {}
+        } catch { }
       }
     }
 
@@ -451,7 +484,7 @@ export function createHubServer({
             headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'public, max-age=86400' },
             body: svgBody,
           }
-        } catch {}
+        } catch { }
       }
       const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><rect width="256" height="256" rx="56" fill="#1d4ed8"/><rect x="36" y="64" width="160" height="136" rx="32" fill="#ffffff"/><path d="M72 108 L108 134 L72 160" stroke="#2563eb" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="124" y1="160" x2="168" y2="160" stroke="#10b981" stroke-width="18" stroke-linecap="round"/></svg>`
       return {
@@ -1181,8 +1214,8 @@ export function createHubServer({
   }
 
   const server = createServer(async (req, res) => {
-    req.on('error', () => {})
-    res.on('error', () => {})
+    req.on('error', () => { })
+    res.on('error', () => { })
     try {
       const urlObj = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
       if (req.method === 'GET' && urlObj.pathname === '/api/events') {
@@ -1207,7 +1240,7 @@ export function createHubServer({
             if (closed || res.writableEnded || res.destroyed) return
             try {
               res.write(chunk)
-            } catch {}
+            } catch { }
           }
           safeWrite('retry: 1000\n\n')
           const sendHostWake = (targetHostId = '') => {
@@ -1248,12 +1281,12 @@ export function createHubServer({
           const rotateTimer =
             sseMaxLifetimeMs > 0
               ? setTimeout(() => {
-                  safeWrite(`event: rotate\ndata: {"reason":"max_lifetime","ts":${Date.now()}}\n\n`)
-                  cleanupHostSse()
-                  try {
-                    res.end()
-                  } catch {}
-                }, sseMaxLifetimeMs)
+                safeWrite(`event: rotate\ndata: {"reason":"max_lifetime","ts":${Date.now()}}\n\n`)
+                cleanupHostSse()
+                try {
+                  res.end()
+                } catch { }
+              }, sseMaxLifetimeMs)
               : null
           rotateTimer?.unref?.()
           req.on('close', cleanupHostSse)
@@ -1293,7 +1326,7 @@ export function createHubServer({
           if (closed || res.writableEnded || res.destroyed) return
           try {
             outStream.write(chunk)
-          } catch {}
+          } catch { }
         }
         safeWrite('retry: 1000\n\n')
         const wantDelta = urlObj.searchParams.get('delta') === '1'
@@ -1378,24 +1411,24 @@ export function createHubServer({
           if (rotateTimer) clearTimeout(rotateTimer)
           unsubscribe()
           if (outStream !== res) {
-            try { outStream.end() } catch {}
+            try { outStream.end() } catch { }
           }
         }
         const rotateTimer =
           sseMaxLifetimeMs > 0
             ? setTimeout(() => {
-                if (pendingSseTimer) {
-                  clearTimeout(pendingSseTimer)
-                  pendingSseTimer = null
-                }
-                safeWrite(`event: rotate\ndata: {"reason":"max_lifetime","ts":${Date.now()}}\n\n`)
-                clearInterval(keepAlive)
-                unsubscribe()
-                closed = true
-                try {
-                  outStream.end()
-                } catch {}
-              }, sseMaxLifetimeMs)
+              if (pendingSseTimer) {
+                clearTimeout(pendingSseTimer)
+                pendingSseTimer = null
+              }
+              safeWrite(`event: rotate\ndata: {"reason":"max_lifetime","ts":${Date.now()}}\n\n`)
+              clearInterval(keepAlive)
+              unsubscribe()
+              closed = true
+              try {
+                outStream.end()
+              } catch { }
+            }, sseMaxLifetimeMs)
             : null
         rotateTimer?.unref?.()
         req.on('close', cleanupClientSse)
@@ -1515,9 +1548,34 @@ export function createHubServer({
           result.stream.destroy?.()
           try {
             res.end()
-          } catch {}
+          } catch { }
         } finally {
           result.onStreamDone?.()
+        }
+      } else if (result.precompressed) {
+        const acceptEncoding = String(req.headers?.['accept-encoding'] ?? req.headers?.['Accept-Encoding'] ?? '')
+        const isHead = req.method === 'HEAD'
+        const pre = result.precompressed
+        if (pre.brBuf && /\bbr\b/i.test(acceptEncoding)) {
+          res.writeHead(result.status, {
+            ...(result.headers || {}),
+            'content-encoding': 'br',
+            'content-length': String(pre.brBuf.length),
+          })
+          res.end(isHead ? Buffer.alloc(0) : pre.brBuf)
+        } else if (pre.gzBuf && /\bgzip\b/i.test(acceptEncoding)) {
+          res.writeHead(result.status, {
+            ...(result.headers || {}),
+            'content-encoding': 'gzip',
+            'content-length': String(pre.gzBuf.length),
+          })
+          res.end(isHead ? Buffer.alloc(0) : pre.gzBuf)
+        } else {
+          res.writeHead(result.status, {
+            ...(result.headers || {}),
+            'content-length': String(pre.rawBuf.length),
+          })
+          res.end(isHead ? Buffer.alloc(0) : pre.rawBuf)
         }
       } else if (result.buffer !== undefined) {
         res.writeHead(result.status, result.headers || {})
@@ -1549,7 +1607,7 @@ export function createHubServer({
       } else {
         try {
           res.end()
-        } catch {}
+        } catch { }
       }
     }
   })
@@ -1634,13 +1692,168 @@ export function createHubServer({
 }
 
 function renderServiceWorkerJs() {
-  return `// DSH Self-Hosted PWA & iOS 16.4+ Web Push Service Worker
+  return `// DSH Self-Hosted PWA, Instant App-Shell Cache & iOS 16.4+ Web Push Service Worker
+const SHELL_CACHE = 'dsh-app-shell-v1';
+
+function extractBundleAssets(htmlText) {
+  const urls = [];
+  const re = /\\/(assets\\/index-[A-Za-z0-9_-]+\\.(?:js|css))/g;
+  let m;
+  while ((m = re.exec(htmlText)) !== null) {
+    const p = '/' + m[1];
+    if (!urls.includes(p)) urls.push(p);
+  }
+  return urls;
+}
+
+async function revalidateAppShell() {
+  try {
+    const cache = await caches.open(SHELL_CACHE);
+    const prevHtmlRes = await cache.match('/');
+    const prevAssets = prevHtmlRes ? extractBundleAssets(await prevHtmlRes.clone().text()) : [];
+
+    const freshRes = await fetch('/', { cache: 'no-store' });
+    if (!freshRes || !freshRes.ok) return null;
+    const htmlText = await freshRes.clone().text();
+    const nextAssets = extractBundleAssets(htmlText);
+
+    // Atomically pre-cache ALL new hashed JS/CSS bundles BEFORE updating '/' HTML
+    // so the cached HTML never points to an uncached bundle after an upgrade.
+    let allAssetsReady = true;
+    for (const assetUrl of nextAssets) {
+      const existing = await cache.match(assetUrl);
+      if (existing) continue;
+      const aRes = await fetch(assetUrl);
+      const cc = (aRes.headers.get('cache-control') || '').toLowerCase();
+      if (aRes.ok && !cc.includes('no-store')) {
+        await cache.put(assetUrl, aRes.clone());
+      } else {
+        allAssetsReady = false;
+      }
+    }
+
+    if (allAssetsReady && nextAssets.length > 0) {
+      await cache.put('/', new Response(htmlText, {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      }));
+      // Prune superseded hashed bundles (keep previous + current generation for open tabs)
+      const keepSet = new Set([...prevAssets, ...nextAssets]);
+      const keys = await cache.keys();
+      for (const reqKey of keys) {
+        try {
+          const u = new URL(reqKey.url);
+          if (u.pathname.startsWith('/assets/index-') && !keepSet.has(u.pathname)) {
+            await cache.delete(reqKey);
+          }
+        } catch {}
+      }
+    }
+    return freshRes;
+  } catch {
+    return null;
+  }
+}
+
 self.addEventListener('install', event => {
   self.skipWaiting();
+  event.waitUntil(revalidateAppShell());
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    Promise.all([
+      self.clients.claim(),
+      caches.keys().then(names =>
+        Promise.all(names.filter(n => n.startsWith('dsh-app-shell-') && n !== SHELL_CACHE).map(n => caches.delete(n)))
+      ).catch(() => {}),
+    ])
+  );
+});
+
+self.addEventListener('fetch', event => {
+  const req = event.request;
+  if (!req || req.method !== 'GET' || req.headers.has('range')) return;
+  let url;
+  try {
+    url = new URL(req.url);
+  } catch {
+    return;
+  }
+  if (url.origin !== self.location.origin) return;
+  const p = url.pathname;
+  if (
+    p.startsWith('/api/') ||
+    p === '/sw.js' ||
+    p === '/manifest.json' ||
+    p === '/install.sh' ||
+    p === '/connect-host.sh' ||
+    p === '/healthz' ||
+    p === '/ready' ||
+    p.startsWith('/share/') ||
+    p.startsWith('/c/') ||
+    p.startsWith('/market/')
+  ) {
+    return;
+  }
+
+  const isHtmlNav = req.mode === 'navigate' || p === '/' || p === '/index.html';
+  if (isHtmlNav) {
+    // Explicit recovery reload (_r=...) bypasses local shell cache and re-syncs from network
+    if (url.searchParams.has('_r')) {
+      event.respondWith(
+        fetch(req).finally(() => {
+          event.waitUntil(revalidateAppShell());
+        })
+      );
+      return;
+    }
+    event.respondWith(
+      (async () => {
+        try {
+          const cache = await caches.open(SHELL_CACHE);
+          const cachedHtml = await cache.match('/');
+          if (cachedHtml) {
+            event.waitUntil(revalidateAppShell());
+            return cachedHtml;
+          }
+        } catch {}
+        const netRes = await fetch(req);
+        event.waitUntil(revalidateAppShell());
+        return netRes;
+      })()
+    );
+    return;
+  }
+
+  const isStaticAsset =
+    p.startsWith('/assets/') ||
+    p === '/apple-touch-icon.png' ||
+    p === '/icon-192.png' ||
+    p === '/icon-512.png' ||
+    p === '/favicon-32x32.png' ||
+    p === '/favicon.ico' ||
+    p === '/icon.svg';
+
+  if (isStaticAsset) {
+    event.respondWith(
+      (async () => {
+        try {
+          const cache = await caches.open(SHELL_CACHE);
+          const hit = await cache.match(req, { ignoreSearch: p.startsWith('/assets/') });
+          if (hit) return hit;
+          const res = await fetch(req);
+          const cc = (res.headers.get('cache-control') || '').toLowerCase();
+          if (res.ok && !cc.includes('no-store')) {
+            await cache.put(req, res.clone());
+          }
+          return res;
+        } catch {
+          return fetch(req);
+        }
+      })()
+    );
+  }
 });
 
 self.addEventListener('push', event => {
@@ -2055,5 +2268,33 @@ if (isMain) {
         stateFile,
       }),
     )
+    // Pre-compress static HTML/JS/CSS into RAM immediately, then self-warm CDN edge (if PUBLIC_URL is HTTPS)
+    // so the very first user open right after any upgrade/restart is already a 0ms RAM + CDN Edge HIT.
+    ;(async () => {
+      try {
+        const htmlEntry = await readStaticTextPrecompressed(INDEX_HTML_PATH)
+        const assetPaths = []
+        const re = /\/(assets\/index-[A-Za-z0-9_-]+\.(?:js|css))/g
+        let m
+        while ((m = re.exec(htmlEntry.text)) !== null) {
+          const rel = m[1]
+          assetPaths.push(`/${rel}`)
+          await readStaticTextPrecompressed(join(__dirname, 'public', rel)).catch(() => {})
+        }
+        const rawPub = String(process.env.PUBLIC_URL || '').trim().replace(/\/+$/, '')
+        if (rawPub.startsWith('https://')) {
+          const warmTimer = setTimeout(async () => {
+            for (const p of ['/', ...assetPaths, '/icon-192.png?v=0.8.0', '/apple-touch-icon.png?v=0.8.0']) {
+              try {
+                await fetch(`${rawPub}${p}`, {
+                  headers: { 'accept-encoding': 'br, gzip', 'user-agent': 'dsh-edge-prewarm/1.0' },
+                })
+              } catch {}
+            }
+          }, 800)
+          warmTimer.unref?.()
+        }
+      } catch {}
+    })()
   })
 }

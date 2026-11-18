@@ -7090,6 +7090,17 @@ test('mobile fast bootstrap: /api/state?lite=1 shrinks idle transcripts while pr
     assert.equal(headRes.status, 200)
     assert.equal(await headRes.text(), '')
 
+    const swBootRes = await fetch(`${baseUrl}/sw.js`)
+    const swBootText = await swBootRes.text()
+    assert.match(swBootText, /dsh-app-shell-v1/)
+    assert.match(swBootText, /revalidateAppShell/)
+
+    const htmlBrRes = await fetch(`${baseUrl}/`, {
+      headers: { 'accept-encoding': 'br, gzip' },
+    })
+    assert.equal(htmlBrRes.status, 200)
+    assert.match(await htmlBrRes.text(), /__dshPreloadState/)
+
     const fullRes = await fetch(`${baseUrl}/api/state`, {
       headers: { authorization: 'Bearer secret-lite-token' },
     })
@@ -7103,10 +7114,11 @@ test('mobile fast bootstrap: /api/state?lite=1 shrinks idle transcripts while pr
     assert.ok(liteText.length < fullText.length, `expected lite (${liteText.length}) < full (${fullText.length})`)
 
     const liteJson = JSON.parse(liteText)
+    assert.equal(liteJson.hosts[0].lastFilePreview, null)
     const idleTask = liteJson.hosts[0].bridgeState.tasks.find(t => t.id === 'session-idle-1')
     assert.equal(idleTask.wireTruncated, true)
     assert.ok(idleTask.transcript.some(m => m.role === 'user'), 'lite mode must keep a user message marker')
-    assert.ok(idleTask.transcript.at(-1).text.length <= 800)
+    assert.ok(idleTask.transcript.at(-1).text.length <= 280)
   } finally {
     server.closeAllConnections?.()
     await new Promise(resolve => server.close(resolve))

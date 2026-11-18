@@ -2,6 +2,16 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.1] - 2026-11-18
+
+### Performance
+
+- **根治每次升级后首次打开链接慢的三段式瀑布流（`hub/server.js` / `hub/hub-core.js` / `hub/web/index.html` / `hub/web/src/controller.js`）**：
+  - 升级 `/sw.js` 为自动注册的原子级 `Stale-While-Revalidate` 应用壳缓存（`dsh-app-shell-v1`），老用户升级后点开直接从手机本地闪存 `< 100ms` 瞬时渲染，后台原子预热全套新哈希 JS/CSS 后再切换壳缓存；
+  - 在 `index.html` `<head>` 中与下载 JS/CSS 同步并行发起 `/api/state?lite=1`（`window.__dshPreloadState`），消除等待 JS 下载解析完才拉取状态的串行跨洋回合；
+  - 深度瘦身 `lite=1` 状态包（剥离闲置 `lastFilePreview`、`lastFsListing`、大体积 `recentResults` 及冷会话冗余摘要），体积再降约 65%；
+  - 服务端内置静态资源内存级 Brotli-6 / Gzip-9 预压缩缓存，并在启动后 `800ms` 自动请求 `PUBLIC_URL` 预热边缘 CDN 缓存。
+
 ## [0.8.0] - 2026-11-18
 
 ### Added

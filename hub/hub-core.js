@@ -756,7 +756,7 @@ export class HubCore {
             if (!m || typeof m !== 'object') return m
             const { toolCalls: _omitTc, ...mRest } = m
             if (m.role !== 'assistant') {
-              const maxUserText = lite ? (isRunningOrApproval ? 4000 : 600) : !isHotSession ? 2400 : Infinity
+              const maxUserText = lite ? (isRunningOrApproval ? 4000 : 280) : !isHotSession ? 2400 : Infinity
               if (typeof m.text === 'string' && m.text.length > maxUserText) {
                 wireTruncated = true
                 return { ...mRest, text: m.text.slice(0, maxUserText) }
@@ -765,13 +765,13 @@ export class HubCore {
             }
             const isHotRecent = isHotSession && (mIdx >= recentCutoff || mIdx === lastAssistantIdx)
             const maxText = lite
-              ? (isRunningOrApproval ? (mIdx === lastAssistantIdx ? 12000 : 2400) : 800)
+              ? (isRunningOrApproval ? (mIdx === lastAssistantIdx ? 12000 : 2400) : 280)
               : isHotRecent ? 48000 : isHotSession ? 16000 : 2400
             const maxThink = lite
               ? (isRunningOrApproval ? 600 : 0)
               : isHotRecent ? 6000 : isHotSession ? 600 : 240
             const maxTools = lite
-              ? (isRunningOrApproval ? 6 : 2)
+              ? (isRunningOrApproval ? 6 : 0)
               : isHotRecent ? 20 : isHotSession ? 6 : 4
             const maxCmd = lite ? 140 : isHotRecent ? 800 : isHotSession ? 200 : 140
             const rawTools = Array.isArray(m.tools) ? m.tools : Array.isArray(m.toolCalls) ? m.toolCalls : []
@@ -781,8 +781,21 @@ export class HubCore {
             if (textTrunc || thinkTrunc || toolsTrunc) {
               wireTruncated = true
             }
+            if (lite && !isRunningOrApproval && Array.isArray(mRest.artifacts) && mRest.artifacts.length > 0) {
+              wireTruncated = true
+            }
             return {
               ...mRest,
+              ...(lite && !isRunningOrApproval && Array.isArray(mRest.artifacts)
+                ? {
+                    artifacts: mRest.artifacts.slice(0, 3).map(a => ({
+                      name: a?.name,
+                      path: a?.path,
+                      kind: a?.kind,
+                      title: a?.title,
+                    })),
+                  }
+                : {}),
               text: textTrunc ? m.text.slice(0, maxText) : m.text,
               thinking: maxThink === 0
                 ? undefined
@@ -820,11 +833,45 @@ export class HubCore {
               }
             }
           }
+          const maxLastOutput = lite && !isRunningOrApproval ? 220 : 600
+          const rawChangedFiles = Array.isArray(nextTask?.changedFiles) ? nextTask.changedFiles : undefined
+          const rawTaskArtifacts = Array.isArray(nextTask?.artifacts) ? nextTask.artifacts : undefined
+          if (lite && !isRunningOrApproval) {
+            if ((rawChangedFiles && rawChangedFiles.length > 5) || (rawTaskArtifacts && rawTaskArtifacts.length > 4)) {
+              wireTruncated = true
+            }
+          }
           return {
             ...nextTask,
+            ...(lite && !isRunningOrApproval ? { recentActivity: undefined } : {}),
+            ...(lite && !isRunningOrApproval && rawChangedFiles
+              ? {
+                  changedFiles: rawChangedFiles.slice(0, 5).map(cf =>
+                    typeof cf === 'string'
+                      ? cf
+                      : {
+                          path: cf?.path,
+                          status: cf?.status,
+                          additions: cf?.additions,
+                          deletions: cf?.deletions,
+                        },
+                  ),
+                }
+              : {}),
+            ...(lite && !isRunningOrApproval && rawTaskArtifacts
+              ? {
+                  artifacts: rawTaskArtifacts.slice(0, 4).map(a => ({
+                    name: a?.name,
+                    path: a?.path,
+                    kind: a?.kind,
+                    title: a?.title,
+                    ...(taskIdx < 6 && a?.summary ? { summary: String(a.summary).slice(0, 120) } : {}),
+                  })),
+                }
+              : {}),
             lastOutput:
-              typeof nextTask?.lastOutput === 'string' && nextTask.lastOutput.length > 600
-                ? nextTask.lastOutput.slice(0, 600)
+              typeof nextTask?.lastOutput === 'string' && nextTask.lastOutput.length > maxLastOutput
+                ? nextTask.lastOutput.slice(0, maxLastOutput)
                 : nextTask?.lastOutput,
             totalTranscriptCount,
             omittedTranscriptCount,
@@ -944,9 +991,9 @@ export class HubCore {
         trust: host.trust ?? { status: 'unpinned', pinnedPublicKey: '', pinnedFingerprint: '' },
         dshStats: host.dshStats ?? {},
         bridgeState: reconciledBridgeState,
-        lastFsListing: host.lastFsListing ?? null,
-        lastFilePreview: sanitizedPreview,
-        lastShareResult: host.lastShareResult ?? null,
+        lastFsListing: lite ? null : (host.lastFsListing ?? null),
+        lastFilePreview: lite ? null : sanitizedPreview,
+        lastShareResult: lite ? null : (host.lastShareResult ?? null),
         pendingCommandsCount: activeCommands.length,
         pendingCommands: activeCommands.map(c => ({
           id: c.id,
@@ -971,11 +1018,24 @@ export class HubCore {
           .slice(-10)
           .reverse()
           .map(r => {
+            if (!r) return r
+            if (lite) {
+              return {
+                id: r.id,
+                type: r.type,
+                agentId: r.agentId,
+                ok: r.ok,
+                cancelled: r.cancelled,
+                expired: r.expired,
+                error: r.error,
+                at: r.at,
+                ...(typeof r.text === 'string' ? { text: r.text.slice(0, 200) } : {}),
+              }
+            }
             if (
-              r &&
-              (r.dataBase64 ||
-                Array.isArray(r.transcript) ||
-                (typeof r.content === 'string' && r.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS))
+              r.dataBase64 ||
+              Array.isArray(r.transcript) ||
+              (typeof r.content === 'string' && r.content.length > INLINE_TEXT_PREVIEW_MAX_CHARS)
             ) {
               const { dataBase64, content, transcript, ...rest } = r
               return { ...rest, hasBlob: true }

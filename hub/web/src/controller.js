@@ -7694,6 +7694,20 @@ export function initHubController() {
           }
         }
       });
+      // Proactively register App-Shell Service Worker after boot so subsequent opens (even right
+      // after server upgrades) render in ~0ms from local flash via Stale-While-Revalidate.
+      if (
+        typeof navigator.serviceWorker.register === 'function' &&
+        typeof window !== 'undefined' &&
+        window.location &&
+        (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ) {
+        setTimeout(() => {
+          try {
+            navigator.serviceWorker.register('/sw.js').catch(() => { });
+          } catch { }
+        }, 1200);
+      }
     } catch { }
   }
 
@@ -7848,6 +7862,24 @@ export function initHubController() {
   let sseRotatingUntil = 0;
 
   async function fetchStateOnceWithTimeout(timeoutMs = 30000) {
+    const preloaded = typeof window !== 'undefined' ? window.__dshPreloadState : null;
+    if (preloaded) {
+      window.__dshPreloadState = null;
+      if (preloaded.token === getToken() && Date.now() - (preloaded.startedAt || 0) < 25000) {
+        const preRes = await preloaded.promise;
+        if (preRes?.__status === 401) {
+          authLockConfirmed = true;
+          closeSSE();
+          document.getElementById('authOverlay')?.classList.add('show');
+          throw new Error('Unauthorized');
+        }
+        if (preRes?.__status === 200 && preRes.data) {
+          authLockConfirmed = false;
+          document.getElementById('authOverlay')?.classList.remove('show');
+          return preRes.data;
+        }
+      }
+    }
     const canAbort = typeof AbortController === 'function';
     const ctrl = canAbort ? new AbortController() : null;
     const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch { } }, timeoutMs) : null;

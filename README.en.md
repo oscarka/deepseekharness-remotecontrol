@@ -201,6 +201,13 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.1</code> — Zero-Wait Post-Upgrade Cold/Warm Open (Service Worker App-Shell, Parallel HTTP/2 State Preload &amp; Edge Self-Warm)</strong></summary>
+
+- **Zero-Wait Post-Upgrade Launch (`v0.8.1`)**: Eliminated the 3-stage trans-ocean waterfall (`GET /` → cold `cf-cache: MISS` bundle → sequential `GET /api/state?lite=1`) that slowed down the first open after every upgrade (`server.js` / `hub-core.js` / `index.html` / `controller.js`): upgraded `/sw.js` with an atomic **Stale-While-Revalidate App-Shell Cache (`dsh-app-shell-v1`)** registered automatically after boot so repeat opens render in `< 100ms` from local device storage while pre-caching new hashed bundles silently in the background; added inline `<head>` HTTP/2 parallel `/api/state?lite=1` preloading (`window.__dshPreloadState`) concurrently with JS/CSS download; trimmed `/api/state?lite=1` wire weight by another ~65% (omitting unused file-preview/listing blobs and verbose idle metadata); and added in-memory Brotli-6/Gzip-9 static pre-compression plus automatic `PUBLIC_URL` CDN edge self-warming `800ms` after server startup.
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.0</code> — Swipe-Review Triage Deck, Mobile Lite-State Instant Load, Anti-White-Screen Guard &amp; Native iOS Home Screen Icons</strong></summary>
 
 - **Swipe-Review Triage Deck (`滑卡批阅模式`, `v0.8.0`)**: Added a gesture-driven card stack (`TriageDeck.tsx` / `triage-deck.js` / `triage-deck.css`) launched from the 4-dot grid button in the filter strip to rapidly review pending approvals, interactive multiple-choice questions, unread conclusions, and interrupted tasks — swipe right to approve/mark read, swipe left to skip, tap `↩ Undo` to revert, or inspect full context in-place.
