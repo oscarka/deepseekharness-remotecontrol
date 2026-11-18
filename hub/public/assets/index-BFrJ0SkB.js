@@ -13659,8 +13659,9 @@ function initHubController() {
 		const pill = document.getElementById("pullRefreshPill");
 		const label = document.getElementById("pullRefreshLabel");
 		if (!vp || !slot || !pill || !label) return;
-		const STAGE1_DY = 58;
-		const STAGE2_DY = 128;
+		const PULL_START_DY = 32;
+		const STAGE1_DY = 155;
+		const STAGE2_DY = 285;
 		let tracking = false;
 		let pulling = false;
 		let startX = 0;
@@ -13676,7 +13677,7 @@ function initHubController() {
 		};
 		vp.addEventListener("touchstart", (event) => {
 			if (event.touches.length !== 1) return;
-			if (vp.scrollTop > 2) return;
+			if (vp.scrollTop > .5) return;
 			if (document.body.classList.contains("mobile-chat-open")) return;
 			if (document.querySelector(".sheet-backdrop.open, #triageDeckOverlay.open")) return;
 			const t = event.touches[0];
@@ -13698,18 +13699,20 @@ function initHubController() {
 			const dx = t.clientX - startX;
 			const dy = t.clientY - startY;
 			if (!pulling) {
-				if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-				if (dy <= 0 || vp.scrollTop > 2 || Math.abs(dy) < Math.abs(dx) * 1.25) {
+				if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+				if (dy <= 0 || vp.scrollTop > .5 || Math.abs(dy) < Math.abs(dx) * 1.35) {
 					tracking = false;
 					return;
 				}
+				if (dy < PULL_START_DY) return;
 				pulling = true;
 				slot.style.transition = "none";
 				slot.classList.add("active");
 			}
 			currentDy = Math.max(0, dy);
-			if (currentDy > 0 && event.cancelable) event.preventDefault();
-			const visualH = Math.min(92, Math.round(Math.pow(currentDy, .78) * 1.95));
+			if (currentDy > PULL_START_DY && event.cancelable) event.preventDefault();
+			const effDy = Math.max(0, currentDy - PULL_START_DY);
+			const visualH = Math.min(96, Math.round(Math.pow(effDy, .72) * 1.8));
 			slot.style.height = `${visualH}px`;
 			const en = langPref === "en";
 			const nextStage = currentDy >= STAGE2_DY ? 2 : currentDy >= STAGE1_DY ? 1 : 0;
@@ -13719,18 +13722,20 @@ function initHubController() {
 				} catch {}
 				else if (nextStage === 2) try {
 					navigator.vibrate?.([
-						14,
+						16,
 						28,
-						18
+						22
 					]);
 				} catch {}
 				lastStage = nextStage;
 			}
 			pill.classList.toggle("stage-1", nextStage === 1);
 			pill.classList.toggle("stage-2", nextStage === 2);
-			if (nextStage === 2) label.textContent = en ? "⚡ Release to force-update app (clear cache)" : "⚡ 松手强制更新前端版本（清缓存重载）";
-			else if (nextStage === 1) label.textContent = en ? "↻ Release to refresh · Pull harder to force update" : "↻ 松手刷新状态 · 继续使劲拉强制升新版";
-			else label.textContent = en ? "↓ Pull to refresh · Pull harder to force update" : "↓ 下拉刷新 · 使劲深拉可强制更新前端";
+			if (nextStage === 2) label.textContent = en ? "⚡ Ready! Release to force-update app" : "⚡ 已拉满！松手强制更新前端（清缓存重载）";
+			else if (nextStage === 1) {
+				const pct = Math.min(99, Math.max(1, Math.round((currentDy - STAGE1_DY) / 130 * 100)));
+				label.textContent = en ? `↻ Release to sync · Pull harder to update (${pct}%)` : `↻ 松手同步状态 · 继续深拉重刷版本 (${pct}%)`;
+			} else label.textContent = en ? "↓ Keep pulling to refresh…" : "↓ 继续向下拉刷新状态…";
 		}, { passive: false });
 		const finishPull = () => {
 			if (!tracking) return;
@@ -13752,8 +13757,14 @@ function initHubController() {
 				try {
 					navigator.serviceWorker?.getRegistration?.().then((r) => r?.update?.()).catch(() => {});
 				} catch {}
-				manualReconnectNow();
-				setTimeout(collapseSlot, 480);
+				if (!sseConnected) connectSSE();
+				fetchState({
+					silent: true,
+					forceFresh: true
+				}).finally(() => {
+					label.textContent = en ? "✅ Synced" : "✅ 已同步最新状态";
+					setTimeout(collapseSlot, 360);
+				});
 				return;
 			}
 			collapseSlot();

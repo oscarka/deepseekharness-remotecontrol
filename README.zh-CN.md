@@ -201,6 +201,13 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.6</code> — 下拉刷新重阻尼防误触调优 &amp; 深拉实时蓄力百分比</strong></summary>
+
+- **重阻尼下拉防误触与深拉百分比进度（`v0.8.6`）**：为列表下拉手势新增前 `32px` 零抖动死区，并将第一段静默同步阈值从 `58px` 提高 `2.7 倍` 至 **`155px`**（不再弹出顶部重连黄条），将第二段清缓存强制重刷阈值从 `128px` 提高 `2.2 倍` 至 **`285px`** 并实时展示深拉百分比（[`controller.js`](hub/web/src/controller.js)），平时随手滑到列表顶部绝不误刷，只有刻意使劲拉到底才会触发强制重载。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.5</code> — iOS 主屏幕 PWA 全屏双向跟手左滑/右滑返回 &amp; 流式刷新防断触保护</strong></summary>
 
 - **会话详情页全区域双向左滑/右滑跟手返回（`v0.8.5`）**：针对 iOS「添加到主屏幕」独立模式下系统原生侧滑后退被禁用、原手势存在热区盲区与横向溢出误判的问题，重构 [`controller.js`](hub/web/src/controller.js) 与 [`app.css`](hub/web/src/styles/app.css)——支持在对话任意区域**左滑（`dx < 0`）或右滑（`dx > 0`）** 双向 60fps 顺滑跟手退回列表；为 `.chat-messages` 增加 `overflow-x: hidden` 防止长路径/代码撑宽导致整个消息区吞掉左滑手势；加入单手拇指弧线起手容差、长按选字防抢占保护，并在手指按住期间暂缓 SSE 实时流重绘 `#chatMessages`，确保边输出边滑动也绝不断触。

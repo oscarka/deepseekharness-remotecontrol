@@ -201,6 +201,13 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.6</code> — Heavy-Damped Pull-to-Refresh Thresholds &amp; Anti-Misfire Deadzone</strong></summary>
+
+- **Heavy-Damped Pull-to-Refresh &amp; Deep-Pull Progress Meter (`v0.8.6`)**: Added a `32px` initial deadzone and raised pull thresholds by >2.2× (`STAGE1_DY = 155px` for silent state sync without flashing reconnect banners; `STAGE2_DY = 285px` with live `1%–99%` pull progress for full cache-clearing app reload) in `controller.js`, eliminating accidental refreshes during casual scrolling at the top of the session list.
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.5</code> — Full-Screen Bidirectional Swipe-Back &amp; Touch-Safe Live Stream Guard for iOS Home Screen PWAs</strong></summary>
 
 - **Full-Width Bidirectional Chat Swipe-Back (`v0.8.5`)**: Overhauled `setupChatSwipeBack` (`controller.js` / `app.css`) for iOS Home Screen standalone PWAs where Safari's native edge-back is disabled — removed X-zone dead strips so **both left-swipes (`dx < 0`) and right-swipes (`dx > 0`)** follow the finger smoothly from anywhere in the session view, added `overflow-x: hidden` on `.chat-messages` so wide transcripts never false-positive as horizontal scrollers, added natural thumb-arc tolerance + 400ms long-press text-selection protection, and deferred `#chatMessages` DOM swaps while a touch is active so live SSE deltas never detach `event.target` mid-gesture.

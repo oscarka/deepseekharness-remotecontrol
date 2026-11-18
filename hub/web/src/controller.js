@@ -8093,8 +8093,9 @@ export function initHubController() {
     const label = document.getElementById('pullRefreshLabel');
     if (!vp || !slot || !pill || !label) return;
 
-    const STAGE1_DY = 58;
-    const STAGE2_DY = 128; // 使劲深拉阈值：清缓存强制更新前端
+    const PULL_START_DY = 32; // 前 32px 防误触死区：轻触或微滑完全不弹出提示槽
+    const STAGE1_DY = 155;    // 第一段（同步状态）：需明显下拉 155px（原 58px 的 2.7 倍）
+    const STAGE2_DY = 285;    // 第二段（清缓存强制重刷整个前端）：需使劲拉到底 285px（原 128px 的 2.2 倍）
     let tracking = false;
     let pulling = false;
     let startX = 0;
@@ -8112,7 +8113,7 @@ export function initHubController() {
 
     vp.addEventListener('touchstart', (event) => {
       if (event.touches.length !== 1) return;
-      if (vp.scrollTop > 2) return;
+      if (vp.scrollTop > 0.5) return;
       if (document.body.classList.contains('mobile-chat-open')) return;
       if (document.querySelector('.sheet-backdrop.open, #triageDeckOverlay.open')) return;
       const t = event.touches[0];
@@ -8135,9 +8136,12 @@ export function initHubController() {
       const dx = t.clientX - startX;
       const dy = t.clientY - startY;
       if (!pulling) {
-        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-        if (dy <= 0 || vp.scrollTop > 2 || Math.abs(dy) < Math.abs(dx) * 1.25) {
+        if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+        if (dy <= 0 || vp.scrollTop > 0.5 || Math.abs(dy) < Math.abs(dx) * 1.35) {
           tracking = false;
+          return;
+        }
+        if (dy < PULL_START_DY) {
           return;
         }
         pulling = true;
@@ -8145,10 +8149,11 @@ export function initHubController() {
         slot.classList.add('active');
       }
       currentDy = Math.max(0, dy);
-      if (currentDy > 0 && event.cancelable) {
+      if (currentDy > PULL_START_DY && event.cancelable) {
         event.preventDefault();
       }
-      const visualH = Math.min(92, Math.round(Math.pow(currentDy, 0.78) * 1.95));
+      const effDy = Math.max(0, currentDy - PULL_START_DY);
+      const visualH = Math.min(96, Math.round(Math.pow(effDy, 0.72) * 1.8));
       slot.style.height = `${visualH}px`;
 
       const en = langPref === 'en';
@@ -8157,7 +8162,7 @@ export function initHubController() {
         if (nextStage === 1 && lastStage === 0) {
           try { navigator.vibrate?.(10); } catch { }
         } else if (nextStage === 2) {
-          try { navigator.vibrate?.([14, 28, 18]); } catch { }
+          try { navigator.vibrate?.([16, 28, 22]); } catch { }
         }
         lastStage = nextStage;
       }
@@ -8165,16 +8170,20 @@ export function initHubController() {
       pill.classList.toggle('stage-2', nextStage === 2);
       if (nextStage === 2) {
         label.textContent = en
-          ? '⚡ Release to force-update app (clear cache)'
-          : '⚡ 松手强制更新前端版本（清缓存重载）';
+          ? '⚡ Ready! Release to force-update app'
+          : '⚡ 已拉满！松手强制更新前端（清缓存重载）';
       } else if (nextStage === 1) {
+        const pct = Math.min(
+          99,
+          Math.max(1, Math.round(((currentDy - STAGE1_DY) / (STAGE2_DY - STAGE1_DY)) * 100))
+        );
         label.textContent = en
-          ? '↻ Release to refresh · Pull harder to force update'
-          : '↻ 松手刷新状态 · 继续使劲拉强制升新版';
+          ? `↻ Release to sync · Pull harder to update (${pct}%)`
+          : `↻ 松手同步状态 · 继续深拉重刷版本 (${pct}%)`;
       } else {
         label.textContent = en
-          ? '↓ Pull to refresh · Pull harder to force update'
-          : '↓ 下拉刷新 · 使劲深拉可强制更新前端';
+          ? '↓ Keep pulling to refresh…'
+          : '↓ 继续向下拉刷新状态…';
       }
     }, { passive: false });
 
@@ -8198,8 +8207,11 @@ export function initHubController() {
         try {
           navigator.serviceWorker?.getRegistration?.().then(r => r?.update?.()).catch(() => { });
         } catch { }
-        manualReconnectNow();
-        setTimeout(collapseSlot, 480);
+        if (!sseConnected) connectSSE();
+        void fetchState({ silent: true, forceFresh: true }).finally(() => {
+          label.textContent = en ? '✅ Synced' : '✅ 已同步最新状态';
+          setTimeout(collapseSlot, 360);
+        });
         return;
       }
       collapseSlot();
