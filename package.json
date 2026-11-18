@@ -77,6 +77,7 @@
     "dev": "vite",
     "build": "vite build",
     "start": "node hub/server.js",
+    "deploy": "bash ./deploy-vm.sh",
     "test": "node --test dsh-feishu/test/*.test.js"
   },
   "devDependencies": {
