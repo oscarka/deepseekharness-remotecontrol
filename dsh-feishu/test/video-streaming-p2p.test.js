@@ -92,7 +92,7 @@ test('Plan 1 + Plan 2: 720p preview=1 stream, fs_abort upload cancellation, and 
 
     let pvEncodeCalls = 0
     const mockExec = async (cmd, args = []) => {
-      if (cmd === 'ffmpeg' && args.includes('1100k')) {
+      if (cmd === 'ffmpeg' && args.includes('1500k')) {
         pvEncodeCalls += 1
         const outPath = args[args.length - 1]
         await writeFile(outPath, fastPvBytes)
