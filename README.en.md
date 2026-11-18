@@ -2,7 +2,7 @@
   <img src="docs/assets/hero-banner-en.svg" alt="DSH Remote Control — Put your computer's AI coding sessions in your pocket" width="100%" />
 
   <p align="center">
-    <strong>Your AI Coding Agents, Under Your Control — No Vendor-Managed Relay Required.<br/>Monitor live progress, steer running tasks, stop runaway loops, or tap to approve commands &amp; multiple-choice popups from your phone.<br/>Deploy your own self-hosted Control Hub on your computer, NAS, VPS, or Cloud Run.</strong>
+    <strong>Your AI Coding Agents, Under Your Control — No Vendor-Managed Relay Required.<br/>Monitor live progress, steer running tasks, stop runaway loops, or tap to approve commands &amp; multiple-choice popups from your phone.<br/>Deploy your own self-hosted Control Hub on Railway, a VPS, NAS, or your computer.</strong>
   </p>
 
   <p align="center">
@@ -79,7 +79,7 @@ Before starting, it helps to understand the two lightweight pieces and how data 
                                       └─────────────────────────────────┘               └─────────────────────────────────┘
 ```
 
-1. **Control Hub (`控制台`)**: A tiny, zero-dependency Node.js web server that you deploy yourself (on your computer, NAS, VPS, or your own Cloud Run/Railway account). You never have to route your sessions through a third-party vendor's central SaaS relay.
+1. **Control Hub (`控制台`)**: A tiny, zero-dependency Node.js web server that you deploy yourself (on Railway, your own VPS/Cloudflare CDN, NAS, computer, or Cloud Run). You never have to route your sessions through a third-party vendor's central SaaS relay.
 2. **Computer Daemon (`connect-host.sh`)**: A background agent installed on each of your Mac/Linux computers via a 1-line command. It watches your local AI coding sessions and connects outbound to your Control Hub (so your computer does **not** need a public IP or port forwarding).
 
 > **Transparent Data Boundary**: Your self-hosted Control Hub holds recent session metadata and active conversation snapshots in memory so your phone can open chats instantly. Full project source files, screenshots, and videos stay on your computers and stream directly on demand over a dedicated reverse HTTP tunnel (`HTTP 206 Range` video scrubbing, smart thumbnails, and short-lived read-only `mediaTicket` URLs that never expose `HUB_TOKEN`). Share links (`/share/:id#k=...`) use client-side AES-256-GCM end-to-end encryption. See [`SECURITY.md`](./SECURITY.md) for full details.
@@ -100,19 +100,10 @@ Before starting, it helps to understand the two lightweight pieces and how data 
 
 Choose the deployment method that best fits how you use your phone:
 
-#### 🌟 Option A: Google Cloud Run (Author's Daily Setup · Recommended for 24/7 4G/5G Access Anywhere)
-If you want to control your home/office computers from anywhere on cellular 4G/5G without keeping a VPS running, deploy the Control Hub to Google Cloud Run (scales to zero when idle, free-tier friendly, built-in HTTPS):
-
-```bash
-git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
-cd deepseekharness-remotecontrol
-
-# Replace with your GCP project ID and your chosen password
-GCP_PROJECT_ID="your-gcp-project-id" \
-HUB_TOKEN="choose-a-strong-password" \
-./deploy-cloudrun.sh
-```
-Once deployed, the script prints your `https://dsh-remotecontrol-hub-xxx.run.app` URL.
+#### 🌟 Option A: 1-Click Cloud Deploy on Railway (Recommended · Fastest 24/7 4G/5G Access, No CLI Required)
+If you want to control your home/office computers from anywhere on cellular 4G/5G without installing cloud CLIs or managing servers, click the **Deploy on Railway** button at the top of this README (or [open the official template directly](https://railway.com/deploy/dsh-remote-control-hub?referralCode=44kg1p&utm_medium=integration&utm_source=template&utm_campaign=generic)):
+- Automatically generates a strong `HUB_TOKEN` password (or customize it to your own strong password before clicking **Deploy**).
+- Provisions a ready-to-use `https://...` URL in ~1 minute with native SSE streaming and predictable low monthly cost (~$5/mo Hobby plan for 24/7 connected hosts).
 
 #### 🏠 Option B: Run Locally on Your Computer (Fastest 30s Tryout · Same Wi-Fi, $0 Cost)
 No cloud account or Docker needed. Clone the repo and start the Control Hub directly on your computer (requires Node.js >= 20):
@@ -126,11 +117,8 @@ HUB_TOKEN="choose-a-password" PORT=8080 npm start
 ```
 The terminal will print both `http://localhost:8080` and your LAN URL (e.g. `http://192.168.1.x:8080`).
 
-#### ☁️ Option C: 1-Click Cloud Deploy on Railway (No CLI Required)
-Click the **Deploy on Railway** button at the top of this README — the template automatically generates a random `HUB_TOKEN` password (which you can customize to your own strong password) and provisions your public `https://...` URL in ~1 minute.
-
-#### 🐳 Option D: VPS / NAS / Raspberry Pi (Docker or Cloudflare Tunnel)
-If you have a home server, NAS, or VPS, you can run the prebuilt Docker image (or run `npm start` + a free tunnel like `cloudflared tunnel --url http://localhost:8080`):
+#### 🐳 Option C: VPS / NAS / Raspberry Pi (Docker or Cloudflare CDN / Tunnel)
+If you have a lightweight VPS (e.g. paired with Nginx + Cloudflare HTTP/2 &amp; HTTP/3 CDN), home server, NAS, or Raspberry Pi, run the prebuilt Docker image (or `npm start` + `cloudflared tunnel --url http://localhost:8080`):
 
 ```bash
 docker run -d --name dsh-hub \
@@ -140,6 +128,20 @@ docker run -d --name dsh-hub \
   -e HUB_TOKEN="choose-a-password" \
   ghcr.io/oscarka/deepseekharness-remotecontrol:latest
 ```
+
+#### ☁️ Option D: Google Cloud Run (CLI Script Deploy)
+If you prefer deploying on GCP via `gcloud`, use the bundled helper script (note: because connected computer daemons keep persistent 24/7 SSE/heartbeat streams open, Cloud Run remains resident while hosts are online rather than scaling to zero — for always-on multi-computer setups, Railway or a lightweight VPS is usually much more cost-effective):
+
+```bash
+git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
+cd deepseekharness-remotecontrol
+
+# Replace with your GCP project ID and your chosen password
+GCP_PROJECT_ID="your-gcp-project-id" \
+HUB_TOKEN="choose-a-strong-password" \
+./deploy-cloudrun.sh
+```
+Once deployed, the script prints your `https://dsh-remotecontrol-hub-xxx.run.app` URL.
 
 <div align="center">
   <img src="docs/assets/step1-login-en.png" width="260" alt="Step 1: Open Control Hub URL and unlock with HUB_TOKEN" /><br/>
@@ -197,6 +199,15 @@ The background daemon automatically discovers local sessions across all 6 suppor
 
 <a id="whats-new"></a>
 ## 📅 What's New (Recent Releases)
+
+<details>
+<summary><strong><code>2026-11-18 · v0.8.0</code> — Swipe-Review Triage Deck, Mobile Lite-State Instant Load, Anti-White-Screen Guard &amp; Native iOS Home Screen Icons</strong></summary>
+
+- **Swipe-Review Triage Deck (`滑卡批阅模式`, `v0.8.0`)**: Added a gesture-driven card stack (`TriageDeck.tsx` / `triage-deck.js` / `triage-deck.css`) launched from the 4-dot grid button in the filter strip to rapidly review pending approvals, interactive multiple-choice questions, unread conclusions, and interrupted tasks — swipe right to approve/mark read, swipe left to skip, tap `↩ Undo` to revert, or inspect full context in-place.
+- **Mobile Lite-State Wire Protocol (`?lite=1`), Fast Auth Verification &amp; SSE Delta Alignment (`v0.8.0`)**: Cut initial mobile `/api/state?lite=1` and `/api/events?lite=1` payloads by ~75% (`hub-core.js` / `server.js` / `controller.js`) while hydrating full cold and active session transcripts seamlessly on demand; added lightweight `POST /api/auth/verify` + token-generation race guards to eliminate slow-network false "wrong password" alerts and pre-login `401` polling storms; aligned `stateSeq` across `lite=1` SSE streams to prevent reconnect/re-fetch loops; capped local snapshot cache staleness (`1h`) and added instant iOS foreground wake-up (`visibilitychange` / `pageshow`) re-sync.
+- **Zero-White-Screen Hot-Deploy Resilience &amp; Native iOS Home Screen PNG Icons (`v0.8.0`)**: Replaced abrupt mid-session `window.location.reload()` on `uiBuild` rollover with deferred background-only upgrades (`controller.js`), added zero-downtime stale `/assets/index-*.js|.css` `no-store` fallback + `HEAD` method support (`server.js`), added `vite:preloadError` / asset-failure self-healing and initial sync skeleton states (`index.html`), and shipped full-bleed raster PNG icons (`180×180` `/apple-touch-icon.png`, `192×192`, `512×512`, `favicon.ico`) fixing the iOS Safari Home Screen gray `"D"` monogram fallback.
+
+</details>
 
 <details>
 <summary><strong><code>2026-11-18 · v0.7.9</code> — Uninterrupted Speech Playback on Code Replies (<code>🔊 Listen</code> Anti-GC &amp; CommonMark Fence Fix)</strong></summary>

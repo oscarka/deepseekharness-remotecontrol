@@ -36,11 +36,11 @@ No. Where the hub lives decides where your phone can reach it:
 
 | Hub location | Phone works from | Cost |
 |---|---|---|
+| Railway / Lightweight VPS | anywhere (4G/5G/Wi-Fi) | predictable flat fee (e.g. ~$5/mo Railway Hobby) |
 | Your laptop | same Wi-Fi only | 0 |
 | Home NAS / server | same Wi-Fi only | hardware |
-| Google Cloud Run | anywhere (4G/5G/Wi-Fi) | scales to zero when idle (~$0 in free tier) |
-| Cloud / Railway | anywhere | server or platform fee |
 | Laptop + tunnel | anywhere | 0 |
+| Google Cloud Run | anywhere (4G/5G/Wi-Fi) | billed while active (stays resident while host daemons stay connected 24/7) |
 
 "Nothing to deploy" and "works from anywhere" are mutually exclusive. Pick one.
 

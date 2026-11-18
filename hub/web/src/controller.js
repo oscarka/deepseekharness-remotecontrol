@@ -56,6 +56,7 @@ import {
   endHoldVoice,
   cancelHoldVoice,
   consumeReturnToVoiceAfterSend,
+  punctuateSpeechText,
 } from './hooks/useVoiceInput';
 import { renderQrCodeSvg } from './utils/qrcode';
 import {
@@ -83,6 +84,10 @@ import {
   sortNormalizedSessions,
   renderCapabilityMatrixRowsHtml,
 } from './utils/session-labels';
+import {
+  isTriageEligibleSession,
+  createTriageDeckController,
+} from './triage-deck.js';
 
 export function initHubController() {
   // ==================== 1. 认证与安全 Token 管理（自动清除 URL 尾巴防止截图泄露） ====================
@@ -117,15 +122,58 @@ export function initHubController() {
     return h;
   }
 
+  let authLockConfirmed = false;
+
+  async function verifyCandidateToken(candidateToken, timeoutMs = 25000) {
+    const canAbort = typeof AbortController === 'function';
+    const ctrl = canAbort ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch { } }, timeoutMs) : null;
+    try {
+      const headers = { 'content-type': 'application/json' };
+      const tk = String(candidateToken ?? '').trim();
+      if (tk) {
+        headers['authorization'] = 'Bearer ' + tk;
+        headers['x-hub-token'] = tk;
+      }
+      const res = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers,
+        body: '{}',
+        ...(ctrl ? { signal: ctrl.signal } : {}),
+      });
+      if (res.status === 401) {
+        return { ok: false, unauthorized: true };
+      }
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        return { ok: true, authRequired: Boolean(data.authRequired) };
+      }
+      return { ok: false, unauthorized: false, error: data?.error || `HTTP ${res.status}` };
+    } catch (err) {
+      const msg = err && err.name === 'AbortError' ? '连接超时，请检查网络后重试' : (err?.message || '网络异常');
+      return { ok: false, unauthorized: false, error: msg };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   async function apiFetch(path, options = {}) {
+    const sentToken = getToken();
     const res = await fetch(path, {
       ...options,
       headers: authHeaders(options.headers || {}),
     });
     if (res.status === 401) {
+      // If user already logged in with a newer token while an unauthenticated call was in flight, ignore stale 401.
+      if (getToken() !== sentToken) {
+        throw new Error('Superseded');
+      }
+      authLockConfirmed = true;
+      closeSSE();
       document.getElementById('authOverlay').classList.add('show');
       throw new Error('Unauthorized');
     }
+    authLockConfirmed = false;
     document.getElementById('authOverlay').classList.remove('show');
     return res;
   }
@@ -134,51 +182,85 @@ export function initHubController() {
     const inputEl = document.getElementById('authTokenInput');
     const raw = inputEl.value.trim();
     if (!raw) return;
-    // 如果输入的是 6 位配对码，先尝试配对交换
-    if (/^[A-Z0-9]{6}$/i.test(raw)) {
-      try {
-        const exRes = await fetch('/api/pairing/exchange', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ code: raw.toUpperCase() }),
-        });
-        const exData = await exRes.json();
-        if (exRes.ok && exData.token) {
-          localStorage.setItem('dsh_hub_token', exData.token);
-          const paired = await fetchState();
-          if (!paired.ok) {
-            showToast('❌ 配对成功但读取数据失败：' + (paired.error || '请重试'));
+    const btnEl = document.querySelector('#authOverlay button.primary-block-btn');
+    const origBtnText = btnEl ? btnEl.textContent : '';
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.textContent = '⏳ 正在验证解锁...';
+    }
+    try {
+      // 如果输入的是 6 位配对码，先尝试配对交换
+      if (/^[A-Z0-9]{6}$/i.test(raw)) {
+        try {
+          const exRes = await fetch('/api/pairing/exchange', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ code: raw.toUpperCase() }),
+          });
+          const exData = await exRes.json().catch(() => ({}));
+          if (exRes.ok && exData.token) {
+            authLockConfirmed = false;
+            localStorage.setItem('dsh_hub_token', exData.token);
+            document.getElementById('authOverlay').classList.remove('show');
+            showToast('🔓 配对解锁成功，正在加载数据...');
+            const paired = await fetchState({ forceFresh: true });
+            if (!paired.ok && !paired.superseded) {
+              setConnectionBanner(true);
+              showToast('⚠️ 已解锁，正在同步数据，请稍候…');
+            }
+            connectSSE();
             return;
           }
-          document.getElementById('authOverlay').classList.remove('show');
-          showToast('🔓 配对解锁成功');
-          connectSSE();
-          return;
-        }
-      } catch { }
-    }
-    localStorage.setItem('dsh_hub_token', raw);
-    // 以前这里不检查 fetchState 的结果：密码错了也会显示「解锁成功」，
-    // 两秒后轮询发现 401，锁屏又弹回来。现在必须确认真的拿到了数据。
-    const state = await fetchState();
-    if (!state.ok) {
-      if (state.unauthorized) {
-        localStorage.removeItem('dsh_hub_token');
-        showToast('❌ 访问密码或配对码不正确，请重试');
-        document.getElementById('authOverlay').classList.add('show');
-        try { inputEl.select(); } catch { }
-      } else {
-        showToast('❌ 无法连接总控台：' + (state.error || '网络异常'));
+          if (exRes.status === 429) {
+            showToast('❌ ' + (exData.error || '尝试次数过多，请稍后再试'));
+            return;
+          }
+        } catch { }
       }
-      return;
+
+      // 先走轻量 /api/auth/verify（几十字节）快速验密，绝不因大包状态同步慢误报“密码错误”
+      const check = await verifyCandidateToken(raw, 25000);
+      if (!check.ok) {
+        if (check.unauthorized) {
+          localStorage.removeItem('dsh_hub_token');
+          authLockConfirmed = true;
+          showToast('❌ 访问密码或配对码不正确，请重试');
+          document.getElementById('authOverlay').classList.add('show');
+          try { inputEl.select(); } catch { }
+        } else {
+          showToast('❌ 无法连接总控台：' + (check.error || '网络异常'));
+        }
+        return;
+      }
+
+      authLockConfirmed = false;
+      localStorage.setItem('dsh_hub_token', raw);
+      document.getElementById('authOverlay').classList.remove('show');
+      showToast('🔓 解锁成功');
+      const state = await fetchState({ forceFresh: true });
+      connectSSE();
+      if (!state.ok && !state.superseded) {
+        if (state.unauthorized) {
+          localStorage.removeItem('dsh_hub_token');
+          authLockConfirmed = true;
+          showToast('❌ 访问密码校验已失效，请重新输入');
+          document.getElementById('authOverlay').classList.add('show');
+        } else {
+          setConnectionBanner(true);
+        }
+      }
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.textContent = origBtnText;
+      }
     }
-    document.getElementById('authOverlay').classList.remove('show');
-    showToast('🔓 解锁成功');
-    connectSSE();
   }
 
   function lockAndLogout() {
     localStorage.removeItem('dsh_hub_token');
+    authLockConfirmed = true;
+    closeSSE();
     document.getElementById('authOverlay').classList.add('show');
     showToast('🔒 已锁定当前浏览器');
   }
@@ -526,6 +608,7 @@ export function initHubController() {
   let pinnedMap = {};
   let seenMap = {};
   let seenSigMap = {};
+  let triageCtrl = null;
   let addHostPanelExpanded = false;
   let expandedHostCardIds = {};
   let liveBannerDismissed = false;
@@ -710,15 +793,32 @@ export function initHubController() {
         const pendingApp = approvals.find(a => a.agentId === t.id);
         const rawWireTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
         const hydratedWire = hydratedWireTranscriptBySession.get(t.id);
-        const wireTranscript =
+        let wireTranscript = rawWireTranscript;
+        if (
           hydratedWire &&
-            Array.isArray(hydratedWire.transcript) &&
-            hydratedWire.transcript.length >= rawWireTranscript.length &&
-            t.status !== 'running' &&
-            t.status !== 'approval' &&
-            (!t.sessionRev || !hydratedWire.sessionRev || hydratedWire.sessionRev === t.sessionRev)
-            ? [...hydratedWire.transcript]
-            : rawWireTranscript;
+          Array.isArray(hydratedWire.transcript) &&
+          hydratedWire.transcript.length >= rawWireTranscript.length &&
+          (!t.sessionRev || !hydratedWire.sessionRev || hydratedWire.sessionRev === t.sessionRev)
+        ) {
+          if (t.status !== 'running' && t.status !== 'approval') {
+            wireTranscript = [...hydratedWire.transcript];
+          } else if (hydratedWire.transcript.length > rawWireTranscript.length) {
+            if (rawWireTranscript.length === 0) {
+              wireTranscript = [...hydratedWire.transcript];
+            } else {
+              const firstLive = rawWireTranscript[0];
+              const matchIdx = hydratedWire.transcript.findIndex(
+                m => m && m.role === firstLive?.role && String(m.text || '').slice(0, 80) === String(firstLive?.text || '').slice(0, 80)
+              );
+              if (matchIdx > 0) {
+                wireTranscript = [...hydratedWire.transcript.slice(0, matchIdx), ...rawWireTranscript];
+              } else {
+                const extraCount = Math.max(0, hydratedWire.transcript.length - rawWireTranscript.length);
+                wireTranscript = [...hydratedWire.transcript.slice(0, extraCount), ...rawWireTranscript];
+              }
+            }
+          }
+        }
         const serverWireTotalCount = Math.max(
           Number(t.totalTranscriptCount) || 0,
           Number(t.messageCount) || 0,
@@ -1111,7 +1211,11 @@ export function initHubController() {
     const currentHostObj = hosts.find(h => h.hostId === currentHostId);
 
     const dotEl = document.getElementById('topHostDot');
-    if (hosts.length === 0) {
+    const isInitialSyncPending = Boolean(getToken()) && !authLockConfirmed && !hasLoadedInitialState && hosts.length === 0;
+    if (isInitialSyncPending) {
+      dotEl.className = 'status-dot';
+      document.getElementById('topHostName').textContent = '正在同步设备…';
+    } else if (hosts.length === 0) {
       dotEl.className = 'status-dot offline';
       document.getElementById('topHostName').textContent = '未接入电脑 (0)';
     } else if (currentHostId === 'ALL_HOSTS') {
@@ -1179,11 +1283,13 @@ export function initHubController() {
     if (document.getElementById('inChatFileSheet').classList.contains('open')) {
       renderInChatFileDrawerBody();
     }
+    triageCtrl?.onStateUpdated();
     applyLangToDom(document.body, langPref);
   }
 
   function renderProjectStrip(sessionsArg) {
     const sessions = Array.isArray(sessionsArg) ? sessionsArg : getNormalizedSessions();
+    const triageCount = sessions.filter(isTriageEligibleSession).length;
     const activeCount = sessions.filter(s => s.status === 'running' || s.status === 'approval').length;
     const unreadCount = sessions.filter(s => s.hasUnreadConclusion || s.isUnreadInterrupted).length;
     const agyCount = sessions.filter(s => s.harness === 'antigravity-ide').length;
@@ -1201,7 +1307,7 @@ export function initHubController() {
     const strip = document.getElementById('projectStrip');
     const nowDate = new Date();
     const todayKey = `${nowDate.getFullYear()}-${nowDate.getMonth() + 1}-${nowDate.getDate()}`;
-    const stripKey = `${todayKey}:${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${doubaoCount}:${claudeCount}:${dshCount}:${projects.map(p => `${p}:${counts[p]}`).join(',')}`;
+    const stripKey = `${todayKey}:${currentProject}:${sessions.length}:${triageCount}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${doubaoCount}:${claudeCount}:${dshCount}:${projects.map(p => `${p}:${counts[p]}`).join(',')}`;
     if (stripKey === lastRenderedStripKey && strip.children.length > 0) return;
     lastRenderedStripKey = stripKey;
     const prevScrollLeft = strip.scrollLeft;
@@ -1229,7 +1335,10 @@ export function initHubController() {
       smartPills.push(`<button class="filter-pill smart-pill ${currentProject === 'HARNESS_DSH' ? 'active' : ''}" onclick="selectProject('HARNESS_DSH')">${renderHarnessBadgeHtml('dsh', 'pill')} DSH <span class="count">${dshCount}</span></button>`);
     }
 
+    const triageGridBtnHtml = `<button type="button" class="triage-grid-entry-btn" id="triageGridEntryBtn" title="滑卡批阅模式" aria-label="滑卡批阅模式" onclick="openTriageDeckMode()"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1.5" y="1.5" width="5.2" height="5.2" rx="1.4"/><rect x="9.3" y="1.5" width="5.2" height="5.2" rx="1.4"/><rect x="1.5" y="9.3" width="5.2" height="5.2" rx="1.4"/><rect x="9.3" y="9.3" width="5.2" height="5.2" rx="1.4"/></svg>${triageCount > 0 ? '<span class="triage-grid-dot"></span>' : ''}</button>`;
+
     strip.innerHTML = [
+      triageGridBtnHtml,
       `<button class="filter-pill ${currentProject === 'ALL' ? 'active' : ''}" onclick="selectProject('ALL')">全部 <span class="count">${sessions.length}</span></button>`,
       ...smartPills,
       ...projects.map(p => `<button class="filter-pill ${currentProject === p ? 'active' : ''}" title="${esc(p)}" onclick="selectProject('${esc(p)}')">${esc(formatCompactProjectLabel(p, nowDate))} <span class="count">${counts[p]}</span></button>`)
@@ -1294,7 +1403,8 @@ export function initHubController() {
     const rowsSig = filtered
       .map(s => `${s.id}:${s.harness}:${s.status}:${s.approvalObj?.kind || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`)
       .join('|');
-    const enrollSig = `${hubState.enrollment?.code || ''}:${hubState.enrollment?.joinedCount || 0}`;
+    const isInitialSyncPending = Boolean(getToken()) && !authLockConfirmed && !hasLoadedInitialState && (hubState.hosts || []).length === 0;
+    const enrollSig = `${hubState.enrollment?.code || ''}:${hubState.enrollment?.joinedCount || 0}:${isInitialSyncPending ? 'sync' : 'ready'}`;
     const listKey = `${todayKey}:${hostsSig}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${showStep6Banner ? 1 : 0}:${enrollSig}:${bannerKey}#${rowsSig}`;
     if (listKey === lastRenderedListKey && viewport.querySelector('.session-list')) return;
     lastRenderedListKey = listKey;
@@ -1391,7 +1501,15 @@ export function initHubController() {
     let emptyStateHtml = '';
     if (!rowsHtml) {
       const hostsCount = (hubState.hosts || []).length;
-      if (hostsCount === 0) {
+      if (isInitialSyncPending) {
+        emptyStateHtml = `
+            <div style="padding:48px 20px;text-align:center;">
+              <div style="font-size:28px;margin-bottom:10px;">⚡</div>
+              <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px;">正在同步在线电脑与会话列表…</div>
+              <div style="font-size:12.5px;color:var(--muted);">已通过安全校验，正在拉取实时任务快照</div>
+            </div>
+          `;
+      } else if (hostsCount === 0) {
         emptyStateHtml = renderAddHostPanelHtml({ isEmptyState: true });
       } else if (allSessions.length === 0) {
         emptyStateHtml = `
@@ -1488,6 +1606,7 @@ export function initHubController() {
     document.getElementById('chatFullscreen').classList.remove('open');
     document.body.classList.remove('mobile-chat-open');
     setScrollBottomVisible(false);
+    triageCtrl?.onStateUpdated();
   }
 
   function closeMobileChat() {
@@ -2133,7 +2252,7 @@ export function initHubController() {
       .slice(-6)
       .map(m => `${m.role}:${m.queuedCmdId || ''}:${m.expiredCmdId || ''}:${(m.text || '').length}:${(m.text || '').slice(-32)}:${(m.thinking || '').length}:${(m.tools || []).length}:${(m.artifacts || []).length}:${m.waitingForInput ? 1 : 0}`)
       .join('|');
-    const chatKey = `${s.id}:${s.status}:${s.sessionRev || ''}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${(s.changedFiles || []).length}:${(s.artifacts || []).length}`;
+    const chatKey = `${s.id}:${s.status}:${s.sessionRev || ''}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${(s.changedFiles || []).length}:${(s.artifacts || []).length}`;
     if (chatKey === lastRenderedChatKey) return;
     lastRenderedChatKey = chatKey;
     selectedAgyOptionIndex = 1;
@@ -2245,10 +2364,14 @@ export function initHubController() {
       const rawTools = Array.isArray(m.toolCalls) && m.toolCalls.length > 0 ? m.toolCalls : (m.tools || []);
       let tools = '';
       if (rawTools.length > 0) {
+        const isOlderCollapsedMsg = msgIdx < msgs.length - 6;
         const toolItemsHtml = rawTools.map((t, tIdx) => {
           const tName = typeof t === 'string' ? t : (t.name || 'tool');
           const tSummary = typeof t === 'string' ? '' : (t.summary || t.argsSummary || '');
-          const tDetail = typeof t === 'string' ? '执行完毕' : (t.commandLine || t.output || tSummary || '执行完毕');
+          const rawDetail = typeof t === 'string' ? '执行完毕' : (t.commandLine || t.output || tSummary || '执行完毕');
+          const tDetail = isOlderCollapsedMsg && rawDetail.length > 600
+            ? rawDetail.slice(0, 600) + '...'
+            : rawDetail;
           const chipId = `tool-${msgIdx}-${tIdx}`;
           return `
               <details class="tool-chip-details" data-detail-id="${chipId}" ${openDetailIds.has(chipId) ? 'open' : ''}>
@@ -2507,7 +2630,10 @@ export function initHubController() {
         </div>
       `;
 
-    const loadEarlierHtml = s.omittedTranscriptCount > 0
+    const isHydratingColdNow = Boolean(s._wireTruncated && hydratingWireSessionIds.has(s.id));
+    const loadEarlierHtml = isHydratingColdNow
+      ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin:4px 0 10px;">⏳ 正在同步完整对话内容…</div>`
+      : s.omittedTranscriptCount > 0
       ? `
           <div style="display:flex;justify-content:center;margin:4px 0 10px;">
             <button
@@ -2543,7 +2669,7 @@ export function initHubController() {
   async function hydrateColdSessionTranscript(hostId, sessionId, sessionRev = '') {
     if (!hostId || !sessionId || hydratingWireSessionIds.has(sessionId)) return;
     const existing = hydratedWireTranscriptBySession.get(sessionId);
-    if (existing && (!sessionRev || existing.sessionRev === sessionRev)) return;
+    if (existing && (!sessionRev || existing.sessionRev === sessionRev || (Date.now() - (existing.fetchedAt || 0) < 8000))) return;
     hydratingWireSessionIds.add(sessionId);
     try {
       const res = await apiFetch(
@@ -2556,15 +2682,15 @@ export function initHubController() {
           sessionRev: data.sessionRev || sessionRev || '',
           fetchedAt: Date.now(),
         });
-        if (activeSessionId === sessionId) {
-          lastRenderedChatKey = '';
-          renderAll();
-        }
       }
     } catch {
       // 静默按需回填云端完整会话缓存，失败时保留预览不打扰用户
     } finally {
       hydratingWireSessionIds.delete(sessionId);
+      if (activeSessionId === sessionId || triageCtrl?.isOpen()) {
+        lastRenderedChatKey = '';
+        renderAll();
+      }
     }
   }
 
@@ -3690,7 +3816,12 @@ export function initHubController() {
       rawPath = decodeURIComponent(rawPath);
     } catch { }
     if (!rawPath) return;
-    const found = findSessionGlobal(activeSessionId);
+    const effectiveSid =
+      (!document.getElementById('chatFullscreen')?.classList.contains('open') &&
+        triageCtrl?.isOpen() &&
+        triageCtrl?.getTopSessionId?.()) ||
+      activeSessionId;
+    const found = findSessionGlobal(effectiveSid);
     if (!found) return;
     const sessionArts = Array.isArray(found.session.artifacts) ? found.session.artifacts : [];
     const cleanLookup = rawPath.replace(/^file:\/\//i, '').replace(/#L\d+(?:-L?\d+)?$/i, '').trim();
@@ -4163,7 +4294,7 @@ export function initHubController() {
     parent.querySelectorAll('[data-dsh-error-tip], [data-dsh-fallback-dl]').forEach(el => {
       try {
         el.remove();
-      } catch {}
+      } catch { }
     });
   }
 
@@ -4204,7 +4335,7 @@ export function initHubController() {
           const oldUrl = p2pVideoBlobCache.get(oldestKey);
           p2pVideoBlobCache.delete(oldestKey);
           if (oldUrl) {
-            try { URL.revokeObjectURL(oldUrl); } catch {}
+            try { URL.revokeObjectURL(oldUrl); } catch { }
           }
         }
         swapVideoElementToBlobUrl(videoEl, blobUrl);
@@ -4239,9 +4370,9 @@ export function initHubController() {
           videoEl.playbackRate = savedRate;
         }
         if (!wasPaused) {
-          void videoEl.play()?.catch?.(() => {});
+          void videoEl.play()?.catch?.(() => { });
         }
-      } catch {}
+      } catch { }
     };
     videoEl.addEventListener('loadedmetadata', restoreState, { once: true });
     const statusEl = videoEl.parentElement?.querySelector?.('[data-dsh-video-status="1"]');
@@ -4296,7 +4427,7 @@ export function initHubController() {
         videoEl.src = retrySrc;
         try {
           videoEl.load();
-        } catch {}
+        } catch { }
         return;
       }
     }
@@ -7645,7 +7776,12 @@ export function initHubController() {
       const raw = localStorage.getItem('dsh_hub_state_cache_v1');
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.hosts) && parsed.hosts.length > 0) {
+      if (
+        parsed &&
+        Array.isArray(parsed.hosts) &&
+        parsed.hosts.length > 0 &&
+        Number(parsed.cachedAt || 0) > Date.now() - 60 * 60 * 1000
+      ) {
         return {
           hosts: parsed.hosts,
           activeHostId: parsed.activeHostId || '',
@@ -7658,20 +7794,37 @@ export function initHubController() {
     return null;
   }
 
+  let pendingBackgroundUiReload = false;
+
+  function hasActiveUserInputInProgress() {
+    if (typeof document === 'undefined') return false;
+    const chatInput = document.getElementById('globalPromptInput');
+    if (chatInput && String(chatInput.value || '').trim().length > 0) return true;
+    const newInput = document.getElementById('newTaskPromptInput');
+    if (newInput && String(newInput.value || '').trim().length > 0) return true;
+    return false;
+  }
+
   function applyHubState(nextState, { skipCache = false } = {}) {
     const incomingBuild = String(nextState?.build?.uiBuild || '').trim();
     if (incomingBuild && incomingBuild !== 'dev') {
       if (!initialUiBuild) {
         initialUiBuild = incomingBuild;
-      } else if (
-        initialUiBuild !== incomingBuild &&
-        typeof window !== 'undefined' &&
-        window.location &&
-        typeof window.location.reload === 'function'
-      ) {
-        closeSSE();
-        window.location.reload();
-        return;
+      } else if (initialUiBuild !== incomingBuild) {
+        initialUiBuild = incomingBuild;
+        const isHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+        if (
+          isHidden &&
+          !hasActiveUserInputInProgress() &&
+          typeof window !== 'undefined' &&
+          window.location &&
+          typeof window.location.reload === 'function'
+        ) {
+          closeSSE();
+          window.location.reload();
+          return;
+        }
+        pendingBackgroundUiReload = true;
       }
     }
     preservePreviewUiState(nextState);
@@ -7683,6 +7836,7 @@ export function initHubController() {
   let hasLoadedInitialState = false;
   let stateFetchInFlight = false;
   let inFlightStatePromise = null;
+  let inFlightStateToken = '';
   let inFlightNeedsFollowup = false;
   let lastStateFetchAt = 0;
   let stateFetchSeq = 0;
@@ -7693,12 +7847,12 @@ export function initHubController() {
   let lastSseStateAt = 0;
   let sseRotatingUntil = 0;
 
-  async function fetchStateOnceWithTimeout(timeoutMs = 12000) {
+  async function fetchStateOnceWithTimeout(timeoutMs = 30000) {
     const canAbort = typeof AbortController === 'function';
     const ctrl = canAbort ? new AbortController() : null;
     const timer = ctrl ? setTimeout(() => { try { ctrl.abort(); } catch { } }, timeoutMs) : null;
     try {
-      const res = await apiFetch('/api/state', ctrl ? { signal: ctrl.signal } : {});
+      const res = await apiFetch('/api/state?lite=1', ctrl ? { signal: ctrl.signal } : {});
       return await res.json();
     } finally {
       if (timer) clearTimeout(timer);
@@ -7713,13 +7867,13 @@ export function initHubController() {
       let lastErr = null;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          data = await fetchStateOnceWithTimeout(12000);
+          data = await fetchStateOnceWithTimeout(30000);
           lastErr = null;
           break;
         } catch (err) {
           lastErr = err;
           const msg = err && err.message ? err.message : String(err);
-          if (msg === 'Unauthorized') throw err;
+          if (msg === 'Unauthorized' || msg === 'Superseded') throw err;
           if (mySeq < stateFetchSeq) {
             return { ok: true, superseded: true };
           }
@@ -7749,6 +7903,9 @@ export function initHubController() {
         return { ok: true, superseded: true };
       }
       const message = err && err.message ? err.message : String(err);
+      if (message === 'Superseded') {
+        return { ok: true, superseded: true };
+      }
       if (message !== 'Unauthorized') {
         consecutiveStateFetchFailures += 1;
         const sseHealthy = sseConnected && (Date.now() - lastSseEventAt < 30000);
@@ -7759,32 +7916,47 @@ export function initHubController() {
       }
       return { ok: false, unauthorized: message === 'Unauthorized', error: message };
     } finally {
-      stateFetchInFlight = false;
+      if (mySeq === stateFetchSeq) {
+        stateFetchInFlight = false;
+      }
     }
   }
 
   async function fetchState(opts = {}) {
     const silent = Boolean(opts && typeof opts === 'object' && opts.silent);
     const forceFresh = Boolean(opts && typeof opts === 'object' && opts.forceFresh);
+    const reqToken = getToken();
     if (inFlightStatePromise) {
-      if (forceFresh) {
-        inFlightNeedsFollowup = true;
+      if (reqToken !== inFlightStateToken) {
+        // Token changed since the previous fetch started (e.g., user unlocked after unauth poll):
+        // invalidate the stale promise so login doesn't inherit a 401 result.
+        stateFetchSeq += 1;
+        inFlightStatePromise = null;
+        inFlightNeedsFollowup = false;
+      } else {
+        if (forceFresh) {
+          inFlightNeedsFollowup = true;
+        }
+        return inFlightStatePromise;
       }
-      return inFlightStatePromise;
     }
-    inFlightStatePromise = (async () => {
+    inFlightStateToken = reqToken;
+    const currentPromise = (async () => {
       let res = await runSingleStateFetch({ silent });
-      if (inFlightNeedsFollowup && res?.ok) {
+      if (inFlightNeedsFollowup && res?.ok && getToken() === reqToken) {
         inFlightNeedsFollowup = false;
         res = await runSingleStateFetch({ silent: true });
       }
       inFlightNeedsFollowup = false;
       return res;
     })();
+    inFlightStatePromise = currentPromise;
     try {
-      return await inFlightStatePromise;
+      return await currentPromise;
     } finally {
-      inFlightStatePromise = null;
+      if (inFlightStatePromise === currentPromise) {
+        inFlightStatePromise = null;
+      }
     }
   }
 
@@ -7814,12 +7986,13 @@ export function initHubController() {
 
   function connectSSE() {
     if (urlParams.get('nosse') === '1') return;
+    if (!getToken() && authLockConfirmed) return;
     const prevSseEventAt = lastSseEventAt;
     closeSSE();
     const tk = getToken();
     const knownSeq = hasLoadedInitialState ? Number(hubState?.stateSeq || 0) : 0;
     const url =
-      '/api/events?initial=0&delta=1' +
+      '/api/events?initial=0&delta=1&lite=1' +
       (knownSeq > 0 ? '&seq=' + encodeURIComponent(String(knownSeq)) : '') +
       (tk ? '&token=' + encodeURIComponent(tk) : '');
     try {
@@ -7830,8 +8003,8 @@ export function initHubController() {
         lastSseEventAt = Date.now();
         consecutiveStateFetchFailures = 0;
         setConnectionBanner(false);
-        // 仅当尚未加载初始状态，或重连前曾断流超过 15s 时才补拉 /api/state；240s 优雅轮转 (rotate) 携带 seq 对齐零额外大包
-        if (!stateFetchInFlight && (!hasLoadedInitialState || !prevSseEventAt || Date.now() - prevSseEventAt > 15000)) {
+        // 仅当尚未加载初始状态，或重连前曾断流超过 15s 时才补拉 /api/state；避免首次直连因 prevSseEventAt=0 重复拉取
+        if (!stateFetchInFlight && (!hasLoadedInitialState || (prevSseEventAt > 0 && Date.now() - prevSseEventAt > 15000))) {
           void fetchState({ silent: hasLoadedInitialState });
         }
       };
@@ -7845,7 +8018,7 @@ export function initHubController() {
         consecutiveStateFetchFailures = 0;
         setConnectionBanner(false);
         try {
-          if (evt?.data && hasLoadedInitialState && !stateFetchInFlight) {
+          if (evt?.data && hasLoadedInitialState && !stateFetchInFlight && Date.now() - lastStateFetchAt > 10000) {
             const pingData = JSON.parse(evt.data);
             const serverSeq = Number(pingData?.stateSeq || 0);
             const localSeq = Number(hubState?.stateSeq || 0);
@@ -7879,7 +8052,9 @@ export function initHubController() {
           const delta = JSON.parse(evt.data);
           const merged = applyStateDelta(hubState, delta);
           if (!merged.ok) {
-            void fetchState({ silent: true, forceFresh: true });
+            if (!stateFetchInFlight && nowEvt - lastStateFetchAt > 4000) {
+              void fetchState({ silent: true, forceFresh: true });
+            }
             return;
           }
           if (!merged.noop) {
@@ -8158,20 +8333,227 @@ export function initHubController() {
     stripRedundantProjectPrefix,
   });
 
+  triageCtrl = createTriageDeckController({
+    getSessions: () => getNormalizedSessions(),
+    getShortHostMap: () => buildShortHostNameMap(hubState.hosts || []),
+    getMediaTicket: () => hubState.mediaTicket || '',
+    showToast,
+    formatAssistantText,
+    punctuateSpeechText,
+    hydrateColdSession: (hostId, sessionId, sessionRev) =>
+      hydrateColdSessionTranscript(hostId, sessionId, sessionRev),
+    openSession: sessionId => openChat(sessionId),
+    openFileForSession: (sessionId, rawPath) => {
+      const found = findSessionGlobal(sessionId);
+      if (found) {
+        activeSessionId = found.session.id;
+        activeSessionHostId = found.session.hostId;
+      }
+      void openChatFileLink(encodeURIComponent(rawPath));
+    },
+    sendApprovalDecision: (hostId, code, allow, optionIndex, sessionId) =>
+      sendApprovalDecision(hostId, code, allow, optionIndex, sessionId),
+    submitQuestionDecision: async (session, code, partialAnswers = {}) => {
+      const finalAnswers = { ...partialAnswers };
+      const qList = Array.isArray(session?.approvalObj?.questions) ? session.approvalObj.questions : [];
+      qList.forEach((q, idx) => {
+        const qId = String(q.id || `q_${idx + 1}`);
+        if (finalAnswers[qId] === undefined) {
+          const firstLbl = Array.isArray(q.options) && q.options[0]?.label ? String(q.options[0].label) : '';
+          finalAnswers[qId] = q.multiSelect ? (firstLbl ? [firstLbl] : []) : firstLbl;
+        }
+      });
+      window.__dshSettlingApprovals = window.__dshSettlingApprovals || {};
+      if (code) {
+        window.__dshSettlingApprovals[code] = { at: Date.now(), decision: 'approve' };
+      }
+      lastRenderedChatKey = '';
+      renderAll();
+      showToast('⏳ 正在将你的选择同步到电脑端...');
+      try {
+        const res = await dispatchHostCommand(session.hostId, {
+          type: 'approval',
+          code,
+          agentId: session.id,
+          allow: true,
+          optionIndex: 1,
+          answers: finalAnswers,
+        });
+        if (!res || res.ok === false) {
+          if (code && window.__dshSettlingApprovals) delete window.__dshSettlingApprovals[code];
+          lastRenderedChatKey = '';
+          renderAll();
+          showToast('❌ 提交选择失败：' + (res?.error || '请重试'));
+          return;
+        }
+      } catch (err) {
+        if (code && window.__dshSettlingApprovals) delete window.__dshSettlingApprovals[code];
+        lastRenderedChatKey = '';
+        renderAll();
+        showToast('❌ 提交选择异常：' + (err?.message || err));
+        return;
+      }
+      scheduleFallbackStateSync();
+    },
+    sendPromptToSession: async (session, rawPromptText) => {
+      const text = String(rawPromptText || '').trim();
+      if (!session || !text) return;
+      const clientCmdId = `cmd_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const optMap = ensureOptimisticMsgsMap();
+      const wireTr = Array.isArray(session._wireTranscript) ? session._wireTranscript : [];
+      const probeOpt = { text, rawText: text };
+      const baselineSameUserCount = wireTr.filter(
+        m => m && m.role === 'user' && matchesOptimisticUserText(m.text, probeOpt)
+      ).length;
+      const baselineTotalCount = Number(session._wireTotalCount) || wireTr.length;
+      const optEntry = {
+        id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        cmdId: clientCmdId,
+        text,
+        rawText: text,
+        time: Date.now(),
+        baselineSameUserCount,
+        baselineTotalCount,
+      };
+      const optList = optMap[session.id] || [];
+      optList.push(optEntry);
+      optMap[session.id] = optList.slice(-8);
+      persistOptimisticMsgsMap();
+      lastRenderedChatKey = '';
+      if (activeSessionId === session.id) renderActiveChatStage();
+
+      const chosenChatModel = selectedSessionModels[session.id] || '';
+      try {
+        const res = await dispatchHostCommand(session.hostId, {
+          id: clientCmdId,
+          type: session.status === 'running' ? 'steer' : 'prompt',
+          agentId: session.id,
+          cwd: session.cwd || '',
+          text,
+          prompt: text,
+          ...(chosenChatModel ? { model: chosenChatModel } : {}),
+        });
+        if (!res || res.ok === false) {
+          optMap[session.id] = (optMap[session.id] || []).filter(item => item.id !== optEntry.id);
+          persistOptimisticMsgsMap();
+          showToast('❌ ' + (res?.error || '发送指令失败'));
+          renderAll();
+          return;
+        }
+        showToast('📨 已发送新方案指令');
+      } catch (err) {
+        optMap[session.id] = (optMap[session.id] || []).filter(item => item.id !== optEntry.id);
+        persistOptimisticMsgsMap();
+        showToast('❌ 发送失败：' + (err?.message || err));
+        renderAll();
+        return;
+      }
+      scheduleFallbackStateSync();
+    },
+    markSessionRead: session => {
+      if (!session?.id) return null;
+      const prevSnapshot = {
+        hasSeenAt: Object.prototype.hasOwnProperty.call(seenMap, session.id),
+        seenAt: seenMap[session.id],
+        hasSeenSig: Object.prototype.hasOwnProperty.call(seenSigMap, session.id),
+        seenSig: seenSigMap[session.id],
+        srvRead: hubState.sessionReadState?.[session.id] ? { ...hubState.sessionReadState[session.id] } : null,
+      };
+      const readTs = Math.max(
+        session.updatedAt || 0,
+        session.lastConclusionAt || 0,
+        session.lastInterruptedAt || 0,
+        Date.now()
+      );
+      seenMap[session.id] = readTs;
+      if (session.conclusionSig) {
+        seenSigMap[session.id] = session.conclusionSig;
+      }
+      try {
+        localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap));
+        localStorage.setItem('dsh_seen_sig_v1', JSON.stringify(seenSigMap));
+      } catch { }
+      syncSessionReadToServer(session.id, session.conclusionSig || '', readTs);
+      return prevSnapshot;
+    },
+    restoreSessionUnread: (sessionId, prevSnapshot) => {
+      if (!sessionId || !prevSnapshot) return;
+      if (prevSnapshot.hasSeenAt && prevSnapshot.seenAt) {
+        seenMap[sessionId] = prevSnapshot.seenAt;
+      } else {
+        seenMap[sessionId] = 1;
+      }
+      if (prevSnapshot.hasSeenSig && prevSnapshot.seenSig !== undefined) {
+        seenSigMap[sessionId] = prevSnapshot.seenSig;
+      } else {
+        delete seenSigMap[sessionId];
+      }
+      hubState.sessionReadState = hubState.sessionReadState || {};
+      if (prevSnapshot.srvRead) {
+        hubState.sessionReadState[sessionId] = { ...prevSnapshot.srvRead };
+      } else {
+        hubState.sessionReadState[sessionId] = { unread: true, sig: '', at: 1 };
+      }
+      try {
+        localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap));
+        localStorage.setItem('dsh_seen_sig_v1', JSON.stringify(seenSigMap));
+      } catch { }
+    },
+    switchToRunningList: () => selectProject('SMART_ACTIVE'),
+    onDeckChanged: () => {
+      lastRenderedStripKey = '';
+      lastRenderedListKey = '';
+      renderAll();
+    },
+  });
+
   setupOverlayGestures();
   setupChatScrollWatcher();
   setupInstallHint();
   clearHomeScreenAppBadge();
+  function resumeForegroundSync({ resetTransforms = false } = {}) {
+    clearHomeScreenAppBadge();
+    if (resetTransforms && typeof document !== 'undefined') {
+      const chatEl = document.getElementById('chatFullscreen');
+      if (chatEl && chatEl.style) {
+        chatEl.style.transition = '';
+        chatEl.style.transform = '';
+      }
+    }
+    if (!getToken() || authLockConfirmed) return;
+    const idleMs = Date.now() - lastSseEventAt;
+    if (!stateFetchInFlight && (!sseConnected || idleMs > 15000)) {
+      void fetchState({ silent: true });
+    }
+    if (!sseConnected || idleMs > 25000) {
+      connectSSE();
+    }
+  }
+
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
-        clearHomeScreenAppBadge();
+        resumeForegroundSync();
+      } else if (
+        document.visibilityState === 'hidden' &&
+        pendingBackgroundUiReload &&
+        !hasActiveUserInputInProgress() &&
+        typeof window !== 'undefined' &&
+        window.location &&
+        typeof window.location.reload === 'function'
+      ) {
+        pendingBackgroundUiReload = false;
+        closeSSE();
+        window.location.reload();
       }
     });
   }
   if (typeof window !== 'undefined') {
     window.addEventListener('focus', () => {
       clearHomeScreenAppBadge();
+    });
+    window.addEventListener('pageshow', evt => {
+      resumeForegroundSync({ resetTransforms: Boolean(evt && evt.persisted) });
     });
   }
   // 首屏 0ms 瞬时渲染：先从 localStorage 恢复上次快照并立即渲染，彻底消灭等待 /api/state 期间的白屏
@@ -8196,22 +8578,47 @@ export function initHubController() {
         });
         const exData = await exRes.json().catch(() => ({}));
         if (exRes.ok && exData.token) {
+          authLockConfirmed = false;
           localStorage.setItem('dsh_hub_token', exData.token);
           showToast('🔓 扫码登录成功');
         } else {
+          authLockConfirmed = !getToken();
           showToast('⚠️ 扫码配对码已过期或无效，请重新扫码');
         }
       } catch { }
+      if (getToken() || !authLockConfirmed) {
+        await fetchState();
+        connectSSE();
+      } else {
+        document.getElementById('authOverlay')?.classList.add('show');
+      }
+    })();
+  } else if (getToken()) {
+    (async () => {
       await fetchState();
-      connectSSE();
+      if (getToken() && !authLockConfirmed) {
+        connectSSE();
+      }
     })();
   } else {
-    fetchState();
-    connectSSE();
+    // 首次未登录：立即展示锁屏输入框并用超轻 /api/auth/verify 探测是否开启无密模式，绝不发无意义 /api/state 与 SSE 401 轮询风暴
+    document.getElementById('authOverlay')?.classList.add('show');
+    authLockConfirmed = true;
+    (async () => {
+      const check = await verifyCandidateToken('', 15000);
+      if (getToken()) return;
+      if (check.ok && !check.authRequired) {
+        authLockConfirmed = false;
+        document.getElementById('authOverlay')?.classList.remove('show');
+        await fetchState();
+        connectSSE();
+      }
+    })();
   }
-  // 服务端每 12s 发送 event: ping；跳过 240s 优雅轮转窗口，仅当 SSE 断开或超过 35s 无事件时静默兜底轮询
+  // 服务端每 12s 发送 event: ping；跳过 240s 优雅轮转窗口，仅当已鉴权且 SSE 断开或超过 35s 无事件时静默兜底轮询
   setInterval(() => {
     if (Date.now() < sseRotatingUntil) return;
+    if (!getToken() && authLockConfirmed) return;
     if (!stateFetchInFlight && (!sseConnected || (Date.now() - lastSseEventAt > 35000))) {
       void fetchState({ silent: true });
     }

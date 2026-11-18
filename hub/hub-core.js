@@ -700,7 +700,7 @@ export class HubCore {
     }
   }
 
-  compactBridgeStateForWire(bridgeState, now = this.now()) {
+  compactBridgeStateForWire(bridgeState, now = this.now(), { lite = false } = {}) {
     if (!bridgeState || typeof bridgeState !== 'object') {
       return { tasks: [], approvals: [], workspaces: [] }
     }
@@ -712,20 +712,36 @@ export class HubCore {
           // and full 48,000-char recent reply budgets so mobile conclusions are NEVER truncated.
           // Cold historical idle sessions (>60 min old & index >= 6) keep 3 short preview messages
           // and set `wireTruncated: true` for automatic on-demand full transcript hydration.
+          // In `lite` mode (initial mobile /api/state?lite=1 load), idle sessions ship minimal
+          // 2-message previews and hydrate full transcripts automatically on tap.
+          const isRunningOrApproval =
+            nextTask?.status === 'running' || nextTask?.status === 'approval'
           const taskRecentTs = Math.max(
             Number(nextTask?.lastConclusionAt) || 0,
             Number(nextTask?.updatedAt) || 0,
             Number(nextTask?.lastActivity) || 0,
           )
           const isHotSession =
-            taskIdx < 6 ||
-            nextTask?.status === 'running' ||
-            nextTask?.status === 'approval' ||
-            taskRecentTs >= recentActiveCutoffMs
-          const maxMsgs = isHotSession ? 14 : 3
+            isRunningOrApproval ||
+            (!lite && (taskIdx < 6 || taskRecentTs >= recentActiveCutoffMs))
+          const maxMsgs = lite ? (isRunningOrApproval ? 6 : 2) : isHotSession ? 14 : 3
           const rawTr = Array.isArray(nextTask?.transcript) ? nextTask.transcript : []
           const totalTranscriptCount = Math.max(Number(nextTask?.messageCount) || 0, rawTr.length)
-          const slicedTr = rawTr.length > maxMsgs ? rawTr.slice(-maxMsgs) : rawTr
+          let slicedTr = rawTr.length > maxMsgs ? rawTr.slice(-maxMsgs) : rawTr
+          // Keep at least one user-role message when present so client list filters never drop the session
+          if (slicedTr.length > 0 && rawTr.some(m => m?.role === 'user') && !slicedTr.some(m => m?.role === 'user')) {
+            const lastUserMsg = [...rawTr].reverse().find(m => m?.role === 'user')
+            if (lastUserMsg) {
+              slicedTr = [
+                {
+                  role: 'user',
+                  text: typeof lastUserMsg.text === 'string' ? lastUserMsg.text.slice(0, 600) : '',
+                  ...(lastUserMsg.time ? { time: lastUserMsg.time } : {}),
+                },
+                ...slicedTr.slice(-Math.max(1, maxMsgs - 1)),
+              ]
+            }
+          }
           const omittedTranscriptCount = Math.max(0, totalTranscriptCount - slicedTr.length)
           const recentCutoff = Math.max(0, slicedTr.length - 4)
           let lastAssistantIdx = -1
@@ -740,17 +756,24 @@ export class HubCore {
             if (!m || typeof m !== 'object') return m
             const { toolCalls: _omitTc, ...mRest } = m
             if (m.role !== 'assistant') {
-              if (!isHotSession && typeof m.text === 'string' && m.text.length > 2400) {
+              const maxUserText = lite ? (isRunningOrApproval ? 4000 : 600) : !isHotSession ? 2400 : Infinity
+              if (typeof m.text === 'string' && m.text.length > maxUserText) {
                 wireTruncated = true
-                return { ...mRest, text: m.text.slice(0, 2400) }
+                return { ...mRest, text: m.text.slice(0, maxUserText) }
               }
               return mRest
             }
             const isHotRecent = isHotSession && (mIdx >= recentCutoff || mIdx === lastAssistantIdx)
-            const maxText = isHotRecent ? 48000 : isHotSession ? 16000 : 2400
-            const maxThink = isHotRecent ? 6000 : isHotSession ? 600 : 240
-            const maxTools = isHotRecent ? 20 : isHotSession ? 6 : 4
-            const maxCmd = isHotRecent ? 800 : isHotSession ? 200 : 140
+            const maxText = lite
+              ? (isRunningOrApproval ? (mIdx === lastAssistantIdx ? 12000 : 2400) : 800)
+              : isHotRecent ? 48000 : isHotSession ? 16000 : 2400
+            const maxThink = lite
+              ? (isRunningOrApproval ? 600 : 0)
+              : isHotRecent ? 6000 : isHotSession ? 600 : 240
+            const maxTools = lite
+              ? (isRunningOrApproval ? 6 : 2)
+              : isHotRecent ? 20 : isHotSession ? 6 : 4
+            const maxCmd = lite ? 140 : isHotRecent ? 800 : isHotSession ? 200 : 140
             const rawTools = Array.isArray(m.tools) ? m.tools : Array.isArray(m.toolCalls) ? m.toolCalls : []
             const textTrunc = typeof m.text === 'string' && m.text.length > maxText
             const thinkTrunc = typeof m.thinking === 'string' && m.thinking.length > maxThink
@@ -761,9 +784,11 @@ export class HubCore {
             return {
               ...mRest,
               text: textTrunc ? m.text.slice(0, maxText) : m.text,
-              thinking: thinkTrunc
-                ? `${m.thinking.slice(0, maxThink)}\n...(历史思考已折叠)...`
-                : m.thinking,
+              thinking: maxThink === 0
+                ? undefined
+                : thinkTrunc
+                  ? `${m.thinking.slice(0, maxThink)}\n...(历史思考已折叠)...`
+                  : m.thinking,
               tools: rawTools.slice(0, maxTools).map(tl =>
                 typeof tl === 'string'
                   ? { name: tl, id: '', summary: '', commandLine: '执行完毕' }
@@ -886,7 +911,7 @@ export class HubCore {
     }
   }
 
-  getFullState() {
+  getFullState({ lite = false } = {}) {
     const now = this.now()
     let prunedAnyHost = false
     const summaryById = new Map(this.getHostsSummary().map(item => [item.hostId, item]))
@@ -909,6 +934,7 @@ export class HubCore {
           now,
         ),
         now,
+        { lite },
       )
       return {
         ...summary,

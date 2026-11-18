@@ -54,11 +54,11 @@ DSH、Antigravity IDE、OpenAI Codex 与腾讯 WorkBuddy 均已支持**完整远
 
 | Hub 放在 | 手机在哪能用 | 成本 |
 |---|---|---|
+| Railway / 轻量云服务器 (VPS) | 任何网络（4G/5G/Wi-Fi） | 固定低月费（如 Railway Hobby 约 $5/月） |
 | 自己的电脑 | 同一个 Wi-Fi | 0 |
 | 家里的 NAS / 服务器 | 同一个 Wi-Fi | 设备成本 |
-| Google Cloud Run | 任何网络（4G/5G/Wi-Fi） | 闲置缩容到 0，免费额度内几乎为 0 |
-| 云服务器 / Railway | 任何网络 | 服务器或平台费用 |
 | 本地 + 隧道 | 任何网络 | 0（隧道免费） |
+| Google Cloud Run | 任何网络（4G/5G/Wi-Fi） | 按实例活跃时长计费（电脑守护进程 24h 在线时不会缩容到 0） |
 
 「不用部署」和「在外面也能用」是互斥的，只能选一个。
 

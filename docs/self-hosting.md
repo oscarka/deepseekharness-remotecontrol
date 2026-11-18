@@ -5,31 +5,17 @@
 
 ---
 
-## 方案 0：Google Cloud Run 一键部署（出门 4G/5G 推荐 · 闲置缩容到 0）
-
-自带 HTTPS 域名（支持 iPhone 添加到主屏幕开启锁屏通知），无人访问时自动缩容到 0 几乎不产生费用：
-
-```bash
-GCP_PROJECT_ID="你的-gcp-project-id" \
-HUB_TOKEN="你的管理员强密码" \
-./deploy-cloudrun.sh
-```
-
-脚本执行完毕会直接输出你的 `https://dsh-remotecontrol-hub-xxx.run.app` 网址。后续升级执行 `./deploy-cloudrun.sh` 会自动保留线上已有密码与配对状态。
-
----
-
-## 方案 1：Railway 一键部署（免装命令行）
+## 方案 0：Railway 一键部署（首选推荐 · 免装命令行，1 分钟上云）
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/dsh-remote-control-hub?referralCode=44kg1p&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
 1. 点击上方或主 README 的 **Deploy on Railway** 按钮。
 2. 模板已自动为你预生成 32 位随机强密钥 **`HUB_TOKEN`** 与锁屏推送密钥 **`VAPID_SECRET`**（建议在部署页面把 `HUB_TOKEN` 记下来，或直接改成你自己好记的强密码）。
-3. 点击 **Deploy** 后会自动分配公网 `https://xxxx.up.railway.app` 网址，约 1 分钟即可打开使用。
+3. 点击 **Deploy** 后会自动分配公网 `https://xxxx.up.railway.app` 网址，约 1 分钟即可打开使用，原生支持 SSE 长连接且常驻月费可控（Hobby 约 $5/月）。
 
 ---
 
-## 方案 2：云服务器 / VPS（Docker Compose + 域名 HTTPS）
+## 方案 1：云服务器 / VPS（Docker Compose + 域名 HTTPS / Cloudflare CDN）
 
 ### 1. 启动容器（带持久化数据盘）
 
@@ -79,6 +65,22 @@ server {
     }
 }
 ```
+
+> 若服务器在海外，推荐把自定义域名托管在 Cloudflare 并开启代理（橙色云朵 `Proxied` + `SSL: Full`），即可免费获得全球边缘 HTTP/2 + HTTP/3 加速与静态资源缓存。
+
+---
+
+## 方案 2：Google Cloud Run 脚本部署
+
+如果你已有 GCP 项目并习惯使用 `gcloud` 命令行部署，可执行一键脚本（提示：只要接入的电脑守护进程保持 24 小时在线 SSE/心跳连接，实例就会持续常驻计费而不会缩容到 0；多台电脑长期在线更推荐方案 0 的 Railway 或方案 1 的轻量 VPS）：
+
+```bash
+GCP_PROJECT_ID="你的-gcp-project-id" \
+HUB_TOKEN="你的管理员强密码" \
+./deploy-cloudrun.sh
+```
+
+脚本执行完毕会直接输出你的 `https://dsh-remotecontrol-hub-xxx.run.app` 网址。后续升级执行 `./deploy-cloudrun.sh` 会自动保留线上已有密码与配对状态。
 
 ---
 

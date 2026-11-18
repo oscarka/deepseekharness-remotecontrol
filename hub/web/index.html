@@ -7,12 +7,57 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="DSH 远控" />
-  <link rel="manifest" href="/manifest.json" />
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/manifest.json?v=0.8.0" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=0.8.0" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg?v=0.8.0" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=0.8.0" />
   <title>DeepSeek Harness 自托管全功能总控台</title>
+  <style>#app:not(:empty) + #dshBootSplash { display: none !important; }</style>
+  <script>
+    (function () {
+      function recoverAssetFailure() {
+        try {
+          var last = Number(sessionStorage.getItem('dsh_boot_retry_ts') || 0);
+          if (Date.now() - last > 20000) {
+            sessionStorage.setItem('dsh_boot_retry_ts', String(Date.now()));
+            var u = new URL(location.href);
+            u.searchParams.set('_r', String(Date.now()).slice(-6));
+            location.replace(u.toString());
+            return;
+          }
+        } catch (e) {}
+        var btn = document.getElementById('dshBootRetryBtn');
+        if (btn) btn.style.display = 'inline-flex';
+      }
+      window.addEventListener('vite:preloadError', function (ev) {
+        if (ev && ev.preventDefault) ev.preventDefault();
+        recoverAssetFailure();
+      });
+      window.addEventListener('error', function (ev) {
+        var t = ev && ev.target;
+        if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) {
+          var appEl = document.getElementById('app');
+          if (!appEl || !appEl.children.length) recoverAssetFailure();
+        }
+      }, true);
+      setTimeout(function () {
+        var appEl = document.getElementById('app');
+        var btn = document.getElementById('dshBootRetryBtn');
+        if (btn && (!appEl || !appEl.children.length)) {
+          btn.style.display = 'inline-flex';
+        }
+      }, 6500);
+    })();
+  </script>
 </head>
 <body class="PhoneFrameMode">
   <div id="app"></div>
+  <div id="dshBootSplash" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f8fafc;color:#475569;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;padding:24px;text-align:center;">
+    <img src="/icon-192.png?v=0.8.0" alt="" width="56" height="56" style="border-radius:14px;margin-bottom:14px;box-shadow:0 8px 20px rgba(15,23,42,0.12);" onerror="this.style.display='none'" />
+    <div style="font-size:15px;font-weight:700;color:#0f172a;">DSH 远控台连接中…</div>
+    <div style="font-size:12.5px;color:#64748b;margin-top:6px;">正在同步加密会话与静态资源，请稍候</div>
+    <button id="dshBootRetryBtn" type="button" onclick="location.reload()" style="display:none;margin-top:16px;align-items:center;gap:6px;padding:8px 16px;border-radius:999px;border:1px solid #cbd5e1;background:#ffffff;color:#0f172a;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,0.06);">🔄 网络较慢，点此重新加载</button>
+  </div>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

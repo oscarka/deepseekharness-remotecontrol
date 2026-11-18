@@ -2,6 +2,25 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.0] - 2026-11-18
+
+### Added
+
+- **滑卡批阅模式（`Triage Deck`）（`hub/web/src/components/TriageDeck.tsx` / `hub/web/src/triage-deck.js` / `hub/web/src/styles/triage-deck.css`）**：
+  - 在筛选栏左侧新增四宫格入口，支持以沉浸式手势卡片栈逐张快速处理待审批命令、多选提问卡、未读结论与中断任务（右滑批准/已读、左滑跳过、`↩ 撤回` 与原地详情抽屉）。
+- **原生全尺寸高清光栅 PNG 应用图标（`hub/web/public/` / `hub/server.js` / `hub/web/index.html`）**：
+  - 内置 `180×180` `/apple-touch-icon.png`、`192×192` `/icon-192.png`、`512×512` `/icon-512.png`、`32×32` `/favicon-32x32.png`、`/favicon.ico` 与高清矢量 `/icon.svg`，彻底修复 iOS Safari「添加到主屏幕」拒收 SVG 图标导致退化为灰色字母 `D` 的问题。
+
+### Fixed
+
+- **手机端跨洋弱网首屏秒开、独立验密防误报与 SSE 序列对齐防卡死（`hub/hub-core.js` / `hub/server.js` / `hub/web/src/controller.js`）**：
+  - 新增 `/api/state?lite=1` 与 `/api/events?lite=1` 首屏精简传输协议，首屏体积降低约 75%，点开历史或运行中长对话时自动按需无感拼接完整上下文；
+  - 新增超轻量 `POST /api/auth/verify` 验密接口与 Token 代数防竞态保护，消除慢网下误报「密码错误」及未登录态 `401` 轮询风暴；
+  - 修复 `lite=1` 模式下 SSE `stateSeq` 不对齐引发的反复重拉与并发 `/transcript` 阻塞，限制本地快照缓存有效期为 `1 小时`，并补齐 iOS 切回前台（`visibilitychange` / `pageshow`）即时静默同步。
+- **热更新零白屏保护与指南首选 Railway 调整（`hub/server.js` / `hub/web/index.html` / `hub/web/src/controller.js` / `README*`）**：
+  - 移除服务端 `uiBuild` 更新时强行打断当前前台页面的 `window.location.reload()`，改为退入后台且无未发草稿时无感更新；
+  - 服务端新增旧哈希 `/assets/index-*.js|.css` 的 `no-store` 平滑兜底与静态资源 `HEAD` 支持，前端新增 `vite:preloadError` 自动重试与首次解锁同步骨架态，并将部署文档第一推荐方式统一调整为 Railway。
+
 ## [0.7.9] - 2026-11-18
 
 ### Fixed

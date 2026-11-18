@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import { timingSafeEqual } from 'node:crypto'
 import { accessSync, constants, existsSync, readFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -255,11 +255,13 @@ export function createHubServer({
     const urlObj = new URL(url || '/', `${scheme}://${headers.host || 'localhost'}`)
     const pathname = urlObj.pathname
 
+    const readMethod = method === 'HEAD' ? 'GET' : method
+
     if (method === 'OPTIONS') {
       return { status: 204, headers: { 'access-control-allow-origin': '*' }, body: '' }
     }
 
-    if (method === 'GET' && (pathname === '/healthz' || pathname === '/ready' || pathname === '/api/health')) {
+    if (readMethod === 'GET' && (pathname === '/healthz' || pathname === '/ready' || pathname === '/api/health')) {
       return {
         status: 200,
         json: {
@@ -274,7 +276,7 @@ export function createHubServer({
       }
     }
 
-    if (method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
+    if (readMethod === 'GET' && (pathname === '/' || pathname === '/index.html')) {
       const html = await readFile(INDEX_HTML_PATH, 'utf8')
       const m = /assets\/index-([A-Za-z0-9_-]+)\.js/.exec(html)
       if (m?.[1]) buildInfo.uiBuild = m[1]
@@ -285,34 +287,86 @@ export function createHubServer({
       }
     }
 
-    if (method === 'GET' && pathname.startsWith('/assets/')) {
+    if (readMethod === 'GET' && pathname.startsWith('/assets/')) {
       const rel = pathname.slice('/assets/'.length)
       if (!rel || rel.includes('..') || rel.includes('/')) {
-        return { status: 404, body: 'Not found' }
+        return {
+          status: 404,
+          headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+          body: 'Not found',
+        }
       }
+      const assetsDir = join(__dirname, 'public', 'assets')
+      const contentType = rel.endsWith('.css')
+        ? 'text/css; charset=utf-8'
+        : rel.endsWith('.js')
+          ? 'application/javascript; charset=utf-8'
+          : rel.endsWith('.svg')
+            ? 'image/svg+xml; charset=utf-8'
+            : rel.endsWith('.png')
+              ? 'image/png'
+              : rel.endsWith('.ico')
+                ? 'image/x-icon'
+                : rel.endsWith('.woff2')
+                  ? 'font/woff2'
+                  : 'application/octet-stream'
+      const isTextAsset = rel.endsWith('.css') || rel.endsWith('.js') || rel.endsWith('.svg')
       try {
-        const assetPath = join(__dirname, 'public', 'assets', rel)
-        const body = await readFile(assetPath, 'utf8')
-        const contentType = rel.endsWith('.css')
-          ? 'text/css; charset=utf-8'
-          : rel.endsWith('.js')
-            ? 'application/javascript; charset=utf-8'
-            : 'text/plain; charset=utf-8'
+        const assetPath = join(assetsDir, rel)
+        if (isTextAsset) {
+          const body = await readFile(assetPath, 'utf8')
+          return {
+            status: 200,
+            headers: {
+              'content-type': contentType,
+              'cache-control': 'public, max-age=31536000, immutable',
+            },
+            body,
+          }
+        }
+        const buf = await readFile(assetPath)
         return {
           status: 200,
           headers: {
             'content-type': contentType,
+            'content-length': String(buf.length),
             'cache-control': 'public, max-age=31536000, immutable',
           },
-          body,
+          buffer: method === 'HEAD' ? Buffer.alloc(0) : buf,
         }
       } catch {
-        return { status: 404, body: 'Asset not found' }
+        // Zero-white-screen deploy fallback: if an open mobile tab requests a just-rotated
+        // `/assets/index-<oldHash>.js` or `.css`, serve the active bundle with `no-store`
+        // so neither browser nor CDN caches the mismatched hash while keeping the tab alive.
+        const staleIndexMatch = /^index-[A-Za-z0-9_-]+\.(js|css)$/.exec(rel)
+        if (staleIndexMatch) {
+          try {
+            const ext = `.${staleIndexMatch[1]}`
+            const files = await readdir(assetsDir)
+            const currentName = files.find(f => f.startsWith('index-') && f.endsWith(ext))
+            if (currentName) {
+              const body = await readFile(join(assetsDir, currentName), 'utf8')
+              return {
+                status: 200,
+                headers: {
+                  'content-type': contentType,
+                  'cache-control': 'no-store',
+                },
+                body,
+              }
+            }
+          } catch {}
+        }
+        return {
+          status: 404,
+          headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+          body: 'Asset not found',
+        }
       }
     }
 
     // PWA Web App Manifest for iPhone / Android Home Screen installation
-    if (method === 'GET' && pathname === '/manifest.json') {
+    if (readMethod === 'GET' && pathname === '/manifest.json') {
       return {
         status: 200,
         headers: { 'content-type': 'application/manifest+json; charset=utf-8', 'cache-control': 'no-store' },
@@ -328,40 +382,82 @@ export function createHubServer({
           theme_color: '#ffffff',
           icons: [
             {
-              src: '/icon.svg',
+              src: '/icon-192.png?v=0.8.0',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: '/icon-512.png?v=0.8.0',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any maskable',
+            },
+            {
+              src: '/apple-touch-icon.png?v=0.8.0',
+              sizes: '180x180',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: '/icon.svg?v=0.8.0',
               sizes: 'any',
               type: 'image/svg+xml',
-              purpose: 'any maskable',
+              purpose: 'any',
             },
           ],
         }, null, 2),
       }
     }
 
-    // Crisp SVG App Icon for Home Screen & Push Notifications (Bright iOS App Style)
-    if (method === 'GET' && (pathname === '/icon.svg' || pathname === '/apple-touch-icon.png')) {
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-        <defs>
-          <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#eff6ff"/>
-            <stop offset="100%" stop-color="#dbeafe"/>
-          </linearGradient>
-          <linearGradient id="brand" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#2563eb"/>
-            <stop offset="100%" stop-color="#4f46e5"/>
-          </linearGradient>
-        </defs>
-        <rect width="256" height="256" rx="56" fill="url(#g)"/>
-        <rect x="28" y="40" width="200" height="142" rx="26" fill="#ffffff" stroke="#bfdbfe" stroke-width="4"/>
-        <path d="M66 94 L98 116 L66 138" stroke="url(#brand)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        <line x1="114" y1="138" x2="166" y2="138" stroke="#059669" stroke-width="14" stroke-linecap="round"/>
-        <circle cx="192" cy="76" r="10" fill="#10b981"/>
-        <text x="128" y="224" text-anchor="middle" fill="#1e3a8a" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-weight="800" font-size="27" letter-spacing="0.5">DSH REMOTE</text>
-      </svg>`
+    // Native Raster PNG Icons for iOS Home Screen (`apple-touch-icon.png` MUST be real PNG, never SVG)
+    const PNG_ICON_ROUTES = {
+      '/apple-touch-icon.png': { file: 'apple-touch-icon.png', type: 'image/png' },
+      '/apple-touch-icon-precomposed.png': { file: 'apple-touch-icon.png', type: 'image/png' },
+      '/apple-touch-icon-180x180.png': { file: 'apple-touch-icon.png', type: 'image/png' },
+      '/icon-192.png': { file: 'icon-192.png', type: 'image/png' },
+      '/icon-512.png': { file: 'icon-512.png', type: 'image/png' },
+      '/favicon-32x32.png': { file: 'favicon-32x32.png', type: 'image/png' },
+      '/favicon.ico': { file: 'favicon.ico', type: 'image/x-icon' },
+    }
+    if (readMethod === 'GET' && Object.prototype.hasOwnProperty.call(PNG_ICON_ROUTES, pathname)) {
+      const spec = PNG_ICON_ROUTES[pathname]
+      for (const candidateDir of [join(__dirname, 'public'), join(__dirname, 'web', 'public')]) {
+        try {
+          const buf = await readFile(join(candidateDir, spec.file))
+          return {
+            status: 200,
+            headers: {
+              'content-type': spec.type,
+              'content-length': String(buf.length),
+              'cache-control': 'public, max-age=86400',
+            },
+            buffer: method === 'HEAD' ? Buffer.alloc(0) : buf,
+          }
+        } catch {}
+      }
+    }
+
+    // Crisp Vector SVG App Icon
+    if (readMethod === 'GET' && pathname === '/icon.svg') {
+      for (const candidateSvg of [
+        join(__dirname, 'public', 'icon.svg'),
+        join(__dirname, '..', 'icon.svg'),
+      ]) {
+        try {
+          const svgBody = await readFile(candidateSvg, 'utf8')
+          return {
+            status: 200,
+            headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'public, max-age=86400' },
+            body: svgBody,
+          }
+        } catch {}
+      }
+      const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><rect width="256" height="256" rx="56" fill="#1d4ed8"/><rect x="36" y="64" width="160" height="136" rx="32" fill="#ffffff"/><path d="M72 108 L108 134 L72 160" stroke="#2563eb" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none"/><line x1="124" y1="160" x2="168" y2="160" stroke="#10b981" stroke-width="18" stroke-linecap="round"/></svg>`
       return {
         status: 200,
-        headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'public, max-age=3600' },
-        body: svg,
+        headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': 'public, max-age=86400' },
+        body: fallbackSvg,
       }
     }
 
@@ -632,13 +728,14 @@ export function createHubServer({
 
       if (method === 'GET' && pathname === '/api/state') {
         const reqPort = Number(urlObj.port || process.env.PORT || process.env.HUB_PORT || 8080)
+        const lite = urlObj.searchParams.get('lite') === '1'
         return {
           status: 200,
           json: {
             ok: true,
             authRequired: Boolean(expectedToken),
             lanOrigins: detectLanOrigins(reqPort, { scheme }),
-            ...hub.getFullState(),
+            ...hub.getFullState({ lite }),
           },
         }
       }
@@ -1200,7 +1297,9 @@ export function createHubServer({
         }
         safeWrite('retry: 1000\n\n')
         const wantDelta = urlObj.searchParams.get('delta') === '1'
+        const useLite = urlObj.searchParams.get('lite') === '1'
         const clientSeq = Number(urlObj.searchParams.get('seq') || 0)
+        const getEventState = () => hub.getFullState({ lite: useLite })
         let prevDigest = null
         const sendEvent = stateData => {
           lastSsePushAt = Date.now()
@@ -1222,7 +1321,7 @@ export function createHubServer({
         }
         if (urlObj.searchParams.get('initial') === '0') {
           if (wantDelta) {
-            const curState = hub.getFullState()
+            const curState = getEventState()
             if (clientSeq > 0 && clientSeq !== curState.stateSeq) {
               sendEvent(curState)
             } else {
@@ -1235,12 +1334,12 @@ export function createHubServer({
             safeWrite(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
           }
         } else {
-          sendEvent(hub.getFullState())
+          sendEvent(getEventState())
         }
         const flushLatestState = () => {
           pendingSseTimer = null
           if (closed || res.writableEnded || res.destroyed) return
-          sendStateOrDelta(hub.getFullState())
+          sendStateOrDelta(getEventState())
         }
         const unsubscribe = hub.onStateChange((evt, stateData) => {
           if (closed || res.writableEnded || res.destroyed) return
@@ -1255,7 +1354,7 @@ export function createHubServer({
               clearTimeout(pendingSseTimer)
               pendingSseTimer = null
             }
-            sendStateOrDelta(stateData || hub.getFullState())
+            sendStateOrDelta(useLite ? getEventState() : (stateData || getEventState()))
             return
           }
           if (!pendingSseTimer) {
@@ -1563,8 +1662,8 @@ self.addEventListener('push', event => {
   const tasks = [
     self.registration.showNotification(payload.title, {
       body: payload.body,
-      icon: '/icon.svg',
-      badge: '/icon.svg',
+      icon: '/icon-192.png?v=0.8.0',
+      badge: '/icon-192.png?v=0.8.0',
       tag: payload.tag || 'dsh-notify',
       renotify: true,
       data: payload.data || { url: '/' },

@@ -2,7 +2,7 @@
   <img src="docs/assets/hero-banner-zh.svg" alt="DSH Remote Control — 把电脑上正在跑的 AI 编程任务装进手机口袋" width="100%" />
 
   <p align="center">
-    <strong>你的 AI 编程工具，由你自己掌控 —— 不必依赖任何第三方厂商的固定中转服务。<br/>随时在手机上看 AI 编程进度、发指令、紧急叫停，或者点一下批准危险命令与多选弹窗。<br/>支持将控制台免费部署在你自己的电脑、NAS、VPS 或你自己的 Cloud Run / Railway 账号上。</strong>
+    <strong>你的 AI 编程工具，由你自己掌控 —— 不必依赖任何第三方厂商的固定中转服务。<br/>随时在手机上看 AI 编程进度、发指令、紧急叫停，或者点一下批准危险命令与多选弹窗。<br/>支持将控制台一键部署在你自己的 Railway 账号、VPS、NAS 或本机电脑上。</strong>
   </p>
 
   <p align="center">
@@ -79,7 +79,7 @@
                                       └─────────────────────────────────┘               └─────────────────────────────────┘
 ```
 
-1. **控制台 (`Control Hub`)**：一个零外部依赖的轻量级 Node.js 网页服务，由你自己选择部署位置（本机、NAS、VPS，或你自己的 Cloud Run / Railway 账号），不需要绑定到任何第三方厂商统一托管的 SaaS 中转服务。
+1. **控制台 (`Control Hub`)**：一个零外部依赖的轻量级 Node.js 网页服务，由你自己选择部署位置（首选 Railway 一键上云，也可部署在你自己的 VPS + Cloudflare CDN、NAS、本机电脑或 Cloud Run 上），不需要绑定到任何第三方厂商统一托管的 SaaS 中转服务。
 2. **电脑端后台服务 (`connect-host.sh`)**：在你写代码的 Mac / Linux 电脑上用一行命令装好的后台小助手。它负责读取本机正在跑的 AI 任务并主动连上你的控制台（因此**你的电脑不需要公网 IP，也不用配路由器端口映射**）。
 
 > **透明的数据边界说明**：你自己部署的控制台 Hub 会在内存中保存近期会话元信息与活跃对话快照，以便手机端秒开查看；你的项目完整源代码、截图与演示视频留在电脑本地，仅当你在手机里点开时通过独立反向 HTTP 流式隧道按需读取（支持 `HTTP 206 Range` 视频拖动分片秒播、长截图保真智能缩略图，以及不暴露主密码的短效只读 `mediaTicket` 票据）。生成的回放分享链接 (`/share/:id#k=...`) 采用浏览器端 AES-256-GCM 端到端加密。完整边界说明见 [`SECURITY.md`](./SECURITY.md)。
@@ -100,19 +100,10 @@
 
 你可以根据自己的使用场景，从下面 4 种方式里选最顺手的一种启动控制台：
 
-#### 🌟 方式 A：Google Cloud Run 云端部署（作者本人日常使用同款 · 推荐出门用 4G/5G 随时遥控）
-如果你想在地铁、咖啡馆用手机 4G/5G 随时遥控家里或公司的电脑，又不想自己买一台 24 小时开机的云服务器，直接用项目自带的一键脚本部署到 Google Cloud Run（自带 HTTPS 域名，闲置时自动缩容到 0 几乎不花钱）：
-
-```bash
-git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
-cd deepseekharness-remotecontrol
-
-# 把 your-gcp-project-id 换成你的 Google Cloud 项目 ID，密码换成你自己的密码
-GCP_PROJECT_ID="your-gcp-project-id" \
-HUB_TOKEN="自定义一个安全密码" \
-./deploy-cloudrun.sh
-```
-脚本跑完后会直接打印出你的专属 `https://dsh-remotecontrol-hub-xxx.run.app` 控制台网址。
+#### 🌟 方式 A：Railway 网页一键部署（首选推荐 · 免装命令行，1 分钟搞定 24 小时 4G/5G 跨网远控）
+如果你想在地铁、咖啡馆用手机 4G/5G 随时遥控家里或公司的电脑，又不想在本地折腾云平台 CLI 或自己维护服务器，直接点击本页顶部的 **Deploy on Railway** 按钮（或[直接打开官方一键模板](https://railway.com/deploy/dsh-remote-control-hub?referralCode=44kg1p&utm_medium=integration&utm_source=template&utm_campaign=generic)）：
+- 模板会自动预生成随机强密码 `HUB_TOKEN`（你也可以在部署页直接改成自己好记的强密码）。
+- 点一下 **Deploy** 约 1 分钟即自动分配公网 `https://` 域名，原生支持 SSE 实时长连接，多台电脑 24 小时在线常驻费用固定可控（Hobby 计划约 $5/月）。
 
 #### 🏠 方式 B：克隆代码在电脑本机直接跑（最快 30 秒体验 · 同一 Wi-Fi 下 0 成本）
 不需要云服务器，也不需要装 Docker。只要电脑有 Node.js（>= 20），克隆仓库加密码参数直接启动：
@@ -126,11 +117,8 @@ HUB_TOKEN="自定义一个密码" PORT=8080 npm start
 ```
 终端会同时打印出本机地址 `http://localhost:8080` 和局域网地址 `http://192.168.1.x:8080`。
 
-#### ☁️ 方式 C：Railway 网页一键部署（免敲命令上云）
-不想在本地装命令行工具？直接点击本页顶部的 **Deploy on Railway** 按钮（模板会自动预生成随机强密码 `HUB_TOKEN` 与公网 `https://` 域名，你也可以在部署页把 `HUB_TOKEN` 改成自己熟悉的强密码），点一下 Deploy 约 1 分钟即可直接使用。
-
-#### 🐳 方式 D：自有云服务器 / NAS / 树莓派（Docker 或内网穿透）
-如果你有自己的 VPS、群晖 NAS 或软路由，可以直接用一行 Docker 命令启动（或者本机 `npm start` 搭配 `cloudflared` / `cpolar` / `Tailscale`）：
+#### 🐳 方式 C：自有云服务器 / VPS / NAS / 树莓派（Docker 或搭配 Cloudflare CDN / 隧道）
+如果你有自己的轻量云服务器 / VPS（推荐搭配 Nginx + Cloudflare 边缘 CDN 开启 HTTP/2 &amp; HTTP/3 加速）、群晖 NAS 或软路由，可以直接用一行 Docker 命令启动（或者本机 `npm start` 搭配 `cloudflared` / `cpolar` / `Tailscale`）：
 
 ```bash
 docker run -d --name dsh-hub \
@@ -140,6 +128,20 @@ docker run -d --name dsh-hub \
   -e HUB_TOKEN="自定义一个密码" \
   ghcr.io/oscarka/deepseekharness-remotecontrol:latest
 ```
+
+#### ☁️ 方式 D：Google Cloud Run 云端脚本部署
+如果你习惯使用 GCP `gcloud` 命令行部署，可直接运行项目自带的一键脚本（提示：由于接入的电脑守护进程会 24 小时保持 SSE 与心跳长连接，电脑在线期间 Cloud Run 实例会保持常驻计费而不会缩容到 0；多机长期在线更推荐上面的 Railway 或轻量 VPS 方案）：
+
+```bash
+git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
+cd deepseekharness-remotecontrol
+
+# 把 your-gcp-project-id 换成你的 Google Cloud 项目 ID，密码换成你自己的密码
+GCP_PROJECT_ID="your-gcp-project-id" \
+HUB_TOKEN="自定义一个安全密码" \
+./deploy-cloudrun.sh
+```
+脚本跑完后会直接打印出你的专属 `https://dsh-remotecontrol-hub-xxx.run.app` 控制台网址。
 
 <div align="center">
   <img src="docs/assets/step1-login-zh.png" width="260" alt="第 1 步：打开控制台网页并输入管理密码解锁" /><br/>
@@ -197,6 +199,15 @@ docker run -d --name dsh-hub \
 
 <a id="最近版本更新记录"></a>
 ## 📅 最近版本更新记录
+
+<details>
+<summary><strong><code>2026-11-18 · v0.8.0</code> — 滑卡批阅模式、手机端 <code>?lite=1</code> 极速秒开、热更新防白屏保护 &amp; 原生 iOS 主屏幕高清图标</strong></summary>
+
+- **滑卡批阅模式（`Triage Deck`，`v0.8.0`）**：在筛选栏左侧新增四宫格入口，支持以沉浸式手势卡片栈（[`TriageDeck.tsx`](hub/web/src/components/TriageDeck.tsx) / [`triage-deck.js`](hub/web/src/triage-deck.js) / [`triage-deck.css`](hub/web/src/styles/triage-deck.css)）逐张快速处理待审批命令、多选提问卡、未读结论与中断任务——右滑已读/批准、左滑稍后处理、支持 `↩ 撤回` 与原地展开上下文详情。
+- **手机端 `?lite=1` 轻量首屏秒开、独立验密防误报 &amp; SSE 序列对齐防卡死（`v0.8.0`）**：为 `/api/state?lite=1` 与 `/api/events?lite=1` 新增首屏精简传输协议（[`hub-core.js`](hub/hub-core.js) / [`server.js`](hub/server.js) / [`controller.js`](hub/web/src/controller.js)），首屏体积直降约 75%，点开历史或运行中长会话时按需无感拼接完整上下文；新增超轻量 `POST /api/auth/verify` 独立验密接口与登录代数防竞态锁，彻底消除跨洋弱网下误报「密码错误」与未登录 `401` 轮询风暴；修复 `lite=1` 模式下 SSE `stateSeq` 不对齐引发的反复重拉与全量 `/transcript` 并发挤爆阻塞；收敛本地快照缓存有效期（`1 小时`）并补齐 iOS 锁屏/切后台回前台（`visibilitychange` / `pageshow`）即时静默重连刷新。
+- **热更新零白屏自愈机制 &amp; 原生 iOS 主屏幕高清 PNG 图标（`v0.8.0`）**：移除服务端构建号变更时强行打断当前页面的 `window.location.reload()`，改为切入后台且无未发草稿时静默无感升级（[`controller.js`](hub/web/src/controller.js)）；服务端新增旧哈希 `/assets/index-*.js|.css` 的 `no-store` 平滑兜底与全静态路由 `HEAD` 方法支持（[`server.js`](hub/server.js)），前端补齐 `vite:preloadError` 自动重试与首次解锁同步骨架态（[`index.html`](hub/web/index.html)）；重绘并内置全尺寸高清光栅 PNG 图标（`180×180` `/apple-touch-icon.png`、`192×192`、`512×512` 与 `favicon.ico`），彻底修复 iOS Safari「添加到主屏幕」因拒收 SVG 而退化为灰色字母 `D` 的问题。
+
+</details>
 
 <details>
 <summary><strong><code>2026-11-18 · v0.7.9</code> — 修复带代码的 AI 回复语音播报中途断停（防 GC 保活 &amp; 代码块围栏精准配对）</strong></summary>

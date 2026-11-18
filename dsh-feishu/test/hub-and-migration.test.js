@@ -730,7 +730,20 @@ test('iPhone Home Screen PWA & W3C Web Push (RFC 8292 VAPID + RFC 8291 aes128gcm
 
   const iconRes = await fetchAdapter(`${hubUrl}/apple-touch-icon.png`)
   assert.equal(iconRes.status, 200)
-  assert.match(await iconRes.text(), /<svg/)
+  assert.equal(iconRes.headers.get('content-type'), 'image/png')
+  const iconBytes = new Uint8Array(await iconRes.arrayBuffer())
+  assert.equal(iconBytes[0], 0x89)
+  assert.equal(iconBytes[1], 0x50)
+  assert.equal(iconBytes[2], 0x4e)
+  assert.equal(iconBytes[3], 0x47)
+
+  const svgIconRes = await fetchAdapter(`${hubUrl}/icon.svg`)
+  assert.equal(svgIconRes.status, 200)
+  assert.match(await svgIconRes.text(), /<svg/)
+
+  const staleAssetRes = await fetchAdapter(`${hubUrl}/assets/index-staleoldhash99.js`)
+  assert.equal(staleAssetRes.status, 200)
+  assert.equal(staleAssetRes.headers.get('cache-control'), 'no-store')
 
   const swRes = await fetchAdapter(`${hubUrl}/sw.js`)
   assert.equal(swRes.status, 200)
@@ -7025,6 +7038,81 @@ test('Codex remote messaging reliability: multi-turn resume transcript merge, th
     await rm(tmpDir, { recursive: true, force: true })
   }
 })
+
+test('mobile fast bootstrap: /api/state?lite=1 shrinks idle transcripts while preserving user-role markers, plus /favicon.ico & HEAD 200', async () => {
+  const hub = new HubCore({ stateFile: null })
+  const bigIdleText = '结论详述'.repeat(1200)
+  hub.handleHeartbeat({
+    hostId: 'mac-lite',
+    hostName: 'Lite Mac',
+    bridgeState: {
+      tasks: [
+        {
+          id: 'session-idle-1',
+          title: '历史超长对话',
+          status: 'idle',
+          updatedAt: Date.now() - 120_000,
+          messageCount: 5,
+          transcript: [
+            { role: 'user', text: '请帮我排查问题', time: 1000 },
+            { role: 'assistant', text: bigIdleText, thinking: '思考过程'.repeat(200), time: 2000 },
+            { role: 'assistant', text: bigIdleText, time: 3000 },
+          ],
+        },
+        {
+          id: 'session-run-1',
+          title: '运行中对话',
+          status: 'running',
+          updatedAt: Date.now(),
+          messageCount: 3,
+          transcript: [
+            { role: 'user', text: '继续执行', time: 4000 },
+            { role: 'assistant', text: '正在处理...', time: 5000 },
+          ],
+        },
+      ],
+    },
+  })
+
+  const { server } = createHubServer({ hub, token: 'secret-lite-token' })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const port = server.address().port
+  const baseUrl = `http://127.0.0.1:${port}`
+  try {
+    const authRes = await fetch(`${baseUrl}/api/auth/verify`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer secret-lite-token' },
+    })
+    assert.equal(authRes.status, 200)
+    const favRes = await fetch(`${baseUrl}/favicon.ico`)
+    assert.equal(favRes.status, 200)
+    const headRes = await fetch(`${baseUrl}/api/health`, { method: 'HEAD' })
+    assert.equal(headRes.status, 200)
+    assert.equal(await headRes.text(), '')
+
+    const fullRes = await fetch(`${baseUrl}/api/state`, {
+      headers: { authorization: 'Bearer secret-lite-token' },
+    })
+    const liteRes = await fetch(`${baseUrl}/api/state?lite=1`, {
+      headers: { authorization: 'Bearer secret-lite-token' },
+    })
+    assert.equal(fullRes.status, 200)
+    assert.equal(liteRes.status, 200)
+    const fullText = await fullRes.text()
+    const liteText = await liteRes.text()
+    assert.ok(liteText.length < fullText.length, `expected lite (${liteText.length}) < full (${fullText.length})`)
+
+    const liteJson = JSON.parse(liteText)
+    const idleTask = liteJson.hosts[0].bridgeState.tasks.find(t => t.id === 'session-idle-1')
+    assert.equal(idleTask.wireTruncated, true)
+    assert.ok(idleTask.transcript.some(m => m.role === 'user'), 'lite mode must keep a user message marker')
+    assert.ok(idleTask.transcript.at(-1).text.length <= 800)
+  } finally {
+    server.closeAllConnections?.()
+    await new Promise(resolve => server.close(resolve))
+  }
+})
+
 
 
 

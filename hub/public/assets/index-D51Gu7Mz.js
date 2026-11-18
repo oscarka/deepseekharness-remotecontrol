@@ -375,6 +375,58 @@ function BottomTabs() {
 		onClick: () => window.switchTab?.("settings")
 	}, /* @__PURE__ */ k("span", { class: "icon" }, "⚙️"), /* @__PURE__ */ k("span", null, "设备与设置")));
 }
+// hub/web/src/components/TriageDeck.tsx
+function TriageDeck() {
+	return /* @__PURE__ */ k("section", {
+		class: "dsh-triage-overlay",
+		id: "triageDeckOverlay",
+		"aria-label": "滑卡批阅模式"
+	}, /* @__PURE__ */ k("div", {
+		class: "dsh-triage-drag-pill",
+		id: "triageDragPill"
+	}), /* @__PURE__ */ k("header", { class: "dsh-triage-topbar" }, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "dsh-triage-top-pill",
+		id: "triageUndoBtn",
+		disabled: true,
+		onClick: () => window.triageUndoLast?.()
+	}, "↩ 撤回"), /* @__PURE__ */ k("div", { class: "dsh-triage-center-title" }, /* @__PURE__ */ k("span", null, "滑卡批阅"), /* @__PURE__ */ k("span", {
+		class: "dsh-triage-count-chip",
+		id: "triageCountChip"
+	}, "0")), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "dsh-triage-top-pill",
+		id: "triageBackToListBtn",
+		onClick: () => window.closeTriageDeckMode?.()
+	}, "☰ 列表模式")), /* @__PURE__ */ k("div", {
+		class: "dsh-triage-stack",
+		id: "triageCardStack"
+	}, /* @__PURE__ */ k("div", {
+		class: "dsh-triage-back-card layer-deep",
+		id: "triageLayerDeep"
+	}, /* @__PURE__ */ k("div", { class: "dsh-triage-back-inner" })), /* @__PURE__ */ k("div", {
+		class: "dsh-triage-back-card layer-left",
+		id: "triageLayerLeft"
+	}, /* @__PURE__ */ k("div", { class: "dsh-triage-back-inner" })), /* @__PURE__ */ k("div", {
+		class: "dsh-triage-back-card layer-right",
+		id: "triageLayerRight"
+	}, /* @__PURE__ */ k("div", {
+		class: "dsh-triage-back-inner",
+		id: "triageLayerRightInner"
+	})), /* @__PURE__ */ k("div", {
+		class: "dsh-triage-fg-card",
+		id: "triageFgCard"
+	})), /* @__PURE__ */ k("div", {
+		class: "dsh-triage-modal",
+		id: "triageDetailModal",
+		onClick: (e) => {
+			if (e.target === e.currentTarget) window.closeTriageDetailModal?.();
+		}
+	}, /* @__PURE__ */ k("div", {
+		class: "dsh-triage-modal-sheet",
+		id: "triageDetailModalContent"
+	})));
+}
 // hub/web/src/components/ChatStage.tsx
 function ChatStage() {
 	return /* @__PURE__ */ k("section", {
@@ -967,7 +1019,7 @@ function App() {
 	}, "🔓 解锁进入总控台"))), /* @__PURE__ */ k("div", { class: "app-shell" }, /* @__PURE__ */ k("div", { class: "primary-pane" }, /* @__PURE__ */ k(TopBar, null), /* @__PURE__ */ k("main", {
 		class: "main-viewport",
 		id: "mainViewport"
-	}), /* @__PURE__ */ k(BottomTabs, null)), /* @__PURE__ */ k(ChatStage, null), /* @__PURE__ */ k(Sheets, null), /* @__PURE__ */ k("button", {
+	}), /* @__PURE__ */ k(BottomTabs, null), /* @__PURE__ */ k(TriageDeck, null)), /* @__PURE__ */ k(ChatStage, null), /* @__PURE__ */ k(Sheets, null), /* @__PURE__ */ k("button", {
 		type: "button",
 		id: "scrollBottomBtn",
 		style: "display:none;",
@@ -975,7 +1027,7 @@ function App() {
 	}, "⬇️ 最新消息")));
 }
 // hub/web/src/utils/format.ts
-function esc(str) {
+function esc$1(str) {
 	return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 function cleanPreviewText(raw) {
@@ -1028,7 +1080,7 @@ function shouldShowInstallHint({ isIos, isStandalone, dismissed } = {}) {
 }
 // hub/web/src/utils/markdown.ts
 function renderInlineMarkdown(rawLine) {
-	let safe = esc(rawLine);
+	let safe = esc$1(rawLine);
 	const htmlBits = [];
 	const stash = (html) => {
 		htmlBits.push(html);
@@ -1048,12 +1100,12 @@ function renderInlineMarkdown(rawLine) {
 		const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, "%27");
 		if (isVideoMedia) {
 			const cachedVideoSrc = typeof window !== "undefined" && window.__dshInlineVideoCache ? window.__dshInlineVideoCache[cleanPath] : "";
-			if (cachedVideoSrc) return stash(`<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="none" onplay="window.maybeAccelerateVideoViaP2p && window.maybeAccelerateVideoViaP2p(this)" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${cleanAlt || esc(baseName)} · 点此打开大屏预览</span></span>`);
-			return stash(`<span class="md-inline-video-card md-local-video-pending" data-local-video-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🎬 ${cleanAlt || esc(baseName)} · 正在连接视频流…（点此打开播放器）</span></span>`);
+			if (cachedVideoSrc) return stash(`<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="none" onplay="window.maybeAccelerateVideoViaP2p && window.maybeAccelerateVideoViaP2p(this)" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${cleanAlt || esc$1(baseName)} · 点此打开大屏预览</span></span>`);
+			return stash(`<span class="md-inline-video-card md-local-video-pending" data-local-video-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🎬 ${cleanAlt || esc$1(baseName)} · 正在连接视频流…（点此打开播放器）</span></span>`);
 		}
 		const cachedSrc = typeof window !== "undefined" && window.__dshInlineImgCache ? window.__dshInlineImgCache[cleanPath] : "";
-		if (cachedSrc) return stash(`<span class="md-inline-img-card" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><img class="md-inline-img" src="${cachedSrc}" alt="${cleanAlt || esc(baseName)}" />${cleanAlt ? `<span class="md-inline-img-cap">🖼️ ${cleanAlt}</span>` : ""}</span>`);
-		return stash(`<span class="md-inline-img-card md-local-img-pending" data-local-img-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🖼️ ${cleanAlt || esc(baseName)} · 正在从电脑加载图片…（点此直接查看）</span></span>`);
+		if (cachedSrc) return stash(`<span class="md-inline-img-card" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><img class="md-inline-img" src="${cachedSrc}" alt="${cleanAlt || esc$1(baseName)}" />${cleanAlt ? `<span class="md-inline-img-cap">🖼️ ${cleanAlt}</span>` : ""}</span>`);
+		return stash(`<span class="md-inline-img-card md-local-img-pending" data-local-img-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🖼️ ${cleanAlt || esc$1(baseName)} · 正在从电脑加载图片…（点此直接查看）</span></span>`);
 	});
 	safe = safe.replace(/\[((?:[^\[\]]|\[[^\]]*\])+)\]\(((?:file:\/\/\/?|\/Users\/|\/home\/|(?!https?:\/\/|mailto:|javascript:)[a-zA-Z0-9_.\-/~]+\.[a-zA-Z0-9]{1,8}(?:#L\d+(?:-L?\d+)?)?)[^)\n]*)\)/g, (_m, rawLabel, rawUrl) => {
 		let cleanLabel = String(rawLabel || "").replace(/^`+|`+$/g, "").trim();
@@ -1223,7 +1275,7 @@ function renderMarkdown(rawText) {
 		const code = match[2].replace(/\n$/, "");
 		const encoded = encodeURIComponent(code).replace(/'/g, "%27");
 		const headerBtnsHtml = (/^(html?|xhtml|svg)$/i.test(lang) || lang === "code" && /^\s*(?:<!doctype\s+html\b|<html\b)/i.test(code)) && /<[a-z!][\s\S]*>/i.test(code) ? `<div style="display:inline-flex;align-items:center;gap:6px;"><button type="button" class="code-copy-btn html-preview-btn" style="color:#60a5fa;font-weight:700;" onclick="openInlineHtmlPreview(this)">🌐 交互预览</button><button type="button" class="code-copy-btn" onclick="copyCodeText('${encoded}')">📋 复制</button></div>` : `<button class="code-copy-btn" onclick="copyCodeText('${encoded}')">📋 复制</button>`;
-		chunks.push(`<div class="code-card"><div class="code-card-header"><span>${esc(lang)}</span>${headerBtnsHtml}</div><pre>${esc(code)}</pre></div>`);
+		chunks.push(`<div class="code-card"><div class="code-card-header"><span>${esc$1(lang)}</span>${headerBtnsHtml}</div><pre>${esc$1(code)}</pre></div>`);
 		cursor = fence.lastIndex;
 	}
 	if (cursor < text.length) chunks.push(renderMarkdownBlocks(text.slice(cursor)));
@@ -1362,7 +1414,7 @@ function buildBreadcrumbSegments(subDir) {
 function fileLoadingSpinnerHtml(text) {
 	return `<div style="padding:40px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;color:#94a3b8;font-size:13.5px;">
     <div class="file-loading-dot"></div>
-    <div>${esc(text)}</div>
+    <div>${esc$1(text)}</div>
   </div>`;
 }
 // hub/web/src/utils/webrtcMedia.js
@@ -5030,6 +5082,1264 @@ function renderCapabilityMatrixRowsHtml(rows = HARNESS_CAPABILITY_MATRIX) {
                   </tr>`;
 	}).join("\n");
 }
+// hub/web/src/triage-deck.js
+function esc(s) {
+	return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+var REST_X = 5;
+var REST_Y = 2;
+var REST_SCALE = .984;
+var REST_ROT = 1.25;
+var GRACE_UNDO_MS = 2e3;
+var HIGH_RISK_RE = /(?:--drop-[a-z0-9_-]*|--accept-data-loss\b|\b(?:rm\s+-(?:[a-zA-Z]*r[a-zA-Z]*f|[a-zA-Z]*f[a-zA-Z]*r)\b|rm\s+--recursive\b|git\s+push\b[^\n]*(?:\s-f\b|--force\b|--tags\b)|git\s+reset\s+--hard\b|git\s+clean\s+-[a-zA-Z]*f|DROP\s+(?:TABLE|DATABASE|SCHEMA)\b|TRUNCATE\s+TABLE\b|kubectl\s+delete\b|terraform\s+destroy\b|gcloud\s+[^\n]*\bdelete\b|npm\s+publish\b|docker\s+push\b|mkfs\b|dd\s+if=|sudo\s+))/i;
+var DANGER_TOKEN_RE = /(\brm\s+-(?:[a-zA-Z]*r[a-zA-Z]*f|[a-zA-Z]*f[a-zA-Z]*r)\b|--force-with-lease\b|--force\b|\s-f\b|--hard\b|--drop-[a-z0-9_-]*|--accept-data-loss\b|\bDROP\s+(?:TABLE|DATABASE|SCHEMA)\b|\bTRUNCATE\s+TABLE\b|\bnpm\s+publish\b|\bdocker\s+push\b|\bkubectl\s+delete\b|\bterraform\s+destroy\b|\bsudo\b)/gi;
+function isTriageEligibleSession(s) {
+	if (!s) return false;
+	if (s.status === "running") return false;
+	if (s.status === "approval") {
+		if (s.approvalObj?.settling) return false;
+		return true;
+	}
+	return Boolean(s.hasUnreadConclusion || s.isUnreadInterrupted);
+}
+function isHighRiskCommand(commandLine = "", reason = "") {
+	const combined = `${String(commandLine || "")}\n${String(reason || "")}`;
+	return HIGH_RISK_RE.test(combined);
+}
+function highlightDangerousCommandHtml(rawCmd = "") {
+	return esc(String(rawCmd || "")).replace(DANGER_TOKEN_RE, "<span class=\"dsh-triage-hl-danger\">$1</span>");
+}
+function extractLastUserPromptAndMedia(transcript = []) {
+	const list = Array.isArray(transcript) ? transcript : [];
+	for (let i = list.length - 1; i >= 0; i -= 1) {
+		const m = list[i];
+		if (!m || m.role !== "user") continue;
+		let raw = String(m.text || "").trim();
+		if (!raw) continue;
+		const reqMatch = /<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i.exec(raw);
+		if (reqMatch) raw = reqMatch[1].trim();
+		else raw = raw.replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/gi, "").trim();
+		const mediaPaths = [];
+		const addPath = (p) => {
+			const clean = String(p || "").replace(/^file:\/\//i, "").trim();
+			if (clean && !mediaPaths.includes(clean)) mediaPaths.push(clean);
+		};
+		raw = raw.replace(/\[手机端上传图片附件\s*\(\d+\s*张\)[^\]]*\]:?([\s\S]*)$/i, (_full, tail) => {
+			const lines = String(tail || "").split("\n");
+			for (const ln of lines) {
+				const pathMatch = /:\s*(\/[^\s()]+?\.(?:jpe?g|png|webp|gif|heic|heif|svg|bmp|avif))/i.exec(ln);
+				if (pathMatch?.[1]) addPath(pathMatch[1]);
+			}
+			return "";
+		});
+		let optimisticImgCount = 0;
+		raw = raw.replace(/\[🖼️\s*已附带\s*(\d+)\s*张截图\]/g, (_m, n) => {
+			optimisticImgCount += Number(n) || 1;
+			return "";
+		});
+		for (const med of [...Array.isArray(m.media) ? m.media : [], ...Array.isArray(m.images) ? m.images : []]) if (typeof med === "string") addPath(med);
+		else if (med?.uri || med?.path) addPath(med.uri || med.path);
+		const cleanText = raw.replace(/\n{3,}/g, "\n\n").trim();
+		const imageCount = Math.max(mediaPaths.length, optimisticImgCount);
+		if (cleanText || imageCount > 0) return {
+			text: cleanText || "（发送了图片附件）",
+			mediaPaths,
+			imageCount
+		};
+	}
+	return {
+		text: "",
+		mediaPaths: [],
+		imageCount: 0
+	};
+}
+function extractSessionChangedFiles(s) {
+	if (!s) return {
+		files: [],
+		hasLineCounts: false,
+		totalAdd: 0,
+		totalDel: 0
+	};
+	if (Array.isArray(s.changedFiles) && s.changedFiles.length > 0) {
+		const files = s.changedFiles.map((fc) => ({
+			name: fc.displayPath || fc.name || fc.path || "file",
+			path: fc.path || fc.name || "",
+			added: Number(fc.added) || 0,
+			removed: Number(fc.removed) || 0
+		}));
+		return {
+			files,
+			hasLineCounts: true,
+			totalAdd: files.reduce((acc, f) => acc + f.added, 0),
+			totalDel: files.reduce((acc, f) => acc + f.removed, 0)
+		};
+	}
+	const seen = /* @__PURE__ */ new Map();
+	const tr = Array.isArray(s.transcript) ? s.transcript : [];
+	for (const m of tr) {
+		if (!m || m.role !== "assistant") continue;
+		const tools = Array.isArray(m.toolCalls) && m.toolCalls.length > 0 ? m.toolCalls : m.tools || [];
+		for (const t of tools) {
+			if (!t || typeof t !== "object") continue;
+			const tName = String(t.name || "");
+			if (!/^(?:write_file|edit_file|Write|Edit|MultiEdit|NotebookEdit|replace_in_file|create_file)$/i.test(tName)) continue;
+			const rawPath = String(t.filePath || t.path || t.targetFile || "").trim();
+			if (!rawPath && t.summary) {
+				const mPath = /([a-zA-Z0-9_.\-/]+\.[a-zA-Z0-9]{1,8})/.exec(String(t.summary));
+				if (mPath?.[1]) seen.set(mPath[1], {
+					name: mPath[1],
+					path: mPath[1],
+					added: 0,
+					removed: 0
+				});
+			} else if (rawPath) {
+				const shortName = rawPath.split("/").slice(-2).join("/");
+				seen.set(rawPath, {
+					name: shortName || rawPath,
+					path: rawPath,
+					added: 0,
+					removed: 0
+				});
+			}
+		}
+	}
+	return {
+		files: [...seen.values()],
+		hasLineCounts: false,
+		totalAdd: 0,
+		totalDel: 0
+	};
+}
+function localizeApprovalOptionLabel(rawLabel = "", idx = 1) {
+	const s = String(rawLabel || "").trim();
+	if (!s) return `${idx}. 允许执行`;
+	let m = /^Yes,\s*allow\s+this\s+time$/i.exec(s);
+	if (m) return `${idx}. 本次允许执行`;
+	m = /^Yes,\s*and\s+always\s+allow\s+'([^']+)'\s+in\s+this\s+conversation$/i.exec(s);
+	if (m) return `${idx}. 本对话内始终允许 '${m[1]}'`;
+	m = /^Yes,\s*and\s+always\s+allow\s+in\s+this\s+conversation$/i.exec(s);
+	if (m) return `${idx}. 本对话内始终允许`;
+	m = /^Yes,\s*and\s+always\s+allow\s+'([^']+)'$/i.exec(s);
+	if (m) return `${idx}. 始终允许 '${m[1]}'`;
+	m = /^Yes,\s*and\s+always\s+allow$/i.exec(s);
+	if (m) return `${idx}. 始终允许该操作`;
+	return /^\d+\./.test(s) ? s : `${idx}. ${s}`;
+}
+function shortenButtonOptionText(label = "") {
+	const clean = String(label || "").replace(/^[0-9A-Za-z]+\.\s*/, "").replace(/（推荐）|\(Recommended\)/gi, "").trim();
+	return clean.length > 13 ? `${clean.slice(0, 12)}…` : clean || "确认";
+}
+function extractPlainSummaryFromMarkdown(md = "") {
+	return String(md || "").replace(/```[\s\S]*?```/g, " [代码块] ").replace(/!\[[^\]]*\]\([^)]+\)/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/^#{1,6}\s+/gm, "").replace(/[*_`>~]/g, "").replace(/\n{2,}/g, "\n").trim();
+}
+function buildTriageCardViewModel(s, shortHostMap = {}) {
+	const hostShort = shortHostMap[s.hostId] || s.hostName || s.hostId || "电脑";
+	const projShort = formatCompactProjectLabel(s.project || "");
+	const cleanTitle = stripRedundantProjectPrefix(s.title || "未命名会话", s.project || "") || "未命名会话";
+	const promptInfo = extractLastUserPromptAndMedia(s.transcript);
+	const diffInfo = extractSessionChangedFiles(s);
+	const canSendPrompt = s.controlMode !== "observe-only" && s.capabilities?.canSendPrompt !== false;
+	const tr = Array.isArray(s.transcript) ? s.transcript : [];
+	let latestAssistantMsg = null;
+	for (let i = tr.length - 1; i >= 0; i -= 1) if (tr[i]?.role === "assistant" && String(tr[i]?.text || "").trim()) {
+		latestAssistantMsg = tr[i];
+		break;
+	}
+	const app = s.approvalObj;
+	if (Boolean(s.status === "approval" && app && (app.kind === "question" || Array.isArray(app.questions)))) {
+		const questions = Array.isArray(app.questions) && app.questions.length > 0 ? app.questions : [{
+			id: "q_1",
+			question: app.promptTitle || "请做出选择以继续",
+			options: []
+		}];
+		const primaryQ = questions[0];
+		const qId = String(primaryQ.id || "q_1");
+		const rawOpts = Array.isArray(primaryQ.options) ? primaryQ.options : [];
+		const alpha = "ABCDEFGH";
+		const options = rawOpts.map((o, idx) => {
+			const rawLbl = String(o?.label || o || `选项 ${idx + 1}`);
+			return {
+				value: rawLbl,
+				label: /^[0-9A-Z]+\.\s/.test(rawLbl) ? rawLbl : `${alpha[idx] || idx + 1}. ${rawLbl}`,
+				shortBtn: shortenButtonOptionText(rawLbl),
+				desc: o?.description ? String(o.description) : ""
+			};
+		});
+		const extraCount = questions.length > 1 ? `（共 ${questions.length} 个问题）` : "";
+		return {
+			cardKey: `q:${s.id}:${app.code || ""}`,
+			sessionId: s.id,
+			hostId: s.hostId,
+			harness: s.harness,
+			title: cleanTitle,
+			sub: `${hostShort} · ${projShort} · 待你选择`,
+			promptInfo,
+			diffInfo,
+			kind: "question",
+			risk: "normal",
+			code: app.code || "",
+			qId,
+			questions,
+			multi: Boolean(primaryQ.multiSelect),
+			headline: `${primaryQ.question || app.promptTitle || "请做出选择以继续"}${extraCount}`,
+			cmdLine: "",
+			cmdReason: "",
+			replyPreview: "",
+			fullReplyMarkdown: latestAssistantMsg?.text || "",
+			options,
+			canCustom: true,
+			customLabel: "其他方案 / 补充说明…"
+		};
+	}
+	if (s.status === "approval" && app) {
+		const cmdLine = String(app.commandLine || app.reason || "").trim();
+		const cmdReason = String(app.subtitle || app.promptTitle || `请求调用 ${app.toolName || "工具"}`).trim();
+		const risk = isHighRiskCommand(cmdLine, cmdReason) ? "high" : "normal";
+		const rawOpts = Array.isArray(app.options) && app.options.length > 0 ? app.options : [{
+			index: 1,
+			label: "1. 本次允许执行"
+		}, {
+			index: 4,
+			label: "不执行，告诉 AI 改怎么做…"
+		}];
+		const positiveOpts = [];
+		let denyOptIndex = 4;
+		rawOpts.forEach((rawOpt, idx) => {
+			const optObj = typeof rawOpt === "string" ? {
+				index: idx + 1,
+				label: rawOpt
+			} : rawOpt;
+			const optIdx = Number(optObj.index) || idx + 1;
+			const lbl = String(optObj.label || "");
+			if (optIdx === 4 || /^(?:no\b|skip\b|deny\b|reject\b|拒绝|不执行|取消)/i.test(lbl)) denyOptIndex = optIdx;
+			else {
+				const localized = localizeApprovalOptionLabel(lbl, positiveOpts.length + 1);
+				positiveOpts.push({
+					optionIndex: optIdx,
+					label: localized,
+					shortBtn: shortenButtonOptionText(localized),
+					desc: ""
+				});
+			}
+		});
+		if (positiveOpts.length === 0) positiveOpts.push({
+			optionIndex: 1,
+			label: "1. 本次允许执行",
+			shortBtn: "本次允许执行",
+			desc: ""
+		});
+		const headline = (latestAssistantMsg?.text ? extractPlainSummaryFromMarkdown(latestAssistantMsg.text).split("\n")[0]?.slice(0, 68) : "") || app.promptTitle || `等待确认工具调用：${app.toolName || "命令"}`;
+		return {
+			cardKey: `app:${s.id}:${app.code || ""}`,
+			sessionId: s.id,
+			hostId: s.hostId,
+			harness: s.harness,
+			title: cleanTitle,
+			sub: `${hostShort} · ${projShort} · ${risk === "high" ? "高危授权" : "命令授权"}`,
+			promptInfo,
+			diffInfo,
+			kind: "approval",
+			risk,
+			code: app.code || "",
+			multi: false,
+			headline,
+			cmdLine,
+			cmdReason: risk === "high" ? `⚠️ 高危操作拦截 · ${cmdReason}` : `🔧 ${cmdReason}`,
+			replyPreview: "",
+			fullReplyMarkdown: latestAssistantMsg?.text || "",
+			options: positiveOpts,
+			denyOptionIndex: denyOptIndex,
+			canCustom: canSendPrompt,
+			customLabel: `${positiveOpts.length + 1}. 不执行，告诉 AI 改怎么做…`
+		};
+	}
+	const isInterrupted = Boolean(s.isUnreadInterrupted);
+	const fullMd = latestAssistantMsg?.text || s.rawLastPreview || s.lastPreview || "";
+	const plainBody = extractPlainSummaryFromMarkdown(fullMd);
+	const lines = plainBody.split("\n").map((l) => l.trim()).filter(Boolean);
+	const headline = isInterrupted ? `⚠️ 任务异常中断：${(lines[0] || s.lastPreview || "请查看详情").slice(0, 56)}` : `✅ 已完工待阅：${(lines[0] || cleanTitle).slice(0, 56)}`;
+	const replyPreview = lines.slice(1, 4).join(" ") || plainBody.slice(0, 140);
+	return {
+		cardKey: `conc:${s.id}:${s.conclusionSig || s.updatedAt || ""}`,
+		sessionId: s.id,
+		hostId: s.hostId,
+		harness: s.harness,
+		title: cleanTitle,
+		sub: `${hostShort} · ${projShort} · ${isInterrupted ? "异常中断" : "已出结论"}`,
+		promptInfo,
+		diffInfo,
+		kind: isInterrupted ? "interrupted" : "conclusion",
+		risk: "normal",
+		code: "",
+		multi: false,
+		headline,
+		cmdLine: "",
+		cmdReason: "",
+		replyPreview,
+		fullReplyMarkdown: fullMd,
+		artifacts: Array.isArray(s.artifacts) ? s.artifacts : [],
+		options: [{
+			optionIndex: 1,
+			label: "1. 已阅归档（消除未读蓝点）",
+			shortBtn: "标为已阅归档",
+			desc: ""
+		}],
+		canCustom: canSendPrompt,
+		customLabel: "2. 继续追问 / 交代修改意见…"
+	};
+}
+function createTriageDeckController(deps) {
+	let isOpen = false;
+	const cardDrafts = /* @__PURE__ */ new Map();
+	let snoozeSeq = 1;
+	const snoozeOrder = /* @__PURE__ */ new Map();
+	const dismissedKeys = /* @__PURE__ */ new Map();
+	const undoStack = [];
+	let graceCountdownTimer = null;
+	let dragging = false;
+	let btnPressMoved = false;
+	let sx = 0;
+	let sy = 0;
+	let dx = 0;
+	let dy = 0;
+	let axisLocked = "";
+	let holdTimer = null;
+	let holdPct = 0;
+	let rightDragHoldTimer = null;
+	let rightDragUnlocked = false;
+	let lpTimer = null;
+	let isLongPress = false;
+	let isRecording = false;
+	let speechRec = null;
+	let listenersBound = false;
+	let lastRenderedSig = "";
+	function appendMediaAuthUrl(url) {
+		const mt = deps.getMediaTicket?.() || "";
+		if (!mt || !url) return url;
+		return `${url}${url.includes("?") ? "&" : "?"}mt=${encodeURIComponent(mt)}`;
+	}
+	function buildLocalThumbSrc(hostId, filePath) {
+		if (!hostId || !filePath) return "";
+		const qp = new URLSearchParams({
+			path: filePath,
+			thumb: "1"
+		});
+		return appendMediaAuthUrl(`/api/hosts/${encodeURIComponent(hostId)}/fs/stream?${qp.toString()}`);
+	}
+	function flushAllGraceCommits() {
+		for (const item of undoStack) if (item.type === "grace" && item.graceTimer) {
+			clearTimeout(item.graceTimer);
+			item.graceTimer = null;
+			item.flushed = true;
+			item.commitFn?.();
+		}
+		clearInterval(graceCountdownTimer);
+		graceCountdownTimer = null;
+	}
+	function getOrderedActiveCards() {
+		const now = Date.now();
+		for (const [k, expAt] of dismissedKeys.entries()) if (now > expAt) dismissedKeys.delete(k);
+		const allSessions = deps.getSessions?.() || [];
+		const shortHostMap = deps.getShortHostMap?.() || {};
+		const eligible = allSessions.filter(isTriageEligibleSession);
+		const models = [];
+		for (const s of eligible) {
+			const vm = buildTriageCardViewModel(s, shortHostMap);
+			if (dismissedKeys.has(vm.cardKey)) continue;
+			models.push({
+				session: s,
+				vm
+			});
+		}
+		models.sort((a, b) => {
+			const sa = snoozeOrder.get(a.vm.cardKey) || 0;
+			const sb = snoozeOrder.get(b.vm.cardKey) || 0;
+			if (sa !== sb) return sa - sb;
+			return 0;
+		});
+		return models;
+	}
+	function ensureDraft(vm) {
+		if (!cardDrafts.has(vm.cardKey)) {
+			const defaultMulti = vm.multi && vm.options.length > 0 ? [0] : [];
+			cardDrafts.set(vm.cardKey, {
+				sel: 0,
+				multiSel: defaultMulti,
+				useCustom: false,
+				customOpen: false,
+				customText: "",
+				snoozedCount: 0
+			});
+		}
+		return cardDrafts.get(vm.cardKey);
+	}
+	function isEmptyCustomSelected(vm, draft) {
+		if (!vm || !draft || !vm.canCustom) return false;
+		return (vm.multi ? draft.useCustom : draft.sel === vm.options.length) && !String(draft.customText || "").trim();
+	}
+	function showDragPill(text, bg, color) {
+		const el = document.getElementById("triageDragPill");
+		if (!el) return;
+		el.textContent = text;
+		el.style.background = bg;
+		el.style.color = color;
+		el.classList.add("show");
+	}
+	function hideDragPill(delay = 0) {
+		const el = document.getElementById("triageDragPill");
+		if (!el) return;
+		if (!delay) el.classList.remove("show");
+		else setTimeout(() => el.classList.remove("show"), delay);
+	}
+	function computeConfirmBtnModel(vm, draft) {
+		if (vm.canCustom && (vm.multi ? draft.useCustom : draft.sel === vm.options.length)) {
+			if (String(draft.customText || "").trim()) return {
+				cls: "orange",
+				t1: "发送新方案 👉",
+				t2: "可点此 或 右滑卡片"
+			};
+			return {
+				cls: "locked",
+				t1: "✍️ 请先输入或长按说话",
+				t2: "填写方案后即可点此或右滑发送"
+			};
+		}
+		if (vm.multi) return {
+			cls: "blue",
+			t1: `确认 (${draft.multiSel.length}项) 👉`,
+			t2: "可点此 或 右滑卡片"
+		};
+		const shortTxt = (vm.options[draft.sel] || vm.options[0] || {}).shortBtn || "确认";
+		if (vm.risk === "high" && draft.sel === 0) return {
+			cls: "crimson",
+			t1: `🛡️ 按住0.8s：${shortTxt} 👉`,
+			t2: "长按此钮 或 右拉稳住0.8s"
+		};
+		return {
+			cls: vm.kind === "question" ? "blue" : "",
+			t1: `${shortTxt} 👉`,
+			t2: "可点此 或 右滑卡片"
+		};
+	}
+	function updateUndoBtnDom() {
+		const undoBtn = document.getElementById("triageUndoBtn");
+		if (!undoBtn) return;
+		while (undoStack.length > 0 && undoStack[undoStack.length - 1].type === "grace" && undoStack[undoStack.length - 1].flushed) undoStack.pop();
+		if (undoStack.length === 0) {
+			undoBtn.disabled = true;
+			undoBtn.classList.remove("grace-active");
+			undoBtn.textContent = "↩ 撤回";
+			return;
+		}
+		const top = undoStack[undoStack.length - 1];
+		undoBtn.disabled = false;
+		if (top.type === "grace" && !top.flushed) {
+			const remSec = Math.max(1, Math.ceil((top.expiresAt - Date.now()) / 1e3));
+			undoBtn.classList.add("grace-active");
+			undoBtn.textContent = `↩ 撤回 (${remSec}s)`;
+		} else {
+			undoBtn.classList.remove("grace-active");
+			undoBtn.textContent = "↩ 撤回";
+		}
+	}
+	function syncConfirmBtnOnly() {
+		const cards = getOrderedActiveCards();
+		if (!cards.length) return;
+		const { vm } = cards[0];
+		const m = computeConfirmBtnModel(vm, ensureDraft(vm));
+		const btn = document.getElementById("triageConfirmBtn");
+		const t1 = document.getElementById("triageBtnT1");
+		const t2 = document.getElementById("triageBtnT2");
+		if (btn) btn.className = `dsh-triage-btn-confirm ${m.cls}`;
+		if (t1) t1.textContent = m.t1;
+		if (t2) t2.textContent = m.t2;
+	}
+	function preHydrateTopCards(cards) {
+		for (const item of cards.slice(0, 2)) {
+			const s = item.session;
+			if (!item.vm.promptInfo.text && (s.omittedTranscriptCount > 0 || s.hasMoreTranscript)) deps.hydrateColdSession?.(s.hostId, s.id, s.sessionRev);
+		}
+	}
+	function render({ force = false } = {}) {
+		if (!isOpen) return;
+		if (!force && (dragging || isRecording || document.activeElement?.id === "triageCustomTextarea")) {
+			const countEl = document.getElementById("triageCountChip");
+			if (countEl) countEl.textContent = String(getOrderedActiveCards().length);
+			updateUndoBtnDom();
+			return;
+		}
+		const cards = getOrderedActiveCards();
+		preHydrateTopCards(cards);
+		updateUndoBtnDom();
+		const countChip = document.getElementById("triageCountChip");
+		if (countChip) countChip.textContent = String(cards.length);
+		const fgCard = document.getElementById("triageFgCard");
+		const lRight = document.getElementById("triageLayerRight");
+		const lRightInner = document.getElementById("triageLayerRightInner");
+		const lLeft = document.getElementById("triageLayerLeft");
+		const lDeep = document.getElementById("triageLayerDeep");
+		if (!fgCard || !lRight || !lRightInner || !lLeft || !lDeep) return;
+		const sig = cards.map((c) => {
+			const d = ensureDraft(c.vm);
+			return `${c.vm.cardKey}:${c.vm.promptInfo.text.slice(0, 30)}:${c.vm.diffInfo.files.length}:${d.sel}:${d.multiSel.join(",")}:${d.useCustom ? 1 : 0}:${d.customOpen ? 1 : 0}:${d.snoozedCount}:${isRecording ? 1 : 0}`;
+		}).join("|");
+		if (!force && sig === lastRenderedSig && fgCard.children.length > 0) return;
+		lastRenderedSig = sig;
+		if (cards.length >= 2) {
+			const nxt = cards[1].vm;
+			lRight.style.display = "block";
+			lRight.style.transform = `translate3d(${REST_X}px, ${REST_Y}px, 0) scale(${REST_SCALE}) rotate(${REST_ROT}deg)`;
+			lRightInner.innerHTML = `
+        <div style="opacity:0.42;display:flex;flex-direction:column;gap:8px;">
+          <div class="dsh-triage-hdr">
+            ${renderHarnessBadgeHtml(nxt.harness, "row", nxt.harness)}
+            <div class="dsh-triage-hdr-info">
+              <div class="dsh-triage-title">${esc(nxt.title)}</div>
+              <div class="dsh-triage-sub">${esc(nxt.sub)}</div>
+            </div>
+          </div>
+          <div class="dsh-triage-headline">${esc(nxt.headline)}</div>
+        </div>`;
+		} else lRight.style.display = "none";
+		lLeft.style.display = cards.length >= 3 ? "block" : "none";
+		lDeep.style.display = cards.length >= 4 ? "block" : "none";
+		if (cards.length === 0) {
+			const runningCount = (deps.getSessions?.() || []).filter((s) => s.status === "running").length;
+			fgCard.classList.remove("is-high");
+			fgCard.innerHTML = `
+        <div style="margin:auto;text-align:center;padding:28px 18px;display:flex;flex-direction:column;gap:14px;align-items:center;">
+          <div style="font-size:44px;">🎉</div>
+          <div style="font-size:18px;font-weight:800;color:#0f172a;">待处理卡片已全部清零！</div>
+          <div style="font-size:13px;color:#64748b;line-height:1.55;">
+            ${runningCount > 0 ? `目前还有 <strong>${runningCount} 个任务正在后台运行</strong>，切回列表模式即可查看实时进度。` : "所有待授权与未读完结会话均已处理完毕。"}
+          </div>
+          ${runningCount > 0 ? `<button type="button" onclick="triageSwitchToRunningList()" style="width:100%;margin-top:6px;height:50px;border:none;border-radius:25px;background:linear-gradient(90deg,#2563eb,#4f46e5);color:#fff;font-size:14.5px;font-weight:800;cursor:pointer;box-shadow:0 6px 16px rgba(37,99,235,0.25);">🟢 去列表查看运行中任务 (${runningCount}) ›</button>` : `<button type="button" onclick="closeTriageDeckMode()" style="width:100%;margin-top:6px;height:50px;border:none;border-radius:25px;background:#0f172a;color:#fff;font-size:14.5px;font-weight:800;cursor:pointer;">☰ 返回会话列表</button>`}
+        </div>`;
+			return;
+		}
+		const { session: s, vm } = cards[0];
+		const draft = ensureDraft(vm);
+		fgCard.classList.toggle("is-high", vm.risk === "high");
+		const customActive = vm.canCustom && (vm.multi ? draft.useCustom : draft.sel === vm.options.length);
+		const btnModel = computeConfirmBtnModel(vm, draft);
+		const firstImgPath = vm.promptInfo.mediaPaths[0] || "";
+		const thumbSrc = firstImgPath ? buildLocalThumbSrc(vm.hostId, firstImgPath) : "";
+		const thumbHtml = vm.promptInfo.imageCount > 0 ? `<div class="dsh-triage-thumb">
+          ${thumbSrc ? `<img src="${esc(thumbSrc)}" alt="附件图" onerror="this.style.display='none'" />` : "<span>🖼️</span>"}
+          <span class="dsh-triage-thumb-count">${vm.promptInfo.imageCount}图</span>
+         </div>` : "";
+		const myPromptText = vm.promptInfo.text || s.title || "点击查看对话详情";
+		const diffBarHtml = vm.diffInfo.files.length > 0 ? `<div class="dsh-triage-diff-bar" onclick="openTriageFilesModal()">
+          <span>📄 代码改动 · ${vm.diffInfo.files.length} 个文件</span>
+          <span style="font-family:var(--mono,monospace);font-weight:700;">
+            ${vm.diffInfo.hasLineCounts ? `<span style="color:#16a34a">+${vm.diffInfo.totalAdd}</span><span style="color:#dc2626;margin-left:5px;">-${vm.diffInfo.totalDel}</span>` : `<span style="color:#64748b">点此查看</span>`}
+            <span style="color:#2563eb;margin-left:6px;">▾</span>
+          </span>
+        </div>` : "";
+		const coreEvidenceHtml = vm.cmdLine ? `<div class="dsh-triage-cmd-box ${vm.risk === "high" ? "high" : ""}" onclick="openTriageCommandModal()">
+          <div class="dsh-triage-cmd-reason">${esc(vm.cmdReason)}</div>
+          <div class="dsh-triage-cmd-mono">${highlightDangerousCommandHtml(vm.cmdLine)}</div>
+        </div>` : vm.replyPreview ? `<div class="dsh-triage-reply-card ${vm.kind === "interrupted" ? "interrupted" : ""}" onclick="openTriageReplyModal()">
+            <div class="dsh-triage-clamp3">${esc(vm.replyPreview)}</div>
+            <div style="color:#2563eb;font-size:11px;font-weight:700;margin-top:4px;">点击展开完整回复全文 ›</div>
+          </div>` : "";
+		fgCard.innerHTML = `
+      <div class="dsh-triage-body" id="triageCardBody">
+        <div class="dsh-triage-hdr">
+          ${renderHarnessBadgeHtml(vm.harness, "row", vm.harness)}
+          <div class="dsh-triage-hdr-info">
+            <div class="dsh-triage-title-row">
+              <div class="dsh-triage-title">${esc(vm.title)}</div>
+              <button type="button" class="dsh-triage-open-chat" onclick="event.stopPropagation(); triageOpenFullSession('${esc(vm.sessionId)}')">对话 ›</button>
+            </div>
+            <div class="dsh-triage-sub">
+              <span>${esc(vm.sub)}</span>
+              ${draft.snoozedCount > 0 ? `<span class="dsh-triage-snooze-tag">↪ 稍后看</span>` : ""}
+            </div>
+          </div>
+        </div>
+
+        <div class="dsh-triage-my-ask" onclick="openTriagePromptModal()">
+          <div class="dsh-triage-my-ask-body">
+            <div class="dsh-triage-clamp2"><strong>我：</strong>${esc(myPromptText)}</div>
+            <div style="color:#2563eb;font-size:11px;font-weight:700;margin-top:2px;">点击查看完整提问${vm.promptInfo.imageCount > 0 ? "与截图" : ""} ›</div>
+          </div>
+          ${thumbHtml}
+        </div>
+
+        <p class="dsh-triage-headline">${esc(vm.headline)}</p>
+
+        ${coreEvidenceHtml}
+        ${diffBarHtml}
+
+        <div class="dsh-triage-opts">
+          ${vm.options.map((o, oi) => {
+			const isSel = vm.multi ? draft.multiSel.includes(oi) : !customActive && draft.sel === oi;
+			return `
+              <div class="dsh-triage-opt ${isSel ? vm.kind === "question" ? "sel-blue" : "sel-green" : ""}" onclick="triagePickOption(${oi})">
+                <div class="dsh-triage-dot ${vm.multi ? "sq" : ""}">${isSel ? "✓" : ""}</div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:13px;font-weight:700;color:#0f172a;word-break:break-word;">${esc(o.label)}</div>
+                  ${o.desc ? `<div style="font-size:11.5px;color:#64748b;margin-top:2px;line-height:1.35;">${esc(o.desc)}</div>` : ""}
+                </div>
+              </div>`;
+		}).join("")}
+
+          ${vm.canCustom ? `
+            <div class="dsh-triage-custom ${customActive ? "sel" : ""} ${isRecording ? "rec" : ""}" id="triageCustomBox"
+              onmousedown="triageCustomDown(event)" onmouseup="triageCustomUp(event)" onmouseleave="triageCustomCancel()"
+              ontouchstart="triageCustomDown(event)" ontouchend="triageCustomUp(event)">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <div style="display:flex;align-items:center;gap:9px;min-width:0;">
+                  <div class="dsh-triage-dot">${customActive ? "✓" : ""}</div>
+                  <div style="min-width:0;">
+                    <div style="font-size:13px;font-weight:700;color:#9a3412;">${esc(vm.customLabel)}</div>
+                    <div style="font-size:11px;color:#ea580c;font-weight:600;">
+                      ${isRecording ? "🎙️ 正在聆听语音… 松手落入输入框" : "短按弹键盘打字 · 长按直接说话"}
+                    </div>
+                  </div>
+                </div>
+                <span class="dsh-triage-mic-chip">${isRecording ? "🔴 听写中" : "🎙️ 长按说"}</span>
+              </div>
+              ${draft.customOpen ? `
+                <textarea class="dsh-triage-ta" id="triageCustomTextarea" rows="2" placeholder="输入你的方案，或继续长按上方追加语音…"
+                  onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"
+                  oninput="triageUpdateCustomText(this.value)">${esc(draft.customText)}</textarea>` : ""}
+            </div>` : ""}
+        </div>
+      </div>
+
+      <div class="dsh-triage-dock">
+        <button type="button" class="dsh-triage-btn-snooze" onclick="triageTapSnooze()">
+          <span>👈</span>
+          <span>搁置</span>
+        </button>
+        <button type="button" class="dsh-triage-btn-confirm ${btnModel.cls}" id="triageConfirmBtn"
+          onmousedown="triageConfirmBtnDown(event)" onmouseup="triageConfirmBtnUp(event)" onmouseleave="triageConfirmBtnCancel()"
+          ontouchstart="triageConfirmBtnDown(event)" ontouchend="triageConfirmBtnUp(event)">
+          <div class="dsh-triage-btn-prog" id="triageBtnProg"></div>
+          <span class="dsh-triage-btn-t1" id="triageBtnT1">${esc(btnModel.t1)}</span>
+          <span class="dsh-triage-btn-t2" id="triageBtnT2">${esc(btnModel.t2)}</span>
+        </button>
+      </div>
+    `;
+	}
+	function nudgeEmptyCustom() {
+		const box = document.getElementById("triageCustomBox");
+		if (box) {
+			box.classList.remove("dsh-triage-shake");
+			box.offsetWidth;
+			box.classList.add("dsh-triage-shake");
+		}
+		showDragPill("✍️ 内容为空，请先打字或长按说话", "#ea580c", "#ffffff");
+		hideDragPill(1e3);
+		setTimeout(() => document.getElementById("triageCustomTextarea")?.focus(), 50);
+	}
+	function startLiveSpeechDictation(vm, draft) {
+		const SpeechCtor = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+		if (!SpeechCtor) {
+			isRecording = false;
+			deps.showToast?.("当前浏览器环境不支持语音听写，请直接键盘输入");
+			render({ force: true });
+			setTimeout(() => document.getElementById("triageCustomTextarea")?.focus(), 40);
+			return;
+		}
+		try {
+			if (speechRec) try {
+				speechRec.abort();
+			} catch {}
+			const rec = new SpeechCtor();
+			rec.lang = "zh-CN";
+			rec.continuous = true;
+			rec.interimResults = true;
+			const baseText = String(draft.customText || "").trim();
+			let latestRaw = "";
+			rec.onresult = (ev) => {
+				let chunk = "";
+				for (let i = 0; i < ev.results.length; i += 1) chunk += ev.results[i][0]?.transcript || "";
+				latestRaw = deps.punctuateSpeechText ? deps.punctuateSpeechText(chunk, null, { finalizeSentence: false }) : chunk;
+				draft.customText = baseText ? `${baseText} ${latestRaw}` : latestRaw;
+				const ta = document.getElementById("triageCustomTextarea");
+				if (ta) ta.value = draft.customText;
+				syncConfirmBtnOnly();
+			};
+			rec.onerror = () => {
+				isRecording = false;
+				speechRec = null;
+				render({ force: true });
+			};
+			rec.onend = () => {
+				if (latestRaw) {
+					const finalClean = deps.punctuateSpeechText ? deps.punctuateSpeechText(latestRaw, null, { finalizeSentence: true }) : latestRaw;
+					draft.customText = baseText ? `${baseText} ${finalClean}` : finalClean;
+				}
+				isRecording = false;
+				speechRec = null;
+				render({ force: true });
+			};
+			speechRec = rec;
+			rec.start();
+		} catch {
+			isRecording = false;
+			speechRec = null;
+			render({ force: true });
+		}
+	}
+	function stopLiveSpeechDictation() {
+		if (speechRec) {
+			const r = speechRec;
+			speechRec = null;
+			setTimeout(() => {
+				try {
+					r.stop();
+				} catch {}
+			}, 240);
+		} else isRecording = false;
+	}
+	function scheduleGraceCommit(vm, session, commitFn) {
+		flushAllGraceCommits();
+		dismissedKeys.set(vm.cardKey, Date.now() + 45e3);
+		const entry = {
+			type: "grace",
+			cardKey: vm.cardKey,
+			sessionId: session.id,
+			expiresAt: Date.now() + GRACE_UNDO_MS,
+			flushed: false,
+			commitFn,
+			graceTimer: null
+		};
+		entry.graceTimer = setTimeout(() => {
+			entry.graceTimer = null;
+			entry.flushed = true;
+			clearInterval(graceCountdownTimer);
+			graceCountdownTimer = null;
+			updateUndoBtnDom();
+			commitFn();
+		}, GRACE_UNDO_MS);
+		undoStack.push(entry);
+		clearInterval(graceCountdownTimer);
+		graceCountdownTimer = setInterval(() => {
+			updateUndoBtnDom();
+		}, 300);
+		updateUndoBtnDom();
+	}
+	function buildCommitAction(session, vm, draft) {
+		const customActive = vm.canCustom && (vm.multi ? draft.useCustom : draft.sel === vm.options.length);
+		const customText = String(draft.customText || "").trim();
+		if (vm.kind === "question") {
+			const answers = {};
+			if (customActive) answers[vm.qId] = vm.multi ? [customText] : customText;
+			else if (vm.multi) {
+				const picked = draft.multiSel.map((i) => vm.options[i]?.value).filter(Boolean);
+				answers[vm.qId] = picked;
+			} else answers[vm.qId] = vm.options[draft.sel]?.value || vm.options[0]?.value || "";
+			return async () => {
+				await deps.submitQuestionDecision?.(session, vm.code, answers);
+			};
+		}
+		if (vm.kind === "approval") {
+			if (customActive) return async () => {
+				await deps.sendApprovalDecision?.(session.hostId, vm.code, false, vm.denyOptionIndex || 4, session.id);
+				if (customText) await deps.sendPromptToSession?.(session, customText);
+			};
+			const chosen = vm.options[draft.sel] || vm.options[0];
+			const optIdx = Number(chosen?.optionIndex) || 1;
+			return async () => {
+				await deps.sendApprovalDecision?.(session.hostId, vm.code, true, optIdx, session.id);
+			};
+		}
+		if (customActive && customText) return async () => {
+			deps.markSessionRead?.(session);
+			await deps.sendPromptToSession?.(session, customText);
+		};
+		return null;
+	}
+	function confirmTopCard() {
+		const cards = getOrderedActiveCards();
+		if (!cards.length) return;
+		const { session, vm } = cards[0];
+		const draft = ensureDraft(vm);
+		if (isEmptyCustomSelected(vm, draft)) {
+			nudgeEmptyCustom();
+			return;
+		}
+		const fgCard = document.getElementById("triageFgCard");
+		const lRight = document.getElementById("triageLayerRight");
+		const commitFn = buildCommitAction(session, vm, draft);
+		if (!commitFn) {
+			const prevSnapshot = deps.markSessionRead?.(session);
+			dismissedKeys.set(vm.cardKey, Date.now() + 5e3);
+			undoStack.push({
+				type: "read",
+				cardKey: vm.cardKey,
+				sessionId: session.id,
+				prevSnapshot
+			});
+			showDragPill("✓ 已标为已读", "#059669", "#ffffff");
+			hideDragPill(650);
+		} else {
+			scheduleGraceCommit(vm, session, commitFn);
+			showDragPill("✓ 已确认（2秒内可点左上角撤回）", "#059669", "#ffffff");
+			hideDragPill(1100);
+		}
+		if (fgCard && lRight) {
+			fgCard.style.transform = "translate3d(340px, 0, 0) rotate(13deg)";
+			fgCard.style.opacity = "0";
+			lRight.classList.remove("following");
+			lRight.style.transform = "translate3d(0, 0, 0) scale(1) rotate(0deg)";
+			setTimeout(() => {
+				fgCard.classList.add("dragging");
+				fgCard.style.transform = "translate3d(0,0,0)";
+				fgCard.style.opacity = "1";
+				render({ force: true });
+				deps.onDeckChanged?.();
+				requestAnimationFrame(() => fgCard.classList.remove("dragging"));
+			}, 210);
+		} else {
+			render({ force: true });
+			deps.onDeckChanged?.();
+		}
+	}
+	function snoozeTopCard() {
+		const cards = getOrderedActiveCards();
+		if (!cards.length) return;
+		if (cards.length === 1) {
+			showDragPill("只剩最后 1 张待处理啦", "#475569", "#ffffff");
+			hideDragPill(700);
+			return;
+		}
+		const { session, vm } = cards[0];
+		const draft = ensureDraft(vm);
+		const prevSnooze = snoozeOrder.get(vm.cardKey) || 0;
+		snoozeSeq += 1;
+		snoozeOrder.set(vm.cardKey, snoozeSeq);
+		draft.snoozedCount = (draft.snoozedCount || 0) + 1;
+		undoStack.push({
+			type: "snooze",
+			cardKey: vm.cardKey,
+			sessionId: session.id,
+			prevSnooze
+		});
+		showDragPill("↪ 已搁置到牌堆后面", "#475569", "#ffffff");
+		hideDragPill(700);
+		const fgCard = document.getElementById("triageFgCard");
+		const lRight = document.getElementById("triageLayerRight");
+		if (fgCard && lRight) {
+			fgCard.classList.add("tucking");
+			lRight.classList.remove("following");
+			lRight.style.transform = "translate3d(0, 0, 0) scale(1) rotate(0deg)";
+			setTimeout(() => {
+				fgCard.classList.remove("tucking");
+				fgCard.classList.add("dragging");
+				fgCard.style.transform = "translate3d(0,0,0)";
+				fgCard.style.opacity = "1";
+				render({ force: true });
+				requestAnimationFrame(() => fgCard.classList.remove("dragging"));
+			}, 320);
+		} else render({ force: true });
+	}
+	function undoLast() {
+		while (undoStack.length > 0 && undoStack[undoStack.length - 1].type === "grace" && undoStack[undoStack.length - 1].flushed) undoStack.pop();
+		if (!undoStack.length) return;
+		const last = undoStack.pop();
+		if (last.type === "grace") {
+			if (last.graceTimer) clearTimeout(last.graceTimer);
+			last.graceTimer = null;
+			dismissedKeys.delete(last.cardKey);
+			showDragPill("↩ 已成功拦截撤回！尚未发往电脑", "#ea580c", "#ffffff");
+			hideDragPill(1e3);
+		} else if (last.type === "snooze") {
+			if (last.prevSnooze) snoozeOrder.set(last.cardKey, last.prevSnooze);
+			else snoozeOrder.delete(last.cardKey);
+			showDragPill("↩ 已撤回上一张卡片", "#334155", "#ffffff");
+			hideDragPill(700);
+		} else if (last.type === "read") {
+			dismissedKeys.delete(last.cardKey);
+			deps.restoreSessionUnread?.(last.sessionId, last.prevSnapshot);
+			showDragPill("↩ 已恢复为未读待阅", "#334155", "#ffffff");
+			hideDragPill(700);
+		}
+		render({ force: true });
+		deps.onDeckChanged?.();
+	}
+	function openModalHtml(html) {
+		const modal = document.getElementById("triageDetailModal");
+		const box = document.getElementById("triageDetailModalContent");
+		if (!modal || !box) return;
+		box.innerHTML = html;
+		modal.classList.add("open");
+	}
+	function closeDetailModal() {
+		document.getElementById("triageDetailModal")?.classList.remove("open");
+	}
+	function bindCardGestureListeners() {
+		if (listenersBound || typeof window === "undefined") return;
+		const fgCard = document.getElementById("triageFgCard");
+		if (!fgCard) return;
+		listenersBound = true;
+		function resetCardPos() {
+			const lRight = document.getElementById("triageLayerRight");
+			fgCard.style.transform = "translate3d(0,0,0)";
+			if (lRight) lRight.style.transform = `translate3d(${REST_X}px, ${REST_Y}px, 0) scale(${REST_SCALE}) rotate(${REST_ROT}deg)`;
+		}
+		function onPointerStart(clientX, clientY, target) {
+			if (!isOpen) return;
+			if (target.closest(".dsh-triage-custom, textarea")) return;
+			if (!getOrderedActiveCards().length) return;
+			dragging = true;
+			axisLocked = "";
+			sx = clientX;
+			sy = clientY;
+			dx = 0;
+			dy = 0;
+			rightDragUnlocked = false;
+			clearInterval(rightDragHoldTimer);
+			rightDragHoldTimer = null;
+		}
+		function onPointerMove(clientX, clientY, ev) {
+			if (!dragging || !isOpen) return;
+			dx = clientX - sx;
+			dy = clientY - sy;
+			if (!axisLocked) {
+				if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+				axisLocked = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+			}
+			if (axisLocked !== "x") return;
+			if (ev && ev.cancelable) ev.preventDefault();
+			btnPressMoved = true;
+			clearInterval(holdTimer);
+			holdTimer = null;
+			const progBar = document.getElementById("triageBtnProg");
+			const stackDom = document.getElementById("triageCardStack");
+			const lRight = document.getElementById("triageLayerRight");
+			fgCard.classList.add("dragging");
+			lRight?.classList.add("following");
+			stackDom?.classList.toggle("dragging-right", dx > 20);
+			stackDom?.classList.toggle("dragging-left", dx < -20);
+			const cards = getOrderedActiveCards();
+			if (!cards.length) return;
+			const { vm } = cards[0];
+			const draft = ensureDraft(vm);
+			if (dx > 0 && isEmptyCustomSelected(vm, draft)) {
+				const lockedX = Math.min(24, Math.pow(dx, .52) * 1.6);
+				fgCard.style.transform = `translate3d(${lockedX}px, 0, 0)`;
+				showDragPill("✍️ 手工填写为空，请先打字或长按说话", "#ea580c", "#ffffff");
+				return;
+			}
+			const ratio = Math.min(1, Math.abs(dx) / 110);
+			if (lRight) lRight.style.transform = `translate3d(${REST_X * (1 - ratio)}px, ${REST_Y * (1 - ratio)}px, 0) scale(${REST_SCALE + .016000000000000014 * ratio}) rotate(${REST_ROT * (1 - ratio)}deg)`;
+			const customActive = vm.canCustom && (vm.multi ? draft.useCustom : draft.sel === vm.options.length);
+			if (dx > 0 && !customActive && !vm.multi && vm.risk === "high" && draft.sel === 0) {
+				const dampedX = Math.min(104, Math.pow(dx, .72) * 2.05);
+				fgCard.style.transform = `translate3d(${dampedX}px, 0, 0) rotate(${dampedX * .045}deg)`;
+				if (dx > 100 && !rightDragHoldTimer && !rightDragUnlocked) {
+					let pct = 15;
+					if (progBar) progBar.style.width = `${pct}%`;
+					showDragPill("🛡️ 高危防手滑 · 稳住 0.8s 蓄力中…", "#e11d48", "#ffffff");
+					rightDragHoldTimer = setInterval(() => {
+						pct += 14;
+						const b = document.getElementById("triageBtnProg");
+						if (b) b.style.width = `${Math.min(100, pct)}%`;
+						if (pct >= 100) {
+							clearInterval(rightDragHoldTimer);
+							rightDragHoldTimer = null;
+							rightDragUnlocked = true;
+							navigator.vibrate?.(25);
+							showDragPill("🔓 蓄力完成！松手确认放行", "#059669", "#ffffff");
+						}
+					}, 85);
+				} else if (dx <= 100 && !rightDragUnlocked) {
+					clearInterval(rightDragHoldTimer);
+					rightDragHoldTimer = null;
+					if (progBar) progBar.style.width = `${Math.min(30, dx * .25)}%`;
+					showDragPill("🛡️ 继续右拉稳住 0.8s 确认", "#e11d48", "#ffffff");
+				}
+			} else {
+				const moveX = dx * .84;
+				fgCard.style.transform = `translate3d(${moveX}px, 0, 0) rotate(${moveX * .045}deg)`;
+				if (dx > 40) showDragPill("👉 松手确认提交", "#059669", "#ffffff");
+				else if (dx < -40) showDragPill("👈 松手搁置到后面", "#475569", "#ffffff");
+				else hideDragPill();
+			}
+		}
+		function onPointerEnd() {
+			if (!dragging) return;
+			dragging = false;
+			clearInterval(rightDragHoldTimer);
+			rightDragHoldTimer = null;
+			document.getElementById("triageCardStack")?.classList.remove("dragging-right", "dragging-left");
+			const progBar = document.getElementById("triageBtnProg");
+			if (progBar) progBar.style.width = "0%";
+			fgCard.classList.remove("dragging");
+			document.getElementById("triageLayerRight")?.classList.remove("following");
+			if (axisLocked === "x") {
+				const top = getOrderedActiveCards()[0];
+				if (top) {
+					const { vm } = top;
+					const draft = ensureDraft(vm);
+					if (dx > 35 && isEmptyCustomSelected(vm, draft)) {
+						resetCardPos();
+						nudgeEmptyCustom();
+						return;
+					}
+					if (dx > 80) {
+						if (!(vm.canCustom && (vm.multi ? draft.useCustom : draft.sel === vm.options.length)) && !vm.multi && vm.risk === "high" && draft.sel === 0 && !rightDragUnlocked) {
+							resetCardPos();
+							hideDragPill(400);
+							return;
+						}
+						confirmTopCard();
+						return;
+					}
+					if (dx < -80) {
+						snoozeTopCard();
+						return;
+					}
+				}
+			}
+			resetCardPos();
+			hideDragPill();
+		}
+		fgCard.addEventListener("touchstart", (e) => {
+			if (e.touches?.[0]) onPointerStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
+		}, { passive: true });
+		window.addEventListener("touchmove", (e) => {
+			if (isOpen && dragging && e.touches?.[0]) onPointerMove(e.touches[0].clientX, e.touches[0].clientY, e);
+		}, { passive: false });
+		window.addEventListener("touchend", onPointerEnd);
+		fgCard.addEventListener("mousedown", (e) => {
+			if (e.button === 0) onPointerStart(e.clientX, e.clientY, e.target);
+		});
+		window.addEventListener("mousemove", (e) => {
+			if (isOpen && dragging) onPointerMove(e.clientX, e.clientY, null);
+		});
+		window.addEventListener("mouseup", onPointerEnd);
+		window.addEventListener("beforeunload", flushAllGraceCommits);
+	}
+	if (typeof window !== "undefined") Object.assign(window, {
+		openTriageDeckMode() {
+			isOpen = true;
+			lastRenderedSig = "";
+			document.getElementById("triageDeckOverlay")?.classList.add("open");
+			bindCardGestureListeners();
+			render({ force: true });
+		},
+		closeTriageDeckMode() {
+			flushAllGraceCommits();
+			stopLiveSpeechDictation();
+			closeDetailModal();
+			isOpen = false;
+			document.getElementById("triageDeckOverlay")?.classList.remove("open");
+			deps.onDeckChanged?.();
+		},
+		triageSwitchToRunningList() {
+			window.closeTriageDeckMode?.();
+			deps.switchToRunningList?.();
+		},
+		triageUndoLast: undoLast,
+		triageTapSnooze() {
+			if (!btnPressMoved) snoozeTopCard();
+		},
+		triageOpenFullSession(sessionId) {
+			if (!sessionId) return;
+			deps.openSession?.(sessionId);
+		},
+		triagePickOption(oi) {
+			const top = getOrderedActiveCards()[0];
+			if (!top) return;
+			const draft = ensureDraft(top.vm);
+			if (top.vm.multi) {
+				draft.useCustom = false;
+				const pos = draft.multiSel.indexOf(oi);
+				if (pos >= 0 && draft.multiSel.length > 1) draft.multiSel.splice(pos, 1);
+				else if (pos < 0) draft.multiSel.push(oi);
+			} else draft.sel = oi;
+			render({ force: true });
+		},
+		triageUpdateCustomText(val) {
+			const top = getOrderedActiveCards()[0];
+			if (!top) return;
+			const draft = ensureDraft(top.vm);
+			draft.customText = String(val ?? "");
+			syncConfirmBtnOnly();
+		},
+		triageCustomDown(e) {
+			if (e.target?.tagName === "TEXTAREA") return;
+			e.stopPropagation();
+			isLongPress = false;
+			clearTimeout(lpTimer);
+			lpTimer = setTimeout(() => {
+				const top = getOrderedActiveCards()[0];
+				if (!top) return;
+				const draft = ensureDraft(top.vm);
+				isLongPress = true;
+				isRecording = true;
+				navigator.vibrate?.(18);
+				if (top.vm.multi) draft.useCustom = true;
+				else draft.sel = top.vm.options.length;
+				draft.customOpen = true;
+				render({ force: true });
+				startLiveSpeechDictation(top.vm, draft);
+			}, 240);
+		},
+		triageCustomUp(e) {
+			if (e.target?.tagName === "TEXTAREA") return;
+			e.stopPropagation();
+			clearTimeout(lpTimer);
+			const top = getOrderedActiveCards()[0];
+			if (!top) return;
+			const draft = ensureDraft(top.vm);
+			if (isLongPress) stopLiveSpeechDictation();
+			else {
+				if (top.vm.multi) draft.useCustom = true;
+				else draft.sel = top.vm.options.length;
+				draft.customOpen = true;
+				render({ force: true });
+				setTimeout(() => document.getElementById("triageCustomTextarea")?.focus(), 45);
+			}
+		},
+		triageCustomCancel() {
+			clearTimeout(lpTimer);
+			if (isRecording) stopLiveSpeechDictation();
+		},
+		triageConfirmBtnDown() {
+			const top = getOrderedActiveCards()[0];
+			if (!top) return;
+			btnPressMoved = false;
+			const draft = ensureDraft(top.vm);
+			if (isEmptyCustomSelected(top.vm, draft)) return;
+			if (!(!(top.vm.canCustom && (top.vm.multi ? draft.useCustom : draft.sel === top.vm.options.length)) && !top.vm.multi && top.vm.risk === "high" && draft.sel === 0)) return;
+			holdPct = 0;
+			clearInterval(holdTimer);
+			holdTimer = setInterval(() => {
+				if (btnPressMoved) {
+					clearInterval(holdTimer);
+					holdTimer = null;
+					return;
+				}
+				holdPct += 12.5;
+				const bar = document.getElementById("triageBtnProg");
+				if (bar) bar.style.width = `${Math.min(100, holdPct)}%`;
+				if (holdPct >= 100) {
+					clearInterval(holdTimer);
+					holdTimer = null;
+					if (bar) bar.style.width = "0%";
+					navigator.vibrate?.(25);
+					confirmTopCard();
+				}
+			}, 80);
+		},
+		triageConfirmBtnUp() {
+			const wasHolding = Boolean(holdTimer);
+			clearInterval(holdTimer);
+			holdTimer = null;
+			const bar = document.getElementById("triageBtnProg");
+			if (bar) bar.style.width = "0%";
+			if (btnPressMoved) return;
+			const top = getOrderedActiveCards()[0];
+			if (!top) return;
+			const draft = ensureDraft(top.vm);
+			if (isEmptyCustomSelected(top.vm, draft)) {
+				nudgeEmptyCustom();
+				return;
+			}
+			if (!(top.vm.canCustom && (top.vm.multi ? draft.useCustom : draft.sel === top.vm.options.length)) && !top.vm.multi && top.vm.risk === "high" && draft.sel === 0) {
+				if (wasHolding && holdPct < 100) {
+					showDragPill("🛡️ 高危操作请按住 0.8 秒确认", "#e11d48", "#ffffff");
+					hideDragPill(800);
+				}
+				return;
+			}
+			confirmTopCard();
+		},
+		triageConfirmBtnCancel() {
+			clearInterval(holdTimer);
+			holdTimer = null;
+			const bar = document.getElementById("triageBtnProg");
+			if (bar) bar.style.width = "0%";
+		},
+		closeTriageDetailModal: closeDetailModal,
+		openTriagePromptModal() {
+			const top = getOrderedActiveCards()[0];
+			if (!top) return;
+			const { vm } = top;
+			const imgsHtml = vm.promptInfo.mediaPaths.map((p) => {
+				const enc = encodeURIComponent(p).replace(/'/g, "%27");
+				const fullSrc = buildLocalThumbSrc(vm.hostId, p);
+				return `<div style="margin-top:8px;" onclick="closeTriageDetailModal(); triageInspectSessionFile('${esc(vm.sessionId)}', '${enc}')">
+            <img src="${esc(fullSrc)}" alt="提问原图" style="max-width:100%;max-height:46vh;border-radius:12px;border:1px solid #cbd5e1;cursor:pointer;" />
+            <div style="font-size:11.5px;color:#2563eb;font-weight:700;margin-top:4px;">🔍 点击打开高清原图预览器</div>
+          </div>`;
+			}).join("");
+			openModalHtml(`
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong style="font-size:15px;">我发送的完整提问</strong>
+            <button type="button" class="dsh-triage-open-chat" onclick="closeTriageDetailModal()">收起 ✕</button>
+          </div>
+          <div style="font-size:14px;line-height:1.62;color:#1e293b;background:#f8fafc;padding:12px;border-radius:14px;white-space:pre-wrap;word-break:break-word;">${esc(vm.promptInfo.text || top.session.title)}</div>
+          ${imgsHtml}
+        `);
+		},
+		openTriageFilesModal() {
+			const top = getOrderedActiveCards()[0];
+			if (!top || !top.vm.diffInfo.files.length) return;
+			const { vm } = top;
+			openModalHtml(`
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong style="font-size:15px;">📄 代码改动 (${vm.diffInfo.files.length} 个文件)</strong>
+            <button type="button" class="dsh-triage-open-chat" onclick="closeTriageDetailModal()">收起 ✕</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${vm.diffInfo.files.map((f) => {
+				const enc = encodeURIComponent(f.path || f.name).replace(/'/g, "%27");
+				return `<div class="dsh-triage-file-row" onclick="closeTriageDetailModal(); triageInspectSessionFile('${esc(vm.sessionId)}', '${enc}')">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;">${esc(f.name)}</span>
+                <span style="flex-shrink:0;">
+                  ${vm.diffInfo.hasLineCounts ? `<b style="color:#16a34a">+${f.added}</b> <b style="color:#dc2626">-${f.removed}</b>` : ""}
+                  <span style="color:#2563eb;margin-left:4px;">查看 ›</span>
+                </span>
+              </div>`;
+			}).join("")}
+          </div>
+        `);
+		},
+		triageInspectSessionFile(sessionId, encodedPath) {
+			deps.openFileForSession?.(sessionId, decodeURIComponent(encodedPath));
+		},
+		openTriageCommandModal() {
+			const top = getOrderedActiveCards()[0];
+			if (!top || !top.vm.cmdLine) return;
+			openModalHtml(`
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong style="font-size:15px;">💻 待执行完整命令</strong>
+            <button type="button" class="dsh-triage-open-chat" onclick="closeTriageDetailModal()">收起 ✕</button>
+          </div>
+          <div style="font-size:12px;color:#64748b;">执行目录：<code>${esc(top.session.cwd || "-")}</code></div>
+          <pre style="margin:0;padding:12px;border-radius:14px;background:#0f172a;color:#f8fafc;font-family:var(--mono,monospace);font-size:12px;line-height:1.55;white-space:pre-wrap;word-break:break-all;">${esc(top.vm.cmdLine)}</pre>
+        `);
+		},
+		openTriageReplyModal() {
+			const top = getOrderedActiveCards()[0];
+			if (!top) return;
+			const rawMd = top.vm.fullReplyMarkdown || top.vm.headline;
+			openModalHtml(`
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong style="font-size:15px;">📖 AI 最新完整回复</strong>
+            <button type="button" class="dsh-triage-open-chat" onclick="closeTriageDetailModal()">收起 ✕</button>
+          </div>
+          <div class="md-body" style="font-size:13.5px;line-height:1.62;padding:4px 2px;color:#0f172a;">${deps.formatAssistantText ? deps.formatAssistantText(rawMd, top.vm.artifacts) : `<div style="white-space:pre-wrap;">${esc(rawMd)}</div>`}</div>
+        `);
+		}
+	});
+	return {
+		isOpen: () => isOpen,
+		getTopSessionId: () => getOrderedActiveCards()[0]?.vm?.sessionId || "",
+		getPendingCount: () => getOrderedActiveCards().length,
+		onStateUpdated: () => {
+			if (isOpen) render({ force: false });
+		}
+	};
+}
 // hub/web/src/controller.js
 function initHubController() {
 	const urlParams = new URLSearchParams(location.search);
@@ -5065,15 +6375,65 @@ function initHubController() {
 		}
 		return h;
 	}
+	let authLockConfirmed = false;
+	async function verifyCandidateToken(candidateToken, timeoutMs = 25e3) {
+		const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+		const timer = ctrl ? setTimeout(() => {
+			try {
+				ctrl.abort();
+			} catch {}
+		}, timeoutMs) : null;
+		try {
+			const headers = { "content-type": "application/json" };
+			const tk = String(candidateToken ?? "").trim();
+			if (tk) {
+				headers["authorization"] = "Bearer " + tk;
+				headers["x-hub-token"] = tk;
+			}
+			const res = await fetch("/api/auth/verify", {
+				method: "POST",
+				headers,
+				body: "{}",
+				...ctrl ? { signal: ctrl.signal } : {}
+			});
+			if (res.status === 401) return {
+				ok: false,
+				unauthorized: true
+			};
+			const data = await res.json().catch(() => ({}));
+			if (res.ok && data?.ok) return {
+				ok: true,
+				authRequired: Boolean(data.authRequired)
+			};
+			return {
+				ok: false,
+				unauthorized: false,
+				error: data?.error || `HTTP ${res.status}`
+			};
+		} catch (err) {
+			return {
+				ok: false,
+				unauthorized: false,
+				error: err && err.name === "AbortError" ? "连接超时，请检查网络后重试" : err?.message || "网络异常"
+			};
+		} finally {
+			if (timer) clearTimeout(timer);
+		}
+	}
 	async function apiFetch(path, options = {}) {
+		const sentToken = getToken();
 		const res = await fetch(path, {
 			...options,
 			headers: authHeaders(options.headers || {})
 		});
 		if (res.status === 401) {
+			if (getToken() !== sentToken) throw new Error("Superseded");
+			authLockConfirmed = true;
+			closeSSE();
 			document.getElementById("authOverlay").classList.add("show");
 			throw new Error("Unauthorized");
 		}
+		authLockConfirmed = false;
 		document.getElementById("authOverlay").classList.remove("show");
 		return res;
 	}
@@ -5081,45 +6441,76 @@ function initHubController() {
 		const inputEl = document.getElementById("authTokenInput");
 		const raw = inputEl.value.trim();
 		if (!raw) return;
-		if (/^[A-Z0-9]{6}$/i.test(raw)) try {
-			const exRes = await fetch("/api/pairing/exchange", {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ code: raw.toUpperCase() })
-			});
-			const exData = await exRes.json();
-			if (exRes.ok && exData.token) {
-				localStorage.setItem("dsh_hub_token", exData.token);
-				const paired = await fetchState();
-				if (!paired.ok) {
-					showToast("❌ 配对成功但读取数据失败：" + (paired.error || "请重试"));
+		const btnEl = document.querySelector("#authOverlay button.primary-block-btn");
+		const origBtnText = btnEl ? btnEl.textContent : "";
+		if (btnEl) {
+			btnEl.disabled = true;
+			btnEl.textContent = "⏳ 正在验证解锁...";
+		}
+		try {
+			if (/^[A-Z0-9]{6}$/i.test(raw)) try {
+				const exRes = await fetch("/api/pairing/exchange", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ code: raw.toUpperCase() })
+				});
+				const exData = await exRes.json().catch(() => ({}));
+				if (exRes.ok && exData.token) {
+					authLockConfirmed = false;
+					localStorage.setItem("dsh_hub_token", exData.token);
+					document.getElementById("authOverlay").classList.remove("show");
+					showToast("🔓 配对解锁成功，正在加载数据...");
+					const paired = await fetchState({ forceFresh: true });
+					if (!paired.ok && !paired.superseded) {
+						setConnectionBanner(true);
+						showToast("⚠️ 已解锁，正在同步数据，请稍候…");
+					}
+					connectSSE();
 					return;
 				}
-				document.getElementById("authOverlay").classList.remove("show");
-				showToast("🔓 配对解锁成功");
-				connectSSE();
+				if (exRes.status === 429) {
+					showToast("❌ " + (exData.error || "尝试次数过多，请稍后再试"));
+					return;
+				}
+			} catch {}
+			const check = await verifyCandidateToken(raw, 25e3);
+			if (!check.ok) {
+				if (check.unauthorized) {
+					localStorage.removeItem("dsh_hub_token");
+					authLockConfirmed = true;
+					showToast("❌ 访问密码或配对码不正确，请重试");
+					document.getElementById("authOverlay").classList.add("show");
+					try {
+						inputEl.select();
+					} catch {}
+				} else showToast("❌ 无法连接总控台：" + (check.error || "网络异常"));
 				return;
 			}
-		} catch {}
-		localStorage.setItem("dsh_hub_token", raw);
-		const state = await fetchState();
-		if (!state.ok) {
-			if (state.unauthorized) {
-				localStorage.removeItem("dsh_hub_token");
-				showToast("❌ 访问密码或配对码不正确，请重试");
-				document.getElementById("authOverlay").classList.add("show");
-				try {
-					inputEl.select();
-				} catch {}
-			} else showToast("❌ 无法连接总控台：" + (state.error || "网络异常"));
-			return;
+			authLockConfirmed = false;
+			localStorage.setItem("dsh_hub_token", raw);
+			document.getElementById("authOverlay").classList.remove("show");
+			showToast("🔓 解锁成功");
+			const state = await fetchState({ forceFresh: true });
+			connectSSE();
+			if (!state.ok && !state.superseded) {
+				if (state.unauthorized) {
+					localStorage.removeItem("dsh_hub_token");
+					authLockConfirmed = true;
+					showToast("❌ 访问密码校验已失效，请重新输入");
+					document.getElementById("authOverlay").classList.add("show");
+				} else setConnectionBanner(true);
+			}
+		} finally {
+			if (btnEl) {
+				btnEl.disabled = false;
+				btnEl.textContent = origBtnText;
+			}
 		}
-		document.getElementById("authOverlay").classList.remove("show");
-		showToast("🔓 解锁成功");
-		connectSSE();
 	}
 	function lockAndLogout() {
 		localStorage.removeItem("dsh_hub_token");
+		authLockConfirmed = true;
+		closeSSE();
 		document.getElementById("authOverlay").classList.add("show");
 		showToast("🔒 已锁定当前浏览器");
 	}
@@ -5413,10 +6804,10 @@ function initHubController() {
 		}))].map((opt) => {
 			const isSel = opt.value === currentSelected;
 			return `
-            <div class="host-option ${isSel ? "selected" : ""}" onclick="selectModelFromPicker('${esc(target)}', '${esc(opt.value)}')">
+            <div class="host-option ${isSel ? "selected" : ""}" onclick="selectModelFromPicker('${esc$1(target)}', '${esc$1(opt.value)}')">
               <div style="min-width:0;flex:1;">
-                <div style="font-size:14px;font-weight:700;color:var(--text);">${esc(opt.label)}</div>
-                <div style="font-size:11.5px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(opt.sub)}</div>
+                <div style="font-size:14px;font-weight:700;color:var(--text);">${esc$1(opt.label)}</div>
+                <div style="font-size:11.5px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc$1(opt.sub)}</div>
               </div>
               <span style="font-size:13px;font-weight:700;color:${isSel ? "var(--primary)" : "var(--muted)"};margin-left:8px;flex-shrink:0;">
                 ${isSel ? "当前已选 ✓" : "选择 ›"}
@@ -5490,6 +6881,7 @@ function initHubController() {
 	let pinnedMap = {};
 	let seenMap = {};
 	let seenSigMap = {};
+	let triageCtrl = null;
 	let addHostPanelExpanded = false;
 	let expandedHostCardIds = {};
 	try {
@@ -5639,7 +7031,22 @@ function initHubController() {
 				const pendingApp = approvals.find((a) => a.agentId === t.id);
 				const rawWireTranscript = Array.isArray(t.transcript) ? [...t.transcript] : [];
 				const hydratedWire = hydratedWireTranscriptBySession.get(t.id);
-				const wireTranscript = hydratedWire && Array.isArray(hydratedWire.transcript) && hydratedWire.transcript.length >= rawWireTranscript.length && t.status !== "running" && t.status !== "approval" && (!t.sessionRev || !hydratedWire.sessionRev || hydratedWire.sessionRev === t.sessionRev) ? [...hydratedWire.transcript] : rawWireTranscript;
+				let wireTranscript = rawWireTranscript;
+				if (hydratedWire && Array.isArray(hydratedWire.transcript) && hydratedWire.transcript.length >= rawWireTranscript.length && (!t.sessionRev || !hydratedWire.sessionRev || hydratedWire.sessionRev === t.sessionRev)) {
+					if (t.status !== "running" && t.status !== "approval") wireTranscript = [...hydratedWire.transcript];
+					else if (hydratedWire.transcript.length > rawWireTranscript.length) {
+						if (rawWireTranscript.length === 0) wireTranscript = [...hydratedWire.transcript];
+						else {
+							const firstLive = rawWireTranscript[0];
+							const matchIdx = hydratedWire.transcript.findIndex((m) => m && m.role === firstLive?.role && String(m.text || "").slice(0, 80) === String(firstLive?.text || "").slice(0, 80));
+							if (matchIdx > 0) wireTranscript = [...hydratedWire.transcript.slice(0, matchIdx), ...rawWireTranscript];
+							else {
+								const extraCount = Math.max(0, hydratedWire.transcript.length - rawWireTranscript.length);
+								wireTranscript = [...hydratedWire.transcript.slice(0, extraCount), ...rawWireTranscript];
+							}
+						}
+					}
+				}
 				const serverWireTotalCount = Math.max(Number(t.totalTranscriptCount) || 0, Number(t.messageCount) || 0, wireTranscript.length);
 				const expandedEntry = expandedTranscriptBySession.get(t.id);
 				let baseTranscript = [...wireTranscript];
@@ -5918,7 +7325,10 @@ function initHubController() {
 		const totalSessions = hosts.reduce((acc, h) => acc + (h.bridgeState?.tasks || []).length, 0);
 		const currentHostObj = hosts.find((h) => h.hostId === currentHostId);
 		const dotEl = document.getElementById("topHostDot");
-		if (hosts.length === 0) {
+		if (Boolean(getToken()) && !authLockConfirmed && !hasLoadedInitialState && hosts.length === 0) {
+			dotEl.className = "status-dot";
+			document.getElementById("topHostName").textContent = "正在同步设备…";
+		} else if (hosts.length === 0) {
 			dotEl.className = "status-dot offline";
 			document.getElementById("topHostName").textContent = "未接入电脑 (0)";
 		} else if (currentHostId === "ALL_HOSTS") {
@@ -5972,10 +7382,12 @@ function initHubController() {
 			}
 		}
 		if (document.getElementById("inChatFileSheet").classList.contains("open")) renderInChatFileDrawerBody();
+		triageCtrl?.onStateUpdated();
 		applyLangToDom(document.body, langPref);
 	}
 	function renderProjectStrip(sessionsArg) {
 		const sessions = Array.isArray(sessionsArg) ? sessionsArg : getNormalizedSessions();
+		const triageCount = sessions.filter(isTriageEligibleSession).length;
 		const activeCount = sessions.filter((s) => s.status === "running" || s.status === "approval").length;
 		const unreadCount = sessions.filter((s) => s.hasUnreadConclusion || s.isUnreadInterrupted).length;
 		const agyCount = sessions.filter((s) => s.harness === "antigravity-ide").length;
@@ -5989,7 +7401,7 @@ function initHubController() {
 		const projects = Object.keys(counts);
 		const strip = document.getElementById("projectStrip");
 		const nowDate = /* @__PURE__ */ new Date();
-		const stripKey = `${`${nowDate.getFullYear()}-${nowDate.getMonth() + 1}-${nowDate.getDate()}`}:${currentProject}:${sessions.length}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${doubaoCount}:${claudeCount}:${dshCount}:${projects.map((p) => `${p}:${counts[p]}`).join(",")}`;
+		const stripKey = `${`${nowDate.getFullYear()}-${nowDate.getMonth() + 1}-${nowDate.getDate()}`}:${currentProject}:${sessions.length}:${triageCount}:${activeCount}:${unreadCount}:${agyCount}:${codexCount}:${workbuddyCount}:${doubaoCount}:${claudeCount}:${dshCount}:${projects.map((p) => `${p}:${counts[p]}`).join(",")}`;
 		if (stripKey === lastRenderedStripKey && strip.children.length > 0) return;
 		lastRenderedStripKey = stripKey;
 		const prevScrollLeft = strip.scrollLeft;
@@ -6001,9 +7413,10 @@ function initHubController() {
 		if (claudeCount > 0) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_CLAUDE" ? "active" : ""}" onclick="selectProject('HARNESS_CLAUDE')">${renderHarnessBadgeHtml("claude", "pill")} Claude <span class="count">${claudeCount}</span></button>`);
 		if (dshCount > 0 && (agyCount > 0 || codexCount > 0 || workbuddyCount > 0 || doubaoCount > 0 || claudeCount > 0)) smartPills.push(`<button class="filter-pill smart-pill ${currentProject === "HARNESS_DSH" ? "active" : ""}" onclick="selectProject('HARNESS_DSH')">${renderHarnessBadgeHtml("dsh", "pill")} DSH <span class="count">${dshCount}</span></button>`);
 		strip.innerHTML = [
+			`<button type="button" class="triage-grid-entry-btn" id="triageGridEntryBtn" title="滑卡批阅模式" aria-label="滑卡批阅模式" onclick="openTriageDeckMode()"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="1.5" y="1.5" width="5.2" height="5.2" rx="1.4"/><rect x="9.3" y="1.5" width="5.2" height="5.2" rx="1.4"/><rect x="1.5" y="9.3" width="5.2" height="5.2" rx="1.4"/><rect x="9.3" y="9.3" width="5.2" height="5.2" rx="1.4"/></svg>${triageCount > 0 ? "<span class=\"triage-grid-dot\"></span>" : ""}</button>`,
 			`<button class="filter-pill ${currentProject === "ALL" ? "active" : ""}" onclick="selectProject('ALL')">全部 <span class="count">${sessions.length}</span></button>`,
 			...smartPills,
-			...projects.map((p) => `<button class="filter-pill ${currentProject === p ? "active" : ""}" title="${esc(p)}" onclick="selectProject('${esc(p)}')">${esc(formatCompactProjectLabel(p, nowDate))} <span class="count">${counts[p]}</span></button>`)
+			...projects.map((p) => `<button class="filter-pill ${currentProject === p ? "active" : ""}" title="${esc$1(p)}" onclick="selectProject('${esc$1(p)}')">${esc$1(formatCompactProjectLabel(p, nowDate))} <span class="count">${counts[p]}</span></button>`)
 		].join("");
 		strip.scrollLeft = prevScrollLeft;
 	}
@@ -6066,7 +7479,8 @@ function initHubController() {
 		const bannerKey = pendingAppInfo ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.kind || ""}:${pendingAppInfo.app.promptTitle || ""}:${pendingAppInfo.app.settling ? 1 : 0}:${pendingAppInfo.app.lastError || ""}` : "";
 		const hostsSig = (hubState.hosts || []).map((h) => `${h.hostId}:${h.hostName || ""}`).join(",");
 		const rowsSig = filtered.map((s) => `${s.id}:${s.harness}:${s.status}:${s.approvalObj?.kind || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`).join("|");
-		const enrollSig = `${hubState.enrollment?.code || ""}:${hubState.enrollment?.joinedCount || 0}`;
+		const isInitialSyncPending = Boolean(getToken()) && !authLockConfirmed && !hasLoadedInitialState && (hubState.hosts || []).length === 0;
+		const enrollSig = `${hubState.enrollment?.code || ""}:${hubState.enrollment?.joinedCount || 0}:${isInitialSyncPending ? "sync" : "ready"}`;
 		const listKey = `${todayKey}:${hostsSig}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${showStep6Banner ? 1 : 0}:${enrollSig}:${bannerKey}#${rowsSig}`;
 		if (listKey === lastRenderedListKey && viewport.querySelector(".session-list")) return;
 		lastRenderedListKey = listKey;
@@ -6084,26 +7498,26 @@ function initHubController() {
       ` : "";
 		const liveBannerHtml = pendingAppInfo ? `
         <div class="live-activity-bar">
-          <div class="live-activity-left" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">
-            <div class="live-activity-title">${isPendingQuestion ? "💬" : "⏳"} [${esc(pendingAppInfo.host.hostName)}] ${esc(pendingAppInfo.app.project ? `${formatCompactProjectLabel(pendingAppInfo.app.project, nowDate)} / ` : "")}${esc(pendingAppInfo.app.settling ? isPendingQuestion ? "正在同步你的选择到电脑端..." : "正在同步审批到电脑端..." : pendingAppInfo.app.title || (isPendingQuestion ? "等待你做出选择" : "等待你批准工具执行"))}</div>
-            <div class="live-activity-desc" ${pendingAppInfo.app.lastError ? "style=\"color:#ef4444;font-weight:600;\"" : ""}>${esc(pendingAppInfo.app.lastError ? `⚠️ ${pendingAppInfo.app.lastError}` : pendingAppInfo.app.promptTitle || pendingAppInfo.app.reason || "")}</div>
+          <div class="live-activity-left" onclick="openChat('${esc$1(pendingAppInfo.app.agentId)}')">
+            <div class="live-activity-title">${isPendingQuestion ? "💬" : "⏳"} [${esc$1(pendingAppInfo.host.hostName)}] ${esc$1(pendingAppInfo.app.project ? `${formatCompactProjectLabel(pendingAppInfo.app.project, nowDate)} / ` : "")}${esc$1(pendingAppInfo.app.settling ? isPendingQuestion ? "正在同步你的选择到电脑端..." : "正在同步审批到电脑端..." : pendingAppInfo.app.title || (isPendingQuestion ? "等待你做出选择" : "等待你批准工具执行"))}</div>
+            <div class="live-activity-desc" ${pendingAppInfo.app.lastError ? "style=\"color:#ef4444;font-weight:600;\"" : ""}>${esc$1(pendingAppInfo.app.lastError ? `⚠️ ${pendingAppInfo.app.lastError}` : pendingAppInfo.app.promptTitle || pendingAppInfo.app.reason || "")}</div>
           </div>
           <div class="live-activity-actions">
             ${pendingAppInfo.app.settling ? `
               <button class="mini-approve-btn" disabled style="opacity:0.65;cursor:not-allowed;">⏳ 处理中...</button>
             ` : isPendingQuestion ? `
-              <button class="mini-approve-btn" onclick="openChat('${esc(pendingAppInfo.app.agentId)}')">去选择 ›</button>
-              <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false, 4, '${esc(pendingAppInfo.app.agentId || "")}')">跳过</button>
+              <button class="mini-approve-btn" onclick="openChat('${esc$1(pendingAppInfo.app.agentId)}')">去选择 ›</button>
+              <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc$1(pendingAppInfo.host.hostId)}', '${esc$1(pendingAppInfo.app.code)}', false, 4, '${esc$1(pendingAppInfo.app.agentId || "")}')">跳过</button>
             ` : `
-              <button class="mini-approve-btn" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', true, 1, '${esc(pendingAppInfo.app.agentId || "")}')">✓ 允许</button>
-              <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc(pendingAppInfo.host.hostId)}', '${esc(pendingAppInfo.app.code)}', false, 4, '${esc(pendingAppInfo.app.agentId || "")}')">拒绝</button>
+              <button class="mini-approve-btn" onclick="sendApprovalDecision('${esc$1(pendingAppInfo.host.hostId)}', '${esc$1(pendingAppInfo.app.code)}', true, 1, '${esc$1(pendingAppInfo.app.agentId || "")}')">✓ 允许</button>
+              <button class="mini-approve-btn ghost" onclick="sendApprovalDecision('${esc$1(pendingAppInfo.host.hostId)}', '${esc$1(pendingAppInfo.app.code)}', false, 4, '${esc$1(pendingAppInfo.app.agentId || "")}')">拒绝</button>
             `}
           </div>
         </div>
       ` : "";
 		const rowsHtml = filtered.map((s) => {
 			let rowStateClass = "";
-			let statusHtml = `<span class="session-time">${esc(s.timeLabel)}</span>`;
+			let statusHtml = `<span class="session-time">${esc$1(s.timeLabel)}</span>`;
 			if (s.status === "approval") {
 				rowStateClass = "row-state-approval";
 				const isRowQuestion = Boolean(s.approvalObj && (s.approvalObj.kind === "question" || Array.isArray(s.approvalObj.questions)));
@@ -6121,35 +7535,43 @@ function initHubController() {
 			}
 			const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : "";
 			const shortHostLabel = shortHostMap[s.hostId] || s.hostName;
-			const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag" title="${esc(s.hostName)}">${esc(shortHostLabel)}</span>` : "";
+			const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag" title="${esc$1(s.hostName)}">${esc$1(shortHostLabel)}</span>` : "";
 			const harnessBadgeHtml = renderHarnessBadgeHtml(s.harness, "row", s.harnessLabel);
 			const compactProject = formatCompactProjectLabel(s.project, nowDate);
 			const rolePrefix = s.status === "running" ? "" : s.lastRole === "user" ? "🧑 我: " : "🤖 ";
 			const displayTitle = stripRedundantProjectPrefix(s.title, s.project);
 			return `
-          <div class="session-row ${rowStateClass} ${s.pinned ? "pinned-row" : ""} ${s.id === activeSessionId ? "selected-desktop" : ""}" onclick="openChat('${esc(s.id)}')">
+          <div class="session-row ${rowStateClass} ${s.pinned ? "pinned-row" : ""} ${s.id === activeSessionId ? "selected-desktop" : ""}" onclick="openChat('${esc$1(s.id)}')">
             <div class="session-main">
               <div class="session-top-line">
                 <div class="session-title-wrap">
                   ${pinHtml}
-                  <div class="session-title">${esc(displayTitle)}</div>
+                  <div class="session-title">${esc$1(displayTitle)}</div>
                 </div>
                 <div class="session-right-meta">${statusHtml}</div>
               </div>
               <div class="session-sub-line">
                 ${harnessBadgeHtml}
                 ${hostBadgeHtml}
-                <span class="project-mini-tag" title="${esc(s.project)}">📁 ${esc(compactProject)}</span>
-                <span class="session-preview-text">${rolePrefix}${esc(s.lastPreview)}</span>
+                <span class="project-mini-tag" title="${esc$1(s.project)}">📁 ${esc$1(compactProject)}</span>
+                <span class="session-preview-text">${rolePrefix}${esc$1(s.lastPreview)}</span>
               </div>
             </div>
-            <button class="row-more-btn" title="更多操作" onclick="event.stopPropagation(); openSessionActions('${esc(s.id)}')">⋯</button>
+            <button class="row-more-btn" title="更多操作" onclick="event.stopPropagation(); openSessionActions('${esc$1(s.id)}')">⋯</button>
           </div>
         `;
 		}).join("");
 		let emptyStateHtml = "";
 		if (!rowsHtml) {
-			if ((hubState.hosts || []).length === 0) emptyStateHtml = renderAddHostPanelHtml({ isEmptyState: true });
+			const hostsCount = (hubState.hosts || []).length;
+			if (isInitialSyncPending) emptyStateHtml = `
+            <div style="padding:48px 20px;text-align:center;">
+              <div style="font-size:28px;margin-bottom:10px;">⚡</div>
+              <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px;">正在同步在线电脑与会话列表…</div>
+              <div style="font-size:12.5px;color:var(--muted);">已通过安全校验，正在拉取实时任务快照</div>
+            </div>
+          `;
+			else if (hostsCount === 0) emptyStateHtml = renderAddHostPanelHtml({ isEmptyState: true });
 			else if (allSessions.length === 0) emptyStateHtml = `
             <div style="padding:40px 20px;text-align:center;">
               <div style="font-size:30px;margin-bottom:8px;">✨</div>
@@ -6225,6 +7647,7 @@ function initHubController() {
 		document.getElementById("chatFullscreen").classList.remove("open");
 		document.body.classList.remove("mobile-chat-open");
 		setScrollBottomVisible(false);
+		triageCtrl?.onStateUpdated();
 	}
 	function closeMobileChat() {
 		dismissOverlay("chat", rawCloseChat);
@@ -6336,7 +7759,7 @@ function initHubController() {
 	}
 	function renderAssistantFooterHtml(sessionId, msgIdx, cleanReplyText) {
 		const speakControlsHtml = activeSpeechState.playing && activeSpeechState.sessionId === sessionId && activeSpeechState.msgIdx === msgIdx ? `<button type="button" class="assistant-copy-btn assistant-speak-btn speaking" onclick="stopAssistantSpeech()">⏹ 停止</button>` + (activeSpeechState.hasDistinctSummary ? `<button type="button" class="assistant-copy-btn assistant-speak-sub-btn" onclick="switchAssistantSpeechMode(${msgIdx})" title="切换重点摘要 / 完整去噪">${activeSpeechState.mode === "concise" ? "⚡ 重点" : "📖 全文"}</button>` : "") + `<button type="button" class="assistant-copy-btn assistant-speak-sub-btn" onclick="cycleAssistantSpeechRate(${msgIdx})" title="切换播报倍速">${activeSpeechState.rate}x</button>` : `<button type="button" class="assistant-copy-btn assistant-speak-btn" onclick="toggleSpeakAssistantReply(${msgIdx})">🔊 播报</button>`;
-		return `<div class="assistant-copy-footer" data-footer-session-id="${esc(sessionId)}" data-footer-msg-idx="${msgIdx}"><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 复制全文</button>${speakControlsHtml}<span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span></div>`;
+		return `<div class="assistant-copy-footer" data-footer-session-id="${esc$1(sessionId)}" data-footer-msg-idx="${msgIdx}"><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 复制全文</button>${speakControlsHtml}<span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span></div>`;
 	}
 	function syncSpeechFooterDom() {
 		if (typeof document === "undefined") return;
@@ -6626,7 +8049,7 @@ function initHubController() {
 		const isObserveOnly = s.controlMode === "observe-only" && s.harness !== "dsh";
 		const modeTag = isObserveOnly ? " · 👀 仅观测" : s.controlMode === "idle-resumable" || s.controlMode === "observe-only" && s.harness === "dsh" ? " · 🔵 可续聊" : "";
 		const compactChatProj = formatCompactProjectLabel(s.project);
-		const nextSubHtml = `${renderHarnessBadgeHtml(s.harness, "inline")} ${esc(harnessNameText)} · 📁 ${esc(compactChatProj)} · 💻 ${esc(s.hostName)} (${s.msgCount} 条对话)${esc(modeTag)}`;
+		const nextSubHtml = `${renderHarnessBadgeHtml(s.harness, "inline")} ${esc$1(harnessNameText)} · 📁 ${esc$1(compactChatProj)} · 💻 ${esc$1(s.hostName)} (${s.msgCount} 条对话)${esc$1(modeTag)}`;
 		const chatSubEl = document.getElementById("chatSub");
 		const nextSubSig = `${langPref}:${nextSubHtml}`;
 		if (chatSubEl && chatSubEl.dataset.subSig !== nextSubSig) {
@@ -6649,8 +8072,8 @@ function initHubController() {
 			const isOtherQuestion = Boolean(otherApproval.app.kind === "question" || Array.isArray(otherApproval.app.questions));
 			const otherProj = otherApproval.app.project ? `${formatCompactProjectLabel(otherApproval.app.project)} / ` : "";
 			const nextAlertHtml = `
-          <span>${isOtherQuestion ? "💬" : "⏳"} [${esc(otherApproval.host.hostName)}]「${esc(otherProj)}${esc(otherApproval.app.title || otherApproval.app.toolName)}」${isOtherQuestion ? "待你选择" : "待你审批"}</span>
-          <button style="border:none;background:#d97706;color:#fff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;" onclick="openChat('${esc(otherApproval.app.agentId)}')">立即切换 ›</button>
+          <span>${isOtherQuestion ? "💬" : "⏳"} [${esc$1(otherApproval.host.hostName)}]「${esc$1(otherProj)}${esc$1(otherApproval.app.title || otherApproval.app.toolName)}」${isOtherQuestion ? "待你选择" : "待你审批"}</span>
+          <button style="border:none;background:#d97706;color:#fff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;" onclick="openChat('${esc$1(otherApproval.app.agentId)}')">立即切换 ›</button>
         `;
 			alertBar.style.display = "flex";
 			const nextAlertSig = `${langPref}:${nextAlertHtml}`;
@@ -6735,7 +8158,7 @@ function initHubController() {
 			syncWechatHoldBtnState();
 		}
 		const trSig = s.transcript.slice(-6).map((m) => `${m.role}:${m.queuedCmdId || ""}:${m.expiredCmdId || ""}:${(m.text || "").length}:${(m.text || "").slice(-32)}:${(m.thinking || "").length}:${(m.tools || []).length}:${(m.artifacts || []).length}:${m.waitingForInput ? 1 : 0}`).join("|");
-		const chatKey = `${s.id}:${s.status}:${s.sessionRev || ""}:${s.transcript.length}:${trSig}:${s.approvalObj?.code || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${(s.changedFiles || []).length}:${(s.artifacts || []).length}`;
+		const chatKey = `${s.id}:${s.status}:${s.sessionRev || ""}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${(s.changedFiles || []).length}:${(s.artifacts || []).length}`;
 		if (chatKey === lastRenderedChatKey) return;
 		lastRenderedChatKey = chatKey;
 		selectedAgyOptionIndex = 1;
@@ -6780,12 +8203,12 @@ function initHubController() {
 		lastRenderedAssistantTexts = {};
 		const bubblesHtml = msgs.map((m, msgIdx) => {
 			if (m.role === "user") {
-				const queuedBadge = m.queuedCmdId ? `<div class="queued-cmd-pill"><span>⏳ 排队中（电脑上线后执行）</span><button class="cancel-queued-btn" onclick="event.stopPropagation(); cancelQueuedCommand('${esc(m.queuedCmdId)}')">✕ 取消</button></div>` : m.expiredCmdId ? `<div class="queued-cmd-pill" style="background:rgba(239,68,68,0.18);color:#fecaca;"><span>⚠️ 电脑超过 10 分钟未上线，该指令已超时未执行</span></div>` : "";
-				return `<div class="bubble user"><div>${esc(m.text)}</div>${queuedBadge}</div>`;
+				const queuedBadge = m.queuedCmdId ? `<div class="queued-cmd-pill"><span>⏳ 排队中（电脑上线后执行）</span><button class="cancel-queued-btn" onclick="event.stopPropagation(); cancelQueuedCommand('${esc$1(m.queuedCmdId)}')">✕ 取消</button></div>` : m.expiredCmdId ? `<div class="queued-cmd-pill" style="background:rgba(239,68,68,0.18);color:#fecaca;"><span>⚠️ 电脑超过 10 分钟未上线，该指令已超时未执行</span></div>` : "";
+				return `<div class="bubble user"><div>${esc$1(m.text)}</div>${queuedBadge}</div>`;
 			}
 			const thinkId = `think-${msgIdx}`;
 			const stepCountLabel = m.thinkingStepCount > 1 ? ` · 共 ${m.thinkingStepCount} 步` : "";
-			const thought = m.thinking ? `<details class="thought-box thinking-details" data-detail-id="${thinkId}" ${openDetailIds.has(thinkId) ? "open" : ""}><summary>💭 思考过程${stepCountLabel} (点击展开)</summary><div style="margin-top:6px;white-space:pre-wrap;">${esc(m.thinking)}</div></details>` : "";
+			const thought = m.thinking ? `<details class="thought-box thinking-details" data-detail-id="${thinkId}" ${openDetailIds.has(thinkId) ? "open" : ""}><summary>💭 思考过程${stepCountLabel} (点击展开)</summary><div style="margin-top:6px;white-space:pre-wrap;">${esc$1(m.thinking)}</div></details>` : "";
 			if (m.isToolStepOnly) {
 				const toolOut = (m.tools || []).map((t) => t.commandLine || t.summary || "").filter(Boolean).join("\n");
 				const waitText = m.waitingForInput ? `<div style="margin-top:6px;font-size:12.5px;color:var(--muted);">Waiting for user input.</div>` : "";
@@ -6795,10 +8218,10 @@ function initHubController() {
               ${thought}
               <details class="tool-chip-details" data-detail-id="${stepToolId}" ${openDetailIds.has(stepToolId) ? "open" : ""} style="border:none;background:transparent;">
                 <summary style="padding:2px 0;font-size:13px;color:var(--text-secondary);">
-                  <span>${esc(m.text)}</span>
+                  <span>${esc$1(m.text)}</span>
                   <span style="color:var(--muted);font-size:11px;">›</span>
                 </summary>
-                ${toolOut ? `<div class="tool-chip-output" style="margin-top:6px;border-radius:6px;">${esc(toolOut)}</div>` : ""}
+                ${toolOut ? `<div class="tool-chip-output" style="margin-top:6px;border-radius:6px;">${esc$1(toolOut)}</div>` : ""}
               </details>
               ${waitText}
             </div>
@@ -6807,22 +8230,24 @@ function initHubController() {
 			const rawTools = Array.isArray(m.toolCalls) && m.toolCalls.length > 0 ? m.toolCalls : m.tools || [];
 			let tools = "";
 			if (rawTools.length > 0) {
+				const isOlderCollapsedMsg = msgIdx < msgs.length - 6;
 				const toolItemsHtml = rawTools.map((t, tIdx) => {
 					const tName = typeof t === "string" ? t : t.name || "tool";
 					const tSummary = typeof t === "string" ? "" : t.summary || t.argsSummary || "";
-					const tDetail = typeof t === "string" ? "执行完毕" : t.commandLine || t.output || tSummary || "执行完毕";
+					const rawDetail = typeof t === "string" ? "执行完毕" : t.commandLine || t.output || tSummary || "执行完毕";
+					const tDetail = isOlderCollapsedMsg && rawDetail.length > 600 ? rawDetail.slice(0, 600) + "..." : rawDetail;
 					const chipId = `tool-${msgIdx}-${tIdx}`;
 					return `
               <details class="tool-chip-details" data-detail-id="${chipId}" ${openDetailIds.has(chipId) ? "open" : ""}>
-                <summary><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔧 ${esc(tName)}${tSummary ? ` · ${esc(tSummary.slice(0, 64))}` : ""}</span><span style="color:#94a3b8;font-size:10.5px;white-space:nowrap;flex-shrink:0;">点击查看详情 ▾</span></summary>
-                <div class="tool-chip-output">${esc(tDetail)}</div>
+                <summary><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🔧 ${esc$1(tName)}${tSummary ? ` · ${esc$1(tSummary.slice(0, 64))}` : ""}</span><span style="color:#94a3b8;font-size:10.5px;white-space:nowrap;flex-shrink:0;">点击查看详情 ▾</span></summary>
+                <div class="tool-chip-output">${esc$1(tDetail)}</div>
               </details>
             `;
 				}).join("");
 				if (rawTools.length > 1) {
 					const groupId = `tool-group-${msgIdx}`;
 					const uniqueToolNames = [...new Set(rawTools.map((t) => typeof t === "string" ? t : t.name || "tool"))].slice(0, 4).join(", ");
-					tools = `<details class="thought-box thinking-details" data-detail-id="${groupId}" ${openDetailIds.has(groupId) ? "open" : ""} style="margin-bottom:8px;"><summary>🔧 执行过程 · 共 ${rawTools.length} 次工具调用 (${esc(uniqueToolNames)}) (点击展开)</summary><div class="tool-chips" style="margin-top:6px;">${toolItemsHtml}</div></details>`;
+					tools = `<details class="thought-box thinking-details" data-detail-id="${groupId}" ${openDetailIds.has(groupId) ? "open" : ""} style="margin-bottom:8px;"><summary>🔧 执行过程 · 共 ${rawTools.length} 次工具调用 (${esc$1(uniqueToolNames)}) (点击展开)</summary><div class="tool-chips" style="margin-top:6px;">${toolItemsHtml}</div></details>`;
 				} else tools = `<div class="tool-chips" style="margin-bottom:8px;">${toolItemsHtml}</div>`;
 			}
 			const msgArtifacts = Array.isArray(m.artifacts) ? m.artifacts.filter((a) => a && a.path) : [];
@@ -6843,10 +8268,10 @@ function initHubController() {
                   <span class="agy-artifact-icon">${art.kind === "walkthrough" ? "📋" : art.kind === "plan" ? "🗺️" : art.kind === "task" ? "☑️" : isHtmlArt ? "🌐" : "📄"}</span>
                   <div class="agy-artifact-titles">
                     <div class="agy-artifact-title-row">
-                      <span class="agy-artifact-kind-pill">${esc(resolveArtifactBadgeTitle(art, isHtmlArt))}</span>
-                      <span class="agy-artifact-name">${esc(art.name || "walkthrough.md")}</span>
+                      <span class="agy-artifact-kind-pill">${esc$1(resolveArtifactBadgeTitle(art, isHtmlArt))}</span>
+                      <span class="agy-artifact-name">${esc$1(art.name || "walkthrough.md")}</span>
                     </div>
-                    ${art.summary ? `<div class="agy-artifact-summary">${esc(String(art.summary).replace(/\s+/g, " ").slice(0, 140))}</div>` : ""}
+                    ${art.summary ? `<div class="agy-artifact-summary">${esc$1(String(art.summary).replace(/\s+/g, " ").slice(0, 140))}</div>` : ""}
                   </div>
                   <button type="button" class="agy-artifact-open-btn" onclick="event.stopPropagation(); openChatFileLink('${encArtPath}')">${isHtmlArt ? "体验网页 ›" : "打开 ›"}</button>
                 </div>
@@ -6878,9 +8303,9 @@ function initHubController() {
 			return `
             <div class="agy-file-row agy-artifact-row" style="cursor:pointer;" onclick="openChatFileLink('${encArtPath}')">
               <span class="agy-artifact-row-icon">${badgeIcon}</span>
-              <span class="agy-artifact-kind-badge">${esc(!rawT || rawT.toLowerCase() === nameStem.toLowerCase() || /^artifact$/i.test(rawT) ? art.kind === "walkthrough" ? "Walkthrough" : isHtmlArt ? "HTML 网页" : "交付文档" : rawT)}</span>
-              <span class="agy-file-name" style="color:#f8fafc;font-weight:700;">${esc(art.name || "")}</span>
-              <span class="agy-file-path" style="flex:1;">${esc(art.summary ? String(art.summary).replace(/\s+/g, " ").slice(0, 80) : art.name || "")}</span>
+              <span class="agy-artifact-kind-badge">${esc$1(!rawT || rawT.toLowerCase() === nameStem.toLowerCase() || /^artifact$/i.test(rawT) ? art.kind === "walkthrough" ? "Walkthrough" : isHtmlArt ? "HTML 网页" : "交付文档" : rawT)}</span>
+              <span class="agy-file-name" style="color:#f8fafc;font-weight:700;">${esc$1(art.name || "")}</span>
+              <span class="agy-file-path" style="flex:1;">${esc$1(art.summary ? String(art.summary).replace(/\s+/g, " ").slice(0, 80) : art.name || "")}</span>
               <span class="agy-artifact-open-tag">${isHtmlArt ? "体验网页 ›" : "打开 ›"}</span>
             </div>
           `;
@@ -6894,8 +8319,8 @@ function initHubController() {
             <div class="agy-file-row" style="cursor:pointer;" onclick="openChatFileLink('${encodeURIComponent(fc.path || fc.name || "").replace(/'/g, "%27")}')">
               <span class="agy-file-dot">◉</span>
               <span class="agy-file-diff"><span class="add">+${Number(fc.added || 0)}</span><span class="del">-${Number(fc.removed || 0)}</span></span>
-              <span class="agy-file-name">${esc(fc.name || "")}</span>
-              <span class="agy-file-path">${esc(fc.displayPath || fc.path || "")}</span>
+              <span class="agy-file-name">${esc$1(fc.name || "")}</span>
+              <span class="agy-file-path">${esc$1(fc.displayPath || fc.path || "")}</span>
             </div>
           `;
 		}).join("")}
@@ -6910,13 +8335,13 @@ function initHubController() {
       ` : "";
 		const isQuestionApproval = Boolean(s.approvalObj && (s.approvalObj.kind === "question" || Array.isArray(s.approvalObj.questions)));
 		const isAgyApproval = s.approvalObj && !isQuestionApproval && (s.approvalObj.harness === "antigravity-ide" || Array.isArray(s.approvalObj.options));
-		const approvalStatusNoticeHtml = s.approvalObj?.lastError ? `<div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:rgba(239,68,68,0.14);border:1px solid rgba(239,68,68,0.35);color:#ef4444;font-size:12px;font-weight:600;">⚠️ ${esc(s.approvalObj.lastError)}</div>` : s.approvalObj?.settling ? `<div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--amber-soft);color:#d97706;font-size:12px;font-weight:600;">⏳ 正在同步到电脑端执行（最长等待 45 秒）...</div>` : "";
+		const approvalStatusNoticeHtml = s.approvalObj?.lastError ? `<div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:rgba(239,68,68,0.14);border:1px solid rgba(239,68,68,0.35);color:#ef4444;font-size:12px;font-weight:600;">⚠️ ${esc$1(s.approvalObj.lastError)}</div>` : s.approvalObj?.settling ? `<div style="margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--amber-soft);color:#d97706;font-size:12px;font-weight:600;">⏳ 正在同步到电脑端执行（最长等待 45 秒）...</div>` : "";
 		const qDraft = isQuestionApproval ? getDshQuestionDraft(s.approvalObj.code, s.approvalObj.questions) : null;
 		const approvalCardHtml = s.approvalObj ? isQuestionApproval ? `
-        <div class="dsh-question-card" data-question-code="${esc(s.approvalObj.code)}">
+        <div class="dsh-question-card" data-question-code="${esc$1(s.approvalObj.code)}">
           <div class="dsh-question-card-header">
             <span class="dsh-question-badge-icon">💬</span>
-            <div class="dsh-question-card-title">${esc(s.approvalObj.promptTitle || "请做出选择以继续")}</div>
+            <div class="dsh-question-card-title">${esc$1(s.approvalObj.promptTitle || "请做出选择以继续")}</div>
           </div>
           ${approvalStatusNoticeHtml}
           <div class="dsh-question-list">
@@ -6928,12 +8353,12 @@ function initHubController() {
 			};
 			const selectedSet = new Set(Array.isArray(draftItem.selected) ? draftItem.selected : []);
 			const opts = Array.isArray(q.options) ? q.options : [];
-			const detailId = `q-detail-${esc(s.approvalObj.code)}-${qIdx}`;
+			const detailId = `q-detail-${esc$1(s.approvalObj.code)}-${qIdx}`;
 			return `
-                <div class="dsh-question-block" data-question-id="${esc(qId)}">
+                <div class="dsh-question-block" data-question-id="${esc$1(qId)}">
                   <div class="dsh-question-prompt-line">
-                    ${q.header ? `<span class="dsh-question-header-pill">${esc(q.header)}</span>` : ""}
-                    <span class="dsh-question-prompt-text">${esc(q.question || q.header || "请选择一项")}</span>
+                    ${q.header ? `<span class="dsh-question-header-pill">${esc$1(q.header)}</span>` : ""}
+                    <span class="dsh-question-prompt-text">${esc$1(q.question || q.header || "请选择一项")}</span>
                     ${q.multiSelect ? `<span class="dsh-question-multi-tag">可多选</span>` : ""}
                   </div>
                   ${q.detail ? `
@@ -6950,15 +8375,15 @@ function initHubController() {
                         <button
                           type="button"
                           class="dsh-question-opt ${isSel ? "selected" : ""}"
-                          data-q-id="${esc(qId)}"
-                          data-opt-label="${esc(label)}"
-                          ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="toggleDshQuestionOption('${esc(s.approvalObj.code)}', '${esc(qId)}', '${esc(label)}', ${Boolean(q.multiSelect)})"`}
+                          data-q-id="${esc$1(qId)}"
+                          data-opt-label="${esc$1(label)}"
+                          ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="toggleDshQuestionOption('${esc$1(s.approvalObj.code)}', '${esc$1(qId)}', '${esc$1(label)}', ${Boolean(q.multiSelect)})"`}
                         >
                           <div class="dsh-question-opt-top">
                             <span class="dsh-question-opt-check">${q.multiSelect ? isSel ? "☑" : "☐" : isSel ? "◉" : "○"}</span>
-                            <span class="dsh-question-opt-label">${esc(label)}</span>
+                            <span class="dsh-question-opt-label">${esc$1(label)}</span>
                           </div>
-                          ${opt.description ? `<div class="dsh-question-opt-desc">${esc(opt.description)}</div>` : ""}
+                          ${opt.description ? `<div class="dsh-question-opt-desc">${esc$1(opt.description)}</div>` : ""}
                         </button>
                       `;
 			}).join("")}
@@ -6967,10 +8392,10 @@ function initHubController() {
                     <input
                       type="text"
                       class="dsh-question-custom-input"
-                      data-q-id="${esc(qId)}"
+                      data-q-id="${esc$1(qId)}"
                       placeholder="或者直接输入自定义回答 / 补充说明..."
-                      value="${esc(draftItem.customText || "")}"
-                      ${s.approvalObj.settling ? "disabled" : `oninput="onDshQuestionCustomInput('${esc(s.approvalObj.code)}', '${esc(qId)}', this.value)"`}
+                      value="${esc$1(draftItem.customText || "")}"
+                      ${s.approvalObj.settling ? "disabled" : `oninput="onDshQuestionCustomInput('${esc$1(s.approvalObj.code)}', '${esc$1(qId)}', this.value)"`}
                     />
                   </div>
                 </div>
@@ -6981,12 +8406,12 @@ function initHubController() {
             <button
               type="button"
               class="dsh-question-btn-skip"
-              ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false, 4, '${esc(s.id)}')"`}
+              ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="sendApprovalDecision('${esc$1(s.hostId)}', '${esc$1(s.approvalObj.code)}', false, 4, '${esc$1(s.id)}')"`}
             >跳过 / 取消</button>
             <button
               type="button"
               class="dsh-question-btn-submit"
-              ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="submitDshQuestionAnswers('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', '${esc(s.id)}')"`}
+              ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="submitDshQuestionAnswers('${esc$1(s.hostId)}', '${esc$1(s.approvalObj.code)}', '${esc$1(s.id)}')"`}
             >${s.approvalObj.settling ? "⏳ 正在提交..." : "提交选择 ↵"}</button>
           </div>
         </div>
@@ -6994,10 +8419,10 @@ function initHubController() {
         <div class="agy-approval-card">
           <div class="agy-approval-header">
             <span class="agy-approval-term-icon">&gt;_</span>
-            <span>${esc(s.approvalObj.promptTitle || `Allow ${s.approvalObj.toolName}?`)}</span>
+            <span>${esc$1(s.approvalObj.promptTitle || `Allow ${s.approvalObj.toolName}?`)}</span>
           </div>
-          <div class="agy-approval-subtitle">${esc(s.approvalObj.subtitle || "the auto-run safety check did not reach a decision")}</div>
-          ${s.approvalObj.commandLine ? `<div class="agy-approval-cmd">${esc(s.approvalObj.commandLine)}</div>` : `<div class="agy-approval-cmd">${esc(s.approvalObj.reason || "")}</div>`}
+          <div class="agy-approval-subtitle">${esc$1(s.approvalObj.subtitle || "the auto-run safety check did not reach a decision")}</div>
+          ${s.approvalObj.commandLine ? `<div class="agy-approval-cmd">${esc$1(s.approvalObj.commandLine)}</div>` : `<div class="agy-approval-cmd">${esc$1(s.approvalObj.reason || "")}</div>`}
           ${approvalStatusNoticeHtml}
           <div class="agy-approval-options">
             ${(s.approvalObj.options && s.approvalObj.options.length > 0 ? s.approvalObj.options : [
@@ -7018,25 +8443,25 @@ function initHubController() {
 				label: "No (tell the agent what to do instead)"
 			}
 		]).map((opt) => `
-              <button type="button" class="agy-approval-opt ${opt.index === 1 ? "selected" : ""}" data-opt-idx="${opt.index}" ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="selectAgyApprovalOption(${opt.index})" ondblclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', ${opt.index !== 4}, ${opt.index})"`}>
+              <button type="button" class="agy-approval-opt ${opt.index === 1 ? "selected" : ""}" data-opt-idx="${opt.index}" ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="selectAgyApprovalOption(${opt.index})" ondblclick="sendApprovalDecision('${esc$1(s.hostId)}', '${esc$1(s.approvalObj.code)}', ${opt.index !== 4}, ${opt.index})"`}>
                 <span class="agy-opt-num">${opt.index}</span>
-                <span>${esc(opt.label)}</span>
+                <span>${esc$1(opt.label)}</span>
               </button>
             `).join("")}
           </div>
           <div class="agy-approval-footer">
-            <button type="button" class="agy-btn-skip" ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false, 4)"`}>Skip</button>
-            <button type="button" class="agy-btn-submit" ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="submitAgyApproval('${esc(s.hostId)}', '${esc(s.approvalObj.code)}')"`}>${s.approvalObj.settling ? "⏳ 处理中..." : "Submit <span>↵</span>"}</button>
+            <button type="button" class="agy-btn-skip" ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="sendApprovalDecision('${esc$1(s.hostId)}', '${esc$1(s.approvalObj.code)}', false, 4)"`}>Skip</button>
+            <button type="button" class="agy-btn-submit" ${s.approvalObj.settling ? "disabled style=\"opacity:0.6;cursor:not-allowed;\"" : `onclick="submitAgyApproval('${esc$1(s.hostId)}', '${esc$1(s.approvalObj.code)}')"`}>${s.approvalObj.settling ? "⏳ 处理中..." : "Submit <span>↵</span>"}</button>
           </div>
         </div>
       ` : `
         <div class="inline-approval-card">
-          <div class="inline-approval-title">⏳ 等待你确认工具调用：${esc(s.approvalObj.toolName)}</div>
-          <div class="inline-approval-cmd">${esc(s.approvalObj.reason || "请求执行权限")}</div>
+          <div class="inline-approval-title">⏳ 等待你确认工具调用：${esc$1(s.approvalObj.toolName)}</div>
+          <div class="inline-approval-cmd">${esc$1(s.approvalObj.reason || "请求执行权限")}</div>
           ${approvalStatusNoticeHtml}
           <div class="inline-approval-btns">
-            <button style="background:#10b981;color:#fff;${s.approvalObj.settling ? "opacity:0.6;cursor:not-allowed;" : ""}" ${s.approvalObj.settling ? "disabled" : `onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', true, 1)"`}>${s.approvalObj.settling ? "⏳ 正在同步..." : "✅ 允许执行"}</button>
-            <button style="background:#fee2e2;color:#dc2626;${s.approvalObj.settling ? "opacity:0.6;cursor:not-allowed;" : ""}" ${s.approvalObj.settling ? "disabled" : `onclick="sendApprovalDecision('${esc(s.hostId)}', '${esc(s.approvalObj.code)}', false, 4)"`}>✕ 拒绝</button>
+            <button style="background:#10b981;color:#fff;${s.approvalObj.settling ? "opacity:0.6;cursor:not-allowed;" : ""}" ${s.approvalObj.settling ? "disabled" : `onclick="sendApprovalDecision('${esc$1(s.hostId)}', '${esc$1(s.approvalObj.code)}', true, 1)"`}>${s.approvalObj.settling ? "⏳ 正在同步..." : "✅ 允许执行"}</button>
+            <button style="background:#fee2e2;color:#dc2626;${s.approvalObj.settling ? "opacity:0.6;cursor:not-allowed;" : ""}" ${s.approvalObj.settling ? "disabled" : `onclick="sendApprovalDecision('${esc$1(s.hostId)}', '${esc$1(s.approvalObj.code)}', false, 4)"`}>✕ 拒绝</button>
           </div>
         </div>
       ` : "";
@@ -7047,16 +8472,16 @@ function initHubController() {
 			"▶ 继续执行下一步",
 			"🔍 查看 git status 与改动",
 			"🧪 运行测试验证"
-		].map((f) => `<button class="followup-pill" onclick="sendQuickFollowup('${esc(f)}')">${esc(f)}</button>`).join("")}
+		].map((f) => `<button class="followup-pill" onclick="sendQuickFollowup('${esc$1(f)}')">${esc$1(f)}</button>`).join("")}
         </div>
       `;
-		const loadEarlierHtml = s.omittedTranscriptCount > 0 ? `
+		const loadEarlierHtml = Boolean(s._wireTruncated && hydratingWireSessionIds.has(s.id)) ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin:4px 0 10px;">⏳ 正在同步完整对话内容…</div>` : s.omittedTranscriptCount > 0 ? `
           <div style="display:flex;justify-content:center;margin:4px 0 10px;">
             <button
               type="button"
               class="followup-pill"
               style="font-size:12px;padding:6px 14px;"
-              onclick="loadEarlierTranscript('${esc(s.hostId)}', '${esc(s.id)}', this)"
+              onclick="loadEarlierTranscript('${esc$1(s.hostId)}', '${esc$1(s.id)}', this)"
             >⬆️ 为保证秒开已省略前 ${s.omittedTranscriptCount} 条早先记录 · 点击加载完整历史</button>
           </div>
         ` : expandedTranscriptBySession.has(s.id) ? `<div style="text-align:center;font-size:11.5px;color:var(--muted);margin:4px 0 10px;">✅ 已加载全部历史对话（共 ${s.transcript.length} 条）</div>` : "";
@@ -7076,23 +8501,21 @@ function initHubController() {
 	async function hydrateColdSessionTranscript(hostId, sessionId, sessionRev = "") {
 		if (!hostId || !sessionId || hydratingWireSessionIds.has(sessionId)) return;
 		const existing = hydratedWireTranscriptBySession.get(sessionId);
-		if (existing && (!sessionRev || existing.sessionRev === sessionRev)) return;
+		if (existing && (!sessionRev || existing.sessionRev === sessionRev || Date.now() - (existing.fetchedAt || 0) < 8e3)) return;
 		hydratingWireSessionIds.add(sessionId);
 		try {
 			const data = await (await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/sessions/${encodeURIComponent(sessionId)}/transcript`)).json();
-			if (data?.ok && Array.isArray(data.transcript) && data.transcript.length > 0) {
-				hydratedWireTranscriptBySession.set(sessionId, {
-					transcript: data.transcript,
-					sessionRev: data.sessionRev || sessionRev || "",
-					fetchedAt: Date.now()
-				});
-				if (activeSessionId === sessionId) {
-					lastRenderedChatKey = "";
-					renderAll();
-				}
-			}
+			if (data?.ok && Array.isArray(data.transcript) && data.transcript.length > 0) hydratedWireTranscriptBySession.set(sessionId, {
+				transcript: data.transcript,
+				sessionRev: data.sessionRev || sessionRev || "",
+				fetchedAt: Date.now()
+			});
 		} catch {} finally {
 			hydratingWireSessionIds.delete(sessionId);
+			if (activeSessionId === sessionId || triageCtrl?.isOpen()) {
+				lastRenderedChatKey = "";
+				renderAll();
+			}
 		}
 	}
 	async function loadEarlierTranscript(hostId, sessionId, btnEl) {
@@ -7502,8 +8925,8 @@ function initHubController() {
 		strip.style.display = "flex";
 		strip.innerHTML = list.map((item, idx) => `
         <div class="attachment-thumb-item">
-          <img class="attachment-thumb-img" src="${esc(item.previewUrl)}" alt="${esc(item.name)}" />
-          <span class="attachment-thumb-meta">${esc(formatBytes(item.sizeBytes || 0))}</span>
+          <img class="attachment-thumb-img" src="${esc$1(item.previewUrl)}" alt="${esc$1(item.name)}" />
+          <span class="attachment-thumb-meta">${esc$1(formatBytes(item.sizeBytes || 0))}</span>
           <button
             type="button"
             class="attachment-thumb-remove"
@@ -7957,7 +9380,7 @@ function initHubController() {
 			rawPath = decodeURIComponent(rawPath);
 		} catch {}
 		if (!rawPath) return;
-		const found = findSessionGlobal(activeSessionId);
+		const found = findSessionGlobal(!document.getElementById("chatFullscreen")?.classList.contains("open") && triageCtrl?.isOpen() && triageCtrl?.getTopSessionId?.() || activeSessionId);
 		if (!found) return;
 		const sessionArts = Array.isArray(found.session.artifacts) ? found.session.artifacts : [];
 		const cleanLookup = rawPath.replace(/^file:\/\//i, "").replace(/#L\d+(?:-L?\d+)?$/i, "").trim();
@@ -8023,7 +9446,7 @@ function initHubController() {
 				window.__dshInlineVideoCache[vPath] = vSrc;
 				vNode.classList.remove("md-local-video-pending");
 				vNode.removeAttribute("onclick");
-				vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="none" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc(baseName)} · 点此打开大屏预览</span>`;
+				vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="none" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc$1(baseName)} · 点此打开大屏预览</span>`;
 			}
 		}
 		const pendingNodes = Array.from(containerEl.querySelectorAll(".md-local-img-pending[data-local-img-path]"));
@@ -8043,7 +9466,7 @@ function initHubController() {
 			});
 			window.__dshInlineImgCache[imgPath] = srcUrl;
 			node.classList.remove("md-local-img-pending");
-			node.innerHTML = `<img class="md-inline-img" src="${srcUrl}" alt="${esc(baseName)}" loading="lazy" />`;
+			node.innerHTML = `<img class="md-inline-img" src="${srcUrl}" alt="${esc$1(baseName)}" loading="lazy" />`;
 		}
 	}
 	const previewTextCache = /* @__PURE__ */ new Map();
@@ -8103,7 +9526,7 @@ function initHubController() {
 			body.innerHTML = `
           <div class="breadcrumbs-bar" style="justify-content:space-between;">
             <button class="back-btn" style="padding:0;font-size:13px;" onclick="cancelFilePreviewLoading()">‹ 返回目录</button>
-            <span style="font-weight:700;color:var(--text);">${esc(String(filePreviewLoading.relPath || "").split("/").filter(Boolean).pop() || "文件")}</span>
+            <span style="font-weight:700;color:var(--text);">${esc$1(String(filePreviewLoading.relPath || "").split("/").filter(Boolean).pop() || "文件")}</span>
             <span style="width:56px;"></span>
           </div>
           <div style="padding:16px 12px;background:#0f172a;min-height:300px;">
@@ -8125,7 +9548,7 @@ function initHubController() {
 			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${preview._origImage ? 1 : 0}:${preview._transcodeVideo ? 1 : 0}:${preview._rawVideo ? 1 : 0}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${isHtml ? rawHtmlMode ? "raw-html" : "html" : ""}:${(preview.content || "").length}`;
 			if (body.dataset.dshPreviewKey === previewKey && body.querySelector(".file-preview-body")) return;
 			body.dataset.dshPreviewKey = previewKey;
-			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
+			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc$1(line)}</span></div>`).join("");
 			const canToggleOrigImg = kind === "image" && Boolean(preview.streamUrl) && !/\.(svg|gif)$/i.test(preview.name || "") && (!preview.size || preview.size > 307200);
 			const dlUrl = preview.streamUrl ? appendMediaAuth(`${preview.streamUrl}${preview.streamUrl.includes("?") ? "&" : "?"}download=1`, mt) : "";
 			const videoMetaUi = kind === "video" ? describeVideoPreviewStatus(preview) : null;
@@ -8140,24 +9563,24 @@ function initHubController() {
 			const previewBodyHtml = kind === "video" ? `<div class="file-preview-body" style="padding:16px 12px;background:#0f172a;min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
                <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? "1" : "0"}" controls playsinline webkit-playsinline preload="metadata" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
-                 <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
-                 <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', true)">${esc(videoMetaUi.toggleLabel)}</button>
-                 ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl)}', '${esc(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
+                 <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc$1(formatBytes(preview.size))} · ${esc$1(videoMetaUi.badge)}</span>
+                 <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc$1(host.hostId)}', true)">${esc$1(videoMetaUi.toggleLabel)}</button>
+                 ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl)}', '${esc$1(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
                </div>
              </div>` : kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-                 <img class="saveable-preview-img" src="${imagePreviewSrc(preview, mt)}" data-download-url="${esc(dlUrl || imagePreviewSrc(preview, mt))}" data-file-name="${esc(preview.name || "image.png")}" alt="${esc(preview.name)}" style="max-width:100%;max-height:52vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回目录重新点击文件加载';" />
+                 <img class="saveable-preview-img" src="${imagePreviewSrc(preview, mt)}" data-download-url="${esc$1(dlUrl || imagePreviewSrc(preview, mt))}" data-file-name="${esc$1(preview.name || "image.png")}" alt="${esc$1(preview.name)}" style="max-width:100%;max-height:52vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回目录重新点击文件加载';" />
                  <div class="file-preview-meta-bar" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
-                   <span>${esc(formatBytes(preview.size))} · 长按或点按钮保存图片</span>
-                   <button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl || imagePreviewSrc(preview, mt))}', '${esc(preview.name || "image.png")}', this)">⬇️ 保存图片</button>
-                   ${canToggleOrigImg ? `<button type="button" class="media-toolbar-pill" onclick="toggleOriginalPreviewImage('${esc(host.hostId)}', true)">${preview._origImage ? "⚡ 切回智能省流图" : "🔍 查看无损原图"}</button>` : ""}
+                   <span>${esc$1(formatBytes(preview.size))} · 长按或点按钮保存图片</span>
+                   <button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl || imagePreviewSrc(preview, mt))}', '${esc$1(preview.name || "image.png")}', this)">⬇️ 保存图片</button>
+                   ${canToggleOrigImg ? `<button type="button" class="media-toolbar-pill" onclick="toggleOriginalPreviewImage('${esc$1(host.hostId)}', true)">${preview._origImage ? "⚡ 切回智能省流图" : "🔍 查看无损原图"}</button>` : ""}
                  </div>
                </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:32px 16px;background:#0f172a;color:#94a3b8;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
                    <div style="font-size:32px;">📦</div>
-                   <div style="font-size:14px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
-                   <div style="font-size:12.5px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
-                   ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl)}', '${esc(preview.name || "file")}', this)">⬇️ 保存/分享文件</button>` : ""}
+                   <div style="font-size:14px;font-weight:600;color:#e2e8f0;">${esc$1(preview.name)}</div>
+                   <div style="font-size:12.5px;">二进制文件（${esc$1(formatBytes(preview.size))}），不支持直接文本预览</div>
+                   ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl)}', '${esc$1(preview.name || "file")}', this)">⬇️ 保存/分享文件</button>` : ""}
                  </div>` : isHtml && !rawHtmlMode ? `<div class="file-preview-body html-sandbox-preview" style="padding:0;background:#ffffff;min-height:420px;">
-                   <iframe title="${esc(preview.name || "HTML Preview")}" sandbox="allow-scripts allow-forms allow-modals allow-popups" referrerpolicy="no-referrer" srcdoc="${htmlSrcdocAttr}" style="width:100%;height:62vh;min-height:420px;border:none;background:#ffffff;display:block;"></iframe>
+                   <iframe title="${esc$1(preview.name || "HTML Preview")}" sandbox="allow-scripts allow-forms allow-modals allow-popups" referrerpolicy="no-referrer" srcdoc="${htmlSrcdocAttr}" style="width:100%;height:62vh;min-height:420px;border:none;background:#ffffff;display:block;"></iframe>
                  </div>` : isMarkdown && !rawMdMode ? `<div class="file-preview-body walkthrough-md-preview md-body" style="padding:16px 14px;background:var(--card-bg, #ffffff);color:var(--text, #0f172a);min-height:340px;overflow-x:auto;">
                      ${formatAssistantText(preview.content || "")}
                    </div>` : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:340px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">
@@ -8166,11 +9589,11 @@ function initHubController() {
 			body.innerHTML = `
           <div class="breadcrumbs-bar" style="justify-content:space-between;gap:6px;">
             <button class="back-btn" style="padding:0;font-size:13px;" onclick="backFromDrawerPreview()">‹ 返回目录</button>
-            <span style="font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(preview.name)}</span>
+            <span style="font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc$1(preview.name)}</span>
             <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-              ${isHtml ? `<button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="openFullscreenHtmlFromPreview('${esc(host.hostId)}', true)">⛶ 全屏体验</button><button class="icon-pill-btn" onclick="toggleHtmlPreviewMode()">${rawHtmlMode ? "🌐 预览" : "</> 源码"}</button>` : ""}
+              ${isHtml ? `<button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="openFullscreenHtmlFromPreview('${esc$1(host.hostId)}', true)">⛶ 全屏体验</button><button class="icon-pill-btn" onclick="toggleHtmlPreviewMode()">${rawHtmlMode ? "🌐 预览" : "</> 源码"}</button>` : ""}
               ${isMarkdown ? `<button class="icon-pill-btn" onclick="toggleMdPreviewMode()">${rawMdMode ? "📖 渲染" : "</> 源码"}</button>` : ""}
-              <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="quoteFileIntoChat('${esc(preview.relPath || preview.name)}')">📎 引用</button>
+              <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="quoteFileIntoChat('${esc$1(preview.relPath || preview.name)}')">📎 引用</button>
             </div>
           </div>
           ${previewBodyHtml}
@@ -8192,22 +9615,22 @@ function initHubController() {
 		body.dataset.dshDrawerListKey = drawerListKey;
 		const prevScrollTop = body.scrollTop;
 		const crumbs = buildBreadcrumbSegments(activeSubDir);
-		const hostId = esc(host.hostId);
-		const sessionId = esc(found.session.id);
+		const hostId = esc$1(host.hostId);
+		const sessionId = esc$1(found.session.id);
 		body.innerHTML = `
         <div class="breadcrumbs-bar">
-          <span class="crumb-link" onclick="requestDirList('${hostId}', '${sessionId}', '${esc(rootCwd)}', '', true)">🏠 ${esc(found.session.project)}</span>
+          <span class="crumb-link" onclick="requestDirList('${hostId}', '${sessionId}', '${esc$1(rootCwd)}', '', true)">🏠 ${esc$1(found.session.project)}</span>
           ${crumbs.map((c, index) => {
-			return "<span style=\"color:#94a3b8;\">/</span>" + (index === crumbs.length - 1 ? `<span style="font-weight:600;color:var(--text);">${esc(c.name)}</span>` : `<span class="crumb-link" onclick="requestDirList('${hostId}', '${sessionId}', '${esc(rootCwd)}', '${esc(c.path)}', true)">${esc(c.name)}</span>`);
+			return "<span style=\"color:#94a3b8;\">/</span>" + (index === crumbs.length - 1 ? `<span style="font-weight:600;color:var(--text);">${esc$1(c.name)}</span>` : `<span class="crumb-link" onclick="requestDirList('${hostId}', '${sessionId}', '${esc$1(rootCwd)}', '${esc$1(c.path)}', true)">${esc$1(c.name)}</span>`);
 		}).join("")}
-          ${crumbs.length === 0 ? `<span style="color:#94a3b8;margin-left:auto;font-family:monospace;">${esc(rootCwd)}</span>` : ""}
+          ${crumbs.length === 0 ? `<span style="color:#94a3b8;margin-left:auto;font-family:monospace;">${esc$1(rootCwd)}</span>` : ""}
         </div>
         <div>
           ${loadingDir ? fileLoadingSpinnerHtml(activeSubDir ? `正在读取 ${activeSubDir} …` : "正在读取目录…") : entries.map((e) => `
-            <div class="file-row" onclick="clickRealFileEntry('${hostId}', '${sessionId}', '${esc(rootCwd)}', '${esc(e.relPath)}', ${Boolean(e.isDirectory)}, true)">
+            <div class="file-row" onclick="clickRealFileEntry('${hostId}', '${sessionId}', '${esc$1(rootCwd)}', '${esc$1(e.relPath)}', ${Boolean(e.isDirectory)}, true)">
               <div class="file-row-left">
                 <span style="font-size:18px;">${fileEntryIcon(e)}</span>
-                <span style="font-weight:500;">${esc(e.name)}</span>
+                <span style="font-weight:500;">${esc$1(e.name)}</span>
               </div>
               <span style="font-size:12px;color:#94a3b8;">${e.isDirectory ? "目录" : formatBytes(e.size)} ›</span>
             </div>
@@ -8697,7 +10120,7 @@ function initHubController() {
 		if (titleEl) titleEl.textContent = `🌐 ${activeHtmlOverlay.title || "HTML 交互预览"}`;
 		if (modeBtn) modeBtn.textContent = activeHtmlOverlay.showSource ? "🌐 预览" : "</> 源码";
 		if (activeHtmlOverlay.showSource) {
-			const numbered = String(activeHtmlOverlay.rawHtml || "").split("\n").map((line, idx) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:32px;text-align:right;flex-shrink:0;">${idx + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
+			const numbered = String(activeHtmlOverlay.rawHtml || "").split("\n").map((line, idx) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:32px;text-align:right;flex-shrink:0;">${idx + 1}</span><span style="white-space:pre;">${esc$1(line)}</span></div>`).join("");
 			body.style.background = "#0f172a";
 			body.innerHTML = `<div style="padding:14px 12px;color:#f8fafc;min-height:100%;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.6;">${numbered}</div>`;
 		} else {
@@ -8710,7 +10133,7 @@ function initHubController() {
 				origin: typeof location !== "undefined" ? location.origin : ""
 			}));
 			body.style.background = "#ffffff";
-			body.innerHTML = `<iframe title="${esc(activeHtmlOverlay.title || "HTML Preview")}" sandbox="allow-scripts allow-forms allow-modals allow-popups" referrerpolicy="no-referrer" srcdoc="${srcdocAttr}" style="width:100%;height:100%;min-height:100%;border:none;background:#ffffff;display:block;"></iframe>`;
+			body.innerHTML = `<iframe title="${esc$1(activeHtmlOverlay.title || "HTML Preview")}" sandbox="allow-scripts allow-forms allow-modals allow-popups" referrerpolicy="no-referrer" srcdoc="${srcdocAttr}" style="width:100%;height:100%;min-height:100%;border:none;background:#ffffff;display:block;"></iframe>`;
 		}
 		overlay.style.display = "flex";
 		applyLangToDom(overlay, langPref);
@@ -9024,7 +10447,7 @@ function initHubController() {
 			container.innerHTML = `
           <div class="breadcrumbs-bar" style="justify-content:space-between;">
             <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="cancelFilePreviewLoading()">‹ 返回文件列表</button>
-            <span style="font-weight:700;color:var(--text);">${esc(String(filePreviewLoading.relPath || "").split("/").filter(Boolean).pop() || "文件")}</span>
+            <span style="font-weight:700;color:var(--text);">${esc$1(String(filePreviewLoading.relPath || "").split("/").filter(Boolean).pop() || "文件")}</span>
             <span style="width:72px;"></span>
           </div>
           <div style="padding:16px 12px;background:#0f172a;min-height:calc(100% - 44px);">
@@ -9046,7 +10469,7 @@ function initHubController() {
 			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${preview._origImage ? 1 : 0}:${preview._transcodeVideo ? 1 : 0}:${preview._rawVideo ? 1 : 0}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${isHtml ? rawHtmlMode ? "raw-html" : "html" : ""}:${(preview.content || "").length}`;
 			if (container.dataset.dshPreviewKey === previewKey && container.querySelector(".file-preview-body")) return;
 			container.dataset.dshPreviewKey = previewKey;
-			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc(line)}</span></div>`).join("");
+			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc$1(line)}</span></div>`).join("");
 			const canToggleOrigImg = kind === "image" && Boolean(preview.streamUrl) && !/\.(svg|gif)$/i.test(preview.name || "") && (!preview.size || preview.size > 307200);
 			const dlUrl = preview.streamUrl ? appendMediaAuth(`${preview.streamUrl}${preview.streamUrl.includes("?") ? "&" : "?"}download=1`, mt) : "";
 			const videoMetaUi = kind === "video" ? describeVideoPreviewStatus(preview) : null;
@@ -9061,24 +10484,24 @@ function initHubController() {
 			const previewBodyHtml = kind === "video" ? `<div class="file-preview-body" style="padding:18px 14px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
                <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? "1" : "0"}" controls playsinline webkit-playsinline preload="metadata" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
-                 <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
-                 <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', false)">${esc(videoMetaUi.toggleLabel)}</button>
-                 ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl)}', '${esc(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
+                 <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc$1(formatBytes(preview.size))} · ${esc$1(videoMetaUi.badge)}</span>
+                 <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc$1(host.hostId)}', false)">${esc$1(videoMetaUi.toggleLabel)}</button>
+                 ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl)}', '${esc$1(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
                </div>
              </div>` : kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-                 <img class="saveable-preview-img" src="${imagePreviewSrc(preview, mt)}" data-download-url="${esc(dlUrl || imagePreviewSrc(preview, mt))}" data-file-name="${esc(preview.name || "image.png")}" alt="${esc(preview.name)}" style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回文件列表重新点击加载';" />
+                 <img class="saveable-preview-img" src="${imagePreviewSrc(preview, mt)}" data-download-url="${esc$1(dlUrl || imagePreviewSrc(preview, mt))}" data-file-name="${esc$1(preview.name || "image.png")}" alt="${esc$1(preview.name)}" style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回文件列表重新点击加载';" />
                  <div class="file-preview-meta-bar" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
-                   <span>${esc(formatBytes(preview.size))} · 长按或点按钮保存图片</span>
-                   <button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl || imagePreviewSrc(preview, mt))}', '${esc(preview.name || "image.png")}', this)">⬇️ 保存图片</button>
-                   ${canToggleOrigImg ? `<button type="button" class="media-toolbar-pill" onclick="toggleOriginalPreviewImage('${esc(host.hostId)}', false)">${preview._origImage ? "⚡ 切回智能省流图" : "🔍 查看无损原图"}</button>` : ""}
+                   <span>${esc$1(formatBytes(preview.size))} · 长按或点按钮保存图片</span>
+                   <button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl || imagePreviewSrc(preview, mt))}', '${esc$1(preview.name || "image.png")}', this)">⬇️ 保存图片</button>
+                   ${canToggleOrigImg ? `<button type="button" class="media-toolbar-pill" onclick="toggleOriginalPreviewImage('${esc$1(host.hostId)}', false)">${preview._origImage ? "⚡ 切回智能省流图" : "🔍 查看无损原图"}</button>` : ""}
                  </div>
                </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:36px 16px;background:#0f172a;color:#94a3b8;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
                    <div style="font-size:36px;">📦</div>
-                   <div style="font-size:14.5px;font-weight:600;color:#e2e8f0;">${esc(preview.name)}</div>
-                   <div style="font-size:13px;">二进制文件（${esc(formatBytes(preview.size))}），不支持直接文本预览</div>
-                   ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl)}', '${esc(preview.name || "file")}', this)">⬇️ 保存/分享文件</button>` : ""}
+                   <div style="font-size:14.5px;font-weight:600;color:#e2e8f0;">${esc$1(preview.name)}</div>
+                   <div style="font-size:13px;">二进制文件（${esc$1(formatBytes(preview.size))}），不支持直接文本预览</div>
+                   ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl)}', '${esc$1(preview.name || "file")}', this)">⬇️ 保存/分享文件</button>` : ""}
                  </div>` : isHtml && !rawHtmlMode ? `<div class="file-preview-body html-sandbox-preview" style="padding:0;background:#ffffff;min-height:calc(100% - 44px);">
-                   <iframe title="${esc(preview.name || "HTML Preview")}" sandbox="allow-scripts allow-forms allow-modals allow-popups" referrerpolicy="no-referrer" srcdoc="${htmlSrcdocAttr}" style="width:100%;height:calc(100vh - 150px);min-height:460px;border:none;background:#ffffff;display:block;"></iframe>
+                   <iframe title="${esc$1(preview.name || "HTML Preview")}" sandbox="allow-scripts allow-forms allow-modals allow-popups" referrerpolicy="no-referrer" srcdoc="${htmlSrcdocAttr}" style="width:100%;height:calc(100vh - 150px);min-height:460px;border:none;background:#ffffff;display:block;"></iframe>
                  </div>` : isMarkdown && !rawMdMode ? `<div class="file-preview-body walkthrough-md-preview md-body" style="padding:16px 14px;background:var(--card-bg, #ffffff);color:var(--text, #0f172a);min-height:calc(100% - 44px);overflow-x:auto;">
                      ${formatAssistantText(preview.content || "")}
                    </div>` : `<div class="file-preview-body" style="padding:14px 12px;background:#0f172a;color:#f8fafc;min-height:calc(100% - 44px);overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.65;">
@@ -9086,13 +10509,13 @@ function initHubController() {
                    </div>`;
 			container.innerHTML = `
           <div class="breadcrumbs-bar" style="justify-content:space-between;gap:6px;">
-            <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="closeMainFilePreview('${esc(host.hostId)}')">‹ 返回文件列表</button>
-            <span style="font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(preview.name)}</span>
+            <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="closeMainFilePreview('${esc$1(host.hostId)}')">‹ 返回文件列表</button>
+            <span style="font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc$1(preview.name)}</span>
             <div style="display:flex;gap:6px;flex-shrink:0;">
-              ${isHtml ? `<button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="openFullscreenHtmlFromPreview('${esc(host.hostId)}', false)">⛶ 全屏体验</button><button class="icon-pill-btn" onclick="toggleHtmlPreviewMode()">${rawHtmlMode ? "🌐 预览" : "</> 源码"}</button>` : ""}
+              ${isHtml ? `<button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="openFullscreenHtmlFromPreview('${esc$1(host.hostId)}', false)">⛶ 全屏体验</button><button class="icon-pill-btn" onclick="toggleHtmlPreviewMode()">${rawHtmlMode ? "🌐 预览" : "</> 源码"}</button>` : ""}
               ${isMarkdown ? `<button class="icon-pill-btn" onclick="toggleMdPreviewMode()">${rawMdMode ? "📖 渲染" : "</> 源码"}</button>` : ""}
               ${kind !== "text" ? "" : `<button class="icon-pill-btn" onclick="copyCodeText('${encodeURIComponent(preview.content || "")}')">📋 复制</button>`}
-              <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="askAiAboutFile('${esc(host.hostId)}', '${esc(fileProjectCwd)}', '${esc(preview.relPath || preview.name)}')">💬 让 AI 分析</button>
+              <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="askAiAboutFile('${esc$1(host.hostId)}', '${esc$1(fileProjectCwd)}', '${esc$1(preview.relPath || preview.name)}')">💬 让 AI 分析</button>
             </div>
           </div>
           ${previewBodyHtml}
@@ -9124,24 +10547,24 @@ function initHubController() {
 		const projectPillsHtml = `
         <div class="filter-strip" style="border-bottom:1px solid var(--hairline);">
           ${projects.map((p) => `
-            <button class="filter-pill ${p.cwd === fileProjectCwd ? "active" : ""}" onclick="requestDirList('${esc(host.hostId)}', '${esc(agentId)}', '${esc(p.cwd)}', '')">📁 ${esc(p.name)}</button>
+            <button class="filter-pill ${p.cwd === fileProjectCwd ? "active" : ""}" onclick="requestDirList('${esc$1(host.hostId)}', '${esc$1(agentId)}', '${esc$1(p.cwd)}', '')">📁 ${esc$1(p.name)}</button>
           `).join("")}
         </div>
       `;
 		const breadcrumbHtml = `
         <div class="breadcrumbs-bar">
-          <span class="crumb-link" onclick="requestDirList('${esc(host.hostId)}', '${esc(agentId)}', '${esc(rootCwd)}', '')">🏠 根目录</span>
+          <span class="crumb-link" onclick="requestDirList('${esc$1(host.hostId)}', '${esc$1(agentId)}', '${esc$1(rootCwd)}', '')">🏠 根目录</span>
           ${crumbs.map((c, index) => {
-			return "<span style=\"color:#94a3b8;\">/</span>" + (index === crumbs.length - 1 ? `<span style="font-weight:600;color:var(--text);">${esc(c.name)}</span>` : `<span class="crumb-link" onclick="requestDirList('${esc(host.hostId)}', '${esc(agentId)}', '${esc(rootCwd)}', '${esc(c.path)}')">${esc(c.name)}</span>`);
+			return "<span style=\"color:#94a3b8;\">/</span>" + (index === crumbs.length - 1 ? `<span style="font-weight:600;color:var(--text);">${esc$1(c.name)}</span>` : `<span class="crumb-link" onclick="requestDirList('${esc$1(host.hostId)}', '${esc$1(agentId)}', '${esc$1(rootCwd)}', '${esc$1(c.path)}')">${esc$1(c.name)}</span>`);
 		}).join("")}
-          ${crumbs.length === 0 ? `<span style="color:#94a3b8;margin-left:auto;font-family:monospace;">${esc(rootCwd)}</span>` : ""}
+          ${crumbs.length === 0 ? `<span style="color:#94a3b8;margin-left:auto;font-family:monospace;">${esc$1(rootCwd)}</span>` : ""}
         </div>
       `;
 		const listHtml = loadingDir ? fileLoadingSpinnerHtml(activeSubDir ? `正在读取 ${activeSubDir} …` : "正在读取目录…") : entries.map((e) => `
-        <div class="file-row" onclick="clickRealFileEntry('${esc(host.hostId)}', '${esc(agentId)}', '${esc(listing?.rootCwd || fileProjectCwd)}', '${esc(e.relPath)}', ${Boolean(e.isDirectory)}, false)">
+        <div class="file-row" onclick="clickRealFileEntry('${esc$1(host.hostId)}', '${esc$1(agentId)}', '${esc$1(listing?.rootCwd || fileProjectCwd)}', '${esc$1(e.relPath)}', ${Boolean(e.isDirectory)}, false)">
           <div class="file-row-left">
             <span style="font-size:18px;">${fileEntryIcon(e)}</span>
-            <span style="font-weight:500;">${esc(e.name)}</span>
+            <span style="font-weight:500;">${esc$1(e.name)}</span>
           </div>
           <span style="font-size:12px;color:#94a3b8;">${e.isDirectory ? "目录" : formatBytes(e.size)} ›</span>
         </div>
@@ -9212,8 +10635,8 @@ function initHubController() {
 			hostChips.innerHTML = hosts.map((h) => {
 				const shortName = shortHostMap[h.hostId] || h.hostName;
 				return `
-            <button type="button" class="context-chip ${h.hostId === newTaskHostId ? "selected" : ""}" title="${esc(h.hostName)}" onclick="selectNewTaskHost('${esc(h.hostId)}')">
-              🟢 ${esc(shortName)}
+            <button type="button" class="context-chip ${h.hostId === newTaskHostId ? "selected" : ""}" title="${esc$1(h.hostName)}" onclick="selectNewTaskHost('${esc$1(h.hostId)}')">
+              🟢 ${esc$1(shortName)}
             </button>
           `;
 			}).join("");
@@ -9242,7 +10665,7 @@ function initHubController() {
 			}
 		].map((opt) => `
           <button type="button" class="context-chip ${opt.id === newTaskHarness ? "selected" : ""}" onclick="selectNewTaskHarness('${opt.id}')">
-            ${renderHarnessBadgeHtml(opt.id, "chip")} ${esc(opt.label)}
+            ${renderHarnessBadgeHtml(opt.id, "chip")} ${esc$1(opt.label)}
           </button>
         `).join("");
 		const projects = getHostProjects(hosts.find((h) => h.hostId === newTaskHostId));
@@ -9252,8 +10675,8 @@ function initHubController() {
 		const projChips = document.getElementById("newTaskProjectChips");
 		if (projChips) {
 			projChips.innerHTML = projects.map((p) => `
-          <button type="button" class="new-task-proj-pill ${p.cwd === newTaskCwd ? "selected" : ""}" title="${esc(p.name)} (${esc(p.cwd)})" onclick="selectNewTaskProject('${esc(p.cwd)}')">
-            📁 ${esc(formatCompactProjectLabel(p.name))}
+          <button type="button" class="new-task-proj-pill ${p.cwd === newTaskCwd ? "selected" : ""}" title="${esc$1(p.name)} (${esc$1(p.cwd)})" onclick="selectNewTaskProject('${esc$1(p.cwd)}')">
+            📁 ${esc$1(formatCompactProjectLabel(p.name))}
           </button>
         `).join("");
 			const selBtn = projChips.querySelector(".new-task-proj-pill.selected");
@@ -9295,10 +10718,10 @@ function initHubController() {
 		body.innerHTML = filtered.map((p) => {
 			const isSel = p.cwd === newTaskCwd;
 			return `
-        <div class="host-option ${isSel ? "selected" : ""}" onclick="selectNewTaskProject('${esc(p.cwd)}'); closeSheet('newTaskProjectPickerSheet');">
+        <div class="host-option ${isSel ? "selected" : ""}" onclick="selectNewTaskProject('${esc$1(p.cwd)}'); closeSheet('newTaskProjectPickerSheet');">
           <div style="min-width:0;flex:1;">
-            <div style="font-size:13.5px;font-weight:700;color:var(--text);">📁 ${esc(p.name)}</div>
-            <div style="font-size:11px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.cwd)}</div>
+            <div style="font-size:13.5px;font-weight:700;color:var(--text);">📁 ${esc$1(p.name)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc$1(p.cwd)}</div>
           </div>
           ${isSel ? "<span style=\"color:var(--primary);font-weight:700;margin-left:8px;\">✓</span>" : ""}
         </div>
@@ -9393,19 +10816,19 @@ function initHubController() {
 		const s = actionTargetSession;
 		if (!s) return;
 		document.getElementById("actionSheetTitle").innerHTML = `
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(s.title)}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc$1(s.title)}</span>
         <button style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;" onclick="closeSheet('taskActionSheet')">✕</button>
       `;
 		document.getElementById("actionSheetBody").innerHTML = `
         <div style="margin-bottom:10px;display:flex;gap:6px;">
-          <input id="renameInlineInput" value="${esc(s.title)}" style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--subtle);color:var(--text);font-size:15px;outline:none;" />
+          <input id="renameInlineInput" value="${esc$1(s.title)}" style="flex:1;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--subtle);color:var(--text);font-size:15px;outline:none;" />
           <button style="background:var(--primary);color:#fff;border:none;border-radius:10px;padding:0 14px;font-weight:600;cursor:pointer;" onclick="saveInlineRename()">保存标题</button>
         </div>
         <button class="action-item" onclick="togglePinTargetSession()">
           ${s.pinned ? "📌 取消置顶此对话" : "📌 置顶此对话（固定在列表最顶部）"}
         </button>
         <button class="action-item" onclick="shareTargetSession()">🔗 生成 AES-256 端到端加密回放链接</button>
-        <button class="action-item" onclick="jumpToSessionFiles('${esc(s.hostId)}', '${esc(s.id)}', '${esc(s.cwd)}')">📂 查看【${esc(s.project)}】项目文件夹</button>
+        <button class="action-item" onclick="jumpToSessionFiles('${esc$1(s.hostId)}', '${esc$1(s.id)}', '${esc$1(s.cwd)}')">📂 查看【${esc$1(s.project)}】项目文件夹</button>
         <button class="action-item danger" onclick="deleteTargetSession()">
           ${confirmSheetDelete ? "⚠️ 再次点击确认彻底删除" : "🗑️ 删除此条会话记录"}
         </button>
@@ -9475,13 +10898,13 @@ function initHubController() {
 		if (!body || !url) return;
 		body.innerHTML = `
         <div style="font-size:13px;color:var(--text-secondary);line-height:1.55;margin-bottom:10px;">
-          会话 <strong>${esc(title)}</strong> 已完成 AES-256-GCM 端到端加密。<br/>
+          会话 <strong>${esc$1(title)}</strong> 已完成 AES-256-GCM 端到端加密。<br/>
           <span style="font-size:11.5px;color:var(--muted);">🔐 解密密钥仅保存在链接 <code>#key=</code> 锚点中，云端服务器无法解密原始内容。</span>
         </div>
         <input
           type="text"
           readonly
-          value="${esc(url)}"
+          value="${esc$1(url)}"
           onclick="this.select()"
           style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--subtle);color:var(--text);font-family:var(--mono);font-size:12px;margin-bottom:12px;outline:none;"
         />
@@ -9494,7 +10917,7 @@ function initHubController() {
             📋 复制加密链接
           </button>
           <a
-            href="${esc(url)}"
+            href="${esc$1(url)}"
             target="_blank"
             rel="noopener"
             class="choice-chip"
@@ -9564,7 +10987,7 @@ function initHubController() {
 			});
 			const data = await res.json().catch(() => ({}));
 			if (!res.ok || !data.ok || !data.code) {
-				body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--red);">❌ 生成失败：${esc(data.error || "请稍后重试")}</div>`;
+				body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--red);">❌ 生成失败：${esc$1(data.error || "请稍后重试")}</div>`;
 				return;
 			}
 			const codeStr = String(data.code);
@@ -9579,9 +11002,9 @@ function initHubController() {
 				margin: 3
 			});
 			const localhostNoticeHtml = isLocalhost ? lanCandidates[0] ? `<div id="pairingLocalhostNotice" style="text-align:left;font-size:11.5px;line-height:1.5;color:#b45309;background:var(--amber-soft);border:1px solid #fde68a;padding:8px 10px;border-radius:10px;margin-bottom:10px;">
-                 📡 <strong>局域网自动修正</strong>：你当前在电脑上用 <code>${esc(location.hostname)}</code> 打开（手机扫 localhost 会连不上），已自动将二维码切换为本机局域网地址 <code>${esc(lanCandidates[0])}</code>。请确保手机与电脑连同一 Wi-Fi，或在下方改为公网/隧道地址：
+                 📡 <strong>局域网自动修正</strong>：你当前在电脑上用 <code>${esc$1(location.hostname)}</code> 打开（手机扫 localhost 会连不上），已自动将二维码切换为本机局域网地址 <code>${esc$1(lanCandidates[0])}</code>。请确保手机与电脑连同一 Wi-Fi，或在下方改为公网/隧道地址：
                </div>` : `<div id="pairingLocalhostNotice" style="text-align:left;font-size:11.5px;line-height:1.5;color:#b45309;background:var(--amber-soft);border:1px solid #fde68a;padding:8px 10px;border-radius:10px;margin-bottom:10px;">
-                 ⚠️ <strong>注意</strong>：你当前使用 <code>${esc(location.hostname)}</code> 打开，手机无法直接访问 localhost！请在下方把地址改为电脑的局域网 IP（如 <code>http://192.168.1.x:8080</code>）或公网域名后再扫码：
+                 ⚠️ <strong>注意</strong>：你当前使用 <code>${esc$1(location.hostname)}</code> 打开，手机无法直接访问 localhost！请在下方把地址改为电脑的局域网 IP（如 <code>http://192.168.1.x:8080</code>）或公网域名后再扫码：
                </div>` : "";
 			const renderCountdown = () => {
 				const remainSec = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1e3));
@@ -9606,7 +11029,7 @@ function initHubController() {
               <input
                 id="pairingBaseOriginInput"
                 type="text"
-                value="${esc(defaultBaseOrigin)}"
+                value="${esc$1(defaultBaseOrigin)}"
                 oninput="updatePairingQrBaseOrigin(this.value)"
                 style="flex:1;min-width:0;padding:6px 9px;border-radius:8px;border:1px solid var(--border);background:var(--subtle);color:var(--text);font-family:var(--mono);font-size:11.5px;outline:none;"
               />
@@ -9616,8 +11039,8 @@ function initHubController() {
             </div>
             <div
               style="font-family:var(--mono);font-size:28px;font-weight:800;letter-spacing:6px;padding:10px 12px;border-radius:12px;background:var(--primary-soft);color:var(--primary);border:1px solid var(--border);user-select:all;"
-            >${esc(codeStr)}</div>
-            <div id="pairingFullLinkPreview" style="margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--muted);word-break:break-all;">${esc(activePairingLink)}</div>
+            >${esc$1(codeStr)}</div>
+            <div id="pairingFullLinkPreview" style="margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--muted);word-break:break-all;">${esc$1(activePairingLink)}</div>
             <div id="pairingCodeTimerText" style="margin-top:8px;font-size:12.5px;font-weight:600;color:var(--primary);"></div>
             <div style="display:flex;gap:8px;margin-top:14px;">
               <button
@@ -9644,7 +11067,7 @@ function initHubController() {
 				if (langPref === "en") applyLangToDom(body, langPref);
 			}, 1e3);
 		} catch (err) {
-			body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--red);">❌ 生成失败：${esc(err && err.message || String(err))}</div>`;
+			body.innerHTML = `<div style="padding:20px;text-align:center;color:var(--red);">❌ 生成失败：${esc$1(err && err.message || String(err))}</div>`;
 			applyLangToDom(body, langPref);
 		}
 	}
@@ -9702,7 +11125,7 @@ function initHubController() {
               <div style="min-width:0;flex:1;">
                 <div style="display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;">
                   <span style="font-size:13.5px;font-weight:700;color:var(--text);">➕ 添加电脑</span>
-                  <span style="font-family:var(--mono);font-size:11.5px;font-weight:700;padding:2px 6px;border-radius:6px;background:var(--primary-soft);color:var(--primary);">${esc(code)}</span>
+                  <span style="font-family:var(--mono);font-size:11.5px;font-weight:700;padding:2px 6px;border-radius:6px;background:var(--primary-soft);color:var(--primary);">${esc$1(code)}</span>
                 </div>
                 <div style="font-size:11.5px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
                   ⏳ ${remainMin}m有效 · 已连 ${joinedCount} 台 · 点此展开命令
@@ -9760,7 +11183,7 @@ function initHubController() {
           <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
             <div style="flex:1;min-width:110px;padding:7px 10px;border-radius:10px;background:var(--primary-soft);border:1px solid var(--border);">
               <div style="font-size:11px;color:var(--muted);">当前电脑配对码</div>
-              <div style="font-family:var(--mono);font-size:16px;font-weight:800;color:var(--primary);letter-spacing:1.2px;margin-top:2px;">${esc(code)}</div>
+              <div style="font-family:var(--mono);font-size:16px;font-weight:800;color:var(--primary);letter-spacing:1.2px;margin-top:2px;">${esc$1(code)}</div>
             </div>
             <div style="padding:7px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
               <div style="font-size:11px;color:var(--muted);">剩余有效期</div>
@@ -9777,7 +11200,7 @@ function initHubController() {
           </div>
           <div
             style="font-family:var(--mono);font-size:11.5px;line-height:1.45;padding:9px 11px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);color:var(--text);word-break:break-all;margin-bottom:10px;user-select:all;"
-          >${esc(oneLineCmd)}</div>
+          >${esc$1(oneLineCmd)}</div>
 
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="pill-action-btn primary" onclick="copyCodeText('${encodeURIComponent(oneLineCmd)}', '📋 一行接入命令已复制！到电脑终端粘贴回车即可')">
@@ -9921,25 +11344,25 @@ function initHubController() {
 			const hostVer = String(h.bridgeState?.agentVersion || "");
 			const isUpgradingHost = Boolean(upgradingHostMap[h.hostId] && Date.now() - upgradingHostMap[h.hostId] < 45e3);
 			const isHostOutdated = Boolean(h.online && !isRevoked && (!hostVer || compareSemver(hostVer, hubVer) < 0));
-			const versionBadgeHtml = isUpgradingHost ? `<span style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--amber-soft);color:#d97706;">⏳ 正在升级重启...</span>` : isHostOutdated ? `<span style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--amber-soft);color:#d97706;">⬆️ 可升 v${esc(hubVer)} (${hostVer ? "当前 v" + esc(hostVer) : "旧版"})</span>` : hostVer ? `<span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:999px;background:var(--green-soft);color:var(--green);">v${esc(hostVer)} 最新</span>` : "";
+			const versionBadgeHtml = isUpgradingHost ? `<span style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--amber-soft);color:#d97706;">⏳ 正在升级重启...</span>` : isHostOutdated ? `<span style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--amber-soft);color:#d97706;">⬆️ 可升 v${esc$1(hubVer)} (${hostVer ? "当前 v" + esc$1(hostVer) : "旧版"})</span>` : hostVer ? `<span style="font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:999px;background:var(--green-soft);color:var(--green);">v${esc$1(hostVer)} 最新</span>` : "";
 			return `
                 <div class="host-visual-card ${h.isFeishuActive ? "active-feishu" : ""}" style="padding:12px 14px;">
                   <div
                     style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;"
-                    onclick="toggleHostSettingsCard('${esc(h.hostId)}')"
+                    onclick="toggleHostSettingsCard('${esc$1(h.hostId)}')"
                   >
                     <div style="min-width:0;flex:1;">
                       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                         <span class="status-dot ${h.online && !isRevoked ? "" : "offline"}"></span>
-                        <span style="font-size:14.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;">${esc(h.hostName)}</span>
+                        <span style="font-size:14.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;">${esc$1(h.hostName)}</span>
                         ${h.isFeishuActive ? `<span style="font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--primary-soft);color:var(--primary);">🎯 主控</span>` : ""}
                         ${isRevoked ? `<span style="font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--red-soft);color:var(--red);">🚫 已吊销</span>` : ""}
                         ${versionBadgeHtml}
                       </div>
                       <div style="font-size:11.5px;color:var(--muted);margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                        <span>${h.online ? `${tm.powerIcon} ${esc(tm.powerShort)}` : `⚪ 离线 (${formatTime(h.lastSeen)})`}</span>
+                        <span>${h.online ? `${tm.powerIcon} ${esc$1(tm.powerShort)}` : `⚪ 离线 (${formatTime(h.lastSeen)})`}</span>
                         <span>·</span>
-                        <span>${tm.netIcon} ${esc(tm.netShort)}</span>
+                        <span>${tm.netIcon} ${esc$1(tm.netShort)}</span>
                         <span>·</span>
                         <span>💬 ${sessCount} 会话${runCount > 0 ? ` (<strong style="color:var(--green);">${runCount} 运行中</strong>)` : ""}</span>
                         <span>·</span>
@@ -9951,7 +11374,7 @@ function initHubController() {
                         <button
                           class="pill-action-btn primary"
                           style="padding:4px 9px;font-size:11.5px;"
-                          onclick="event.stopPropagation(); upgradeHostTurbo('${esc(h.hostId)}', '${esc(h.hostName)}')"
+                          onclick="event.stopPropagation(); upgradeHostTurbo('${esc$1(h.hostId)}', '${esc$1(h.hostName)}')"
                         >🔄 一键升级</button>
                       ` : ""}
                       <span style="font-size:11.5px;font-weight:600;color:var(--text-secondary);padding:4px 8px;border-radius:999px;background:var(--subtle);">
@@ -9965,11 +11388,11 @@ function initHubController() {
                       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;font-size:12px;">
                         <div style="padding:8px 10px;border-radius:10px;background:${tm.lowBattery ? "var(--amber-soft)" : "var(--subtle)"};border:1px solid ${tm.lowBattery ? "#fde68a" : "var(--border)"};">
                           <div style="font-size:11px;color:var(--muted);">供电与电量</div>
-                          <div style="font-weight:700;color:var(--text);margin-top:2px;">${tm.powerIcon} ${esc(tm.powerDetail)}${tm.lowBattery ? " ⚠️" : ""}</div>
+                          <div style="font-weight:700;color:var(--text);margin-top:2px;">${tm.powerIcon} ${esc$1(tm.powerDetail)}${tm.lowBattery ? " ⚠️" : ""}</div>
                         </div>
                         <div style="padding:8px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
                           <div style="font-size:11px;color:var(--muted);">网络与延迟</div>
-                          <div style="font-weight:700;color:var(--text);margin-top:2px;">${tm.netIcon} ${esc(tm.netDetail)}</div>
+                          <div style="font-weight:700;color:var(--text);margin-top:2px;">${tm.netIcon} ${esc$1(tm.netDetail)}</div>
                         </div>
                         <div style="padding:8px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
                           <div style="font-size:11px;color:var(--muted);">会话与存储</div>
@@ -9977,7 +11400,7 @@ function initHubController() {
                         </div>
                         <div style="padding:8px 10px;border-radius:10px;background:var(--subtle);border:1px solid var(--border);">
                           <div style="font-size:11px;color:var(--muted);">同步与系统</div>
-                          <div style="font-weight:700;color:var(--text);margin-top:2px;">${esc(h.platform || "macOS")} ${esc(h.arch || "")} · ${turboShort}</div>
+                          <div style="font-weight:700;color:var(--text);margin-top:2px;">${esc$1(h.platform || "macOS")} ${esc$1(h.arch || "")} · ${turboShort}</div>
                         </div>
                       </div>
 
@@ -9990,37 +11413,37 @@ function initHubController() {
 				const statusTag = !ad.installed && !ad.hasBinary ? "⚪ 未安装" : isObserveAdapter ? "👀 仅观测" : ad.hasBinary ? canApproveNow ? "✅ 远控+审批" : "🔵 看会话/发指令" : "👀 观察模式";
 				return `
                           <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;background:var(--subtle);color:var(--text);">
-                            ${renderHarnessBadgeHtml(ad.id, "inline")} ${esc(ad.label || ad.id)} · ${statusTag}
+                            ${renderHarnessBadgeHtml(ad.id, "inline")} ${esc$1(ad.label || ad.id)} · ${statusTag}
                           </span>
                         `;
 			}).join("")}
                       </div>
 
                       <div style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
-                        <span>🔒 指纹 <code>${esc(shortFp)}</code> · ${h.hasDedicatedToken ? `🔑 独立凭证 (${esc(h.hostTokenPreview)})` : "🔑 管理员凭证"}</span>
+                        <span>🔒 指纹 <code>${esc$1(shortFp)}</code> · ${h.hasDedicatedToken ? `🔑 独立凭证 (${esc$1(h.hostTokenPreview)})` : "🔑 管理员凭证"}</span>
                         <span>${h.syncMeta?.seq ? `同步序号 #${h.syncMeta.seq}` : ""}</span>
                       </div>
 
                       <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;padding-top:4px;">
                         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                          <button class="pill-action-btn ${h.isFeishuActive ? "primary" : ""}" style="padding:5px 10px;font-size:11.5px;" onclick="activateFeishuHost('${esc(h.hostId)}')">
+                          <button class="pill-action-btn ${h.isFeishuActive ? "primary" : ""}" style="padding:5px 10px;font-size:11.5px;" onclick="activateFeishuHost('${esc$1(h.hostId)}')">
                             ${h.isFeishuActive ? "🎯 飞书当前主控" : "切飞书到这台"}
                           </button>
-                          <button class="pill-action-btn ${h.remoteActive ? "primary" : ""}" style="padding:5px 10px;font-size:11.5px;" onclick="toggleHostRemoteMode('${esc(h.hostId)}', ${!h.remoteActive})">
+                          <button class="pill-action-btn ${h.remoteActive ? "primary" : ""}" style="padding:5px 10px;font-size:11.5px;" onclick="toggleHostRemoteMode('${esc$1(h.hostId)}', ${!h.remoteActive})">
                             ${h.remoteActive ? "🔔 飞书通知: 开" : "🔕 飞书通知: 关"}
                           </button>
                           <button class="pill-action-btn" style="padding:5px 10px;font-size:11.5px;" onclick="openTurboGuideSheet()">
                             ${h.bridgeState?.turbo?.enabled ? "⚡ 极速详情" : "🚀 一键提速"}
                           </button>
-                          <button class="pill-action-btn ${isHostOutdated ? "primary" : ""}" style="padding:5px 10px;font-size:11.5px;" onclick="upgradeHostTurbo('${esc(h.hostId)}', '${esc(h.hostName)}')" ${isUpgradingHost ? "disabled" : ""}>
-                            ${isUpgradingHost ? "⏳ 正在升级重启..." : isHostOutdated ? `🔄 一键升级 (v${esc(hubVer)})` : "🔄 检查/重装更新"}
+                          <button class="pill-action-btn ${isHostOutdated ? "primary" : ""}" style="padding:5px 10px;font-size:11.5px;" onclick="upgradeHostTurbo('${esc$1(h.hostId)}', '${esc$1(h.hostName)}')" ${isUpgradingHost ? "disabled" : ""}>
+                            ${isUpgradingHost ? "⏳ 正在升级重启..." : isHostOutdated ? `🔄 一键升级 (v${esc$1(hubVer)})` : "🔄 检查/重装更新"}
                           </button>
                         </div>
                         <div>
                           ${isRevoked ? `
-                            <button class="pill-action-btn" style="padding:5px 10px;font-size:11.5px;" onclick="unrevokeHostCredential('${esc(h.hostId)}', '${esc(h.hostName)}')">恢复接入</button>
+                            <button class="pill-action-btn" style="padding:5px 10px;font-size:11.5px;" onclick="unrevokeHostCredential('${esc$1(h.hostId)}', '${esc$1(h.hostName)}')">恢复接入</button>
                           ` : `
-                            <button class="pill-action-btn" style="padding:5px 10px;font-size:11.5px;color:var(--red);" onclick="revokeHostCredential('${esc(h.hostId)}', '${esc(h.hostName)}')">🚫 吊销凭证</button>
+                            <button class="pill-action-btn" style="padding:5px 10px;font-size:11.5px;color:var(--red);" onclick="revokeHostCredential('${esc$1(h.hostId)}', '${esc$1(h.hostName)}')">🚫 吊销凭证</button>
                           `}
                         </div>
                       </div>
@@ -10099,25 +11522,25 @@ function initHubController() {
               ${latestShareResults.map((item) => `
                 <div class="settings-item" style="flex-direction:column;align-items:stretch;gap:8px;">
                   <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <div class="settings-item-title">🔐 最近生成（来自 ${esc(item.hostName)}）</div>
+                    <div class="settings-item-title">🔐 最近生成（来自 ${esc$1(item.hostName)}）</div>
                     <span style="font-size:11.5px;color:var(--muted);">${formatTime(item.at)}</span>
                   </div>
                   <div style="font-size:11.5px;color:var(--muted);font-family:var(--mono);word-break:break-all;background:var(--subtle);padding:6px 8px;border-radius:8px;">
-                    ${esc(item.fullUrl)}
+                    ${esc$1(item.fullUrl)}
                   </div>
                   <div style="display:flex;gap:8px;">
                     <button class="pill-action-btn primary" onclick="copyCodeText('${encodeURIComponent(item.fullUrl)}', '🔗 加密分享链接已复制')">📋 复制完整解密链接</button>
-                    <a href="${esc(item.fullUrl)}" target="_blank" rel="noopener" class="pill-action-btn" style="text-decoration:none;display:inline-flex;align-items:center;">🌐 打开</a>
+                    <a href="${esc$1(item.fullUrl)}" target="_blank" rel="noopener" class="pill-action-btn" style="text-decoration:none;display:inline-flex;align-items:center;">🌐 打开</a>
                   </div>
                 </div>
               `).join("")}
               ${shares.length ? shares.slice(0, 8).map((s) => `
                 <div class="settings-item">
                   <div>
-                    <div class="settings-item-title">${esc(s.title || "加密会话回放")}</div>
-                    <div class="settings-item-desc">来自 ${esc(s.hostName || s.hostId || "远端电脑")} · ${formatTime(s.createdAt)} · ${formatBytes(s.sizeBytes || 0)}</div>
+                    <div class="settings-item-title">${esc$1(s.title || "加密会话回放")}</div>
+                    <div class="settings-item-desc">来自 ${esc$1(s.hostName || s.hostId || "远端电脑")} · ${formatTime(s.createdAt)} · ${formatBytes(s.sizeBytes || 0)}</div>
                   </div>
-                  <button class="pill-action-btn" style="color:var(--red);" onclick="deleteShareRecord('${esc(s.id || s.shareId)}')">🗑️ 销毁</button>
+                  <button class="pill-action-btn" style="color:var(--red);" onclick="deleteShareRecord('${esc$1(s.id || s.shareId)}')">🗑️ 销毁</button>
                 </div>
               `).join("") : `
                 <div class="settings-item">
@@ -10133,10 +11556,10 @@ function initHubController() {
               <div class="settings-item" style="display:block;">
                 <div class="settings-item-title">启用 iPhone 锁屏实时推送</div>
                 <div class="settings-item-desc">当任意电脑有待审批、任务完成或异常时直接弹窗</div>
-                <div id="pushLocalStatus" style="margin-top:9px;font-size:12.5px;font-weight:600;color:${esc(cachedPushStatusColor || "var(--primary)")};">
-                  ${esc(cachedPushStatusText || "正在检测本机推送状态…")}
+                <div id="pushLocalStatus" style="margin-top:9px;font-size:12.5px;font-weight:600;color:${esc$1(cachedPushStatusColor || "var(--primary)")};">
+                  ${esc$1(cachedPushStatusText || "正在检测本机推送状态…")}
                 </div>
-                <div id="pushDeviceList" style="margin-top:4px;font-size:12px;color:var(--muted);line-height:1.55;">${esc(cachedPushDeviceListText || "")}</div>
+                <div id="pushDeviceList" style="margin-top:4px;font-size:12px;color:var(--muted);line-height:1.55;">${esc$1(cachedPushDeviceListText || "")}</div>
                 <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
                   <button class="pill-action-btn primary" onclick="subscribeIphonePush()">📲 开启推送</button>
                   <button class="pill-action-btn" onclick="sendTestPush()">🔔 测试</button>
@@ -10180,7 +11603,7 @@ function initHubController() {
             style="text-align:center;padding:8px 12px 18px;font-size:11.5px;color:var(--muted);cursor:pointer;user-select:none;"
             onclick="copyCodeText('${encodeURIComponent(`DSH Hub v${buildInfo.version || "0.2.0"} (${buildInfo.uiBuild || "dev"}) · started ${buildInfo.startedAt ? new Date(buildInfo.startedAt).toISOString() : ""}`)}', '📋 版本信息已复制')"
           >
-            DSH 远控总控台 v${esc(buildInfo.version || "0.2.0")} · 构建 <code>${esc(buildInfo.uiBuild || "dev")}</code>${buildInfo.startedAt ? " · 云端启动于 " + formatTime(buildInfo.startedAt) : ""}
+            DSH 远控总控台 v${esc$1(buildInfo.version || "0.2.0")} · 构建 <code>${esc$1(buildInfo.uiBuild || "dev")}</code>${buildInfo.startedAt ? " · 云端启动于 " + formatTime(buildInfo.startedAt) : ""}
           </div>
         </div>
       `;
@@ -10389,12 +11812,12 @@ function initHubController() {
         <div class="form-label">1. 选择迁移方向</div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
           <div style="flex:1;padding:10px 12px;border-radius:12px;background:var(--subtle);border:1px solid var(--border);text-align:center;font-weight:700;font-size:14px;color:var(--text);">
-            💻 ${esc(srcObj?.hostName || migSource)}
+            💻 ${esc$1(srcObj?.hostName || migSource)}
             <div style="font-size:11px;color:var(--muted);font-weight:400;margin-top:2px;">源电脑</div>
           </div>
           <button class="pill-action-btn" onclick="swapMigrateHosts()">⇄ 互换</button>
           <div style="flex:1;padding:10px 12px;border-radius:12px;background:var(--primary-soft);border:1px solid var(--border);text-align:center;font-weight:700;font-size:14px;color:var(--primary);">
-            💻 ${esc(dstObj?.hostName || migTarget)}
+            💻 ${esc$1(dstObj?.hostName || migTarget)}
             <div style="font-size:11px;color:var(--primary);font-weight:400;margin-top:2px;">目标电脑</div>
           </div>
         </div>
@@ -10528,9 +11951,9 @@ function initHubController() {
           </div>
           <span style="font-size:13px;font-weight:600;color:var(--primary);">${currentHostId === "ALL_HOSTS" ? "当前视图 ✓" : "切换 ›"}</span>
         </div>`, ...hosts.map((h) => `
-          <div class="host-option ${h.hostId === currentHostId ? "selected" : ""}" onclick="selectHost('${esc(h.hostId)}')">
+          <div class="host-option ${h.hostId === currentHostId ? "selected" : ""}" onclick="selectHost('${esc$1(h.hostId)}')">
             <div>
-              <div style="font-weight:700;font-size:15px;color:var(--text);">${h.online ? "🟢" : "⚪"} ${esc(h.hostName)}</div>
+              <div style="font-weight:700;font-size:15px;color:var(--text);">${h.online ? "🟢" : "⚪"} ${esc$1(h.hostName)}</div>
               <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${(h.bridgeState?.tasks || []).length} 条会话 · ${h.isFeishuActive ? "🎯 飞书当前主控" : h.online ? "在线待命" : "离线 (" + formatTime(h.lastSeen) + ")"}</div>
             </div>
             <span style="font-size:13px;font-weight:600;color:var(--primary);">${h.hostId === currentHostId ? "当前设备 ✓" : "切换 ›"}</span>
@@ -10670,19 +12093,19 @@ function initHubController() {
 			return `
               <div style="border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--subtle);">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-                  <strong style="font-size:14px;color:var(--text);">${h.online ? "🟢" : "⚪"} ${esc(h.hostName)}</strong>
+                  <strong style="font-size:14px;color:var(--text);">${h.online ? "🟢" : "⚪"} ${esc$1(h.hostName)}</strong>
                   <span style="font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:${isTurbo ? "var(--green-soft)" : "var(--amber-soft)"};color:${isTurbo ? "var(--green)" : "var(--amber)"};">
-                    ${esc(tb?.engineLabel || "🐢 标准轮询模式")}
+                    ${esc$1(tb?.engineLabel || "🐢 标准轮询模式")}
                   </span>
                 </div>
                 <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">
                   辅助功能遥控权限：${axOk ? "<span style=\"color:var(--green);font-weight:600;\">✅ 已授权 (支持 1ms 审批点击)</span>" : "<span style=\"color:var(--amber);font-weight:600;\">⚠️ 待开启或待升级</span>"}
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                  <button class="pill-action-btn primary" style="font-size:12px;padding:5px 11px;" onclick="upgradeHostTurbo('${esc(h.hostId)}')">
+                  <button class="pill-action-btn primary" style="font-size:12px;padding:5px 11px;" onclick="upgradeHostTurbo('${esc$1(h.hostId)}')">
                     🚀 远程一键升级/刷新极速引擎
                   </button>
-                  <button class="pill-action-btn" style="font-size:12px;padding:5px 11px;" onclick="requestHostAxPermission('${esc(h.hostId)}')">
+                  <button class="pill-action-btn" style="font-size:12px;padding:5px 11px;" onclick="requestHostAxPermission('${esc$1(h.hostId)}')">
                     🔓 在电脑弹出辅助功能授权框
                   </button>
                 </div>
@@ -11337,7 +12760,7 @@ function initHubController() {
 			const raw = localStorage.getItem("dsh_hub_state_cache_v1");
 			if (!raw) return null;
 			const parsed = JSON.parse(raw);
-			if (parsed && Array.isArray(parsed.hosts) && parsed.hosts.length > 0) return {
+			if (parsed && Array.isArray(parsed.hosts) && parsed.hosts.length > 0 && Number(parsed.cachedAt || 0) > Date.now() - 36e5) return {
 				hosts: parsed.hosts,
 				activeHostId: parsed.activeHostId || "",
 				migrations: [],
@@ -11347,14 +12770,27 @@ function initHubController() {
 		} catch {}
 		return null;
 	}
+	let pendingBackgroundUiReload = false;
+	function hasActiveUserInputInProgress() {
+		if (typeof document === "undefined") return false;
+		const chatInput = document.getElementById("globalPromptInput");
+		if (chatInput && String(chatInput.value || "").trim().length > 0) return true;
+		const newInput = document.getElementById("newTaskPromptInput");
+		if (newInput && String(newInput.value || "").trim().length > 0) return true;
+		return false;
+	}
 	function applyHubState(nextState, { skipCache = false } = {}) {
 		const incomingBuild = String(nextState?.build?.uiBuild || "").trim();
 		if (incomingBuild && incomingBuild !== "dev") {
 			if (!initialUiBuild) initialUiBuild = incomingBuild;
-			else if (initialUiBuild !== incomingBuild && typeof window !== "undefined" && window.location && typeof window.location.reload === "function") {
-				closeSSE();
-				window.location.reload();
-				return;
+			else if (initialUiBuild !== incomingBuild) {
+				initialUiBuild = incomingBuild;
+				if (typeof document !== "undefined" && document.visibilityState === "hidden" && !hasActiveUserInputInProgress() && typeof window !== "undefined" && window.location && typeof window.location.reload === "function") {
+					closeSSE();
+					window.location.reload();
+					return;
+				}
+				pendingBackgroundUiReload = true;
 			}
 		}
 		preservePreviewUiState(nextState);
@@ -11364,7 +12800,9 @@ function initHubController() {
 	let hasLoadedInitialState = false;
 	let stateFetchInFlight = false;
 	let inFlightStatePromise = null;
+	let inFlightStateToken = "";
 	let inFlightNeedsFollowup = false;
+	let lastStateFetchAt = 0;
 	let stateFetchSeq = 0;
 	let consecutiveStateFetchFailures = 0;
 	let sseSource = null;
@@ -11372,7 +12810,7 @@ function initHubController() {
 	let lastSseEventAt = 0;
 	let lastSseStateAt = 0;
 	let sseRotatingUntil = 0;
-	async function fetchStateOnceWithTimeout(timeoutMs = 12e3) {
+	async function fetchStateOnceWithTimeout(timeoutMs = 3e4) {
 		const ctrl = typeof AbortController === "function" ? new AbortController() : null;
 		const timer = ctrl ? setTimeout(() => {
 			try {
@@ -11380,7 +12818,7 @@ function initHubController() {
 			} catch {}
 		}, timeoutMs) : null;
 		try {
-			return await (await apiFetch("/api/state", ctrl ? { signal: ctrl.signal } : {})).json();
+			return await (await apiFetch("/api/state?lite=1", ctrl ? { signal: ctrl.signal } : {})).json();
 		} finally {
 			if (timer) clearTimeout(timer);
 		}
@@ -11392,12 +12830,13 @@ function initHubController() {
 			let data = null;
 			let lastErr = null;
 			for (let attempt = 0; attempt < 2; attempt += 1) try {
-				data = await fetchStateOnceWithTimeout(12e3);
+				data = await fetchStateOnceWithTimeout(3e4);
 				lastErr = null;
 				break;
 			} catch (err) {
 				lastErr = err;
-				if ((err && err.message ? err.message : String(err)) === "Unauthorized") throw err;
+				const msg = err && err.message ? err.message : String(err);
+				if (msg === "Unauthorized" || msg === "Superseded") throw err;
 				if (mySeq < stateFetchSeq) return {
 					ok: true,
 					superseded: true
@@ -11411,6 +12850,7 @@ function initHubController() {
 			};
 			if (data && data.ok) {
 				hasLoadedInitialState = true;
+				lastStateFetchAt = Date.now();
 				consecutiveStateFetchFailures = 0;
 				setConnectionBanner(false);
 				applyHubState(data);
@@ -11429,6 +12869,10 @@ function initHubController() {
 				superseded: true
 			};
 			const message = err && err.message ? err.message : String(err);
+			if (message === "Superseded") return {
+				ok: true,
+				superseded: true
+			};
 			if (message !== "Unauthorized") {
 				consecutiveStateFetchFailures += 1;
 				const sseHealthy = sseConnected && Date.now() - lastSseEventAt < 3e4;
@@ -11440,29 +12884,38 @@ function initHubController() {
 				error: message
 			};
 		} finally {
-			stateFetchInFlight = false;
+			if (mySeq === stateFetchSeq) stateFetchInFlight = false;
 		}
 	}
 	async function fetchState(opts = {}) {
 		const silent = Boolean(opts && typeof opts === "object" && opts.silent);
 		const forceFresh = Boolean(opts && typeof opts === "object" && opts.forceFresh);
+		const reqToken = getToken();
 		if (inFlightStatePromise) {
-			if (forceFresh) inFlightNeedsFollowup = true;
-			return inFlightStatePromise;
+			if (reqToken !== inFlightStateToken) {
+				stateFetchSeq += 1;
+				inFlightStatePromise = null;
+				inFlightNeedsFollowup = false;
+			} else {
+				if (forceFresh) inFlightNeedsFollowup = true;
+				return inFlightStatePromise;
+			}
 		}
-		inFlightStatePromise = (async () => {
+		inFlightStateToken = reqToken;
+		const currentPromise = (async () => {
 			let res = await runSingleStateFetch({ silent });
-			if (inFlightNeedsFollowup && res?.ok) {
+			if (inFlightNeedsFollowup && res?.ok && getToken() === reqToken) {
 				inFlightNeedsFollowup = false;
 				res = await runSingleStateFetch({ silent: true });
 			}
 			inFlightNeedsFollowup = false;
 			return res;
 		})();
+		inFlightStatePromise = currentPromise;
 		try {
-			return await inFlightStatePromise;
+			return await currentPromise;
 		} finally {
-			inFlightStatePromise = null;
+			if (inFlightStatePromise === currentPromise) inFlightStatePromise = null;
 		}
 	}
 	function scheduleFallbackStateSync() {
@@ -11500,11 +12953,12 @@ function initHubController() {
 	}
 	function connectSSE() {
 		if (urlParams.get("nosse") === "1") return;
+		if (!getToken() && authLockConfirmed) return;
 		const prevSseEventAt = lastSseEventAt;
 		closeSSE();
 		const tk = getToken();
 		const knownSeq = hasLoadedInitialState ? Number(hubState?.stateSeq || 0) : 0;
-		const url = "/api/events?initial=0&delta=1" + (knownSeq > 0 ? "&seq=" + encodeURIComponent(String(knownSeq)) : "") + (tk ? "&token=" + encodeURIComponent(tk) : "");
+		const url = "/api/events?initial=0&delta=1&lite=1" + (knownSeq > 0 ? "&seq=" + encodeURIComponent(String(knownSeq)) : "") + (tk ? "&token=" + encodeURIComponent(tk) : "");
 		try {
 			sseSource = new EventSource(url);
 			sseSource.onopen = () => {
@@ -11513,7 +12967,7 @@ function initHubController() {
 				lastSseEventAt = Date.now();
 				consecutiveStateFetchFailures = 0;
 				setConnectionBanner(false);
-				if (!stateFetchInFlight && (!hasLoadedInitialState || !prevSseEventAt || Date.now() - prevSseEventAt > 15e3)) fetchState({ silent: hasLoadedInitialState });
+				if (!stateFetchInFlight && (!hasLoadedInitialState || prevSseEventAt > 0 && Date.now() - prevSseEventAt > 15e3)) fetchState({ silent: hasLoadedInitialState });
 			};
 			sseSource.onerror = () => {
 				sseConnected = false;
@@ -11525,7 +12979,7 @@ function initHubController() {
 				consecutiveStateFetchFailures = 0;
 				setConnectionBanner(false);
 				try {
-					if (evt?.data && hasLoadedInitialState && !stateFetchInFlight) {
+					if (evt?.data && hasLoadedInitialState && !stateFetchInFlight && Date.now() - lastStateFetchAt > 1e4) {
 						const pingData = JSON.parse(evt.data);
 						const serverSeq = Number(pingData?.stateSeq || 0);
 						const localSeq = Number(hubState?.stateSeq || 0);
@@ -11560,13 +13014,14 @@ function initHubController() {
 					const delta = JSON.parse(evt.data);
 					const merged = applyStateDelta(hubState, delta);
 					if (!merged.ok) {
-						fetchState({
+						if (!stateFetchInFlight && nowEvt - lastStateFetchAt > 4e3) fetchState({
 							silent: true,
 							forceFresh: true
 						});
 						return;
 					}
 					if (!merged.noop) {
+						lastStateFetchAt = nowEvt;
 						applyHubState(merged.state, { skipCache: Boolean(merged.metaOnly) });
 						if (!merged.metaOnly) {
 							renderAll();
@@ -11587,6 +13042,7 @@ function initHubController() {
 					const data = JSON.parse(evt.data);
 					if (data.ok) {
 						hasLoadedInitialState = true;
+						lastStateFetchAt = nowEvt;
 						applyHubState(data);
 						renderAll();
 						flushPendingDeepLink();
@@ -11625,7 +13081,7 @@ function initHubController() {
 		setLangPreference: setLangPreference$1,
 		toggleLangPreference,
 		applyLangToDom,
-		esc,
+		esc: esc$1,
 		cleanPreviewText,
 		formatTime,
 		formatBytes,
@@ -11835,16 +13291,199 @@ function initHubController() {
 		buildShortHostNameMap,
 		stripRedundantProjectPrefix
 	});
+	triageCtrl = createTriageDeckController({
+		getSessions: () => getNormalizedSessions(),
+		getShortHostMap: () => buildShortHostNameMap(hubState.hosts || []),
+		getMediaTicket: () => hubState.mediaTicket || "",
+		showToast,
+		formatAssistantText,
+		punctuateSpeechText,
+		hydrateColdSession: (hostId, sessionId, sessionRev) => hydrateColdSessionTranscript(hostId, sessionId, sessionRev),
+		openSession: (sessionId) => openChat(sessionId),
+		openFileForSession: (sessionId, rawPath) => {
+			const found = findSessionGlobal(sessionId);
+			if (found) {
+				activeSessionId = found.session.id;
+				found.session.hostId;
+			}
+			openChatFileLink(encodeURIComponent(rawPath));
+		},
+		sendApprovalDecision: (hostId, code, allow, optionIndex, sessionId) => sendApprovalDecision(hostId, code, allow, optionIndex, sessionId),
+		submitQuestionDecision: async (session, code, partialAnswers = {}) => {
+			const finalAnswers = { ...partialAnswers };
+			(Array.isArray(session?.approvalObj?.questions) ? session.approvalObj.questions : []).forEach((q, idx) => {
+				const qId = String(q.id || `q_${idx + 1}`);
+				if (finalAnswers[qId] === void 0) {
+					const firstLbl = Array.isArray(q.options) && q.options[0]?.label ? String(q.options[0].label) : "";
+					finalAnswers[qId] = q.multiSelect ? firstLbl ? [firstLbl] : [] : firstLbl;
+				}
+			});
+			window.__dshSettlingApprovals = window.__dshSettlingApprovals || {};
+			if (code) window.__dshSettlingApprovals[code] = {
+				at: Date.now(),
+				decision: "approve"
+			};
+			lastRenderedChatKey = "";
+			renderAll();
+			showToast("⏳ 正在将你的选择同步到电脑端...");
+			try {
+				const res = await dispatchHostCommand(session.hostId, {
+					type: "approval",
+					code,
+					agentId: session.id,
+					allow: true,
+					optionIndex: 1,
+					answers: finalAnswers
+				});
+				if (!res || res.ok === false) {
+					if (code && window.__dshSettlingApprovals) delete window.__dshSettlingApprovals[code];
+					lastRenderedChatKey = "";
+					renderAll();
+					showToast("❌ 提交选择失败：" + (res?.error || "请重试"));
+					return;
+				}
+			} catch (err) {
+				if (code && window.__dshSettlingApprovals) delete window.__dshSettlingApprovals[code];
+				lastRenderedChatKey = "";
+				renderAll();
+				showToast("❌ 提交选择异常：" + (err?.message || err));
+				return;
+			}
+			scheduleFallbackStateSync();
+		},
+		sendPromptToSession: async (session, rawPromptText) => {
+			const text = String(rawPromptText || "").trim();
+			if (!session || !text) return;
+			const clientCmdId = `cmd_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+			const optMap = ensureOptimisticMsgsMap();
+			const wireTr = Array.isArray(session._wireTranscript) ? session._wireTranscript : [];
+			const probeOpt = {
+				text,
+				rawText: text
+			};
+			const baselineSameUserCount = wireTr.filter((m) => m && m.role === "user" && matchesOptimisticUserText(m.text, probeOpt)).length;
+			const baselineTotalCount = Number(session._wireTotalCount) || wireTr.length;
+			const optEntry = {
+				id: `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+				cmdId: clientCmdId,
+				text,
+				rawText: text,
+				time: Date.now(),
+				baselineSameUserCount,
+				baselineTotalCount
+			};
+			const optList = optMap[session.id] || [];
+			optList.push(optEntry);
+			optMap[session.id] = optList.slice(-8);
+			persistOptimisticMsgsMap();
+			lastRenderedChatKey = "";
+			if (activeSessionId === session.id) renderActiveChatStage();
+			const chosenChatModel = selectedSessionModels[session.id] || "";
+			try {
+				const res = await dispatchHostCommand(session.hostId, {
+					id: clientCmdId,
+					type: session.status === "running" ? "steer" : "prompt",
+					agentId: session.id,
+					cwd: session.cwd || "",
+					text,
+					prompt: text,
+					...chosenChatModel ? { model: chosenChatModel } : {}
+				});
+				if (!res || res.ok === false) {
+					optMap[session.id] = (optMap[session.id] || []).filter((item) => item.id !== optEntry.id);
+					persistOptimisticMsgsMap();
+					showToast("❌ " + (res?.error || "发送指令失败"));
+					renderAll();
+					return;
+				}
+				showToast("📨 已发送新方案指令");
+			} catch (err) {
+				optMap[session.id] = (optMap[session.id] || []).filter((item) => item.id !== optEntry.id);
+				persistOptimisticMsgsMap();
+				showToast("❌ 发送失败：" + (err?.message || err));
+				renderAll();
+				return;
+			}
+			scheduleFallbackStateSync();
+		},
+		markSessionRead: (session) => {
+			if (!session?.id) return null;
+			const prevSnapshot = {
+				hasSeenAt: Object.prototype.hasOwnProperty.call(seenMap, session.id),
+				seenAt: seenMap[session.id],
+				hasSeenSig: Object.prototype.hasOwnProperty.call(seenSigMap, session.id),
+				seenSig: seenSigMap[session.id],
+				srvRead: hubState.sessionReadState?.[session.id] ? { ...hubState.sessionReadState[session.id] } : null
+			};
+			const readTs = Math.max(session.updatedAt || 0, session.lastConclusionAt || 0, session.lastInterruptedAt || 0, Date.now());
+			seenMap[session.id] = readTs;
+			if (session.conclusionSig) seenSigMap[session.id] = session.conclusionSig;
+			try {
+				localStorage.setItem("dsh_seen_v4", JSON.stringify(seenMap));
+				localStorage.setItem("dsh_seen_sig_v1", JSON.stringify(seenSigMap));
+			} catch {}
+			syncSessionReadToServer(session.id, session.conclusionSig || "", readTs);
+			return prevSnapshot;
+		},
+		restoreSessionUnread: (sessionId, prevSnapshot) => {
+			if (!sessionId || !prevSnapshot) return;
+			if (prevSnapshot.hasSeenAt && prevSnapshot.seenAt) seenMap[sessionId] = prevSnapshot.seenAt;
+			else seenMap[sessionId] = 1;
+			if (prevSnapshot.hasSeenSig && prevSnapshot.seenSig !== void 0) seenSigMap[sessionId] = prevSnapshot.seenSig;
+			else delete seenSigMap[sessionId];
+			hubState.sessionReadState = hubState.sessionReadState || {};
+			if (prevSnapshot.srvRead) hubState.sessionReadState[sessionId] = { ...prevSnapshot.srvRead };
+			else hubState.sessionReadState[sessionId] = {
+				unread: true,
+				sig: "",
+				at: 1
+			};
+			try {
+				localStorage.setItem("dsh_seen_v4", JSON.stringify(seenMap));
+				localStorage.setItem("dsh_seen_sig_v1", JSON.stringify(seenSigMap));
+			} catch {}
+		},
+		switchToRunningList: () => selectProject("SMART_ACTIVE"),
+		onDeckChanged: () => {
+			lastRenderedStripKey = "";
+			lastRenderedListKey = "";
+			renderAll();
+		}
+	});
 	setupOverlayGestures();
 	setupChatScrollWatcher();
 	setupInstallHint();
 	clearHomeScreenAppBadge();
-	if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => {
-		if (document.visibilityState === "visible") clearHomeScreenAppBadge();
-	});
-	if (typeof window !== "undefined") window.addEventListener("focus", () => {
+	function resumeForegroundSync({ resetTransforms = false } = {}) {
 		clearHomeScreenAppBadge();
+		if (resetTransforms && typeof document !== "undefined") {
+			const chatEl = document.getElementById("chatFullscreen");
+			if (chatEl && chatEl.style) {
+				chatEl.style.transition = "";
+				chatEl.style.transform = "";
+			}
+		}
+		if (!getToken() || authLockConfirmed) return;
+		const idleMs = Date.now() - lastSseEventAt;
+		if (!stateFetchInFlight && (!sseConnected || idleMs > 15e3)) fetchState({ silent: true });
+		if (!sseConnected || idleMs > 25e3) connectSSE();
+	}
+	if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => {
+		if (document.visibilityState === "visible") resumeForegroundSync();
+		else if (document.visibilityState === "hidden" && pendingBackgroundUiReload && !hasActiveUserInputInProgress() && typeof window !== "undefined" && window.location && typeof window.location.reload === "function") {
+			pendingBackgroundUiReload = false;
+			closeSSE();
+			window.location.reload();
+		}
 	});
+	if (typeof window !== "undefined") {
+		window.addEventListener("focus", () => {
+			clearHomeScreenAppBadge();
+		});
+		window.addEventListener("pageshow", (evt) => {
+			resumeForegroundSync({ resetTransforms: Boolean(evt && evt.persisted) });
+		});
+	}
 	if (getToken()) {
 		const cachedSnapshot = loadCachedHubStateSnapshot();
 		if (cachedSnapshot) hubState = cachedSnapshot;
@@ -11862,19 +13501,40 @@ function initHubController() {
 			});
 			const exData = await exRes.json().catch(() => ({}));
 			if (exRes.ok && exData.token) {
+				authLockConfirmed = false;
 				localStorage.setItem("dsh_hub_token", exData.token);
 				showToast("🔓 扫码登录成功");
-			} else showToast("⚠️ 扫码配对码已过期或无效，请重新扫码");
+			} else {
+				authLockConfirmed = !getToken();
+				showToast("⚠️ 扫码配对码已过期或无效，请重新扫码");
+			}
 		} catch {}
+		if (getToken() || !authLockConfirmed) {
+			await fetchState();
+			connectSSE();
+		} else document.getElementById("authOverlay")?.classList.add("show");
+	})();
+	else if (getToken()) (async () => {
 		await fetchState();
-		connectSSE();
+		if (getToken() && !authLockConfirmed) connectSSE();
 	})();
 	else {
-		fetchState();
-		connectSSE();
+		document.getElementById("authOverlay")?.classList.add("show");
+		authLockConfirmed = true;
+		(async () => {
+			const check = await verifyCandidateToken("", 15e3);
+			if (getToken()) return;
+			if (check.ok && !check.authRequired) {
+				authLockConfirmed = false;
+				document.getElementById("authOverlay")?.classList.remove("show");
+				await fetchState();
+				connectSSE();
+			}
+		})();
 	}
 	setInterval(() => {
 		if (Date.now() < sseRotatingUntil) return;
+		if (!getToken() && authLockConfirmed) return;
 		if (!stateFetchInFlight && (!sseConnected || Date.now() - lastSseEventAt > 35e3)) fetchState({ silent: true });
 	}, 5e3);
 }

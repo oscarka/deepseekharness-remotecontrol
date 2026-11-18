@@ -1,6 +1,7 @@
 import { h, Fragment } from 'preact';
 import { TopBar } from './components/TopBar';
 import { BottomTabs } from './components/BottomTabs';
+import { TriageDeck } from './components/TriageDeck';
 import { ChatStage } from './components/ChatStage';
 import { Sheets } from './components/Sheets';
 
@@ -211,6 +212,7 @@ export function App() {
           <TopBar />
           <main class="main-viewport" id="mainViewport"></main>
           <BottomTabs />
+          <TriageDeck />
         </div>
 
         {/* 右栏 / 二级全屏对话页 */}
