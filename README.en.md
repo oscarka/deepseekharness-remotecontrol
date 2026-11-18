@@ -201,6 +201,13 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.5</code> — Full-Screen Bidirectional Swipe-Back &amp; Touch-Safe Live Stream Guard for iOS Home Screen PWAs</strong></summary>
+
+- **Full-Width Bidirectional Chat Swipe-Back (`v0.8.5`)**: Overhauled `setupChatSwipeBack` (`controller.js` / `app.css`) for iOS Home Screen standalone PWAs where Safari's native edge-back is disabled — removed X-zone dead strips so **both left-swipes (`dx < 0`) and right-swipes (`dx > 0`)** follow the finger smoothly from anywhere in the session view, added `overflow-x: hidden` on `.chat-messages` so wide transcripts never false-positive as horizontal scrollers, added natural thumb-arc tolerance + 400ms long-press text-selection protection, and deferred `#chatMessages` DOM swaps while a touch is active so live SSE deltas never detach `event.target` mid-gesture.
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.4</code> — Two-Stage Pull-to-Refresh &amp; Deep-Pull Force App Update for Home Screen PWAs</strong></summary>
 
 - **Two-Stage Elastic Pull-to-Refresh &amp; Force-Update Gesture (`v0.8.4`)**: Added native-feel 2-stage pull-down physics to `#mainViewport` (`App.tsx` / `app.css` / `controller.js`) tailored for iOS Home Screen standalone PWAs that lack a browser URL bar: **light pull (`>= 58px`)** syncs live sessions &amp; SSE state, while **deep pull (`>= 128px`)** triggers haptic feedback, purges local `CacheStorage` (preserving Web Push subscriptions), updates the Service Worker, and reloads the latest frontend bundle immediately; also added a 1-tap `🔄 Force Update App` button in Settings and `WindowClient.navigate` auto-rescue in `/sw.js` (`server.js`).

@@ -1064,6 +1064,7 @@
       flex: 1;
       min-height: 0;
       overflow-y: auto;
+      overflow-x: hidden;
       padding: 18px 16px;
       display: flex;
       flex-direction: column;
@@ -1075,7 +1076,6 @@
     }
 
     .chat-messages pre,
-    .chat-messages code,
     .chat-messages table {
       touch-action: pan-x pan-y;
     }

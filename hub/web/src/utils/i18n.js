@@ -507,6 +507,7 @@ const EXACT_ZH_TO_EN = {
   '此目录下暂无子文件夹': 'No subfolders in this directory',
   '↓ 下拉刷新状态': '↓ Pull to refresh',
   '🔄 强制刷新前端版本（清缓存重载）': '🔄 Force Update App (Clear Cache)',
+  '💡 提示：左右滑动即可返回会话列表': '💡 Tip: Swipe left or right to return to sessions',
 };
 
 const REGEX_ZH_TO_EN = [

@@ -2,6 +2,15 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.5] - 2026-11-18
+
+### Fixed
+
+- **彻底修复 iOS 主屏幕 PWA 会话详情页「左滑/右滑手势返回」无响应问题（`hub/web/src/controller.js` / `hub/web/src/styles/app.css`）**：
+  - 消除原版仅右边缘 `48px` 允许左滑及 `75%~width-48` 盲区限制，现支持在会话页任意位置**左滑（`dx < 0`）或右滑（`dx > 0`）** 双向顺滑跟手返回会话列表；
+  - 为 `.chat-messages` 显式补齐 `overflow-x: hidden` 并移除对行内 `code` 的 `pan-x` 声明，根治长文本/链接撑宽导致整个消息流被误判为横向滚动容器而吞掉全部左滑手势的问题；
+  - 新增单手拇指弧线起手容差、长按选字防误触保护，以及触屏按住期间暂缓 SSE / 历史补拉对 `#chatMessages` 的 `innerHTML` 重写，防止触点目标节点中途脱离 DOM 导致 `touchmove`/`touchend` 断流。
+
 ## [0.8.4] - 2026-11-18
 
 ### Added

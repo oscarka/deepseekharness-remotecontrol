@@ -201,6 +201,13 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.5</code> — iOS 主屏幕 PWA 全屏双向跟手左滑/右滑返回 &amp; 流式刷新防断触保护</strong></summary>
+
+- **会话详情页全区域双向左滑/右滑跟手返回（`v0.8.5`）**：针对 iOS「添加到主屏幕」独立模式下系统原生侧滑后退被禁用、原手势存在热区盲区与横向溢出误判的问题，重构 [`controller.js`](hub/web/src/controller.js) 与 [`app.css`](hub/web/src/styles/app.css)——支持在对话任意区域**左滑（`dx < 0`）或右滑（`dx > 0`）** 双向 60fps 顺滑跟手退回列表；为 `.chat-messages` 增加 `overflow-x: hidden` 防止长路径/代码撑宽导致整个消息区吞掉左滑手势；加入单手拇指弧线起手容差、长按选字防抢占保护，并在手指按住期间暂缓 SSE 实时流重绘 `#chatMessages`，确保边输出边滑动也绝不断触。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.4</code> — 主屏幕 PWA 二段式下拉刷新 &amp; 使劲深拉一键清缓存强制升新版</strong></summary>
 
 - **二段式阻尼下拉刷新与深拉强制更新前端（`v0.8.4`）**：专为 iOS「添加到主屏幕」后无浏览器地址栏刷新按钮的场景打造（[`App.tsx`](hub/web/src/App.tsx) / [`app.css`](hub/web/src/styles/app.css) / [`controller.js`](hub/web/src/controller.js)）——在列表顶部**轻拉（`>= 58px`）** 即时刷新最新会话与实时连接，**使劲深拉（`>= 128px`）** 触发高亮胶囊与震动反馈，松手一键清空本地旧应用壳缓存并强制重载最新前端版本（全程保留锁屏推送订阅不丢失）；同时在设置页底部提供 `🔄 强制刷新前端版本` 按钮，并在 `/sw.js` 激活时通过 `WindowClient.navigate` 自动救活旧版主屏幕窗口（[`server.js`](hub/server.js)）。
