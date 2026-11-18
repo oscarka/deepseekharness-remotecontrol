@@ -1075,6 +1075,10 @@
       position: relative;
     }
 
+    .chat-messages > * {
+      flex-shrink: 0;
+    }
+
     .chat-messages pre,
     .chat-messages table {
       touch-action: pan-x pan-y;

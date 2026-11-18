@@ -201,6 +201,13 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.7</code> — 点开会话零跳变直出完整全文 &amp; 根治底部交付卡片被压成细线</strong></summary>
+
+- **点进会话第 0 秒直出完整全文与底部卡片防挤压修复（`v0.8.7`）**：修复此前移动端长期停留在 `lite=1`（280 字预览）导致点开会话第 1 秒显示半截断句、1 秒后才突变全文并跳动滚动条的问题——首屏通过 `lite=1` 秒开列表后，立即在后台静默补齐热会话完整正文（48,000 字无截断）并将 SSE 切至完整增量流（[`controller.js`](hub/web/src/controller.js) / [`hub-core.js`](hub/hub-core.js)）；同时为 `.chat-messages > *` 增加 `flex-shrink: 0`（[`app.css`](hub/web/src/styles/app.css)），彻底消除长回复超出屏高时底部 `AI 交付文档` 与 `Files With Changes` 卡片被 Flexbox 压扁成两条横线的 Bug。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.6</code> — 下拉刷新重阻尼防误触调优 &amp; 深拉实时蓄力百分比</strong></summary>
 
 - **重阻尼下拉防误触与深拉百分比进度（`v0.8.6`）**：为列表下拉手势新增前 `32px` 零抖动死区，并将第一段静默同步阈值从 `58px` 提高 `2.7 倍` 至 **`155px`**（不再弹出顶部重连黄条），将第二段清缓存强制重刷阈值从 `128px` 提高 `2.2 倍` 至 **`285px`** 并实时展示深拉百分比（[`controller.js`](hub/web/src/controller.js)），平时随手滑到列表顶部绝不误刷，只有刻意使劲拉到底才会触发强制重载。

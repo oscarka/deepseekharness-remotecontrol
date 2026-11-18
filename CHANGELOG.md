@@ -2,6 +2,15 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.7] - 2026-11-18
+
+### Fixed
+
+- **修复点进对话「第 1 秒截断 280 字 vs 1 秒后跳变全文、底部交付卡片被挤压成两条细线」的问题（`hub/web/src/controller.js` / `hub/web/src/styles/app.css` / `hub/hub-core.js`）**：
+  - 首屏通过 `lite=1` 秒开列表后，立即在后台静默升级一次完整热会话状态（48,000 字无截断）并将 SSE 实时流切换至非截断增量流，使点开任何近期会话第 0 秒即展示 100% 最终全文，彻底消灭 1 秒后正文突变与滚动跳动；
+  - 修正热会话在保留最近 14 条完整消息时误标 `wireTruncated: true` 的问题，并在 `localStorage` 本地首屏缓存中保留前 8 个会话的完整正文与变更文件；
+  - 为 `.chat-messages > *` 补齐 `flex-shrink: 0`，根治长回复超出屏幕高度时 Flexbox 将底部 `.agy-session-artifacts-card`（AI 交付文档卡片）与 `.agy-files-changed-card` 挤压成 `0px` 双横线的布局 Bug。
+
 ## [0.8.6] - 2026-11-18
 
 ### Changed

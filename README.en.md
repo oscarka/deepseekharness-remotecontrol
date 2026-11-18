@@ -201,6 +201,13 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.7</code> — Zero-Jump Session Open (Instant Full Reply &amp; Uncrushed Artifact/Diff Cards)</strong></summary>
+
+- **Zero-Jump Session Open &amp; Flexbox Card Fix (`v0.8.7`)**: Eliminated the 1-second 280-char stub -> full-reply jump when opening sessions (`controller.js` / `hub-core.js`) by silently upgrading from initial `lite=1` list bootstrap to full 48,000-char hot-session state + non-lite SSE deltas right after first paint, keeping 14-message hot sessions `wireTruncated: false`, and caching full recent replies in `localStorage`; added `.chat-messages > * { flex-shrink: 0 }` in `app.css` so long replies never squash bottom `.agy-session-artifacts-card` and `.agy-files-changed-card` blocks into flat 0px lines.
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.6</code> — Heavy-Damped Pull-to-Refresh Thresholds &amp; Anti-Misfire Deadzone</strong></summary>
 
 - **Heavy-Damped Pull-to-Refresh &amp; Deep-Pull Progress Meter (`v0.8.6`)**: Added a `32px` initial deadzone and raised pull thresholds by >2.2× (`STAGE1_DY = 155px` for silent state sync without flashing reconnect banners; `STAGE2_DY = 285px` with live `1%–99%` pull progress for full cache-clearing app reload) in `controller.js`, eliminating accidental refreshes during casual scrolling at the top of the session list.

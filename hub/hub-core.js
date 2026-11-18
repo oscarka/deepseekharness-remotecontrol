@@ -751,7 +751,7 @@ export class HubCore {
               break
             }
           }
-          let wireTruncated = slicedTr.length < rawTr.length
+          let wireTruncated = Boolean((lite || !isHotSession) && slicedTr.length < rawTr.length)
           const compactedTr = slicedTr.map((m, mIdx) => {
             if (!m || typeof m !== 'object') return m
             const { toolCalls: _omitTc, ...mRest } = m
@@ -846,12 +846,16 @@ export class HubCore {
             ...(lite && !isRunningOrApproval ? { recentActivity: undefined } : {}),
             ...(lite && !isRunningOrApproval && rawChangedFiles
               ? {
-                  changedFiles: rawChangedFiles.slice(0, 5).map(cf =>
+                  changedFiles: rawChangedFiles.slice(-8).map(cf =>
                     typeof cf === 'string'
                       ? cf
                       : {
+                          name: cf?.name,
                           path: cf?.path,
+                          displayPath: cf?.displayPath,
                           status: cf?.status,
+                          added: cf?.added,
+                          removed: cf?.removed,
                           additions: cf?.additions,
                           deletions: cf?.deletions,
                         },

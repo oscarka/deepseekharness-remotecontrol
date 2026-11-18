@@ -3815,7 +3815,8 @@ var EXACT_ZH_TO_EN = {
 	"此目录下暂无子文件夹": "No subfolders in this directory",
 	"↓ 下拉刷新状态": "↓ Pull to refresh",
 	"🔄 强制刷新前端版本（清缓存重载）": "🔄 Force Update App (Clear Cache)",
-	"💡 提示：左右滑动即可返回会话列表": "💡 Tip: Swipe left or right to return to sessions"
+	"💡 提示：左右滑动即可返回会话列表": "💡 Tip: Swipe left or right to return to sessions",
+	"全文同步中…": "Syncing full reply…"
 };
 var REGEX_ZH_TO_EN = [
 	[/^🌐 (.+)$/, (_, title) => `🌐 ${title === "对话内 HTML 交互预览" ? "Inline HTML Live Preview" : title}`],
@@ -8464,9 +8465,10 @@ function initHubController() {
 			activeSpeechState.wakeLock = wl;
 		} catch {}
 	}
-	function renderAssistantFooterHtml(sessionId, msgIdx, cleanReplyText) {
+	function renderAssistantFooterHtml(sessionId, msgIdx, cleanReplyText, { isTruncatedPreview = false } = {}) {
 		const speakControlsHtml = activeSpeechState.playing && activeSpeechState.sessionId === sessionId && activeSpeechState.msgIdx === msgIdx ? `<button type="button" class="assistant-copy-btn assistant-speak-btn speaking" onclick="stopAssistantSpeech()">⏹ 停止</button>` + (activeSpeechState.hasDistinctSummary ? `<button type="button" class="assistant-copy-btn assistant-speak-sub-btn" onclick="switchAssistantSpeechMode(${msgIdx})" title="切换重点摘要 / 完整去噪">${activeSpeechState.mode === "concise" ? "⚡ 重点" : "📖 全文"}</button>` : "") + `<button type="button" class="assistant-copy-btn assistant-speak-sub-btn" onclick="cycleAssistantSpeechRate(${msgIdx})" title="切换播报倍速">${activeSpeechState.rate}x</button>` : `<button type="button" class="assistant-copy-btn assistant-speak-btn" onclick="toggleSpeakAssistantReply(${msgIdx})">🔊 播报</button>`;
-		return `<div class="assistant-copy-footer" data-footer-session-id="${esc$1(sessionId)}" data-footer-msg-idx="${msgIdx}"><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 复制全文</button>${speakControlsHtml}<span class="assistant-char-meta">共 ${cleanReplyText.length} 字</span></div>`;
+		const charMetaText = isTruncatedPreview ? "全文同步中…" : `共 ${cleanReplyText.length} 字`;
+		return `<div class="assistant-copy-footer" data-footer-session-id="${esc$1(sessionId)}" data-footer-msg-idx="${msgIdx}"><button type="button" class="assistant-copy-btn" onclick="copyAssistantReply(${msgIdx}, this)">📋 复制全文</button>${speakControlsHtml}<span class="assistant-char-meta">${charMetaText}</span></div>`;
 	}
 	function syncSpeechFooterDom() {
 		if (typeof document === "undefined") return;
@@ -8992,9 +8994,11 @@ function initHubController() {
 			}).join("")}
         </div>
       ` : "";
-			const cleanReplyText = m.text ? String(m.text).trim() : "";
+			const isColdTruncatedTail = Boolean(s._wireTruncated && !hydratedWireTranscriptBySession.has(s.id) && msgIdx === msgs.length - 1);
+			const rawReplyText = m.text ? String(m.text).trim() : "";
+			const cleanReplyText = isColdTruncatedTail && rawReplyText.length >= 250 ? rawReplyText.replace(/\[[^\]]*\]\([^)]*$/, "").replace(/\[[^\]]*$/, "").trimEnd() + "…" : rawReplyText;
 			if (cleanReplyText) lastRenderedAssistantTexts[msgIdx] = cleanReplyText;
-			const copyFooterHtml = cleanReplyText ? renderAssistantFooterHtml(s.id, msgIdx, cleanReplyText) : "";
+			const copyFooterHtml = cleanReplyText ? renderAssistantFooterHtml(s.id, msgIdx, cleanReplyText, { isTruncatedPreview: isColdTruncatedTail && rawReplyText.length >= 250 }) : "";
 			const renderedMdHtml = cleanReplyText ? formatAssistantText(cleanReplyText, msgArtifacts) : "";
 			const bodyHtml = renderedMdHtml ? `<div class="md-body">${renderedMdHtml}</div>${copyFooterHtml}` : cleanReplyText && msgArtifacts.length > 0 ? `${copyFooterHtml}` : `<div style="font-size:12.5px;color:var(--muted);margin-top:4px;">⚙️ 正在思考与执行工具调用...</div>`;
 			return `<div class="bubble assistant">${thought}${tools}${bodyHtml}${artifactsCardHtml}</div>`;
@@ -13966,36 +13970,53 @@ function initHubController() {
 					modelCatalog: h.bridgeState.modelCatalog || {},
 					turbo: h.bridgeState.turbo || null,
 					systemTelemetry: h.bridgeState.systemTelemetry || null,
-					tasks: (h.bridgeState.tasks || []).map((t, tIdx) => ({
-						id: t.id,
-						rawId: t.rawId,
-						shortId: t.shortId,
-						harness: t.harness,
-						harnessLabel: t.harnessLabel,
-						model: t.model,
-						title: t.title,
-						status: t.status,
-						turnState: t.turnState,
-						statusLabel: t.statusLabel,
-						project: t.project,
-						cwd: t.cwd,
-						lastActivity: t.lastActivity,
-						updatedAt: t.updatedAt,
-						lastConclusionAt: t.lastConclusionAt,
-						lastOutput: String(t.lastOutput || "").slice(0, 260),
-						runningSummary: String(t.runningSummary || "").slice(0, 200),
-						pendingApproval: t.pendingApproval || null,
-						artifacts: t.artifacts || [],
-						messageCount: t.messageCount || 0,
-						wireTruncated: true,
-						transcript: (t.transcript || []).slice(-2).map((m) => ({
-							index: m.index,
-							role: m.role,
-							text: String(m.text || "").slice(0, tIdx < 4 ? 4e3 : 600),
-							time: m.time,
-							artifacts: m.artifacts || []
-						}))
-					}))
+					tasks: (h.bridgeState.tasks || []).map((t, tIdx) => {
+						const isRecentSlot = tIdx < 8;
+						const maxCachedLen = isRecentSlot ? 24e3 : 600;
+						const srcTr = Array.isArray(t.transcript) ? t.transcript : [];
+						const slicedCacheTr = srcTr.slice(-(isRecentSlot ? 6 : 2));
+						let cacheSliced = Boolean(t.wireTruncated || !isRecentSlot && srcTr.length > slicedCacheTr.length);
+						const cachedTranscript = slicedCacheTr.map((m) => {
+							const rawText = String(m?.text || "");
+							if (rawText.length > maxCachedLen) cacheSliced = true;
+							return {
+								index: m.index,
+								role: m.role,
+								text: rawText.slice(0, maxCachedLen),
+								time: m.time,
+								...isRecentSlot && m.thinking ? { thinking: String(m.thinking).slice(0, 2e3) } : {},
+								...isRecentSlot && Array.isArray(m.tools) && m.tools.length > 0 ? { tools: m.tools.slice(0, 8) } : {},
+								artifacts: m.artifacts || []
+							};
+						});
+						return {
+							id: t.id,
+							rawId: t.rawId,
+							shortId: t.shortId,
+							harness: t.harness,
+							harnessLabel: t.harnessLabel,
+							model: t.model,
+							title: t.title,
+							status: t.status,
+							turnState: t.turnState,
+							statusLabel: t.statusLabel,
+							project: t.project,
+							cwd: t.cwd,
+							lastActivity: t.lastActivity,
+							updatedAt: t.updatedAt,
+							lastConclusionAt: t.lastConclusionAt,
+							lastOutput: String(t.lastOutput || "").slice(0, 260),
+							runningSummary: String(t.runningSummary || "").slice(0, 200),
+							pendingApproval: t.pendingApproval || null,
+							changedFiles: Array.isArray(t.changedFiles) ? t.changedFiles.slice(-8) : [],
+							artifacts: t.artifacts || [],
+							messageCount: t.messageCount || 0,
+							totalTranscriptCount: t.totalTranscriptCount || t.messageCount || srcTr.length,
+							omittedTranscriptCount: Math.max(0, (t.totalTranscriptCount || t.messageCount || srcTr.length) - cachedTranscript.length),
+							wireTruncated: cacheSliced,
+							transcript: cachedTranscript
+						};
+					})
 				} : { tasks: [] }
 			}));
 			localStorage.setItem("dsh_hub_state_cache_v1", JSON.stringify({
@@ -14076,6 +14097,8 @@ function initHubController() {
 		if (!skipCache) saveCachedHubStateSnapshot(nextState);
 	}
 	let hasLoadedInitialState = false;
+	let hasLoadedFullState = false;
+	let fullStateUpgradeQueued = false;
 	let stateFetchInFlight = false;
 	let inFlightStatePromise = null;
 	let inFlightStateToken = "";
@@ -14085,28 +14108,32 @@ function initHubController() {
 	let consecutiveStateFetchFailures = 0;
 	let sseSource = null;
 	let sseConnected = false;
+	let sseUsingLite = false;
 	let lastSseEventAt = 0;
 	let lastSseStateAt = 0;
 	let sseRotatingUntil = 0;
 	async function fetchStateOnceWithTimeout(timeoutMs = 3e4) {
-		const preloaded = typeof window !== "undefined" ? window.__dshPreloadState : null;
-		if (preloaded) {
-			window.__dshPreloadState = null;
-			if (preloaded.token === getToken() && Date.now() - (preloaded.startedAt || 0) < 25e3) {
-				const preRes = await preloaded.promise;
-				if (preRes?.__status === 401) {
-					authLockConfirmed = true;
-					closeSSE();
-					document.getElementById("authOverlay")?.classList.add("show");
-					throw new Error("Unauthorized");
-				}
-				if (preRes?.__status === 200 && preRes.data) {
-					authLockConfirmed = false;
-					document.getElementById("authOverlay")?.classList.remove("show");
-					return preRes.data;
+		if (!hasLoadedInitialState) {
+			const preloaded = typeof window !== "undefined" ? window.__dshPreloadState : null;
+			if (preloaded) {
+				window.__dshPreloadState = null;
+				if (preloaded.token === getToken() && Date.now() - (preloaded.startedAt || 0) < 25e3) {
+					const preRes = await preloaded.promise;
+					if (preRes?.__status === 401) {
+						authLockConfirmed = true;
+						closeSSE();
+						document.getElementById("authOverlay")?.classList.add("show");
+						throw new Error("Unauthorized");
+					}
+					if (preRes?.__status === 200 && preRes.data) {
+						authLockConfirmed = false;
+						document.getElementById("authOverlay")?.classList.remove("show");
+						return preRes.data;
+					}
 				}
 			}
 		}
+		const useFullEndpoint = hasLoadedInitialState;
 		const ctrl = typeof AbortController === "function" ? new AbortController() : null;
 		const timer = ctrl ? setTimeout(() => {
 			try {
@@ -14114,7 +14141,9 @@ function initHubController() {
 			} catch {}
 		}, timeoutMs) : null;
 		try {
-			return await (await apiFetch("/api/state?lite=1", ctrl ? { signal: ctrl.signal } : {})).json();
+			const json = await (await apiFetch(useFullEndpoint ? "/api/state" : "/api/state?lite=1", ctrl ? { signal: ctrl.signal } : {})).json();
+			if (json && typeof json === "object" && useFullEndpoint) json.__isFullState = true;
+			return json;
 		} finally {
 			if (timer) clearTimeout(timer);
 		}
@@ -14145,7 +14174,10 @@ function initHubController() {
 				superseded: true
 			};
 			if (data && data.ok) {
+				const isFullPayload = Boolean(data.__isFullState);
+				delete data.__isFullState;
 				hasLoadedInitialState = true;
+				if (isFullPayload) hasLoadedFullState = true;
 				lastStateFetchAt = Date.now();
 				consecutiveStateFetchFailures = 0;
 				setConnectionBanner(false);
@@ -14153,6 +14185,17 @@ function initHubController() {
 				renderAll();
 				flushPendingDeepLink();
 				ensureLocalPushSubscriptionSynced();
+				if (isFullPayload && sseConnected && sseUsingLite) connectSSE();
+				else if (!hasLoadedFullState && !fullStateUpgradeQueued) {
+					fullStateUpgradeQueued = true;
+					setTimeout(() => {
+						fullStateUpgradeQueued = false;
+						if ((getToken() || !authLockConfirmed) && !hasLoadedFullState) fetchState({
+							silent: true,
+							forceFresh: true
+						});
+					}, 120);
+				}
 				return { ok: true };
 			}
 			return {
@@ -14254,7 +14297,8 @@ function initHubController() {
 		closeSSE();
 		const tk = getToken();
 		const knownSeq = hasLoadedInitialState ? Number(hubState?.stateSeq || 0) : 0;
-		const url = "/api/events?initial=0&delta=1&lite=1" + (knownSeq > 0 ? "&seq=" + encodeURIComponent(String(knownSeq)) : "") + (tk ? "&token=" + encodeURIComponent(tk) : "");
+		sseUsingLite = !hasLoadedFullState;
+		const url = "/api/events?initial=0&delta=1" + (sseUsingLite ? "&lite=1" : "") + (knownSeq > 0 ? "&seq=" + encodeURIComponent(String(knownSeq)) : "") + (tk ? "&token=" + encodeURIComponent(tk) : "");
 		try {
 			sseSource = new EventSource(url);
 			sseSource.onopen = () => {
