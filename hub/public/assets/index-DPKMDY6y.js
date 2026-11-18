@@ -1048,7 +1048,7 @@ function renderInlineMarkdown(rawLine) {
 		const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, "%27");
 		if (isVideoMedia) {
 			const cachedVideoSrc = typeof window !== "undefined" && window.__dshInlineVideoCache ? window.__dshInlineVideoCache[cleanPath] : "";
-			if (cachedVideoSrc) return stash(`<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${cleanAlt || esc(baseName)} · 点此打开大屏预览</span></span>`);
+			if (cachedVideoSrc) return stash(`<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="none" onplay="window.maybeAccelerateVideoViaP2p && window.maybeAccelerateVideoViaP2p(this)" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${cleanAlt || esc(baseName)} · 点此打开大屏预览</span></span>`);
 			return stash(`<span class="md-inline-video-card md-local-video-pending" data-local-video-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🎬 ${cleanAlt || esc(baseName)} · 正在连接视频流…（点此打开播放器）</span></span>`);
 		}
 		const cachedSrc = typeof window !== "undefined" && window.__dshInlineImgCache ? window.__dshInlineImgCache[cleanPath] : "";
@@ -1319,6 +1319,7 @@ function buildFastStreamUrl(hostId, relPath, opts = {}) {
 	if (opts.agentId) qp.set("agentId", opts.agentId);
 	if (opts.thumb) qp.set("thumb", "1");
 	if (opts.transcode) qp.set("transcode", "1");
+	if (opts.preview) qp.set("preview", "1");
 	if (opts.download) qp.set("download", "1");
 	if (opts.raw) qp.set("raw", "1");
 	return appendMediaAuth(`/api/hosts/${encodeURIComponent(hostId)}/fs/stream?${qp.toString()}`, opts.mediaTicket || "");
@@ -1346,7 +1347,8 @@ function videoPreviewSrc(preview, mediaTicket = "") {
 	const raw = preview.streamUrl || preview.previewUrl || "";
 	if (!raw) return "";
 	const sep = raw.includes("?") ? "&" : "?";
-	return appendMediaAuth(preview._rawVideo ? `${raw}${sep}raw=1` : preview._transcodeVideo ? `${raw}${sep}transcode=1` : raw, mediaTicket);
+	const useFastPreview = !preview._rawVideo && !preview._transcodeVideo && preview.videoProbe?.strategy !== "transcode" && Number(preview.size || 0) > 4194304;
+	return appendMediaAuth(preview._rawVideo ? `${raw}${sep}raw=1` : preview._transcodeVideo ? `${raw}${sep}transcode=1` : useFastPreview ? `${raw}${sep}preview=1` : raw, mediaTicket);
 }
 function buildBreadcrumbSegments(subDir) {
 	const clean = String(subDir || "").replace(/^\/+|\/+$/g, "");
@@ -1362,6 +1364,319 @@ function fileLoadingSpinnerHtml(text) {
     <div class="file-loading-dot"></div>
     <div>${esc(text)}</div>
   </div>`;
+}
+// hub/web/src/utils/webrtcMedia.js
+var DEFAULT_ICE_SERVERS = [{ urls: [
+	"stun:stun.qq.com:3478",
+	"stun:stun.miwifi.com:3478",
+	"stun:stun.cloudflare.com:3478"
+] }];
+var channelPool = /* @__PURE__ */ new Map();
+var recentFailByHost = /* @__PURE__ */ new Map();
+function parseStreamUrlDescriptor(rawUrl) {
+	if (!rawUrl || typeof rawUrl !== "string") return null;
+	try {
+		const base = typeof location !== "undefined" && location.origin ? location.origin : "http://localhost";
+		const u = new URL(rawUrl, base);
+		const m = /^\/api\/hosts\/([^/]+)\/fs\/stream$/.exec(u.pathname);
+		if (!m) return null;
+		return {
+			hostId: decodeURIComponent(m[1]),
+			path: u.searchParams.get("path") || "",
+			cwd: u.searchParams.get("cwd") || "",
+			agentId: u.searchParams.get("agentId") || "",
+			thumb: u.searchParams.get("thumb") === "1",
+			transcode: u.searchParams.get("transcode") === "1",
+			fastPreview: u.searchParams.get("preview") === "1",
+			download: u.searchParams.get("download") === "1",
+			raw: u.searchParams.get("raw") === "1",
+			mt: u.searchParams.get("mt") || ""
+		};
+	} catch {
+		return null;
+	}
+}
+function isWebRtcDataChannelSupported() {
+	return typeof window !== "undefined" && typeof window.RTCPeerConnection === "function";
+}
+function closePoolEntry(hostId, entry) {
+	if (!entry || entry.closed) return;
+	entry.closed = true;
+	if (entry.idleTimer) {
+		clearTimeout(entry.idleTimer);
+		entry.idleTimer = null;
+	}
+	if (channelPool.get(hostId) === entry) channelPool.delete(hostId);
+	for (const [, pending] of entry.pendingReqs.entries()) pending.reject(/* @__PURE__ */ new Error("WebRTC DataChannel closed"));
+	entry.pendingReqs.clear();
+	try {
+		entry.dc?.close?.();
+	} catch {}
+	try {
+		entry.pc?.close?.();
+	} catch {}
+}
+function touchPoolEntry(hostId, entry) {
+	if (!entry || entry.closed) return;
+	if (entry.idleTimer) clearTimeout(entry.idleTimer);
+	entry.idleTimer = setTimeout(() => {
+		if (entry.pendingReqs.size === 0) closePoolEntry(hostId, entry);
+	}, 9e4);
+}
+async function getOrConnectWebRtcChannel(hostId, { cwd = "", agentId = "", mt = "", token = "", connectTimeoutMs = 1600 } = {}) {
+	if (!isWebRtcDataChannelSupported() || !hostId) return null;
+	const existing = channelPool.get(hostId);
+	if (existing && !existing.closed) {
+		if (existing.dc && existing.dc.readyState === "open") {
+			touchPoolEntry(hostId, existing);
+			return existing;
+		}
+		if (existing.connectPromise) return existing.connectPromise;
+	}
+	const lastFail = recentFailByHost.get(hostId) || 0;
+	if (lastFail > 0 && Date.now() - lastFail < 15e3) return null;
+	const entry = {
+		hostId,
+		pc: null,
+		dc: null,
+		closed: false,
+		idleTimer: null,
+		pendingReqs: /* @__PURE__ */ new Map(),
+		connectPromise: null
+	};
+	channelPool.set(hostId, entry);
+	entry.connectPromise = (async () => {
+		const isLocalhost = typeof location !== "undefined" && (location.hostname === "127.0.0.1" || location.hostname === "localhost");
+		const pc = new window.RTCPeerConnection({ iceServers: isLocalhost ? [] : DEFAULT_ICE_SERVERS });
+		entry.pc = pc;
+		const dc = pc.createDataChannel("dsh-media", { ordered: true });
+		dc.binaryType = "arraybuffer";
+		entry.dc = dc;
+		dc.onmessage = (ev) => {
+			touchPoolEntry(hostId, entry);
+			if (typeof ev.data === "string") {
+				let msg = null;
+				try {
+					msg = JSON.parse(ev.data);
+				} catch {}
+				if (!msg || !msg.reqId) return;
+				const pending = entry.pendingReqs.get(msg.reqId);
+				if (!pending) return;
+				if (msg.type === "meta") pending.onMeta(msg);
+				else if (msg.type === "eof") pending.onEof(msg);
+				else if (msg.type === "error") pending.reject(new Error(msg.error || `P2P HTTP ${msg.status || 500}`));
+				return;
+			}
+			if (ev.data instanceof ArrayBuffer) {
+				const u8 = new Uint8Array(ev.data);
+				if (u8.byteLength < 3 || u8[0] !== 1) return;
+				const idLen = u8[1];
+				if (2 + idLen > u8.byteLength) return;
+				let reqId = "";
+				for (let i = 0; i < idLen; i += 1) reqId += String.fromCharCode(u8[2 + i]);
+				const pending = entry.pendingReqs.get(reqId);
+				if (pending) pending.onChunk(u8.subarray(2 + idLen));
+			}
+		};
+		dc.onclose = () => closePoolEntry(hostId, entry);
+		pc.onconnectionstatechange = () => {
+			const st = pc.connectionState;
+			if (st === "failed" || st === "closed" || st === "disconnected") closePoolEntry(hostId, entry);
+		};
+		const dcOpenPromise = new Promise((resolve, reject) => {
+			const timer = setTimeout(() => {
+				reject(/* @__PURE__ */ new Error("P2P connect timeout"));
+			}, connectTimeoutMs);
+			dc.onopen = () => {
+				clearTimeout(timer);
+				resolve(true);
+			};
+			dc.onerror = () => {
+				clearTimeout(timer);
+				reject(/* @__PURE__ */ new Error("P2P DataChannel error"));
+			};
+		});
+		try {
+			const offer = await pc.createOffer();
+			await pc.setLocalDescription(offer);
+			const gatherWaitMs = isLocalhost ? 80 : 220;
+			await new Promise((resolve) => {
+				if (pc.iceGatheringState === "complete") {
+					resolve(true);
+					return;
+				}
+				let sawCandidate = false;
+				const timer = setTimeout(resolve, gatherWaitMs);
+				pc.onicecandidate = (ev) => {
+					if (!ev.candidate) {
+						clearTimeout(timer);
+						resolve(true);
+						return;
+					}
+					if (!sawCandidate && String(ev.candidate.candidate || "").includes("typ srflx")) {
+						sawCandidate = true;
+						clearTimeout(timer);
+						setTimeout(resolve, 40);
+					}
+				};
+				pc.onicegatheringstatechange = () => {
+					if (pc.iceGatheringState === "complete") {
+						clearTimeout(timer);
+						resolve(true);
+					}
+				};
+			});
+			const qp = new URLSearchParams();
+			if (mt) qp.set("mt", mt);
+			const offerUrl = `/api/hosts/${encodeURIComponent(hostId)}/fs/rtc-offer${qp.toString() ? `?${qp.toString()}` : ""}`;
+			const headers = {
+				"content-type": "application/json",
+				...token ? { authorization: `Bearer ${token}` } : {}
+			};
+			const sigCtrl = typeof AbortController === "function" ? new AbortController() : null;
+			const sigTimer = sigCtrl ? setTimeout(() => sigCtrl.abort(), Math.max(1200, connectTimeoutMs)) : null;
+			let sigData = null;
+			try {
+				sigData = await (await fetch(offerUrl, {
+					method: "POST",
+					headers,
+					body: JSON.stringify({
+						sdp: pc.localDescription?.sdp || offer.sdp,
+						cwd,
+						agentId
+					}),
+					...sigCtrl ? { signal: sigCtrl.signal } : {}
+				})).json().catch(() => null);
+			} finally {
+				if (sigTimer) clearTimeout(sigTimer);
+			}
+			if (!sigData?.ok || !sigData?.sdp) throw new Error(sigData?.error || "Signaling rejected");
+			await pc.setRemoteDescription({
+				type: "answer",
+				sdp: sigData.sdp
+			});
+			await dcOpenPromise;
+			recentFailByHost.delete(hostId);
+			touchPoolEntry(hostId, entry);
+			return entry;
+		} catch {
+			recentFailByHost.set(hostId, Date.now());
+			closePoolEntry(hostId, entry);
+			return null;
+		} finally {
+			entry.connectPromise = null;
+		}
+	})();
+	return entry.connectPromise;
+}
+async function fetchMediaViaWebRtc(rawStreamUrl, { token = "", mediaTicket = "", download = void 0, fastPreview = void 0, raw = void 0, transcode = void 0, maxBytes = 0, connectTimeoutMs = 1600, stallTimeoutMs = 12e3, onProgress = null, signal = null } = {}) {
+	const desc = parseStreamUrlDescriptor(rawStreamUrl);
+	if (!desc || !desc.path) return null;
+	const entry = await getOrConnectWebRtcChannel(desc.hostId, {
+		cwd: desc.cwd,
+		agentId: desc.agentId,
+		mt: mediaTicket || desc.mt,
+		token,
+		connectTimeoutMs
+	});
+	if (!entry || !entry.dc || entry.dc.readyState !== "open") return null;
+	if (signal?.aborted) return null;
+	const reqId = `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+	return new Promise((resolve) => {
+		const chunks = [];
+		let received = 0;
+		let totalBytes = 0;
+		let metaInfo = null;
+		let settled = false;
+		let stallTimer = null;
+		const resetStall = () => {
+			if (stallTimer) clearTimeout(stallTimer);
+			stallTimer = setTimeout(() => {
+				finish(null, true);
+			}, stallTimeoutMs);
+		};
+		const onAbort = () => finish(null, true);
+		const finish = (result, sendCancel = false) => {
+			if (settled) return;
+			settled = true;
+			if (stallTimer) clearTimeout(stallTimer);
+			entry.pendingReqs.delete(reqId);
+			if (signal && typeof signal.removeEventListener === "function") try {
+				signal.removeEventListener("abort", onAbort);
+			} catch {}
+			if (sendCancel && entry.dc?.readyState === "open") try {
+				entry.dc.send(JSON.stringify({
+					op: "cancel",
+					reqId
+				}));
+			} catch {}
+			resolve(result);
+		};
+		if (signal && typeof signal.addEventListener === "function") signal.addEventListener("abort", onAbort, { once: true });
+		entry.pendingReqs.set(reqId, {
+			onMeta(meta) {
+				metaInfo = meta;
+				totalBytes = Number(meta.byteLength || 0);
+				if (maxBytes > 0 && totalBytes > maxBytes) {
+					finish(null, true);
+					return;
+				}
+				resetStall();
+				onProgress?.({
+					received,
+					totalBytes
+				});
+			},
+			onChunk(slice) {
+				resetStall();
+				const copy = new Uint8Array(slice.byteLength);
+				copy.set(slice);
+				chunks.push(copy);
+				received += copy.byteLength;
+				onProgress?.({
+					received,
+					totalBytes
+				});
+			},
+			onEof(eofMsg) {
+				const expected = Number(eofMsg?.byteLength ?? totalBytes);
+				if (expected > 0 && received !== expected) {
+					finish(null, false);
+					return;
+				}
+				const mime = metaInfo?.mime || "video/mp4";
+				const blob = new Blob(chunks, { type: mime });
+				finish({
+					ok: true,
+					blob,
+					byteLength: received,
+					mime,
+					name: metaInfo?.name || "",
+					variant: metaInfo?.variant || "orig"
+				});
+			},
+			reject() {
+				finish(null, false);
+			}
+		});
+		resetStall();
+		try {
+			entry.dc.send(JSON.stringify({
+				op: "stream",
+				reqId,
+				path: desc.path,
+				cwd: desc.cwd,
+				agentId: desc.agentId,
+				thumb: desc.thumb,
+				transcode: transcode !== void 0 ? Boolean(transcode) : desc.transcode,
+				fastPreview: fastPreview !== void 0 ? Boolean(fastPreview) : desc.fastPreview,
+				download: download !== void 0 ? Boolean(download) : desc.download,
+				raw: raw !== void 0 ? Boolean(raw) : desc.raw
+			}));
+		} catch {
+			finish(null, false);
+		}
+	});
 }
 // hub/web/src/utils/gestures.ts
 function composerUsesCoarsePointer() {
@@ -3135,7 +3450,11 @@ var EXACT_ZH_TO_EN = {
 var REGEX_ZH_TO_EN = [
 	[/^🌐 (.+)$/, (_, title) => `🌐 ${title === "对话内 HTML 交互预览" ? "Inline HTML Live Preview" : title}`],
 	[/^⏳ 拉取中 (\d+)%…$/, "⏳ Downloading $1%…"],
+	[/^⚡ 直连拉取 (\d+)%…$/, "⚡ P2P Direct $1%…"],
+	[/^⚡ 已直连拉取 (.+)…$/, "⚡ P2P Direct $1…"],
 	[/^⏳ 已拉取 (.+)…$/, "⏳ Downloaded $1…"],
+	[/^🎬 (.+) · ⚡ P2P 极速直连 · 零缓冲秒播$/, "🎬 $1 · ⚡ P2P Direct Zero-Buffer"],
+	[/^🎬 (.+) · ⚡ 720p 极速秒看流 · 拖动秒播$/, "🎬 $1 · ⚡ 720p Fast Preview Stream"],
 	[/^🎬 (.+) · 智能 H\.264 兼容流 · 拖动秒播$/, "🎬 $1 · Smart H.264 Compat Stream"],
 	[/^🎬 (.+) · 无损快启重封装 · 拖动秒播$/, "🎬 $1 · Fast-Start Lossless Remux"],
 	[/^🎬 (.+) · 原始视频字节直出流$/, "🎬 $1 · Raw Original Stream"],
@@ -7324,12 +7643,13 @@ function initHubController() {
 				const vSrc = buildFastStreamUrl(session.hostId, relPath, {
 					cwd: session.cwd || "",
 					agentId: session.id || "",
+					preview: true,
 					mediaTicket: mt
 				});
 				window.__dshInlineVideoCache[vPath] = vSrc;
 				vNode.classList.remove("md-local-video-pending");
 				vNode.removeAttribute("onclick");
-				vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="none" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc(baseName)} · 点此打开大屏预览</span>`;
+				vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="none" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc(baseName)} · 点此打开大屏预览</span>`;
 			}
 		}
 		const pendingNodes = Array.from(containerEl.querySelectorAll(".md-local-img-pending[data-local-img-path]"));
@@ -7444,9 +7764,9 @@ function initHubController() {
 				origin: typeof location !== "undefined" ? location.origin : ""
 			})) : "";
 			const previewBodyHtml = kind === "video" ? `<div class="file-preview-body" style="padding:16px 12px;background:#0f172a;min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
-               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
+               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? "1" : "0"}" controls playsinline webkit-playsinline preload="metadata" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
-                 <span style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
+                 <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
                  <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', true)">${esc(videoMetaUi.toggleLabel)}</button>
                  ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl)}', '${esc(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
                </div>
@@ -7482,6 +7802,10 @@ function initHubController() {
           ${previewBodyHtml}
         `;
 			if (isMarkdown && !rawMdMode) hydrateInlineChatImages(found.session, body);
+			else if (kind === "video") {
+				const vidEl = body.querySelector("video.file-preview-video");
+				if (vidEl) maybeAccelerateVideoViaP2p(vidEl);
+			}
 			return;
 		}
 		body.dataset.dshPreviewKey = "";
@@ -7575,6 +7899,10 @@ function initHubController() {
 			badge: "智能 H.264 兼容流 · 拖动秒播",
 			toggleLabel: "🎞️ 尝试原片直出"
 		};
+		if (Number(preview?.size || 0) > 4194304) return {
+			badge: "⚡ 720p 极速秒看流 · 拖动秒播",
+			toggleLabel: "🎞️ 尝试原片直出"
+		};
 		if (strategy === "remux") return {
 			badge: "无损快启重封装 · 拖动秒播",
 			toggleLabel: "🔄 强制重编码兼容流"
@@ -7589,6 +7917,7 @@ function initHubController() {
 		try {
 			const u = new URL(rawSrc, typeof location !== "undefined" ? location.origin : "http://localhost");
 			u.searchParams.delete("raw");
+			u.searchParams.delete("preview");
 			u.searchParams.set("transcode", "1");
 			const freshMt = hubState.mediaTicket || "";
 			if (freshMt) u.searchParams.set("mt", freshMt);
@@ -7597,8 +7926,100 @@ function initHubController() {
 			return "";
 		}
 	}
+	function buildRetryFreshVideoSrc(rawSrc) {
+		if (!rawSrc || !rawSrc.includes("/fs/stream")) return "";
+		try {
+			const u = new URL(rawSrc, typeof location !== "undefined" ? location.origin : "http://localhost");
+			const freshMt = hubState.mediaTicket || "";
+			if (freshMt) u.searchParams.set("mt", freshMt);
+			u.searchParams.set("_r", String(Date.now()));
+			return `${u.pathname}?${u.searchParams.toString()}`;
+		} catch {
+			return "";
+		}
+	}
+	const p2pVideoBlobCache = /* @__PURE__ */ new Map();
+	function clearSmartVideoErrorBanner(videoEl) {
+		if (!videoEl) return;
+		if (videoEl.dataset) delete videoEl.dataset.dshErrorBannerShown;
+		const parent = videoEl.parentElement;
+		if (!parent) return;
+		parent.querySelectorAll("[data-dsh-error-tip], [data-dsh-fallback-dl]").forEach((el) => {
+			try {
+				el.remove();
+			} catch {}
+		});
+	}
+	async function maybeAccelerateVideoViaP2p(videoEl, { fromErrorFallback = false } = {}) {
+		if (!videoEl) return false;
+		if (videoEl.dataset?.dshP2pUpgraded === "1") return true;
+		if (videoEl.__dshP2pPromise) return videoEl.__dshP2pPromise;
+		const rawSrc = videoEl.getAttribute("src") || videoEl.currentSrc || "";
+		if (!rawSrc || rawSrc.startsWith("blob:") || !rawSrc.includes("/fs/stream")) return false;
+		const cacheKey = rawSrc.replace(/([?&])_r=[^&]+/g, "").replace(/[?&]$/, "");
+		const cachedBlobUrl = p2pVideoBlobCache.get(cacheKey);
+		if (cachedBlobUrl) {
+			swapVideoElementToBlobUrl(videoEl, cachedBlobUrl);
+			return true;
+		}
+		videoEl.dataset.dshP2pInflight = "1";
+		const runPromise = (async () => {
+			try {
+				const p2pRes = await fetchMediaViaWebRtc(rawSrc, {
+					token: getToken(),
+					mediaTicket: hubState.mediaTicket || "",
+					maxBytes: 50331648,
+					connectTimeoutMs: fromErrorFallback ? 2e3 : 1400
+				});
+				if (!p2pRes?.ok || !p2pRes.blob || !videoEl.isConnected) return false;
+				const blobUrl = URL.createObjectURL(p2pRes.blob);
+				p2pVideoBlobCache.set(cacheKey, blobUrl);
+				while (p2pVideoBlobCache.size > 12) {
+					const oldestKey = p2pVideoBlobCache.keys().next().value;
+					const oldUrl = p2pVideoBlobCache.get(oldestKey);
+					p2pVideoBlobCache.delete(oldestKey);
+					if (oldUrl) try {
+						URL.revokeObjectURL(oldUrl);
+					} catch {}
+				}
+				swapVideoElementToBlobUrl(videoEl, blobUrl);
+				return true;
+			} catch {
+				return false;
+			} finally {
+				delete videoEl.__dshP2pPromise;
+				if (videoEl.dataset) delete videoEl.dataset.dshP2pInflight;
+			}
+		})();
+		videoEl.__dshP2pPromise = runPromise;
+		return runPromise;
+	}
+	function swapVideoElementToBlobUrl(videoEl, blobUrl) {
+		if (!videoEl || !blobUrl) return;
+		const wasPaused = videoEl.paused;
+		const savedTime = Number(videoEl.currentTime) || 0;
+		const savedRate = Number(videoEl.playbackRate) || 1;
+		clearSmartVideoErrorBanner(videoEl);
+		videoEl.dataset.dshP2pUpgraded = "1";
+		videoEl.src = blobUrl;
+		const restoreState = () => {
+			try {
+				if (savedTime > .1 && Number.isFinite(videoEl.duration) && savedTime < videoEl.duration) videoEl.currentTime = savedTime;
+				if (savedRate !== 1) videoEl.playbackRate = savedRate;
+				if (!wasPaused) videoEl.play()?.catch?.(() => {});
+			} catch {}
+		};
+		videoEl.addEventListener("loadedmetadata", restoreState, { once: true });
+		const statusEl = videoEl.parentElement?.querySelector?.("[data-dsh-video-status=\"1\"]");
+		if (statusEl && statusEl.textContent) {
+			statusEl.textContent = `${statusEl.textContent.split("·")[0].trim()} · ⚡ P2P 极速直连 · 零缓冲秒播`;
+			if (langPref === "en") applyLangToDom(videoEl.parentElement, langPref);
+		}
+	}
 	function onSmartVideoLoadedMeta(videoEl) {
-		if (!videoEl || videoEl.dataset?.dshFallbackTried === "1") return;
+		if (!videoEl) return;
+		if (videoEl.videoWidth > 0) clearSmartVideoErrorBanner(videoEl);
+		if (videoEl.dataset?.dshFallbackTried === "1") return;
 		if (videoEl.videoWidth === 0 && Number(videoEl.duration) > 0) {
 			const nextSrc = buildTranscodeFallbackSrc(videoEl.getAttribute("src") || videoEl.currentSrc || "");
 			if (!nextSrc) return;
@@ -7610,10 +8031,28 @@ function initHubController() {
 			} catch {}
 		}
 	}
-	function onSmartVideoError(videoEl) {
+	async function onSmartVideoError(videoEl) {
 		if (!videoEl) return;
+		if (videoEl.error?.code === 1) return;
 		const currentSrc = videoEl.getAttribute("src") || videoEl.currentSrc || "";
-		if (videoEl.dataset?.dshFallbackTried !== "1") {
+		if (!currentSrc || currentSrc.startsWith("blob:") || videoEl.dataset?.dshP2pUpgraded === "1") return;
+		if (videoEl.dataset?.dshP2pFallbackTried !== "1" || videoEl.__dshP2pPromise) {
+			videoEl.dataset.dshP2pFallbackTried = "1";
+			if (await maybeAccelerateVideoViaP2p(videoEl, { fromErrorFallback: true }) || videoEl.dataset?.dshP2pUpgraded === "1") return;
+		}
+		const alreadyCompatOrDirect = videoEl.dataset?.dshUniversalDirect === "1" || currentSrc.includes("preview=1") || currentSrc.includes("transcode=1");
+		if (alreadyCompatOrDirect && videoEl.dataset?.dshNetRetryTried !== "1") {
+			const retrySrc = buildRetryFreshVideoSrc(currentSrc);
+			if (retrySrc) {
+				videoEl.dataset.dshNetRetryTried = "1";
+				videoEl.src = retrySrc;
+				try {
+					videoEl.load();
+				} catch {}
+				return;
+			}
+		}
+		if (!alreadyCompatOrDirect && videoEl.dataset?.dshFallbackTried !== "1") {
 			const nextSrc = buildTranscodeFallbackSrc(currentSrc);
 			if (nextSrc && nextSrc !== currentSrc) {
 				videoEl.dataset.dshFallbackTried = "1";
@@ -7625,7 +8064,7 @@ function initHubController() {
 				return;
 			}
 		}
-		if (videoEl.dataset?.dshErrorBannerShown === "1") return;
+		if (videoEl.dataset?.dshP2pUpgraded === "1" || videoEl.dataset?.dshErrorBannerShown === "1") return;
 		videoEl.dataset.dshErrorBannerShown = "1";
 		const parent = videoEl.parentElement;
 		if (!parent) return;
@@ -7637,7 +8076,9 @@ function initHubController() {
 				const base = (u.searchParams.get("path") || "").split("/").filter(Boolean).pop();
 				if (base) dlName = base;
 				u.searchParams.delete("transcode");
+				u.searchParams.delete("preview");
 				u.searchParams.delete("raw");
+				u.searchParams.delete("_r");
 				u.searchParams.set("download", "1");
 				const freshMt = hubState.mediaTicket || "";
 				if (freshMt) u.searchParams.set("mt", freshMt);
@@ -7645,8 +8086,9 @@ function initHubController() {
 			}
 		} catch {}
 		const tip = document.createElement("div");
+		tip.dataset.dshErrorTip = "1";
 		tip.style.cssText = "font-size:12px;color:#fca5a5;text-align:center;padding:6px 10px;line-height:1.5;";
-		tip.textContent = "⚠️ 当前无法直接在线解码此视频（若该电脑端版本较旧，可在设置页点一键升级守护进程），可点下方保存原片观看";
+		tip.textContent = "⚠️ 当前网络波动未能完成在线加载，可点下方高速分片下载到本地观看";
 		parent.appendChild(tip);
 		if (dlHref && !parent.querySelector("[data-dsh-fallback-dl]")) {
 			const btn = document.createElement("button");
@@ -7676,10 +8118,12 @@ function initHubController() {
 		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
 		const preview = target || host?.lastFilePreview;
 		if (!preview) return;
-		if (preview?.videoProbe?.strategy === "transcode") {
+		const autoTranscode = preview?.videoProbe?.strategy === "transcode";
+		const isLargeFastPreview = Number(preview?.size || 0) > 4194304 && !autoTranscode;
+		if (autoTranscode || isLargeFastPreview) {
 			preview._rawVideo = !preview._rawVideo;
 			preview._transcodeVideo = false;
-			showToast(preview._rawVideo ? "🎞️ 已切换为原始视频字节直出（部分手机不支持 4:4:4 等专业编码）" : "⚡ 已切回电脑端智能 H.264 兼容流");
+			showToast(preview._rawVideo ? "🎞️ 已切换为无损原片直出流" : isLargeFastPreview ? "⚡ 已切回 720p 手机极速秒看流" : "⚡ 已切回电脑端智能 H.264 兼容流");
 		} else {
 			preview._rawVideo = false;
 			preview._transcodeVideo = !preview._transcodeVideo;
@@ -7982,68 +8426,142 @@ function initHubController() {
 			btnEl.disabled = true;
 			btnEl.textContent = "⏳ 准备中…";
 		}
+		let wakeLockSentinel = null;
+		try {
+			if (typeof navigator !== "undefined" && navigator.wakeLock?.request) wakeLockSentinel = await navigator.wakeLock.request("screen").catch(() => null);
+		} catch {}
 		try {
 			const token = getToken();
-			const baseAuthHeaders = token ? { authorization: `Bearer ${token}` } : {};
-			const parseContentRangeInfo = (headerVal) => {
-				const m = /bytes\s+(\d+)-(\d+)\/(\d+)/i.exec(String(headerVal || "").trim());
-				if (!m) return null;
-				return {
-					start: Number(m[1]),
-					end: Number(m[2]),
-					total: Number(m[3])
-				};
-			};
-			const readSliceIntoChunks = async (resp, outChunks, progState) => {
-				if (resp.body && typeof resp.body.getReader === "function") {
-					const reader = resp.body.getReader();
-					while (true) {
-						const { done, value } = await reader.read();
-						if (done) break;
-						if (value) {
-							outChunks.push(value);
-							progState.received += value.byteLength;
-							if (btnEl) {
-								if (progState.totalBytes > 0) btnEl.textContent = `⏳ 拉取中 ${Math.min(99, Math.round(progState.received / progState.totalBytes * 100))}%…`;
-								else btnEl.textContent = `⏳ 已拉取 ${formatBytes(progState.received)}…`;
-							}
-						}
+			const freshMt = hubState.mediaTicket || "";
+			let effectiveDlUrl = String(dlUrl || "");
+			const isDataUrl = effectiveDlUrl.startsWith("data:");
+			if (!isDataUrl && freshMt && effectiveDlUrl.includes("/fs/stream")) try {
+				const u = new URL(effectiveDlUrl, typeof location !== "undefined" ? location.origin : "http://localhost");
+				u.searchParams.set("mt", freshMt);
+				effectiveDlUrl = `${u.pathname}?${u.searchParams.toString()}`;
+			} catch {}
+			const guessMimeByName = (nameStr) => /\.png$/i.test(nameStr) ? "image/png" : /\.(jpe?g)$/i.test(nameStr) ? "image/jpeg" : /\.webp$/i.test(nameStr) ? "image/webp" : /\.gif$/i.test(nameStr) ? "image/gif" : /\.svg$/i.test(nameStr) ? "image/svg+xml" : /\.mp4$/i.test(nameStr) ? "video/mp4" : /\.mov$/i.test(nameStr) ? "video/quicktime" : /\.webm$/i.test(nameStr) ? "video/webm" : "application/octet-stream";
+			let blob = null;
+			let mimeType = guessMimeByName(safeName);
+			const streamDesc = !isDataUrl ? parseStreamUrlDescriptor(effectiveDlUrl) : null;
+			if (streamDesc) {
+				const p2pOut = await fetchMediaViaWebRtc(effectiveDlUrl, {
+					token,
+					mediaTicket: freshMt || streamDesc.mt,
+					download: true,
+					fastPreview: false,
+					raw: true,
+					transcode: false,
+					connectTimeoutMs: 1500,
+					onProgress: ({ received, totalBytes }) => {
+						if (!btnEl) return;
+						if (totalBytes > 0) btnEl.textContent = `⚡ 直连拉取 ${Math.min(99, Math.round(received / totalBytes * 100))}%…`;
+						else if (received > 0) btnEl.textContent = `⚡ 已直连拉取 ${formatBytes(received)}…`;
 					}
-				} else {
-					const ab = await resp.arrayBuffer();
-					const u8 = new Uint8Array(ab);
-					outChunks.push(u8);
-					progState.received += u8.byteLength;
-				}
-			};
-			const res = String(dlUrl || "").startsWith("data:") ? await fetch(dlUrl) : await fetch(dlUrl, { headers: baseAuthHeaders });
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const firstCr = res.status === 206 ? parseContentRangeInfo(res.headers.get("content-range")) : null;
-			const totalBytes = firstCr?.total || Number(res.headers.get("content-length") || 0);
-			const mimeType = (res.headers.get("content-type") || "").split(";")[0].trim() || (/\.png$/i.test(safeName) ? "image/png" : /\.(jpe?g)$/i.test(safeName) ? "image/jpeg" : /\.webp$/i.test(safeName) ? "image/webp" : /\.gif$/i.test(safeName) ? "image/gif" : /\.svg$/i.test(safeName) ? "image/svg+xml" : /\.mp4$/i.test(safeName) ? "video/mp4" : /\.mov$/i.test(safeName) ? "video/quicktime" : /\.webm$/i.test(safeName) ? "video/webm" : "application/octet-stream");
-			const allChunks = [];
-			const progState = {
-				received: 0,
-				totalBytes
-			};
-			await readSliceIntoChunks(res, allChunks, progState);
-			if (firstCr && firstCr.end + 1 < firstCr.total) {
-				let nextStart = firstCr.end + 1;
-				for (let partIdx = 0; partIdx < 64 && nextStart < firstCr.total; partIdx += 1) {
-					const partRes = await fetch(dlUrl, { headers: {
-						...baseAuthHeaders,
-						Range: `bytes=${nextStart}-`
-					} });
-					if (!partRes.ok) throw new Error(`HTTP ${partRes.status}`);
-					const partCr = parseContentRangeInfo(partRes.headers.get("content-range"));
-					const prevReceived = progState.received;
-					await readSliceIntoChunks(partRes, allChunks, progState);
-					const gotBytes = progState.received - prevReceived;
-					if (gotBytes <= 0) break;
-					nextStart = partCr ? partCr.end + 1 : nextStart + gotBytes;
+				});
+				if (p2pOut?.ok && p2pOut.blob) {
+					blob = p2pOut.blob;
+					mimeType = (p2pOut.mime || "").split(";")[0].trim() || mimeType;
 				}
 			}
-			const blob = new Blob(allChunks, { type: mimeType });
+			if (!blob) {
+				const baseAuthHeaders = token ? { authorization: `Bearer ${token}` } : {};
+				const DOWNLOAD_SLICE_BYTES = 2097152;
+				const parseContentRangeInfo = (headerVal) => {
+					const m = /bytes\s+(\d+)-(\d+)\/(\d+)/i.exec(String(headerVal || "").trim());
+					if (!m) return null;
+					return {
+						start: Number(m[1]),
+						end: Number(m[2]),
+						total: Number(m[3])
+					};
+				};
+				const updateBtnProgress = (received, totalBytes) => {
+					if (!btnEl) return;
+					if (totalBytes > 0) btnEl.textContent = `⏳ 拉取中 ${Math.min(99, Math.round(received / totalBytes * 100))}%…`;
+					else btnEl.textContent = `⏳ 已拉取 ${formatBytes(received)}…`;
+				};
+				const fetchSliceBytesWithRetry = async (extraHeaders = {}, onDelta = null) => {
+					let lastErr = null;
+					for (let attempt = 0; attempt < 3; attempt += 1) {
+						let attemptAdded = 0;
+						try {
+							const resp = isDataUrl ? await fetch(effectiveDlUrl) : await fetch(effectiveDlUrl, { headers: {
+								...baseAuthHeaders,
+								...extraHeaders
+							} });
+							if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+							const chunks = [];
+							if (resp.body && typeof resp.body.getReader === "function") {
+								const reader = resp.body.getReader();
+								while (true) {
+									const { done, value } = await reader.read();
+									if (done) break;
+									if (value) {
+										chunks.push(value);
+										attemptAdded += value.byteLength;
+										onDelta?.(value.byteLength);
+									}
+								}
+							} else {
+								const u8 = new Uint8Array(await resp.arrayBuffer());
+								chunks.push(u8);
+								attemptAdded += u8.byteLength;
+								onDelta?.(u8.byteLength);
+							}
+							return {
+								resp,
+								chunks
+							};
+						} catch (err) {
+							if (attemptAdded > 0) onDelta?.(-attemptAdded);
+							lastErr = err;
+							if (attempt < 2) await new Promise((r) => setTimeout(r, 450 * (attempt + 1)));
+						}
+					}
+					throw lastErr || /* @__PURE__ */ new Error("分片拉取失败");
+				};
+				let receivedBytes = 0;
+				let knownTotalBytes = 0;
+				const firstSlice = await fetchSliceBytesWithRetry(!isDataUrl && streamDesc ? { Range: `bytes=0-2097151` } : {}, (delta) => {
+					receivedBytes = Math.max(0, receivedBytes + delta);
+					updateBtnProgress(receivedBytes, knownTotalBytes);
+				});
+				const firstResp = firstSlice.resp;
+				const firstCr = firstResp.status === 206 ? parseContentRangeInfo(firstResp.headers.get("content-range")) : null;
+				knownTotalBytes = firstCr?.total || Number(firstResp.headers.get("content-length") || 0);
+				mimeType = (firstResp.headers.get("content-type") || "").split(";")[0].trim() || mimeType;
+				updateBtnProgress(receivedBytes, knownTotalBytes);
+				if (firstCr && firstCr.end + 1 < firstCr.total) {
+					const ranges = [];
+					for (let s = firstCr.end + 1; s < firstCr.total; s += DOWNLOAD_SLICE_BYTES) {
+						const e = Math.min(firstCr.total - 1, s + DOWNLOAD_SLICE_BYTES - 1);
+						ranges.push({
+							start: s,
+							end: e
+						});
+					}
+					const orderedPartChunks = new Array(ranges.length + 1);
+					orderedPartChunks[0] = firstSlice.chunks;
+					let nextIdx = 0;
+					const workerCount = Math.min(3, ranges.length);
+					const workers = Array.from({ length: workerCount }, async () => {
+						while (nextIdx < ranges.length) {
+							const myIdx = nextIdx++;
+							const { start, end } = ranges[myIdx];
+							const partOut = await fetchSliceBytesWithRetry({ Range: `bytes=${start}-${end}` }, (delta) => {
+								receivedBytes = Math.max(0, receivedBytes + delta);
+								updateBtnProgress(receivedBytes, knownTotalBytes);
+							});
+							orderedPartChunks[myIdx + 1] = partOut.chunks;
+						}
+					});
+					await Promise.all(workers);
+					const flatChunks = [];
+					for (const group of orderedPartChunks) if (Array.isArray(group)) flatChunks.push(...group);
+					blob = new Blob(flatChunks, { type: mimeType });
+				} else blob = new Blob(firstSlice.chunks, { type: mimeType });
+			}
 			const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
 			if ((isIosDevice() || isStandaloneApp() || /Android|iPhone|iPad|iPod|Mobile/i.test(ua)) && typeof File === "function" && typeof navigator !== "undefined" && typeof navigator.canShare === "function" && typeof navigator.share === "function") {
 				const shareFile = new File([blob], safeName, { type: mimeType });
@@ -8094,6 +8612,9 @@ function initHubController() {
 		} catch (err) {
 			showToast("❌ 保存失败：" + (err && err.message || String(err)));
 		} finally {
+			if (wakeLockSentinel) try {
+				await wakeLockSentinel.release();
+			} catch {}
 			if (btnEl && !btnEl.__readyShareFile) {
 				btnEl.dataset.downloading = "0";
 				btnEl.disabled = false;
@@ -8164,9 +8685,9 @@ function initHubController() {
 				origin: typeof location !== "undefined" ? location.origin : ""
 			})) : "";
 			const previewBodyHtml = kind === "video" ? `<div class="file-preview-body" style="padding:18px 14px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
-               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
+               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? "1" : "0"}" controls playsinline webkit-playsinline preload="metadata" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
-                 <span style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
+                 <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
                  <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', false)">${esc(videoMetaUi.toggleLabel)}</button>
                  ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl)}', '${esc(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
                </div>
@@ -8206,6 +8727,10 @@ function initHubController() {
 				...firstSession,
 				hostId: host.hostId
 			}, container);
+			else if (kind === "video") {
+				const vidEl = container.querySelector("video.file-preview-video");
+				if (vidEl) maybeAccelerateVideoViaP2p(vidEl);
+			}
 			return;
 		}
 		container.dataset.dshPreviewKey = "";
@@ -10906,6 +11431,7 @@ function initHubController() {
 		downloadPreviewMedia,
 		toggleOriginalPreviewImage,
 		switchVideoTranscodeMode,
+		maybeAccelerateVideoViaP2p,
 		onSmartVideoLoadedMeta,
 		onSmartVideoError,
 		dismissOverlay,

@@ -57,6 +57,7 @@ export class HubCore {
     this.sseListeners = new Set()
     this.hostCommandListeners = new Set()
     this.hostFsListeners = new Set()
+    this.hostFsAbortListeners = new Set()
     this.fullTranscriptCache = new Map()
     this.pendingFsRequests = new Map()
     this.fsHotCache = new Map()
@@ -95,11 +96,27 @@ export class HubCore {
     return () => this.hostFsListeners.delete(listener)
   }
 
+  onHostFsAbort(listener) {
+    this.hostFsAbortListeners.add(listener)
+    return () => this.hostFsAbortListeners.delete(listener)
+  }
+
   emitHostFsRequest(hostId, fsReq) {
     if (this.hostFsListeners.size === 0) return
     for (const listener of this.hostFsListeners) {
       try {
         listener(hostId, fsReq)
+      } catch {
+        // ignore listener error
+      }
+    }
+  }
+
+  emitHostFsAbort(hostId, reqId) {
+    if (this.hostFsAbortListeners.size === 0) return
+    for (const listener of this.hostFsAbortListeners) {
+      try {
+        listener(hostId, { hostId, reqId })
       } catch {
         // ignore listener error
       }
@@ -2660,14 +2677,16 @@ export class HubCore {
       ifNoneMatch: String(reqSpec.ifNoneMatch || ''),
       thumb: Boolean(reqSpec.thumb),
       transcode: Boolean(reqSpec.transcode),
+      fastPreview: Boolean(reqSpec.fastPreview),
       download: Boolean(reqSpec.download),
       raw: Boolean(reqSpec.raw),
+      ...(reqSpec.sdp ? { sdp: String(reqSpec.sdp) } : {}),
       createdAt: now,
     }
     return new Promise(resolve => {
       let settled = false
       let onAbort = null
-      const finish = payload => {
+      const finish = (payload, { notifyHostAbort = false } = {}) => {
         if (settled) return
         settled = true
         clearTimeout(timer)
@@ -2676,26 +2695,35 @@ export class HubCore {
             signal.removeEventListener('abort', onAbort)
           } catch {}
         }
-        this.pendingFsRequests.delete(reqId)
+        const hadPending = this.pendingFsRequests.delete(reqId)
+        if (notifyHostAbort && hadPending) {
+          this.emitHostFsAbort(cleanHost, reqId)
+        }
         resolve(payload)
       }
       const timer = setTimeout(() => {
-        finish({
-          ok: false,
-          status: 504,
-          meta: { ok: false, status: 504, error: `等待电脑端响应文件流超时（${Math.round(timeoutMs / 1000)}s）` },
-          buffer: null,
-        })
+        finish(
+          {
+            ok: false,
+            status: 504,
+            meta: { ok: false, status: 504, error: `等待电脑端响应文件流超时（${Math.round(timeoutMs / 1000)}s）` },
+            buffer: null,
+          },
+          { notifyHostAbort: true },
+        )
       }, timeoutMs)
       timer.unref?.()
       if (signal && typeof signal.addEventListener === 'function') {
         onAbort = () => {
-          finish({
-            ok: false,
-            status: 499,
-            meta: { ok: false, status: 499, error: 'Client closed connection' },
-            buffer: null,
-          })
+          finish(
+            {
+              ok: false,
+              status: 499,
+              meta: { ok: false, status: 499, error: 'Client closed connection' },
+              buffer: null,
+            },
+            { notifyHostAbort: true },
+          )
         }
         signal.addEventListener('abort', onAbort, { once: true })
       }

@@ -567,9 +567,10 @@ export function createHubServer({
         pathname === '/api/v1/turn/credentials'
 
       const isReadOnlyMediaEndpoint =
-        method === 'GET' &&
-        (/^\/api\/hosts\/([^/]+)\/file-preview$/.test(pathname) ||
-          /^\/api\/hosts\/([^/]+)\/fs\/(?:list|read|stream)$/.test(pathname))
+        (method === 'GET' &&
+          (/^\/api\/hosts\/([^/]+)\/file-preview$/.test(pathname) ||
+            /^\/api\/hosts\/([^/]+)\/fs\/(?:list|read|stream)$/.test(pathname))) ||
+        (method === 'POST' && /^\/api\/hosts\/([^/]+)\/fs\/rtc-offer$/.test(pathname))
 
       if (isSharedHostEndpoint) {
         const claimedHostId = String(body?.hostId || body?.fromHostId || body?.meta?.hostId || '').trim()
@@ -714,6 +715,29 @@ export function createHubServer({
         }
       }
 
+      const hostRtcOfferMatch = /^\/api\/hosts\/([^/]+)\/fs\/rtc-offer$/.exec(pathname)
+      if (method === 'POST' && hostRtcOfferMatch) {
+        const hostId = decodeURIComponent(hostRtcOfferMatch[1])
+        const sdp = String(body?.sdp ?? '').trim()
+        if (!sdp) {
+          return { status: 400, json: { ok: false, error: 'Missing SDP offer' } }
+        }
+        const out = await hub.dispatchFastFsRequest(
+          hostId,
+          {
+            op: 'rtc_offer',
+            sdp,
+            cwd: String(body?.cwd || urlObj.searchParams.get('cwd') || ''),
+            agentId: String(body?.agentId || urlObj.searchParams.get('agentId') || ''),
+          },
+          { timeoutMs: 8_000, signal },
+        )
+        return {
+          status: out.ok ? 200 : out.status || 502,
+          json: out.meta || { ok: false, error: 'WebRTC signaling failed' },
+        }
+      }
+
       const hostFsMatch = /^\/api\/hosts\/([^/]+)\/fs\/(list|read|stream)$/.exec(pathname)
       if (method === 'GET' && hostFsMatch) {
         const hostId = decodeURIComponent(hostFsMatch[1])
@@ -785,6 +809,7 @@ export function createHubServer({
 
         const thumb = urlObj.searchParams.get('thumb') === '1'
         const transcode = urlObj.searchParams.get('transcode') === '1'
+        const fastPreview = urlObj.searchParams.get('preview') === '1'
         const download = urlObj.searchParams.get('download') === '1'
         const raw = urlObj.searchParams.get('raw') === '1'
         const rangeHeader = String(headers.range ?? headers.Range ?? '').trim()
@@ -801,10 +826,11 @@ export function createHubServer({
             ifNoneMatch,
             thumb,
             transcode,
+            fastPreview,
             download,
             raw,
           },
-          { timeoutMs: transcode || download || isVideoPath ? 60_000 : 30_000, signal },
+          { timeoutMs: transcode || fastPreview || download || isVideoPath ? 60_000 : 30_000, signal },
         )
         const mtParam = String(urlObj.searchParams.get('mt') ?? '').trim()
         const hasMediaTicket = Boolean(mtParam && hub.verifyMediaTicket(mtParam))
@@ -1104,6 +1130,11 @@ export function createHubServer({
               safeWrite(`event: fs_req\ndata: ${JSON.stringify(fsReq)}\n\n`)
             }
           })
+          const unsubFsAbort = hub.onHostFsAbort((fsHostId, abortInfo) => {
+            if (!watchHostId || fsHostId === watchHostId) {
+              safeWrite(`event: fs_abort\ndata: ${JSON.stringify(abortInfo)}\n\n`)
+            }
+          })
           const keepAlive = setInterval(() => {
             safeWrite(`event: ping\ndata: {"ts":${Date.now()}}\n\n`)
           }, 20_000)
@@ -1115,6 +1146,7 @@ export function createHubServer({
             if (rotateTimer) clearTimeout(rotateTimer)
             unsubscribe()
             unsubFs()
+            unsubFsAbort()
           }
           const rotateTimer =
             sseMaxLifetimeMs > 0

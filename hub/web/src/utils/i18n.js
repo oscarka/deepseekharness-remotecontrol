@@ -453,7 +453,11 @@ const EXACT_ZH_TO_EN = {
 const REGEX_ZH_TO_EN = [
   [/^🌐 (.+)$/, (_, title) => `🌐 ${title === '对话内 HTML 交互预览' ? 'Inline HTML Live Preview' : title}`],
   [/^⏳ 拉取中 (\d+)%…$/, '⏳ Downloading $1%…'],
+  [/^⚡ 直连拉取 (\d+)%…$/, '⚡ P2P Direct $1%…'],
+  [/^⚡ 已直连拉取 (.+)…$/, '⚡ P2P Direct $1…'],
   [/^⏳ 已拉取 (.+)…$/, '⏳ Downloaded $1…'],
+  [/^🎬 (.+) · ⚡ P2P 极速直连 · 零缓冲秒播$/, '🎬 $1 · ⚡ P2P Direct Zero-Buffer'],
+  [/^🎬 (.+) · ⚡ 720p 极速秒看流 · 拖动秒播$/, '🎬 $1 · ⚡ 720p Fast Preview Stream'],
   [/^🎬 (.+) · 智能 H\.264 兼容流 · 拖动秒播$/, '🎬 $1 · Smart H.264 Compat Stream'],
   [/^🎬 (.+) · 无损快启重封装 · 拖动秒播$/, '🎬 $1 · Fast-Start Lossless Remux'],
   [/^🎬 (.+) · 原始视频字节直出流$/, '🎬 $1 · Raw Original Stream'],

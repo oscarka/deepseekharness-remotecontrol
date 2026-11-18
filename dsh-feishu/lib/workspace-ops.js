@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { chmod, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { homedir, networkInterfaces } from 'node:os'
+import { homedir, networkInterfaces, tmpdir } from 'node:os'
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import * as zlib from 'node:zlib'
@@ -1919,6 +1919,24 @@ async function resolveWorkspaceOrArtifactFile(workspaceRoot, relPath = '', { ext
         break
       }
     }
+    if (!matchedRoot) {
+      const extCand = extname(candidateReal).toLowerCase()
+      const isSafeTempMedia = Boolean(
+        VIDEO_MIME[extCand] || IMAGE_MIME[extCand] || extCand === '.html' || extCand === '.pdf',
+      )
+      if (isSafeTempMedia) {
+        const tempRoots = [
+          await resolveRealRoot('/tmp'),
+          await resolveRealRoot(tmpdir()),
+        ].filter(Boolean)
+        for (const tr of tempRoots) {
+          if (tr && candidateReal.startsWith(tr + sep)) {
+            matchedRoot = tr
+            break
+          }
+        }
+      }
+    }
     if (matchedRoot) {
       realFile = await resolveSafeTarget(matchedRoot, candidateReal)
     } else if (root) {
@@ -2514,6 +2532,129 @@ async function getOrCreateFastRemuxMp4(
   })
 }
 
+async function getOrCreateFastPreviewMp4(
+  realFile,
+  info,
+  { dshHome = '', execImpl = execFileAsync, platform = process.platform } = {},
+) {
+  const cacheDir = join(resolve(dshHome || '/tmp'), 'cache', 'thumbs')
+  const key = createHash('sha1')
+    .update(`${realFile}:${info.size}:${Math.round(info.mtimeMs)}:pv720v1`)
+    .digest('hex')
+    .slice(0, 24)
+  const outPath = join(cacheDir, `${key}-pv720.mp4`)
+
+  return withSingleFlightMediaJob(outPath, async () => {
+    try {
+      const cachedInfo = await stat(outPath)
+      if (cachedInfo.isFile() && cachedInfo.size > 0) {
+        return { filePath: outPath, size: cachedInfo.size, mime: 'video/mp4' }
+      }
+    } catch {}
+
+    await mkdir(cacheDir, { recursive: true })
+    const tmpOut = join(cacheDir, `${key}.tmp-${randomBytes(3).toString('hex')}.mp4`)
+    const pvScaleFilter = "scale='min(1280,trunc(iw/2)*2)':-2,format=yuv420p"
+    let converted = false
+
+    if (platform === 'darwin') {
+      try {
+        await execImpl(
+          'ffmpeg',
+          [
+            '-y',
+            '-i',
+            realFile,
+            '-vf',
+            pvScaleFilter,
+            '-c:v',
+            'h264_videotoolbox',
+            '-profile:v',
+            'main',
+            '-b:v',
+            '1100k',
+            '-maxrate',
+            '1500k',
+            '-bufsize',
+            '3000k',
+            '-allow_sw',
+            '1',
+            '-movflags',
+            '+faststart',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '96k',
+            tmpOut,
+          ],
+          { timeout: 45_000 },
+        )
+        converted = true
+      } catch {
+        await rm(tmpOut, { force: true }).catch(() => {})
+      }
+    }
+
+    if (!converted) {
+      try {
+        await execImpl(
+          'ffmpeg',
+          [
+            '-y',
+            '-i',
+            realFile,
+            '-vf',
+            pvScaleFilter,
+            '-c:v',
+            'libx264',
+            '-profile:v',
+            'main',
+            '-pix_fmt',
+            'yuv420p',
+            '-preset',
+            'ultrafast',
+            '-crf',
+            '27',
+            '-maxrate',
+            '1500k',
+            '-bufsize',
+            '3000k',
+            '-movflags',
+            '+faststart',
+            '-c:a',
+            'aac',
+            '-b:a',
+            '96k',
+            tmpOut,
+          ],
+          { timeout: 45_000 },
+        )
+        converted = true
+      } catch {
+        await rm(tmpOut, { force: true }).catch(() => {})
+      }
+    }
+
+    if (!converted) {
+      await rm(tmpOut, { force: true }).catch(() => {})
+      return null
+    }
+    try {
+      const outInfo = await stat(tmpOut)
+      if (!outInfo.isFile() || outInfo.size === 0 || outInfo.size >= info.size * 0.9) {
+        await rm(tmpOut, { force: true }).catch(() => {})
+        return null
+      }
+      await rename(tmpOut, outPath)
+      void pruneMediaCacheDir(cacheDir)
+      return { filePath: outPath, size: outInfo.size, mime: 'video/mp4' }
+    } catch {
+      await rm(tmpOut, { force: true }).catch(() => {})
+      return null
+    }
+  })
+}
+
 async function getOrCreateCompatibleMp4(
   realFile,
   info,
@@ -2763,7 +2904,7 @@ export async function readWorkspaceFileFastMeta(workspaceRoot, relPath = '', { e
   }
 }
 
-async function prepareWorkspaceFileStream(
+export async function prepareWorkspaceFileStream(
   workspaceRoot,
   relPath = '',
   {
@@ -2771,8 +2912,10 @@ async function prepareWorkspaceFileStream(
     ifNoneMatch = '',
     thumb = false,
     transcode = false,
+    fastPreview = false,
     download = false,
     raw = false,
+    skipChunkCap = false,
     dshHome = '',
     extraRoots = [],
     maxChunkBytes = DEFAULT_STREAM_CHUNK_BYTES,
@@ -2809,6 +2952,35 @@ async function prepareWorkspaceFileStream(
       } else {
         transcodeUnavailable = true
       }
+    } else if (fastPreview && info.size > 4 * 1024 * 1024) {
+      const pv = await getOrCreateFastPreviewMp4(realFile, info, { dshHome, execImpl, platform })
+      if (pv) {
+        streamFile = pv.filePath
+        streamSize = pv.size
+        streamMime = pv.mime
+        variant = 'pv'
+      } else {
+        const probe = await probeVideoCompatibility(realFile, info, ext).catch(() => null)
+        if (probe?.strategy === 'remux') {
+          const remuxed = await getOrCreateFastRemuxMp4(realFile, info, { dshHome, execImpl })
+          if (remuxed) {
+            streamFile = remuxed.filePath
+            streamSize = remuxed.size
+            streamMime = remuxed.mime
+            variant = 'remux'
+          }
+        } else if (probe?.strategy === 'transcode') {
+          const tc = await getOrCreateCompatibleMp4(realFile, info, { dshHome, execImpl, platform })
+          if (tc) {
+            streamFile = tc.filePath
+            streamSize = tc.size
+            streamMime = tc.mime
+            variant = 'tc'
+          } else {
+            transcodeUnavailable = true
+          }
+        }
+      }
     } else {
       const probe = await probeVideoCompatibility(realFile, info, ext).catch(() => null)
       if (probe?.strategy === 'remux') {
@@ -2844,7 +3016,7 @@ async function prepareWorkspaceFileStream(
   }
 
   const isThumb = variant === 'th'
-  const transcoded = variant === 'tc'
+  const transcoded = variant === 'tc' || variant === 'pv'
   const remuxed = variant === 'remux'
   const mtimeMs = Math.round(info.mtimeMs)
   const etag = `W/"${info.size.toString(16)}-${mtimeMs.toString(16)}-${variant}"`
@@ -2895,7 +3067,14 @@ async function prepareWorkspaceFileStream(
     }
   }
 
-  const parsedRange = parseHttpByteRange(rangeHeader, streamSize, maxChunkBytes)
+  const isVideoPlayback = Boolean(VIDEO_MIME[ext]) && !download
+  const effectiveRangeCap = skipChunkCap
+    ? Math.max(streamSize, maxChunkBytes)
+    : isVideoPlayback
+      ? 1024 * 1024 // parseHttpByteRange uses 2x for closed ranges -> 2 MiB max per HTTP video slice (eliminates Cloud Run 60s GFE buffering 504s!)
+      : maxChunkBytes
+
+  const parsedRange = parseHttpByteRange(rangeHeader, streamSize, effectiveRangeCap)
   if (parsedRange) {
     if (!parsedRange.ok) {
       const contentRange = `bytes */${streamSize}`
@@ -2907,7 +3086,11 @@ async function prepareWorkspaceFileStream(
         error: 'Requested Range Not Satisfiable',
       }
     }
-    const { start, end } = parsedRange
+    let { start, end } = parsedRange
+    // For initial video playback probe (Safari sends Range: bytes=0-<entire-file>), cap first slice at 1 MiB so frame 1 starts in ~1-3s!
+    if (!skipChunkCap && isVideoPlayback && start === 0 && end - start + 1 > 1024 * 1024) {
+      end = Math.min(streamSize - 1, 1024 * 1024 - 1)
+    }
     const chunkLen = end - start + 1
     const contentRange = `bytes ${start}-${end}/${streamSize}`
     return {
@@ -2932,8 +3115,12 @@ async function prepareWorkspaceFileStream(
     }
   }
 
-  // Non-Range GET: cap single HTTP/1.1 tunnel slice at 16 MiB (safe below Cloud Run / Cloudflare 32 MiB gateway ceiling)
-  const maxNonRange = 16 * 1024 * 1024
+  // Non-Range GET: cap video playback at 2 MiB and general downloads at 16 MiB (unless P2P skipChunkCap is true)
+  const maxNonRange = skipChunkCap
+    ? streamSize
+    : isVideoPlayback
+      ? 2 * 1024 * 1024
+      : 16 * 1024 * 1024
   if (streamSize > maxNonRange) {
     const end = maxNonRange - 1
     const contentRange = `bytes 0-${end}/${streamSize}`

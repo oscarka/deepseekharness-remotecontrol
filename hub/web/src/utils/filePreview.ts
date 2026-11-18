@@ -55,6 +55,7 @@ export function buildFastStreamUrl(
     agentId?: string;
     thumb?: boolean;
     transcode?: boolean;
+    preview?: boolean;
     download?: boolean;
     raw?: boolean;
     mediaTicket?: string;
@@ -65,6 +66,7 @@ export function buildFastStreamUrl(
   if (opts.agentId) qp.set('agentId', opts.agentId);
   if (opts.thumb) qp.set('thumb', '1');
   if (opts.transcode) qp.set('transcode', '1');
+  if (opts.preview) qp.set('preview', '1');
   if (opts.download) qp.set('download', '1');
   if (opts.raw) qp.set('raw', '1');
   const raw = `/api/hosts/${encodeURIComponent(hostId)}/fs/stream?${qp.toString()}`;
@@ -117,11 +119,18 @@ export function videoPreviewSrc(preview: FilePreviewData, mediaTicket = ''): str
   const raw = preview.streamUrl || preview.previewUrl || '';
   if (!raw) return '';
   const sep = raw.includes('?') ? '&' : '?';
+  const useFastPreview =
+    !preview._rawVideo &&
+    !preview._transcodeVideo &&
+    preview.videoProbe?.strategy !== 'transcode' &&
+    Number(preview.size || 0) > 4 * 1024 * 1024;
   const withMode = preview._rawVideo
     ? `${raw}${sep}raw=1`
     : preview._transcodeVideo
       ? `${raw}${sep}transcode=1`
-      : raw;
+      : useFastPreview
+        ? `${raw}${sep}preview=1`
+        : raw;
   return appendMediaAuth(withMode, mediaTicket);
 }
 

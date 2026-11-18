@@ -2,6 +2,22 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.7.8] - 2026-11-18
+
+### Added
+
+- **零外部依赖 WebRTC `RTCDataChannel` 点对点音视频直连引擎（`dsh-feishu/lib/webrtc-p2p.js` / `hub/web/src/utils/webrtcMedia.js` / `hub/hub-core.js`）**：
+  - 纯 Node.js 内置模块实现完整 WebRTC 数据通道协议栈（ICE Lite/Full 连通性校验 + STUN `srflx` 公网打洞 + DTLS 1.2 `TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256` 含 RFC 7627 `extended_master_secret` + SCTP CRC-32c / DCEP / 滑动窗口 `SACK` 确认与快速重传），零 npm 运行时依赖；
+  - 新增 `POST /api/hosts/:hostId/fs/rtc-offer` 信令协商接口（支持 `mediaTicket` 与 `HUB_TOKEN` 双鉴权），手机在线看视频（`⚡ P2P 极速直连 · 零缓冲秒播`）与无损下载视频（`⬇️ 保存/分享视频`）优先直连电脑跑满局域网 / Tailscale / 国内直连带宽，UDP 受阻时 `1.5s` 内无感回退 HTTP 小分片流水线。
+
+### Fixed
+
+- **根治跨洋 Cloud Run 在线看视频与下载视频频繁 `504` 超时失败（`dsh-feishu/lib/workspace-ops.js` / `dsh-feishu/lib/hub-agent.js` / `hub/hub-core.js` / `hub/web/src/controller.js`）**：
+  - 将视频在线播放单次 `HTTP 206` 分片上限由 `16 MiB` 下调为首包 **`1 MiB`**（秒拿 `moov` 与首帧）+ 后续每片 **`2 MiB`**，彻底避开 Google Cloud Run HTTP/1.1 整包请求体缓冲在跨洋上行波动时撞击 `60s` 网关超时；
+  - 实现预览与下载分流：`> 4 MiB` 视频手机在线观看默认走 `720p` 硬件加速极速秒看流（`?preview=1`，支持一键切换 `🎞️ 尝试原片直出`），点击 `⬇️ 保存/分享视频` 始终保存 100% 无损原片，并升级为 **`2 MiB × 3` 路并发拉取 + 单片 3 次指数退避自动重试 + `navigator.wakeLock` 防息屏断流**；
+  - 新增 Host SSE `event: fs_abort` 断流信号透传，手机端超时或划走时立即在 Mac 端 `abort()` 掐断进行中的 `/api/fs-tunnel` 上传流并销毁本地文件读取流，防止僵尸分片堵死上行带宽；
+  - 修复 `<video onerror>` 将网络 `504` 波动误判为编码不兼容进而对标准 H.264 视频盲目触发 `?transcode=1` 全片重压的问题，并放开 `/tmp` 及系统临时目录下安全音视频/图文产物的只读预览与下载。
+
 ## [0.7.7] - 2026-11-17
 
 ### Fixed

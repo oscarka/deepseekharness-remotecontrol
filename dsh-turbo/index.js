@@ -138,6 +138,7 @@ export class TurboController {
     hubToken = '',
     onTriggerSync = () => {},
     onFsRequest = null,
+    onFsAbort = null,
     fetchImpl = globalThis.fetch,
     execImpl = execFileAsync,
     debounceMs = 120,
@@ -149,6 +150,7 @@ export class TurboController {
     this.hubToken = hubToken
     this.onTriggerSync = onTriggerSync
     this.onFsRequest = onFsRequest
+    this.onFsAbort = onFsAbort
     this.fetch = fetchImpl
     this.execImpl = execImpl
     this.debounceMs = debounceMs
@@ -345,6 +347,12 @@ export class TurboController {
               if (eventName === 'fs_req') {
                 if (!payload.hostId || payload.hostId === this.hostId) {
                   void this.onFsRequest?.(payload)
+                }
+                continue
+              }
+              if (eventName === 'fs_abort') {
+                if (!payload.hostId || payload.hostId === this.hostId) {
+                  this.onFsAbort?.(payload)
                 }
                 continue
               }

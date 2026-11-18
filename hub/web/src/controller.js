@@ -29,6 +29,10 @@ import {
   buildSandboxedHtmlSrcdoc,
 } from './utils/filePreview';
 import {
+  fetchMediaViaWebRtc,
+  parseStreamUrlDescriptor,
+} from './utils/webrtcMedia.js';
+import {
   composerUsesCoarsePointer,
   shouldSendOnEnter,
   shouldDismissHorizontalSwipe,
@@ -3575,12 +3579,13 @@ export function initHubController() {
         const vSrc = buildFastStreamUrl(session.hostId, relPath, {
           cwd: session.cwd || '',
           agentId: session.id || '',
+          preview: true,
           mediaTicket: mt,
         });
         window.__dshInlineVideoCache[vPath] = vSrc;
         vNode.classList.remove('md-local-video-pending');
         vNode.removeAttribute('onclick');
-        vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="none" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc(baseName)} · 点此打开大屏预览</span>`;
+        vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="none" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc(baseName)} · 点此打开大屏预览</span>`;
       }
     }
 
@@ -3734,9 +3739,9 @@ export function initHubController() {
         : '';
       const previewBodyHtml = kind === 'video'
         ? `<div class="file-preview-body" style="padding:16px 12px;background:#0f172a;min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
-               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
+               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? '1' : '0'}" controls playsinline webkit-playsinline preload="metadata" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
-                 <span style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
+                 <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
                  <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', true)">${esc(videoMetaUi.toggleLabel)}</button>
                  ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl)}', '${esc(preview.name || 'video.mp4')}', this)">⬇️ 保存/分享视频</button>` : ''}
                </div>
@@ -3782,6 +3787,9 @@ export function initHubController() {
         `;
       if (isMarkdown && !rawMdMode) {
         void hydrateInlineChatImages(found.session, body);
+      } else if (kind === 'video') {
+        const vidEl = body.querySelector('video.file-preview-video');
+        if (vidEl) void maybeAccelerateVideoViaP2p(vidEl);
       }
       return;
     }
@@ -3912,6 +3920,12 @@ export function initHubController() {
         toggleLabel: '🎞️ 尝试原片直出',
       };
     }
+    if (Number(preview?.size || 0) > 4 * 1024 * 1024) {
+      return {
+        badge: '⚡ 720p 极速秒看流 · 拖动秒播',
+        toggleLabel: '🎞️ 尝试原片直出',
+      };
+    }
     if (strategy === 'remux') {
       return {
         badge: '无损快启重封装 · 拖动秒播',
@@ -3929,6 +3943,7 @@ export function initHubController() {
     try {
       const u = new URL(rawSrc, typeof location !== 'undefined' ? location.origin : 'http://localhost');
       u.searchParams.delete('raw');
+      u.searchParams.delete('preview');
       u.searchParams.set('transcode', '1');
       const freshMt = hubState.mediaTicket || '';
       if (freshMt) {
@@ -3940,8 +3955,128 @@ export function initHubController() {
     }
   }
 
+  function buildRetryFreshVideoSrc(rawSrc) {
+    if (!rawSrc || !rawSrc.includes('/fs/stream')) return '';
+    try {
+      const u = new URL(rawSrc, typeof location !== 'undefined' ? location.origin : 'http://localhost');
+      const freshMt = hubState.mediaTicket || '';
+      if (freshMt) {
+        u.searchParams.set('mt', freshMt);
+      }
+      u.searchParams.set('_r', String(Date.now()));
+      return `${u.pathname}?${u.searchParams.toString()}`;
+    } catch {
+      return '';
+    }
+  }
+
+  const p2pVideoBlobCache = new Map();
+
+  function clearSmartVideoErrorBanner(videoEl) {
+    if (!videoEl) return;
+    if (videoEl.dataset) {
+      delete videoEl.dataset.dshErrorBannerShown;
+    }
+    const parent = videoEl.parentElement;
+    if (!parent) return;
+    parent.querySelectorAll('[data-dsh-error-tip], [data-dsh-fallback-dl]').forEach(el => {
+      try {
+        el.remove();
+      } catch {}
+    });
+  }
+
+  async function maybeAccelerateVideoViaP2p(videoEl, { fromErrorFallback = false } = {}) {
+    if (!videoEl) return false;
+    if (videoEl.dataset?.dshP2pUpgraded === '1') return true;
+    if (videoEl.__dshP2pPromise) {
+      return videoEl.__dshP2pPromise;
+    }
+    const rawSrc = videoEl.getAttribute('src') || videoEl.currentSrc || '';
+    if (!rawSrc || rawSrc.startsWith('blob:') || !rawSrc.includes('/fs/stream')) {
+      return false;
+    }
+
+    const cacheKey = rawSrc.replace(/([?&])_r=[^&]+/g, '').replace(/[?&]$/, '');
+    const cachedBlobUrl = p2pVideoBlobCache.get(cacheKey);
+    if (cachedBlobUrl) {
+      swapVideoElementToBlobUrl(videoEl, cachedBlobUrl);
+      return true;
+    }
+
+    videoEl.dataset.dshP2pInflight = '1';
+    const runPromise = (async () => {
+      try {
+        const p2pRes = await fetchMediaViaWebRtc(rawSrc, {
+          token: getToken(),
+          mediaTicket: hubState.mediaTicket || '',
+          maxBytes: 48 * 1024 * 1024,
+          connectTimeoutMs: fromErrorFallback ? 2000 : 1400,
+        });
+        if (!p2pRes?.ok || !p2pRes.blob || !videoEl.isConnected) {
+          return false;
+        }
+        const blobUrl = URL.createObjectURL(p2pRes.blob);
+        p2pVideoBlobCache.set(cacheKey, blobUrl);
+        while (p2pVideoBlobCache.size > 12) {
+          const oldestKey = p2pVideoBlobCache.keys().next().value;
+          const oldUrl = p2pVideoBlobCache.get(oldestKey);
+          p2pVideoBlobCache.delete(oldestKey);
+          if (oldUrl) {
+            try { URL.revokeObjectURL(oldUrl); } catch {}
+          }
+        }
+        swapVideoElementToBlobUrl(videoEl, blobUrl);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        delete videoEl.__dshP2pPromise;
+        if (videoEl.dataset) {
+          delete videoEl.dataset.dshP2pInflight;
+        }
+      }
+    })();
+    videoEl.__dshP2pPromise = runPromise;
+    return runPromise;
+  }
+
+  function swapVideoElementToBlobUrl(videoEl, blobUrl) {
+    if (!videoEl || !blobUrl) return;
+    const wasPaused = videoEl.paused;
+    const savedTime = Number(videoEl.currentTime) || 0;
+    const savedRate = Number(videoEl.playbackRate) || 1;
+    clearSmartVideoErrorBanner(videoEl);
+    videoEl.dataset.dshP2pUpgraded = '1';
+    videoEl.src = blobUrl;
+    const restoreState = () => {
+      try {
+        if (savedTime > 0.1 && Number.isFinite(videoEl.duration) && savedTime < videoEl.duration) {
+          videoEl.currentTime = savedTime;
+        }
+        if (savedRate !== 1) {
+          videoEl.playbackRate = savedRate;
+        }
+        if (!wasPaused) {
+          void videoEl.play()?.catch?.(() => {});
+        }
+      } catch {}
+    };
+    videoEl.addEventListener('loadedmetadata', restoreState, { once: true });
+    const statusEl = videoEl.parentElement?.querySelector?.('[data-dsh-video-status="1"]');
+    if (statusEl && statusEl.textContent) {
+      const prefix = statusEl.textContent.split('·')[0].trim();
+      statusEl.textContent = `${prefix} · ⚡ P2P 极速直连 · 零缓冲秒播`;
+      if (langPref === 'en') applyLangToDom(videoEl.parentElement, langPref);
+    }
+  }
+
   function onSmartVideoLoadedMeta(videoEl) {
-    if (!videoEl || videoEl.dataset?.dshFallbackTried === '1') return;
+    if (!videoEl) return;
+    if (videoEl.videoWidth > 0) {
+      clearSmartVideoErrorBanner(videoEl);
+    }
+    if (videoEl.dataset?.dshFallbackTried === '1') return;
     if (videoEl.videoWidth === 0 && Number(videoEl.duration) > 0) {
       const nextSrc = buildTranscodeFallbackSrc(videoEl.getAttribute('src') || videoEl.currentSrc || '');
       if (!nextSrc) return;
@@ -3954,10 +4089,39 @@ export function initHubController() {
     }
   }
 
-  function onSmartVideoError(videoEl) {
+  async function onSmartVideoError(videoEl) {
     if (!videoEl) return;
+    if (videoEl.error?.code === 1) return;
     const currentSrc = videoEl.getAttribute('src') || videoEl.currentSrc || '';
-    if (videoEl.dataset?.dshFallbackTried !== '1') {
+    if (!currentSrc || currentSrc.startsWith('blob:') || videoEl.dataset?.dshP2pUpgraded === '1') return;
+
+    // 1. 优先尝试或等待进行中的 WebRTC P2P 直连恢复（绕开跨洋网关超时）
+    if (videoEl.dataset?.dshP2pFallbackTried !== '1' || videoEl.__dshP2pPromise) {
+      videoEl.dataset.dshP2pFallbackTried = '1';
+      const recoveredViaP2p = await maybeAccelerateVideoViaP2p(videoEl, { fromErrorFallback: true });
+      if (recoveredViaP2p || videoEl.dataset?.dshP2pUpgraded === '1') return;
+    }
+
+    const alreadyCompatOrDirect =
+      videoEl.dataset?.dshUniversalDirect === '1' ||
+      currentSrc.includes('preview=1') ||
+      currentSrc.includes('transcode=1');
+
+    // 2. 若原视频本来就是标准 H.264（报错来自网络抖动而非编码不兼容），原地刷新票据重试一次，绝不盲目重压转码！
+    if (alreadyCompatOrDirect && videoEl.dataset?.dshNetRetryTried !== '1') {
+      const retrySrc = buildRetryFreshVideoSrc(currentSrc);
+      if (retrySrc) {
+        videoEl.dataset.dshNetRetryTried = '1';
+        videoEl.src = retrySrc;
+        try {
+          videoEl.load();
+        } catch {}
+        return;
+      }
+    }
+
+    // 3. 仅对尚未确认兼容编码的视频回退到电脑端 H.264 转码流
+    if (!alreadyCompatOrDirect && videoEl.dataset?.dshFallbackTried !== '1') {
       const nextSrc = buildTranscodeFallbackSrc(currentSrc);
       if (nextSrc && nextSrc !== currentSrc) {
         videoEl.dataset.dshFallbackTried = '1';
@@ -3969,7 +4133,8 @@ export function initHubController() {
         return;
       }
     }
-    if (videoEl.dataset?.dshErrorBannerShown === '1') return;
+
+    if (videoEl.dataset?.dshP2pUpgraded === '1' || videoEl.dataset?.dshErrorBannerShown === '1') return;
     videoEl.dataset.dshErrorBannerShown = '1';
     const parent = videoEl.parentElement;
     if (!parent) return;
@@ -3982,7 +4147,9 @@ export function initHubController() {
         const base = rawPath.split('/').filter(Boolean).pop();
         if (base) dlName = base;
         u.searchParams.delete('transcode');
+        u.searchParams.delete('preview');
         u.searchParams.delete('raw');
+        u.searchParams.delete('_r');
         u.searchParams.set('download', '1');
         const freshMt = hubState.mediaTicket || '';
         if (freshMt) u.searchParams.set('mt', freshMt);
@@ -3990,8 +4157,9 @@ export function initHubController() {
       }
     } catch { }
     const tip = document.createElement('div');
+    tip.dataset.dshErrorTip = '1';
     tip.style.cssText = 'font-size:12px;color:#fca5a5;text-align:center;padding:6px 10px;line-height:1.5;';
-    tip.textContent = '⚠️ 当前无法直接在线解码此视频（若该电脑端版本较旧，可在设置页点一键升级守护进程），可点下方保存原片观看';
+    tip.textContent = '⚠️ 当前网络波动未能完成在线加载，可点下方高速分片下载到本地观看';
     parent.appendChild(tip);
     if (dlHref && !parent.querySelector('[data-dsh-fallback-dl]')) {
       const btn = document.createElement('button');
@@ -4024,13 +4192,16 @@ export function initHubController() {
     const preview = target || host?.lastFilePreview;
     if (!preview) return;
     const autoTranscode = preview?.videoProbe?.strategy === 'transcode';
-    if (autoTranscode) {
+    const isLargeFastPreview = Number(preview?.size || 0) > 4 * 1024 * 1024 && !autoTranscode;
+    if (autoTranscode || isLargeFastPreview) {
       preview._rawVideo = !preview._rawVideo;
       preview._transcodeVideo = false;
       showToast(
         preview._rawVideo
-          ? '🎞️ 已切换为原始视频字节直出（部分手机不支持 4:4:4 等专业编码）'
-          : '⚡ 已切回电脑端智能 H.264 兼容流'
+          ? '🎞️ 已切换为无损原片直出流'
+          : isLargeFastPreview
+            ? '⚡ 已切回 720p 手机极速秒看流'
+            : '⚡ 已切回电脑端智能 H.264 兼容流'
       );
     } else {
       preview._rawVideo = false;
@@ -4380,94 +4551,181 @@ export function initHubController() {
       btnEl.textContent = '⏳ 准备中…';
     }
 
+    let wakeLockSentinel = null;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.wakeLock?.request) {
+        wakeLockSentinel = await navigator.wakeLock.request('screen').catch(() => null);
+      }
+    } catch { }
+
     try {
       const token = getToken();
-      const baseAuthHeaders = token ? { authorization: `Bearer ${token}` } : {};
-      const parseContentRangeInfo = headerVal => {
-        const m = /bytes\s+(\d+)-(\d+)\/(\d+)/i.exec(String(headerVal || '').trim());
-        if (!m) return null;
-        return { start: Number(m[1]), end: Number(m[2]), total: Number(m[3]) };
-      };
-      const readSliceIntoChunks = async (resp, outChunks, progState) => {
-        if (resp.body && typeof resp.body.getReader === 'function') {
-          const reader = resp.body.getReader();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            if (value) {
-              outChunks.push(value);
-              progState.received += value.byteLength;
-              if (btnEl) {
-                if (progState.totalBytes > 0) {
-                  const pct = Math.min(99, Math.round((progState.received / progState.totalBytes) * 100));
-                  btnEl.textContent = `⏳ 拉取中 ${pct}%…`;
-                } else {
-                  btnEl.textContent = `⏳ 已拉取 ${formatBytes(progState.received)}…`;
+      const freshMt = hubState.mediaTicket || '';
+      let effectiveDlUrl = String(dlUrl || '');
+      const isDataUrl = effectiveDlUrl.startsWith('data:');
+      if (!isDataUrl && freshMt && effectiveDlUrl.includes('/fs/stream')) {
+        try {
+          const u = new URL(effectiveDlUrl, typeof location !== 'undefined' ? location.origin : 'http://localhost');
+          u.searchParams.set('mt', freshMt);
+          effectiveDlUrl = `${u.pathname}?${u.searchParams.toString()}`;
+        } catch { }
+      }
+
+      const guessMimeByName = nameStr =>
+        /\.png$/i.test(nameStr)
+          ? 'image/png'
+          : /\.(jpe?g)$/i.test(nameStr)
+            ? 'image/jpeg'
+            : /\.webp$/i.test(nameStr)
+              ? 'image/webp'
+              : /\.gif$/i.test(nameStr)
+                ? 'image/gif'
+                : /\.svg$/i.test(nameStr)
+                  ? 'image/svg+xml'
+                  : /\.mp4$/i.test(nameStr)
+                    ? 'video/mp4'
+                    : /\.mov$/i.test(nameStr)
+                      ? 'video/quicktime'
+                      : /\.webm$/i.test(nameStr)
+                        ? 'video/webm'
+                        : 'application/octet-stream';
+
+      let blob = null;
+      let mimeType = guessMimeByName(safeName);
+
+      // 优先尝试方案 2：WebRTC P2P DataChannel 点对点极速直传（同 Wi-Fi / Tailscale / 国内直连跑满带宽）
+      const streamDesc = !isDataUrl ? parseStreamUrlDescriptor(effectiveDlUrl) : null;
+      if (streamDesc) {
+        const p2pOut = await fetchMediaViaWebRtc(effectiveDlUrl, {
+          token,
+          mediaTicket: freshMt || streamDesc.mt,
+          download: true,
+          fastPreview: false,
+          raw: true,
+          transcode: false,
+          connectTimeoutMs: 1500,
+          onProgress: ({ received, totalBytes }) => {
+            if (!btnEl) return;
+            if (totalBytes > 0) {
+              const pct = Math.min(99, Math.round((received / totalBytes) * 100));
+              btnEl.textContent = `⚡ 直连拉取 ${pct}%…`;
+            } else if (received > 0) {
+              btnEl.textContent = `⚡ 已直连拉取 ${formatBytes(received)}…`;
+            }
+          },
+        });
+        if (p2pOut?.ok && p2pOut.blob) {
+          blob = p2pOut.blob;
+          mimeType = (p2pOut.mime || '').split(';')[0].trim() || mimeType;
+        }
+      }
+
+      // 方案 1 保底：2 MiB 小分片 × 3 路并发流水线 + 单片 3 次指数退避自动重试（彻底杜绝 16 MiB 单包撞 Cloud Run 60s 504 超时）
+      if (!blob) {
+        const baseAuthHeaders = token ? { authorization: `Bearer ${token}` } : {};
+        const DOWNLOAD_SLICE_BYTES = 2 * 1024 * 1024;
+        const parseContentRangeInfo = headerVal => {
+          const m = /bytes\s+(\d+)-(\d+)\/(\d+)/i.exec(String(headerVal || '').trim());
+          if (!m) return null;
+          return { start: Number(m[1]), end: Number(m[2]), total: Number(m[3]) };
+        };
+        const updateBtnProgress = (received, totalBytes) => {
+          if (!btnEl) return;
+          if (totalBytes > 0) {
+            const pct = Math.min(99, Math.round((received / totalBytes) * 100));
+            btnEl.textContent = `⏳ 拉取中 ${pct}%…`;
+          } else {
+            btnEl.textContent = `⏳ 已拉取 ${formatBytes(received)}…`;
+          }
+        };
+        const fetchSliceBytesWithRetry = async (extraHeaders = {}, onDelta = null) => {
+          let lastErr = null;
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            let attemptAdded = 0;
+            try {
+              const resp = isDataUrl
+                ? await fetch(effectiveDlUrl)
+                : await fetch(effectiveDlUrl, { headers: { ...baseAuthHeaders, ...extraHeaders } });
+              if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}`);
+              }
+              const chunks = [];
+              if (resp.body && typeof resp.body.getReader === 'function') {
+                const reader = resp.body.getReader();
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  if (value) {
+                    chunks.push(value);
+                    attemptAdded += value.byteLength;
+                    onDelta?.(value.byteLength);
+                  }
                 }
+              } else {
+                const u8 = new Uint8Array(await resp.arrayBuffer());
+                chunks.push(u8);
+                attemptAdded += u8.byteLength;
+                onDelta?.(u8.byteLength);
+              }
+              return { resp, chunks };
+            } catch (err) {
+              if (attemptAdded > 0) onDelta?.(-attemptAdded);
+              lastErr = err;
+              if (attempt < 2) {
+                await new Promise(r => setTimeout(r, 450 * (attempt + 1)));
               }
             }
           }
-        } else {
-          const ab = await resp.arrayBuffer();
-          const u8 = new Uint8Array(ab);
-          outChunks.push(u8);
-          progState.received += u8.byteLength;
-        }
-      };
+          throw lastErr || new Error('分片拉取失败');
+        };
 
-      const isDataUrl = String(dlUrl || '').startsWith('data:');
-      const res = isDataUrl ? await fetch(dlUrl) : await fetch(dlUrl, { headers: baseAuthHeaders });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const firstCr = res.status === 206 ? parseContentRangeInfo(res.headers.get('content-range')) : null;
-      const totalBytes = firstCr?.total || Number(res.headers.get('content-length') || 0);
-      const mimeType =
-        (res.headers.get('content-type') || '').split(';')[0].trim() ||
-        (/\.png$/i.test(safeName)
-          ? 'image/png'
-          : /\.(jpe?g)$/i.test(safeName)
-            ? 'image/jpeg'
-            : /\.webp$/i.test(safeName)
-              ? 'image/webp'
-              : /\.gif$/i.test(safeName)
-                ? 'image/gif'
-                : /\.svg$/i.test(safeName)
-                  ? 'image/svg+xml'
-                  : /\.mp4$/i.test(safeName)
-                    ? 'video/mp4'
-                    : /\.mov$/i.test(safeName)
-                      ? 'video/quicktime'
-                      : /\.webm$/i.test(safeName)
-                        ? 'video/webm'
-                        : 'application/octet-stream');
+        let receivedBytes = 0;
+        let knownTotalBytes = 0;
+        const firstExtraHeaders = !isDataUrl && streamDesc ? { Range: `bytes=0-${DOWNLOAD_SLICE_BYTES - 1}` } : {};
+        const firstSlice = await fetchSliceBytesWithRetry(firstExtraHeaders, delta => {
+          receivedBytes = Math.max(0, receivedBytes + delta);
+          updateBtnProgress(receivedBytes, knownTotalBytes);
+        });
+        const firstResp = firstSlice.resp;
+        const firstCr = firstResp.status === 206 ? parseContentRangeInfo(firstResp.headers.get('content-range')) : null;
+        knownTotalBytes = firstCr?.total || Number(firstResp.headers.get('content-length') || 0);
+        mimeType = (firstResp.headers.get('content-type') || '').split(';')[0].trim() || mimeType;
+        updateBtnProgress(receivedBytes, knownTotalBytes);
 
-      const allChunks = [];
-      const progState = { received: 0, totalBytes };
-      await readSliceIntoChunks(res, allChunks, progState);
-
-      // 若原文件大于 16 MiB（触发 HTTP 206 分片），自动循环顺序拼接剩余字节，彻底杜绝大视频截断
-      if (firstCr && firstCr.end + 1 < firstCr.total) {
-        let nextStart = firstCr.end + 1;
-        for (let partIdx = 0; partIdx < 64 && nextStart < firstCr.total; partIdx += 1) {
-          const partRes = await fetch(dlUrl, {
-            headers: {
-              ...baseAuthHeaders,
-              Range: `bytes=${nextStart}-`,
-            },
-          });
-          if (!partRes.ok) {
-            throw new Error(`HTTP ${partRes.status}`);
+        if (firstCr && firstCr.end + 1 < firstCr.total) {
+          const ranges = [];
+          for (let s = firstCr.end + 1; s < firstCr.total; s += DOWNLOAD_SLICE_BYTES) {
+            const e = Math.min(firstCr.total - 1, s + DOWNLOAD_SLICE_BYTES - 1);
+            ranges.push({ start: s, end: e });
           }
-          const partCr = parseContentRangeInfo(partRes.headers.get('content-range'));
-          const prevReceived = progState.received;
-          await readSliceIntoChunks(partRes, allChunks, progState);
-          const gotBytes = progState.received - prevReceived;
-          if (gotBytes <= 0) break;
-          nextStart = partCr ? partCr.end + 1 : nextStart + gotBytes;
+          const orderedPartChunks = new Array(ranges.length + 1);
+          orderedPartChunks[0] = firstSlice.chunks;
+          let nextIdx = 0;
+          const workerCount = Math.min(3, ranges.length);
+          const workers = Array.from({ length: workerCount }, async () => {
+            while (nextIdx < ranges.length) {
+              const myIdx = nextIdx++;
+              const { start, end } = ranges[myIdx];
+              const partOut = await fetchSliceBytesWithRetry(
+                { Range: `bytes=${start}-${end}` },
+                delta => {
+                  receivedBytes = Math.max(0, receivedBytes + delta);
+                  updateBtnProgress(receivedBytes, knownTotalBytes);
+                }
+              );
+              orderedPartChunks[myIdx + 1] = partOut.chunks;
+            }
+          });
+          await Promise.all(workers);
+          const flatChunks = [];
+          for (const group of orderedPartChunks) {
+            if (Array.isArray(group)) flatChunks.push(...group);
+          }
+          blob = new Blob(flatChunks, { type: mimeType });
+        } else {
+          blob = new Blob(firstSlice.chunks, { type: mimeType });
         }
       }
-      const blob = new Blob(allChunks, { type: mimeType });
 
       const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
       const preferNativeShare =
@@ -4528,6 +4786,9 @@ export function initHubController() {
     } catch (err) {
       showToast('❌ 保存失败：' + ((err && err.message) || String(err)));
     } finally {
+      if (wakeLockSentinel) {
+        try { await wakeLockSentinel.release(); } catch { }
+      }
       if (btnEl && !btnEl.__readyShareFile) {
         btnEl.dataset.downloading = '0';
         btnEl.disabled = false;
@@ -4625,9 +4886,9 @@ export function initHubController() {
         : '';
       const previewBodyHtml = kind === 'video'
         ? `<div class="file-preview-body" style="padding:18px 14px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
-               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
+               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? '1' : '0'}" controls playsinline webkit-playsinline preload="metadata" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
-                 <span style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
+                 <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
                  <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', false)">${esc(videoMetaUi.toggleLabel)}</button>
                  ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc(dlUrl)}', '${esc(preview.name || 'video.mp4')}', this)">⬇️ 保存/分享视频</button>` : ''}
                </div>
@@ -4674,6 +4935,9 @@ export function initHubController() {
         `;
       if (isMarkdown && !rawMdMode && firstSession) {
         void hydrateInlineChatImages({ ...firstSession, hostId: host.hostId }, container);
+      } else if (kind === 'video') {
+        const vidEl = container.querySelector('video.file-preview-video');
+        if (vidEl) void maybeAccelerateVideoViaP2p(vidEl);
       }
       return;
     }
@@ -7682,6 +7946,7 @@ export function initHubController() {
     downloadPreviewMedia,
     toggleOriginalPreviewImage,
     switchVideoTranscodeMode,
+    maybeAccelerateVideoViaP2p,
     onSmartVideoLoadedMeta,
     onSmartVideoError,
     dismissOverlay,

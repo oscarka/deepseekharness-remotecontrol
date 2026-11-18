@@ -199,6 +199,14 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-18 · v0.7.8</code> — Zero-Dependency WebRTC P2P Video Acceleration &amp; Small-Chunk Cloud Run Pipeline</strong></summary>
+
+- **Zero-Dependency WebRTC `RTCDataChannel` P2P Media Acceleration (`v0.7.8`)**: Added a pure-Node.js WebRTC `RTCDataChannel` engine (`dsh-feishu/lib/webrtc-p2p.js`: ICE LAN/Tailscale + STUN `srflx` UDP hole-punching, DTLS 1.2 `ECDHE-ECDSA-AES128-GCM-SHA256` with RFC 7627 `extended_master_secret`, and SCTP CRC-32c + sliding-window `SACK` retransmission — zero npm dependencies) paired with a browser `RTCPeerConnection` pool (`webrtcMedia.js`) signaled over `POST /api/hosts/:hostId/fs/rtc-offer`. Mobile `<video>` previews (`⚡ P2P Direct · Zero-Buffer`) and lossless **`⬇️ Save / Share Video`** downloads bypass cross-ocean Cloud Run relays whenever direct LAN/Tailscale/NAT UDP connectivity succeeds, falling back automatically within `1.5s` when UDP is blocked.
+- **Small-Chunk `HTTP 206` Pipeline, 720p Fast-Preview &amp; `fs_abort` Zombie Cleanup (`v0.7.8`)**: Eliminated Cloud Run `60s -> HTTP 504` gateway timeouts caused by GFE HTTP/1.1 request-body buffering on `16 MiB` `/api/fs-tunnel` slices (`workspace-ops.js` / `hub-core.js` / `hub-agent.js` / `controller.js`): capped video Range slices to **`1 MiB` initial (`start === 0`)** + **`2 MiB` subsequent**, defaulted `> 4 MiB` mobile video playback to a **`720p` hardware-accelerated fast-preview stream (`?preview=1`)** with a 1-tap **`🎞️ Try Raw Stream`** toggle while keeping **`⬇️ Save / Share Video`** 100% lossless (`2 MiB × 3` concurrent Range workers + 3 retries + `navigator.wakeLock`), propagated client disconnects via `event: fs_abort` to abort dead Mac uploads immediately, stopped misdiagnosing `504` timeouts as codec errors, and unlocked read-only `/tmp` media previews.
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-17 · v0.7.7</code> — Eliminate Ghost Sent Drafts in Mobile Input Box</strong></summary>
 
 - **Self-Healing Sent Draft Reconciliation & iOS IME / 5G Drop Protection (`v0.7.7`)**: Fixed already-sent messages occasionally reappearing in `#globalPromptInput` when reopening a conversation (`controller.js` / `ChatStage.tsx`): added mobile touch `blur()` + `onMouseDown` focus guard + `lastSentComposerGuard` to block delayed iOS keyboard dictation / Pinyin IME ghost `input` commits after tapping **Send**; verified server delivery (`hasCommandOrPromptDelivered`) before restoring text on mobile 5G / lock-screen `Load failed` socket drops; and added wire-baseline `reconcileDeliveredComposerDraft` so both newly delivered prompts and legacy pre-`v0.7.7` stale `localStorage` drafts are purged automatically while preserving genuine repeat unsent drafts.

@@ -199,6 +199,14 @@ docker run -d --name dsh-hub \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-18 · v0.7.8</code> — 零外部依赖 WebRTC P2P 视频直连加速 &amp; Cloud Run 小分片防超时流水线</strong></summary>
+
+- **零外部依赖 WebRTC `RTCDataChannel` 点对点媒体直连引擎（`v0.7.8`）**：基于 Node.js 原生内置模块手写完整 WebRTC 服务端协议栈（[`webrtc-p2p.js`](dsh-feishu/lib/webrtc-p2p.js)：ICE 局域网 / Tailscale / STUN `srflx` UDP 打洞 + DTLS 1.2 `ECDHE-ECDSA-AES128-GCM-SHA256` 含 RFC 7627 `extended_master_secret` + SCTP CRC-32c 与滑动窗口 `SACK` 丢包重传，零 npm 运行时依赖，老机器免重装依赖直接生效），配合前端按机器复用的连接池（[`webrtcMedia.js`](hub/web/src/utils/webrtcMedia.js)）与 `/fs/rtc-offer` 信令交换；手机看视频（`⚡ P2P 极速直连 · 零缓冲秒播`）与点击 **`⬇️ 保存/分享视频`** 自动优先走手机 ⇄ Mac 直连通道，跨网严格对称 NAT 打不通时 `1.5s` 内无感回退 HTTP 小分片流水线。
+- **Cloud Run 小分片防超时流水线、720p 手机极速秒看流与 `fs_abort` 断流秒停（`v0.7.8`）**：根治 Google Cloud Run 前端网关缓冲整包 HTTP/1.1 请求体导致 `16 MiB` 单分片在跨洋上行抖动时触发 `60s -> HTTP 504` 超时及死包占满带宽的问题（[`workspace-ops.js`](dsh-feishu/lib/workspace-ops.js) / [`hub-core.js`](hub/hub-core.js) / [`hub-agent.js`](dsh-feishu/lib/hub-agent.js) / [`controller.js`](hub/web/src/controller.js)）——视频首包限幅 **`1 MiB`** 秒开首帧、后续分片限幅 **`2 MiB`**；`> 4 MiB` 大视频在线预览默认启用 **`720p` 硬件加速轻量秒看流（`?preview=1`）**（保留 **`🎞️ 尝试原片直出`** 一键切换，且 **`⬇️ 保存/分享视频`** 始终拉取 100% 无损原片，升级为 **`2 MiB × 3` 路并发 + 单片 3 次自动重试 + `WakeLock` 防锁屏断流**）；新增 Host SSE `event: fs_abort` 实时掐断手机已取消的废弃上传流；修复 `504` 网络波动被误判成编码不兼容触发二次重压转码的问题，并放开 `/tmp` 临时目录安全音视频/图片只读预览。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-17 · v0.7.7</code> — 修复已发送消息偶发残留在输入框草稿中的问题</strong></summary>
 
 - **已送达消息草稿自愈清理 &amp; iOS 输入法 / 5G 切后台防残影回写（`v0.7.7`）**：彻底根治已发出的消息在重新打开会话时偶发回到输入框的问题（[`controller.js`](hub/web/src/controller.js) / [`ChatStage.tsx`](hub/web/src/components/ChatStage.tsx)）——发送时同步收起手机输入法缓冲并加装 `lastSentComposerGuard` 拦截 iOS 系统键盘听写/拼音延迟回写；5G 切后台锁屏触发 `Load failed` 时先向服务端核验 `clientCmdId` 与对话尾部记录，已送达则绝不误回填；新增基于消息基线计数的 `reconcileDeliveredComposerDraft` 对账机制，自动清除跨端已发或旧版遗留在 `localStorage` 中的陈旧草稿，同时完整保留用户真正重打的同词未发草稿。

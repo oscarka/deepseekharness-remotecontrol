@@ -49,12 +49,14 @@ import {
   loadOrCreateHostIdentity,
   openWorkspaceFileStream,
   persistCommandAttachments,
+  prepareWorkspaceFileStream,
   readPendingDshInteractions,
   readWorkspaceFileFastMeta,
   removePendingDshInteraction,
   renameDiskSession,
   writePendingDshInteractionResponse,
 } from './workspace-ops.js'
+import { WebRtcMediaServer } from './webrtc-p2p.js'
 
 /**
  * Outbound agent that synchronizes a local DSH host with the Cloud Run Control Hub
@@ -193,6 +195,9 @@ export class HubAgent {
     this.lastAdaptersHealthAt = 0
     this.executedIds = new Set()
     this.handledFsReqIds = new Set()
+    this.abortedFsReqIds = new Set()
+    this.inflightFsUploads = new Map()
+    this.webrtcServer = null
     this.prewarmedArtifactMtimes = new Map()
     this.identity = null
     this.turbo = null
@@ -256,6 +261,9 @@ export class HubAgent {
       onFsRequest: fsReq => {
         void this.handleFastFsRequest(fsReq)
       },
+      onFsAbort: payload => {
+        this.abortFastFsRequest(payload?.reqId)
+      },
     })
     void this.turbo.start()
     this.timer = setInterval(() => {
@@ -271,6 +279,17 @@ export class HubAgent {
       this.turbo.stop()
       this.turbo = null
     }
+    if (this.webrtcServer) {
+      this.webrtcServer.closeAll()
+      this.webrtcServer = null
+    }
+    for (const entry of this.inflightFsUploads.values()) {
+      try {
+        entry.abortController?.abort()
+        entry.nodeStream?.destroy?.()
+      } catch {}
+    }
+    this.inflightFsUploads.clear()
     if (this.followUpTimer) {
       clearTimeout(this.followUpTimer)
       this.followUpTimer = null
@@ -556,10 +575,56 @@ export class HubAgent {
     return prewarmed
   }
 
+  ensureWebRtcServer() {
+    if (!this.webrtcServer) {
+      this.webrtcServer = new WebRtcMediaServer({
+        enablePublicStun: this.fetch === globalThis.fetch,
+        onStreamRequest: (req, ctx = {}) => this.handleWebRtcStreamRequest(req, ctx),
+      })
+    }
+    return this.webrtcServer
+  }
+
+  async handleWebRtcStreamRequest(req = {}, ctx = {}) {
+    const rootCwd = this.resolveFsRootCwd(req.cwd || ctx.cwd || '', req.agentId || ctx.agentId || '')
+    return prepareWorkspaceFileStream(rootCwd, String(req.path || ''), {
+      rangeHeader: String(req.rangeHeader || ''),
+      thumb: Boolean(req.thumb),
+      transcode: Boolean(req.transcode),
+      fastPreview: Boolean(req.fastPreview),
+      download: Boolean(req.download),
+      raw: Boolean(req.raw),
+      skipChunkCap: true,
+      dshHome: this.config?.dshHome || '',
+      extraRoots: this.resolveExtraArtifactRoots(),
+      execImpl: this.execImpl,
+    })
+  }
+
+  abortFastFsRequest(reqId) {
+    const cleanId = String(reqId ?? '').trim()
+    if (!cleanId) return
+    this.abortedFsReqIds.add(cleanId)
+    while (this.abortedFsReqIds.size > 500) {
+      const oldest = this.abortedFsReqIds.values().next().value
+      this.abortedFsReqIds.delete(oldest)
+    }
+    const inflight = this.inflightFsUploads.get(cleanId)
+    if (inflight) {
+      this.inflightFsUploads.delete(cleanId)
+      try {
+        inflight.abortController?.abort()
+      } catch {}
+      try {
+        inflight.nodeStream?.destroy?.()
+      } catch {}
+    }
+  }
+
   async handleFastFsRequest(fsReq = {}) {
     const reqId = String(fsReq?.reqId ?? '').trim()
     if (!reqId || this.disposed || !this.config?.hubUrl) return
-    if (this.handledFsReqIds.has(reqId)) return
+    if (this.handledFsReqIds.has(reqId) || this.abortedFsReqIds.has(reqId)) return
     this.handledFsReqIds.add(reqId)
     while (this.handledFsReqIds.size > 500) {
       const oldest = this.handledFsReqIds.values().next().value
@@ -570,6 +635,26 @@ export class HubAgent {
     const targetUrl = `${this.config.hubUrl.replace(/\/+$/, '')}/api/fs-tunnel/${encodeURIComponent(reqId)}`
 
     try {
+      if (op === 'rtc_offer') {
+        const rtcAns = await this.ensureWebRtcServer().acceptOffer(String(fsReq.sdp || ''), {
+          cwd: rootCwd,
+          agentId: fsReq.agentId || '',
+        })
+        await this.fetch(targetUrl, {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify({
+            meta: {
+              ...rtcAns,
+              status: rtcAns.ok ? 200 : rtcAns.status || 400,
+              hostId: this.config.hostId,
+              agentId: fsReq.agentId || '',
+            },
+          }),
+        })
+        return
+      }
+
       if (op === 'list') {
         const listed = await listWorkspaceFiles(rootCwd, String(fsReq.path || ''))
         await this.fetch(targetUrl, {
@@ -611,12 +696,14 @@ export class HubAgent {
         ifNoneMatch: String(fsReq.ifNoneMatch || ''),
         thumb: Boolean(fsReq.thumb),
         transcode: Boolean(fsReq.transcode),
+        fastPreview: Boolean(fsReq.fastPreview),
         download: Boolean(fsReq.download),
         raw: Boolean(fsReq.raw),
         dshHome: this.config?.dshHome || '',
         extraRoots: this.resolveExtraArtifactRoots(),
         execImpl: this.execImpl,
       })
+      if (this.abortedFsReqIds.has(reqId)) return
       const { buffer, createBodyStream, ...metaRest } = streamRes
       const metaHeader = Buffer.from(
         JSON.stringify({
@@ -628,6 +715,8 @@ export class HubAgent {
       ).toString('base64url')
       if (typeof createBodyStream === 'function' && Number(metaRest.byteLength) > 0) {
         const nodeStream = createBodyStream()
+        const abortController = new AbortController()
+        this.inflightFsUploads.set(reqId, { abortController, nodeStream })
         try {
           await this.fetch(targetUrl, {
             method: 'POST',
@@ -638,9 +727,12 @@ export class HubAgent {
             }),
             body: Readable.toWeb(nodeStream),
             duplex: 'half',
+            signal: abortController.signal,
           })
         } catch {
           nodeStream.destroy?.()
+        } finally {
+          this.inflightFsUploads.delete(reqId)
         }
         return
       }
@@ -655,6 +747,7 @@ export class HubAgent {
         body: fallbackBuf,
       })
     } catch (error) {
+      if (this.abortedFsReqIds.has(reqId)) return
       try {
         await this.fetch(targetUrl, {
           method: 'POST',
