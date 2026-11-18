@@ -1,6 +1,6 @@
 {
   "name": "deepseekharness-remotecontrol",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "type": "module",
   "license": "MIT",
   "description": "Mobile Web & Feishu Remote Control Hub for DeepSeek Harness (DSH), Antigravity, Codex, Claude Code, WorkBuddy, and Doubao.",
@@ -81,6 +81,7 @@
     "test": "node --test dsh-feishu/test/*.test.js"
   },
   "devDependencies": {
+    "hls.js": "^1.5.17",
     "preact": "^11.1.1",
     "vite": "^8.3.5"
   }

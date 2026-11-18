@@ -36,8 +36,11 @@ export function renderInlineMarkdown(rawLine: string): string {
           ? (window as any).__dshInlineVideoCache[cleanPath]
           : '';
       if (cachedVideoSrc) {
+        const cachedHlsSrc = String(cachedVideoSrc).includes('/fs/stream?')
+          ? String(cachedVideoSrc).replace('/fs/stream?', '/fs/hls/index.m3u8?')
+          : '';
         return stash(
-          `<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="none" onplay="window.maybeAccelerateVideoViaP2p && window.maybeAccelerateVideoViaP2p(this)" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${cleanAlt || esc(baseName)
+          `<span class="md-inline-video-card"><video class="md-inline-video" data-hls-src="${cachedHlsSrc}" data-fallback-src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="none" onplay="window.mountSmartVideoElement && window.mountSmartVideoElement(this)" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${cleanAlt || esc(baseName)
           } · 点此打开大屏预览</span></span>`
         );
       }

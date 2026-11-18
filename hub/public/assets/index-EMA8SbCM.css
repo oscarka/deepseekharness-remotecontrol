@@ -3867,7 +3867,6 @@
   color: #0f172a;
   padding: max(12px, var(--safe-top, 12px)) 18px calc(16px + var(--safe-bottom, 0px));
   overflow: hidden;
-  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -3962,7 +3961,6 @@
   margin: 12px 4px 4px;
   min-height: 0;
   perspective: 1000px;
-  touch-action: none;
 }
 
 .dsh-triage-back-card {
@@ -4039,6 +4037,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  touch-action: pan-y;
   transform-origin: 50% 92%;
   transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease;
 }
@@ -4460,6 +4459,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  touch-action: pan-y;
 }
 
 .dsh-triage-btn-snooze {
@@ -4478,6 +4478,8 @@
   gap: 5px;
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
   transition: transform 0.1s;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .dsh-triage-btn-snooze:active {
@@ -4502,6 +4504,8 @@
   cursor: pointer;
   box-shadow: 0 6px 14px rgba(5, 150, 105, 0.24);
   transition: all 0.16s;
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .dsh-triage-btn-confirm:active {
@@ -4558,7 +4562,7 @@
   font-weight: 600;
 }
 
-/* 滑卡内部弹出层（完整提问+原图 / 代码改动文件列表 / 完整回复） */
+/* 滑卡内部弹出层（完整提问+原图 / 代码改动文件列表 / 完整回复：支持上拉放大至 94% 全屏 + 丝滑原生滚动） */
 .dsh-triage-modal {
   position: absolute;
   inset: 0;
@@ -4568,7 +4572,6 @@
   display: none;
   align-items: flex-end;
   justify-content: center;
-  touch-action: auto;
 }
 
 .dsh-triage-modal.open {
@@ -4577,17 +4580,70 @@
 
 .dsh-triage-modal-sheet {
   width: 100%;
+  height: 68%;
+  max-height: 94%;
+  min-height: 44%;
   background: #ffffff;
   color: #0f172a;
-  border-radius: 26px 26px 0 0;
-  padding: 16px 16px calc(20px + var(--safe-bottom, 0px));
-  max-height: 82%;
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -10px 34px rgba(15, 23, 42, 0.22);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  overflow: hidden;
+  transition: height 0.25s cubic-bezier(0.22, 1, 0.36, 1), transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), border-radius 0.2s;
+}
+
+.dsh-triage-modal-sheet.expanded {
+  height: 94%;
+  border-radius: 18px 18px 0 0;
+}
+
+.dsh-triage-modal-sheet.sheet-dragging {
+  transition: none !important;
+}
+
+.dsh-triage-modal-hdr {
+  flex-shrink: 0;
+  padding: 9px 16px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #ffffff;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.dsh-triage-sheet-grabber {
+  width: 42px;
+  height: 5px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  margin: 0 auto 9px;
+}
+
+.dsh-triage-modal-hdr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dsh-triage-modal-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dsh-triage-modal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px calc(28px + var(--safe-bottom, 0px));
   overflow-y: auto;
-  touch-action: pan-y;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .dsh-triage-file-row {

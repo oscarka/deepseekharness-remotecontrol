@@ -13,10 +13,12 @@ export interface FilePreviewData {
   hasBlob?: boolean;
   previewUrl?: string;
   streamUrl?: string;
+  hlsAvailable?: boolean;
   videoProbe?: {
     strategy?: string;
     codec?: string;
     avcProfile?: number | null;
+    durationSec?: number;
     faststart?: boolean;
     universalDirectPlay?: boolean;
     reason?: string;
@@ -119,18 +121,21 @@ export function videoPreviewSrc(preview: FilePreviewData, mediaTicket = ''): str
   const raw = preview.streamUrl || preview.previewUrl || '';
   if (!raw) return '';
   const sep = raw.includes('?') ? '&' : '?';
-  const useFastPreview =
-    !preview._rawVideo &&
-    !preview._transcodeVideo &&
-    preview.videoProbe?.strategy !== 'transcode' &&
-    Number(preview.size || 0) > 4 * 1024 * 1024;
   const withMode = preview._rawVideo
     ? `${raw}${sep}raw=1`
     : preview._transcodeVideo
       ? `${raw}${sep}transcode=1`
-      : useFastPreview
-        ? `${raw}${sep}preview=1`
-        : raw;
+      : raw;
+  return appendMediaAuth(withMode, mediaTicket);
+}
+
+export function videoHlsSrc(preview: FilePreviewData, mediaTicket = ''): string {
+  if (!preview || preview.hlsAvailable === false || preview._transcodeVideo) return '';
+  const raw = preview.streamUrl || '';
+  if (!raw || !raw.includes('/fs/stream')) return '';
+  const hlsBase = raw.replace('/fs/stream', '/fs/hls/index.m3u8');
+  const sep = hlsBase.includes('?') ? '&' : '?';
+  const withMode = preview._rawVideo ? `${hlsBase}${sep}raw=1` : hlsBase;
   return appendMediaAuth(withMode, mediaTicket);
 }
 

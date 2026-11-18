@@ -2,6 +2,16 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.2] - 2026-11-18
+
+### Added
+
+- **行业标准 HLS（`m3u8 + 2s .ts`）跨平台自适应视频流引擎与本地缓存自动回收（`dsh-feishu/lib/hls-streamer.js` / `hub/server.js` / `hub/web/src/utils/hlsPlayer.js`）**：
+  - 纯 Node.js `< 1ms` 解析 ISO BMFF `mvhd` 总时长并立即生成完整 `#EXT-X-ENDLIST` VOD 播放列表，低码率兼容视频直接 `-c:v copy` 无损秒切，百 MB 级高码率成片采用 `ffmpeg -hls_flags temp_file+independent_segments` 渐进式 `2s` 切片（单片约 `250–400 KB`，首片 `< 300ms` 产出，支持任意拖动进度条按需跳切与离开页面 `25s` 自动停编码释放 CPU）；
+  - 苹果 iOS / macOS Safari 走系统原生 HLS 内核零开销播放，Windows / Linux / Android / Chrome / Edge / 飞书内置浏览器按需懒加载内置 `hls.js` MSE 引擎播放，遇未升级旧版节点自动无感回退 `/fs/stream`；
+  - 内置 `~/.dsh/cache/hls` 及时自动清理机制（空闲 `2 小时` 过期、`512 MiB` 容量上限与 `24` 个目录上限 LRU 淘汰、每 `10 分钟` 后台定时巡检，同步清扫 `cache/thumbs` 中残留的超时 `.tmp-*.mp4` 文件）；
+  - 为 Host SSE（`isHostMode`）、`/fs/stream` 与 `/fs/hls/*` 补齐 `X-Accel-Buffering: no` 与 `TCP_NODELAY`，并在 WebRTC 局域网候选中过滤代理虚拟网卡（`utun` / `198.18.x.x`，保留物理网卡与 Tailscale `100.64.0.0/10`）。
+
 ## [0.8.1] - 2026-11-18
 
 ### Performance

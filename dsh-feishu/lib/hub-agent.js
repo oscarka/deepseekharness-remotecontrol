@@ -50,10 +50,12 @@ import {
   openWorkspaceFileStream,
   persistCommandAttachments,
   prepareWorkspaceFileStream,
+  prepareWorkspaceHlsRequest,
   readPendingDshInteractions,
   readWorkspaceFileFastMeta,
   removePendingDshInteraction,
   renameDiskSession,
+  stopAllHlsEncoders,
   writePendingDshInteractionResponse,
 } from './workspace-ops.js'
 import { WebRtcMediaServer } from './webrtc-p2p.js'
@@ -283,6 +285,7 @@ export class HubAgent {
       this.webrtcServer.closeAll()
       this.webrtcServer = null
     }
+    stopAllHlsEncoders()
     for (const entry of this.inflightFsUploads.values()) {
       try {
         entry.abortController?.abort()
@@ -675,6 +678,7 @@ export class HubAgent {
       if (op === 'read') {
         const readMeta = await readWorkspaceFileFastMeta(rootCwd, String(fsReq.path || ''), {
           extraRoots: this.resolveExtraArtifactRoots(),
+          execImpl: this.execImpl,
         })
         await this.fetch(targetUrl, {
           method: 'POST',
@@ -691,18 +695,51 @@ export class HubAgent {
         return
       }
 
-      const streamRes = await openWorkspaceFileStream(rootCwd, String(fsReq.path || ''), {
-        rangeHeader: String(fsReq.rangeHeader || ''),
-        ifNoneMatch: String(fsReq.ifNoneMatch || ''),
-        thumb: Boolean(fsReq.thumb),
-        transcode: Boolean(fsReq.transcode),
-        fastPreview: Boolean(fsReq.fastPreview),
-        download: Boolean(fsReq.download),
-        raw: Boolean(fsReq.raw),
-        dshHome: this.config?.dshHome || '',
-        extraRoots: this.resolveExtraArtifactRoots(),
-        execImpl: this.execImpl,
-      })
+      if (op === 'hls_playlist') {
+        const hlsPlaylist = await prepareWorkspaceHlsRequest(rootCwd, String(fsReq.path || ''), {
+          item: 'index.m3u8',
+          raw: Boolean(fsReq.raw),
+          dshHome: this.config?.dshHome || '',
+          extraRoots: this.resolveExtraArtifactRoots(),
+          execImpl: this.execImpl,
+        })
+        if (this.abortedFsReqIds.has(reqId)) return
+        await this.fetch(targetUrl, {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify({
+            meta: {
+              ...hlsPlaylist,
+              status: hlsPlaylist.ok ? 200 : hlsPlaylist.status || 404,
+              hostId: this.config.hostId,
+              agentId: fsReq.agentId || '',
+            },
+          }),
+        })
+        return
+      }
+
+      const streamRes =
+        op === 'hls_segment'
+          ? await prepareWorkspaceHlsRequest(rootCwd, String(fsReq.path || ''), {
+              item: String(fsReq.segment || ''),
+              raw: Boolean(fsReq.raw),
+              dshHome: this.config?.dshHome || '',
+              extraRoots: this.resolveExtraArtifactRoots(),
+              execImpl: this.execImpl,
+            })
+          : await openWorkspaceFileStream(rootCwd, String(fsReq.path || ''), {
+              rangeHeader: String(fsReq.rangeHeader || ''),
+              ifNoneMatch: String(fsReq.ifNoneMatch || ''),
+              thumb: Boolean(fsReq.thumb),
+              transcode: Boolean(fsReq.transcode),
+              fastPreview: Boolean(fsReq.fastPreview),
+              download: Boolean(fsReq.download),
+              raw: Boolean(fsReq.raw),
+              dshHome: this.config?.dshHome || '',
+              extraRoots: this.resolveExtraArtifactRoots(),
+              execImpl: this.execImpl,
+            })
       if (this.abortedFsReqIds.has(reqId)) return
       const { buffer, createBodyStream, ...metaRest } = streamRes
       const metaHeader = Buffer.from(

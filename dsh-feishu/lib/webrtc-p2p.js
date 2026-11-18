@@ -280,22 +280,38 @@ async function discoverSrflxCandidate(udpSocket, timeoutMs = 180) {
   })
 }
 
+function isTailscaleCgnatV4(ip) {
+  const parts = String(ip || '').split('.').map(Number)
+  return parts.length === 4 && parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127
+}
+
 function listLocalIpv4Candidates({ includeLoopback = false } = {}) {
-  const out = []
+  const primaryLan = []
+  const secondaryNet = []
   const seen = new Set()
   const nets = networkInterfaces()
   for (const [ifName, addrs] of Object.entries(nets || {})) {
     if (!Array.isArray(addrs)) continue
-    if (/^(docker|br-|veth|vmnet|vboxnet)/i.test(ifName)) continue
+    if (/^(docker|br-|veth|vmnet|vboxnet|awdl|llw)/i.test(ifName)) continue
+    const isTun = /^(utun|tun|tap|ppp|wg)/i.test(ifName)
     for (const addr of addrs) {
       if (!addr || (addr.family !== 'IPv4' && addr.family !== 4)) continue
       if (addr.internal && !includeLoopback) continue
-      if (addr.address.startsWith('169.254.')) continue
-      if (seen.has(addr.address)) continue
-      seen.add(addr.address)
-      out.push(addr.address)
+      const ip = addr.address
+      // Skip link-local & proxy fake-IP benchmark ranges (198.18.0.0/15)
+      if (ip.startsWith('169.254.') || ip.startsWith('198.18.') || ip.startsWith('198.19.')) continue
+      // Skip VPN/proxy virtual TUN addresses unless they are Tailscale 100.64.0.0/10
+      if (isTun && !isTailscaleCgnatV4(ip)) continue
+      if (seen.has(ip)) continue
+      seen.add(ip)
+      if (!isTun && /^(en|eth|wlan|wl)/i.test(ifName)) {
+        primaryLan.push(ip)
+      } else {
+        secondaryNet.push(ip)
+      }
     }
   }
+  const out = [...primaryLan, ...secondaryNet]
   if (includeLoopback && !seen.has('127.0.0.1')) {
     out.push('127.0.0.1')
   }

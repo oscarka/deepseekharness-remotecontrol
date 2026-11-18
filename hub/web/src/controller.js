@@ -20,6 +20,7 @@ import {
   previewKind,
   imagePreviewSrc,
   videoPreviewSrc,
+  videoHlsSrc,
   buildFastStreamUrl,
   appendMediaAuth,
   buildBreadcrumbSegments,
@@ -28,6 +29,10 @@ import {
   escapeSrcdocAttr,
   buildSandboxedHtmlSrcdoc,
 } from './utils/filePreview';
+import {
+  attachSmartHlsPlayer,
+  destroyHlsPlayer,
+} from './utils/hlsPlayer.js';
 import {
   fetchMediaViaWebRtc,
   parseStreamUrlDescriptor,
@@ -3888,16 +3893,16 @@ export function initHubController() {
         const relPath = resolveLocalRelPath(vPath);
         const baseName = relPath.split('/').filter(Boolean).pop() || 'video.mp4';
         const encodedPath = encodeURIComponent(vPath).replace(/'/g, '%27');
-        const vSrc = buildFastStreamUrl(session.hostId, relPath, {
+        const vFallbackSrc = buildFastStreamUrl(session.hostId, relPath, {
           cwd: session.cwd || '',
           agentId: session.id || '',
-          preview: true,
           mediaTicket: mt,
         });
-        window.__dshInlineVideoCache[vPath] = vSrc;
+        const vHlsSrc = vFallbackSrc.replace('/fs/stream?', '/fs/hls/index.m3u8?');
+        window.__dshInlineVideoCache[vPath] = vFallbackSrc;
         vNode.classList.remove('md-local-video-pending');
         vNode.removeAttribute('onclick');
-        vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="none" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc(baseName)} · 点此打开大屏预览</span>`;
+        vNode.innerHTML = `<video class="md-inline-video" data-hls-src="${vHlsSrc}" data-fallback-src="${vFallbackSrc}" controls playsinline webkit-playsinline preload="none" onplay="mountSmartVideoElement(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc(baseName)} · 点此打开大屏预览</span>`;
       }
     }
 
@@ -4051,7 +4056,7 @@ export function initHubController() {
         : '';
       const previewBodyHtml = kind === 'video'
         ? `<div class="file-preview-body" style="padding:16px 12px;background:#0f172a;min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
-               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? '1' : '0'}" controls playsinline webkit-playsinline preload="metadata" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
+               <video class="file-preview-video" data-hls-src="${esc(videoHlsSrc(preview, mt))}" data-fallback-src="${esc(videoPreviewSrc(preview, mt))}" data-video-bytes="${Number(preview.size || 0)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? '1' : '0'}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
                  <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
                  <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', true)">${esc(videoMetaUi.toggleLabel)}</button>
@@ -4101,7 +4106,7 @@ export function initHubController() {
         void hydrateInlineChatImages(found.session, body);
       } else if (kind === 'video') {
         const vidEl = body.querySelector('video.file-preview-video');
-        if (vidEl) void maybeAccelerateVideoViaP2p(vidEl);
+        if (vidEl) void mountSmartVideoElement(vidEl);
       }
       return;
     }
@@ -4220,22 +4225,23 @@ export function initHubController() {
 
   function describeVideoPreviewStatus(preview) {
     const strategy = preview?.videoProbe?.strategy || '';
+    const canHls = preview?.hlsAvailable !== false && !preview?._transcodeVideo;
     if (preview?._rawVideo) {
       return {
-        badge: '原始视频字节直出流',
-        toggleLabel: '✨ 切回智能兼容秒播',
+        badge: canHls ? '无损原画 HLS 切片流' : '原始视频字节直出流',
+        toggleLabel: '✨ 切回自适应秒播流',
       };
     }
-    if (preview?._transcodeVideo || strategy === 'transcode') {
+    if (preview?._transcodeVideo) {
       return {
         badge: '智能 H.264 兼容流 · 拖动秒播',
-        toggleLabel: '🎞️ 尝试原片直出',
+        toggleLabel: '🎞️ 切换无损原画流',
       };
     }
-    if (Number(preview?.size || 0) > 4 * 1024 * 1024) {
+    if (canHls) {
       return {
-        badge: '⚡ 720p 极速秒看流 · 拖动秒播',
-        toggleLabel: '🎞️ 尝试原片直出',
+        badge: '⚡ HLS 切片秒播 · 抗弱网零卡死',
+        toggleLabel: '🎞️ 切换无损原画流',
       };
     }
     if (strategy === 'remux') {
@@ -4298,13 +4304,36 @@ export function initHubController() {
     });
   }
 
+  async function mountSmartVideoElement(videoEl) {
+    if (!videoEl || videoEl.dataset?.dshMounted === '1') return;
+    videoEl.dataset.dshMounted = '1';
+    const hlsSrc = videoEl.dataset?.hlsSrc || '';
+    const fallbackSrc = videoEl.dataset?.fallbackSrc || videoEl.getAttribute('src') || '';
+    const videoBytes = Number(videoEl.dataset?.videoBytes || 0);
+
+    await attachSmartHlsPlayer(videoEl, {
+      hlsUrl: hlsSrc,
+      fallbackSrc,
+    });
+
+    // For compact clips (<= 24 MiB), optionally race same-LAN WebRTC P2P zero-buffer upgrade in background;
+    // large videos (> 24 MiB) stay 100% on 2-second HLS streaming chunks without loading giant Blobs into RAM.
+    if (videoBytes > 0 && videoBytes <= 24 * 1024 * 1024 && fallbackSrc) {
+      void maybeAccelerateVideoViaP2p(videoEl);
+    }
+  }
+
   async function maybeAccelerateVideoViaP2p(videoEl, { fromErrorFallback = false } = {}) {
     if (!videoEl) return false;
     if (videoEl.dataset?.dshP2pUpgraded === '1') return true;
     if (videoEl.__dshP2pPromise) {
       return videoEl.__dshP2pPromise;
     }
-    const rawSrc = videoEl.getAttribute('src') || videoEl.currentSrc || '';
+    const rawSrc =
+      videoEl.dataset?.fallbackSrc ||
+      videoEl.getAttribute('src') ||
+      videoEl.currentSrc ||
+      '';
     if (!rawSrc || rawSrc.startsWith('blob:') || !rawSrc.includes('/fs/stream')) {
       return false;
     }
@@ -4322,8 +4351,8 @@ export function initHubController() {
         const p2pRes = await fetchMediaViaWebRtc(rawSrc, {
           token: getToken(),
           mediaTicket: hubState.mediaTicket || '',
-          maxBytes: 48 * 1024 * 1024,
-          connectTimeoutMs: fromErrorFallback ? 2000 : 1400,
+          maxBytes: 24 * 1024 * 1024,
+          connectTimeoutMs: fromErrorFallback ? 1800 : 1200,
         });
         if (!p2pRes?.ok || !p2pRes.blob || !videoEl.isConnected) {
           return false;
@@ -4358,6 +4387,8 @@ export function initHubController() {
     const wasPaused = videoEl.paused;
     const savedTime = Number(videoEl.currentTime) || 0;
     const savedRate = Number(videoEl.playbackRate) || 1;
+    destroyHlsPlayer(videoEl);
+    delete videoEl.dataset.dshHlsActive;
     clearSmartVideoErrorBanner(videoEl);
     videoEl.dataset.dshP2pUpgraded = '1';
     videoEl.src = blobUrl;
@@ -4404,8 +4435,22 @@ export function initHubController() {
   async function onSmartVideoError(videoEl) {
     if (!videoEl) return;
     if (videoEl.error?.code === 1) return;
+    // When hls.js MSE is attached, hls.js handles its own retry & fallback before setting dshHlsFailed='1'
+    if (videoEl.__dshHlsInstance) return;
     const currentSrc = videoEl.getAttribute('src') || videoEl.currentSrc || '';
     if (!currentSrc || currentSrc.startsWith('blob:') || videoEl.dataset?.dshP2pUpgraded === '1') return;
+
+    // 0. If native Safari HLS failed (e.g. remote host daemon is still v0.7.4 without /fs/hls/ endpoint), fall back to /fs/stream
+    if (currentSrc.includes('/fs/hls/') && videoEl.dataset?.fallbackSrc && videoEl.dataset?.dshHlsFailed !== '1') {
+      destroyHlsPlayer(videoEl);
+      delete videoEl.dataset.dshHlsActive;
+      videoEl.dataset.dshHlsFailed = '1';
+      videoEl.src = videoEl.dataset.fallbackSrc;
+      try {
+        videoEl.load();
+      } catch { }
+      return;
+    }
 
     // 1. 优先尝试或等待进行中的 WebRTC P2P 直连恢复（绕开跨洋网关超时）
     if (videoEl.dataset?.dshP2pFallbackTried !== '1' || videoEl.__dshP2pPromise) {
@@ -4503,24 +4548,21 @@ export function initHubController() {
     const host = (hubState.hosts || []).find(h => h.hostId === hostId);
     const preview = target || host?.lastFilePreview;
     if (!preview) return;
-    const autoTranscode = preview?.videoProbe?.strategy === 'transcode';
-    const isLargeFastPreview = Number(preview?.size || 0) > 4 * 1024 * 1024 && !autoTranscode;
-    if (autoTranscode || isLargeFastPreview) {
+    const canHls = preview?.hlsAvailable !== false;
+    if (canHls) {
       preview._rawVideo = !preview._rawVideo;
       preview._transcodeVideo = false;
       showToast(
         preview._rawVideo
-          ? '🎞️ 已切换为无损原片直出流'
-          : isLargeFastPreview
-            ? '⚡ 已切回 720p 手机极速秒看流'
-            : '⚡ 已切回电脑端智能 H.264 兼容流'
+          ? '🎞️ 已切换为无损原画 HLS 切片流'
+          : '⚡ 已切回自适应抗弱网 HLS 秒播流'
       );
     } else {
       preview._rawVideo = false;
       preview._transcodeVideo = !preview._transcodeVideo;
       showToast(
         preview._transcodeVideo
-          ? '🔄 正在用电脑端 H.264 兼容转码流加载（首次可能需数秒）…'
+          ? '🔄 正在用电脑端 H.264 兼容转码流加载…'
           : '✨ 已切回智能秒播模式'
       );
     }
@@ -5198,7 +5240,7 @@ export function initHubController() {
         : '';
       const previewBodyHtml = kind === 'video'
         ? `<div class="file-preview-body" style="padding:18px 14px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
-               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? '1' : '0'}" controls playsinline webkit-playsinline preload="metadata" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
+               <video class="file-preview-video" data-hls-src="${esc(videoHlsSrc(preview, mt))}" data-fallback-src="${esc(videoPreviewSrc(preview, mt))}" data-video-bytes="${Number(preview.size || 0)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? '1' : '0'}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
                  <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc(formatBytes(preview.size))} · ${esc(videoMetaUi.badge)}</span>
                  <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc(host.hostId)}', false)">${esc(videoMetaUi.toggleLabel)}</button>
@@ -5249,7 +5291,7 @@ export function initHubController() {
         void hydrateInlineChatImages({ ...firstSession, hostId: host.hostId }, container);
       } else if (kind === 'video') {
         const vidEl = container.querySelector('video.file-preview-video');
-        if (vidEl) void maybeAccelerateVideoViaP2p(vidEl);
+        if (vidEl) void mountSmartVideoElement(vidEl);
       }
       return;
     }
@@ -8334,6 +8376,7 @@ export function initHubController() {
     downloadPreviewMedia,
     toggleOriginalPreviewImage,
     switchVideoTranscodeMode,
+    mountSmartVideoElement,
     maybeAccelerateVideoViaP2p,
     onSmartVideoLoadedMeta,
     onSmartVideoError,
@@ -8369,6 +8412,7 @@ export function initHubController() {
     getSessions: () => getNormalizedSessions(),
     getShortHostMap: () => buildShortHostNameMap(hubState.hosts || []),
     getMediaTicket: () => hubState.mediaTicket || '',
+    getLang: () => langPref,
     showToast,
     formatAssistantText,
     punctuateSpeechText,

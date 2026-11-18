@@ -7,6 +7,13 @@ import { basename, dirname, extname, join, normalize, relative, resolve, sep } f
 import { promisify } from 'node:util'
 import * as zlib from 'node:zlib'
 import { cleanForChat, redactText } from './redact.js'
+import {
+  isFfmpegAvailable,
+  prepareWorkspaceHlsPlaylist,
+  prepareWorkspaceHlsSegment,
+  pruneHlsCacheDir,
+  stopAllHlsEncoders,
+} from './hls-streamer.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -2277,10 +2284,29 @@ export function parseMoovVideoInfo(moovBuf) {
   let width = 0
   let height = 0
   let audioCodec = null
+  let durationSec = 0
 
   const topChildren = iterIsoBoxes(moovBuf, payloadStart, payloadEnd)
-  for (const trak of topChildren) {
-    if (trak.type !== 'trak') continue
+  for (const topBox of topChildren) {
+    if (topBox.type === 'mvhd' && topBox.payloadEnd - topBox.payloadOffset >= 20) {
+      const ver = moovBuf[topBox.payloadOffset]
+      if (ver === 1 && topBox.payloadEnd - topBox.payloadOffset >= 32) {
+        const timescale = moovBuf.readUInt32BE(topBox.payloadOffset + 20)
+        const dur = Number(moovBuf.readBigUInt64BE(topBox.payloadOffset + 24))
+        if (timescale > 0 && dur > 0 && dur < Number.MAX_SAFE_INTEGER) {
+          durationSec = Math.round((dur / timescale) * 1000) / 1000
+        }
+      } else if (ver === 0) {
+        const timescale = moovBuf.readUInt32BE(topBox.payloadOffset + 12)
+        const dur = moovBuf.readUInt32BE(topBox.payloadOffset + 16)
+        if (timescale > 0 && dur > 0 && dur !== 0xffffffff) {
+          durationSec = Math.round((dur / timescale) * 1000) / 1000
+        }
+      }
+      continue
+    }
+    if (topBox.type !== 'trak') continue
+    const trak = topBox
     const trakChildren = iterIsoBoxes(moovBuf, trak.payloadOffset, trak.payloadEnd)
     const mdia = trakChildren.find(b => b.type === 'mdia')
     if (!mdia) continue
@@ -2318,7 +2344,7 @@ export function parseMoovVideoInfo(moovBuf) {
     }
   }
 
-  return { codec, avcProfile, avcLevel, width, height, audioCodec }
+  return { codec, avcProfile, avcLevel, width, height, audioCodec, durationSec }
 }
 
 const COMPAT_AVC_PROFILES = new Set([66, 77, 88, 100])
@@ -2420,6 +2446,7 @@ export async function probeVideoCompatibility(realFile, info, ext = '') {
   const parsed = parseMoovVideoInfo(moovBuf)
   const codec = parsed.codec || 'unknown'
   const avcProfile = parsed.avcProfile
+  const durationFields = parsed.durationSec > 0 ? { durationSec: parsed.durationSec } : {}
   const isCompatAvc =
     (codec === 'avc1' || codec === 'avc3') &&
     (avcProfile === null || COMPAT_AVC_PROFILES.has(avcProfile))
@@ -2433,6 +2460,7 @@ export async function probeVideoCompatibility(realFile, info, ext = '') {
         avcProfile,
         width: parsed.width,
         height: parsed.height,
+        ...durationFields,
         faststart,
         universalDirectPlay: true,
         strategy: 'direct',
@@ -2446,6 +2474,7 @@ export async function probeVideoCompatibility(realFile, info, ext = '') {
       avcProfile,
       width: parsed.width,
       height: parsed.height,
+      ...durationFields,
       faststart,
       universalDirectPlay: false,
       strategy: 'remux',
@@ -2461,6 +2490,7 @@ export async function probeVideoCompatibility(realFile, info, ext = '') {
       avcProfile: null,
       width: parsed.width,
       height: parsed.height,
+      ...durationFields,
       faststart,
       universalDirectPlay: false,
       strategy: 'direct',
@@ -2482,6 +2512,7 @@ export async function probeVideoCompatibility(realFile, info, ext = '') {
     avcProfile,
     width: parsed.width,
     height: parsed.height,
+    ...durationFields,
     faststart,
     universalDirectPlay: false,
     strategy: 'transcode',
@@ -2820,7 +2851,11 @@ export function parseHttpByteRange(rangeHeader, totalSize, maxChunkBytes = DEFAU
   return { ok: true, start, end: cappedEnd }
 }
 
-export async function readWorkspaceFileFastMeta(workspaceRoot, relPath = '', { extraRoots = [] } = {}) {
+export async function readWorkspaceFileFastMeta(
+  workspaceRoot,
+  relPath = '',
+  { extraRoots = [], execImpl = execFileAsync } = {},
+) {
   try {
     const resolved = await resolveWorkspaceOrArtifactFile(workspaceRoot, relPath, { extraRoots })
     if (!resolved.ok) return resolved
@@ -2829,7 +2864,10 @@ export async function readWorkspaceFileFastMeta(workspaceRoot, relPath = '', { e
     const etag = `W/"${info.size.toString(16)}-${mtimeMs.toString(16)}"`
 
     if (VIDEO_MIME[ext]) {
-      const videoProbe = await probeVideoCompatibility(realFile, info, ext).catch(() => null)
+      const [videoProbe, hlsAvailable] = await Promise.all([
+        probeVideoCompatibility(realFile, info, ext).catch(() => null),
+        isFfmpegAvailable({ execImpl }).catch(() => false),
+      ])
       return {
         ok: true,
         relPath: returnRelPath,
@@ -2840,6 +2878,7 @@ export async function readWorkspaceFileFastMeta(workspaceRoot, relPath = '', { e
         size: info.size,
         mtimeMs,
         etag,
+        hlsAvailable: Boolean(hlsAvailable),
         ...(videoProbe ? { videoProbe } : {}),
       }
     }
@@ -2953,32 +2992,34 @@ export async function prepareWorkspaceFileStream(
         transcodeUnavailable = true
       }
     } else if (fastPreview && info.size > 4 * 1024 * 1024) {
-      const pv = await getOrCreateFastPreviewMp4(realFile, info, { dshHome, execImpl, platform })
+      const probe = await probeVideoCompatibility(realFile, info, ext).catch(() => null)
+      // Never block >20 MiB already-compatible faststart MP4s on whole-file ffmpeg re-encoding (use HLS for large videos!)
+      const skipWholeFilePreviewEncode = Boolean(probe?.hasMoov && probe?.universalDirectPlay && info.size > 20 * 1024 * 1024)
+      const pv = skipWholeFilePreviewEncode
+        ? null
+        : await getOrCreateFastPreviewMp4(realFile, info, { dshHome, execImpl, platform })
       if (pv) {
         streamFile = pv.filePath
         streamSize = pv.size
         streamMime = pv.mime
         variant = 'pv'
-      } else {
-        const probe = await probeVideoCompatibility(realFile, info, ext).catch(() => null)
-        if (probe?.strategy === 'remux') {
-          const remuxed = await getOrCreateFastRemuxMp4(realFile, info, { dshHome, execImpl })
-          if (remuxed) {
-            streamFile = remuxed.filePath
-            streamSize = remuxed.size
-            streamMime = remuxed.mime
-            variant = 'remux'
-          }
-        } else if (probe?.strategy === 'transcode') {
-          const tc = await getOrCreateCompatibleMp4(realFile, info, { dshHome, execImpl, platform })
-          if (tc) {
-            streamFile = tc.filePath
-            streamSize = tc.size
-            streamMime = tc.mime
-            variant = 'tc'
-          } else {
-            transcodeUnavailable = true
-          }
+      } else if (probe?.strategy === 'remux') {
+        const remuxed = await getOrCreateFastRemuxMp4(realFile, info, { dshHome, execImpl })
+        if (remuxed) {
+          streamFile = remuxed.filePath
+          streamSize = remuxed.size
+          streamMime = remuxed.mime
+          variant = 'remux'
+        }
+      } else if (probe?.strategy === 'transcode') {
+        const tc = await getOrCreateCompatibleMp4(realFile, info, { dshHome, execImpl, platform })
+        if (tc) {
+          streamFile = tc.filePath
+          streamSize = tc.size
+          streamMime = tc.mime
+          variant = 'tc'
+        } else {
+          transcodeUnavailable = true
         }
       }
     } else {
@@ -3210,6 +3251,52 @@ export async function prepareWorkspaceFileStream(
       'content-disposition': `inline; filename="${encodeURIComponent(name)}"`,
     },
     streamSpec: { filePath: streamFile, start: 0, end: streamSize - 1 },
+  }
+}
+
+export { pruneHlsCacheDir, stopAllHlsEncoders }
+
+export async function prepareWorkspaceHlsRequest(
+  workspaceRoot,
+  relPath = '',
+  {
+    item = 'index.m3u8',
+    raw = false,
+    dshHome = '',
+    extraRoots = [],
+    execImpl = execFileAsync,
+    spawnImpl = undefined,
+    platform = process.platform,
+  } = {},
+) {
+  try {
+    const resolved = await resolveWorkspaceOrArtifactFile(workspaceRoot, relPath, { extraRoots })
+    if (!resolved.ok) return { ok: false, status: 404, error: resolved.error }
+    const { realFile, info, ext } = resolved
+    if (!VIDEO_MIME[ext]) {
+      return { ok: false, status: 400, error: 'Not a supported video file' }
+    }
+    const videoProbe = await probeVideoCompatibility(realFile, info, ext).catch(() => null)
+    if (item === 'index.m3u8') {
+      return prepareWorkspaceHlsPlaylist(resolved, {
+        videoProbe,
+        raw,
+        dshHome,
+        execImpl,
+        ...(spawnImpl ? { spawnImpl } : {}),
+        platform,
+      })
+    }
+    return prepareWorkspaceHlsSegment(resolved, item, {
+      videoProbe,
+      raw,
+      dshHome,
+      execImpl,
+      ...(spawnImpl ? { spawnImpl } : {}),
+      platform,
+    })
+  } catch (error) {
+    return { ok: false, status: 500, error: error?.message || 'HLS 切片流准备失败' }
   }
 }
 

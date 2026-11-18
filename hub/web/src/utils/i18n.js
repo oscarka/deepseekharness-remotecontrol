@@ -444,10 +444,53 @@ const EXACT_ZH_TO_EN = {
   '📲 已缓存 · 再点存入相册/文件': '📲 Ready · Tap to Save',
   '⏳ 准备中…': '⏳ Preparing…',
   '✨ 切回智能兼容秒播': '✨ Back to Smart Stream',
+  '✨ 切回自适应秒播流': '✨ Adaptive HLS Stream',
+  '🎞️ 切换无损原画流': '🎞️ Lossless Raw Stream',
   '🎞️ 尝试原片直出': '🎞️ Raw Original Stream',
   '🔄 强制重编码兼容流': '🔄 Force Compat Transcode',
   '🔄 播不出？转码兼容播放': '🔄 Compat Transcode',
   '⬇️ 保存原视频到本地播放': '⬇️ Save Original Video',
+
+  // Swipe Triage Deck
+  '滑卡批阅模式': 'Swipe Triage Mode',
+  '滑卡批阅': 'Swipe Triage',
+  '↩ 撤回': '↩ Undo',
+  '☰ 列表模式': '☰ List View',
+  '☰ 返回会话列表': '☰ Back to Session List',
+  '对话 ›': 'Chat ›',
+  '↪ 稍后看': '↪ Snoozed',
+  '我：': 'Me: ',
+  '搁置': 'Snooze',
+  '点此查看': 'View',
+  '查看 ›': 'View ›',
+  '⤢ 全屏': '⤢ Full',
+  '⤡ 半屏': '⤡ Half',
+  '收起 ✕': 'Close ✕',
+  '详情': 'Details',
+  '点击查看完整提问 ›': 'Tap to view full prompt ›',
+  '点击查看完整提问与截图 ›': 'Tap to view full prompt & image ›',
+  '点击展开完整回复全文 ›': 'Tap to read full reply ›',
+  '短按弹键盘打字 · 长按直接说话': 'Tap to type · Hold to speak',
+  '🎙️ 正在聆听语音… 松手落入输入框': '🎙️ Listening… Release to insert text',
+  '🎙️ 长按说': '🎙️ Hold',
+  '🔴 听写中': '🔴 Live',
+  '输入你的方案，或继续长按上方追加语音…': 'Type your instructions, or hold above to append voice…',
+  '发送新方案 👉': 'Send New Plan 👉',
+  '可点此 或 右滑卡片': 'Tap here or swipe right',
+  '✍️ 请先输入或长按说话': '✍️ Type or hold to speak first',
+  '填写方案后即可点此或右滑发送': 'Enter your instructions to unlock',
+  '长按此钮 或 右拉稳住0.8s': 'Hold button or pull right 0.8s',
+  '待处理卡片已全部清零！': 'All Pending Cards Cleared!',
+  '所有待授权与未读完结会话均已处理完毕。': 'All pending approvals and unread conclusions are done.',
+  '💬 我发送的完整提问': '💬 My Full Prompt',
+  '🔍 点击打开高清原图预览器': '🔍 Tap to open full-res image viewer',
+  '⏳ 正在同步完整提问内容…': '⏳ Syncing full prompt…',
+  '💻 待执行完整命令': '💻 Full Command to Execute',
+  '📖 AI 最新完整回复': '📖 Latest Full AI Reply',
+  '⏳ 正在从云端拉取完整未截断全文…': '⏳ Fetching full untruncated reply…',
+  '💬 进入完整对话上下文 ›': '💬 Open Full Conversation ›',
+  '📨 已发送新方案指令': '📨 Sent new instructions',
+  '当前浏览器环境不支持语音听写，请直接键盘输入': 'Speech dictation is unavailable in this browser; please type instead',
 };
 
 const REGEX_ZH_TO_EN = [
@@ -457,6 +500,8 @@ const REGEX_ZH_TO_EN = [
   [/^⚡ 已直连拉取 (.+)…$/, '⚡ P2P Direct $1…'],
   [/^⏳ 已拉取 (.+)…$/, '⏳ Downloaded $1…'],
   [/^🎬 (.+) · ⚡ P2P 极速直连 · 零缓冲秒播$/, '🎬 $1 · ⚡ P2P Direct Zero-Buffer'],
+  [/^🎬 (.+) · ⚡ HLS 切片秒播 · 抗弱网零卡死$/, '🎬 $1 · ⚡ Adaptive HLS Instant Stream'],
+  [/^🎬 (.+) · 无损原画 HLS 切片流$/, '🎬 $1 · Lossless HLS Original Stream'],
   [/^🎬 (.+) · ⚡ 720p 极速秒看流 · 拖动秒播$/, '🎬 $1 · ⚡ 720p Fast Preview Stream'],
   [/^🎬 (.+) · 智能 H\.264 兼容流 · 拖动秒播$/, '🎬 $1 · Smart H.264 Compat Stream'],
   [/^🎬 (.+) · 无损快启重封装 · 拖动秒播$/, '🎬 $1 · Fast-Start Lossless Remux'],
@@ -536,6 +581,11 @@ const REGEX_ZH_TO_EN = [
   [/^(\d+)\s*分钟前$/, '$1m ago'],
   [/^(\d+)\s*小时前$/, '$1h ago'],
   [/^(\d+)\s*天前$/, '$1d ago'],
+  [/^↩ 撤回 \((\d+)s\)$/, '↩ Undo ($1s)'],
+  [/^(\d+)图$/, '$1 img'],
+  [/^📄 代码改动 · (\d+) 个文件$/, (_, n) => `📄 Code Changes · ${n} file${Number(n) === 1 ? '' : 's'}`],
+  [/^📄 代码改动 \((\d+) 个文件\)$/, (_, n) => `📄 Code Changes (${n} file${Number(n) === 1 ? '' : 's'})`],
+  [/^🟢 去列表查看运行中任务 \((\d+)\) ›$/, '🟢 View Running Tasks ($1) ›'],
 ];
 
 export function getLangPref() {
@@ -703,8 +753,16 @@ export function applyLangToDom(root = typeof document !== 'undefined' ? document
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
   let node = walker.nextNode();
   while (node) {
-    const parentTag = node.parentElement?.tagName;
-    if (parentTag !== 'SCRIPT' && parentTag !== 'STYLE' && parentTag !== 'CODE' && parentTag !== 'PRE') {
+    const parentEl = node.parentElement;
+    const parentTag = parentEl?.tagName;
+    if (
+      parentTag !== 'SCRIPT' &&
+      parentTag !== 'STYLE' &&
+      parentTag !== 'CODE' &&
+      parentTag !== 'PRE' &&
+      parentTag !== 'TEXTAREA' &&
+      !parentEl?.closest?.('#triageDeckOverlay')
+    ) {
       const curVal = node.nodeValue || '';
       if (node.__origZh === undefined) {
         node.__origZh = curVal;

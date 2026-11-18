@@ -390,7 +390,7 @@ function TriageDeck() {
 		id: "triageUndoBtn",
 		disabled: true,
 		onClick: () => window.triageUndoLast?.()
-	}, "↩ 撤回"), /* @__PURE__ */ k("div", { class: "dsh-triage-center-title" }, /* @__PURE__ */ k("span", null, "滑卡批阅"), /* @__PURE__ */ k("span", {
+	}, "↩ 撤回"), /* @__PURE__ */ k("div", { class: "dsh-triage-center-title" }, /* @__PURE__ */ k("span", { id: "triageCenterTitleText" }, "滑卡批阅"), /* @__PURE__ */ k("span", {
 		class: "dsh-triage-count-chip",
 		id: "triageCountChip"
 	}, "0")), /* @__PURE__ */ k("button", {
@@ -425,7 +425,29 @@ function TriageDeck() {
 	}, /* @__PURE__ */ k("div", {
 		class: "dsh-triage-modal-sheet",
 		id: "triageDetailModalContent"
-	})));
+	}, /* @__PURE__ */ k("div", {
+		class: "dsh-triage-modal-hdr",
+		id: "triageModalHeader"
+	}, /* @__PURE__ */ k("div", {
+		class: "dsh-triage-sheet-grabber",
+		"aria-hidden": "true"
+	}), /* @__PURE__ */ k("div", { class: "dsh-triage-modal-hdr-row" }, /* @__PURE__ */ k("strong", {
+		id: "triageModalTitle",
+		style: "font-size:15px;color:#0f172a;"
+	}, "详情"), /* @__PURE__ */ k("div", { class: "dsh-triage-modal-actions" }, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "dsh-triage-open-chat",
+		id: "triageModalExpandBtn",
+		onClick: () => window.toggleTriageModalExpand?.()
+	}, "⤢ 全屏"), /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "dsh-triage-open-chat",
+		id: "triageModalCloseBtn",
+		onClick: () => window.closeTriageDetailModal?.()
+	}, "收起 ✕")))), /* @__PURE__ */ k("div", {
+		class: "dsh-triage-modal-body",
+		id: "triageModalScrollBody"
+	}))));
 }
 // hub/web/src/components/ChatStage.tsx
 function ChatStage() {
@@ -1100,7 +1122,10 @@ function renderInlineMarkdown(rawLine) {
 		const encodedPath = encodeURIComponent(cleanPath).replace(/'/g, "%27");
 		if (isVideoMedia) {
 			const cachedVideoSrc = typeof window !== "undefined" && window.__dshInlineVideoCache ? window.__dshInlineVideoCache[cleanPath] : "";
-			if (cachedVideoSrc) return stash(`<span class="md-inline-video-card"><video class="md-inline-video" src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="none" onplay="window.maybeAccelerateVideoViaP2p && window.maybeAccelerateVideoViaP2p(this)" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${cleanAlt || esc$1(baseName)} · 点此打开大屏预览</span></span>`);
+			if (cachedVideoSrc) {
+				const cachedHlsSrc = String(cachedVideoSrc).includes("/fs/stream?") ? String(cachedVideoSrc).replace("/fs/stream?", "/fs/hls/index.m3u8?") : "";
+				return stash(`<span class="md-inline-video-card"><video class="md-inline-video" data-hls-src="${cachedHlsSrc}" data-fallback-src="${cachedVideoSrc}" controls playsinline webkit-playsinline preload="none" onplay="window.mountSmartVideoElement && window.mountSmartVideoElement(this)" onloadedmetadata="window.onSmartVideoLoadedMeta && window.onSmartVideoLoadedMeta(this)" onerror="window.onSmartVideoError && window.onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${cleanAlt || esc$1(baseName)} · 点此打开大屏预览</span></span>`);
+			}
 			return stash(`<span class="md-inline-video-card md-local-video-pending" data-local-video-path="${cleanPath}" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')"><span class="md-local-img-loader">🎬 ${cleanAlt || esc$1(baseName)} · 正在连接视频流…（点此打开播放器）</span></span>`);
 		}
 		const cachedSrc = typeof window !== "undefined" && window.__dshInlineImgCache ? window.__dshInlineImgCache[cleanPath] : "";
@@ -1399,8 +1424,15 @@ function videoPreviewSrc(preview, mediaTicket = "") {
 	const raw = preview.streamUrl || preview.previewUrl || "";
 	if (!raw) return "";
 	const sep = raw.includes("?") ? "&" : "?";
-	const useFastPreview = !preview._rawVideo && !preview._transcodeVideo && preview.videoProbe?.strategy !== "transcode" && Number(preview.size || 0) > 4194304;
-	return appendMediaAuth(preview._rawVideo ? `${raw}${sep}raw=1` : preview._transcodeVideo ? `${raw}${sep}transcode=1` : useFastPreview ? `${raw}${sep}preview=1` : raw, mediaTicket);
+	return appendMediaAuth(preview._rawVideo ? `${raw}${sep}raw=1` : preview._transcodeVideo ? `${raw}${sep}transcode=1` : raw, mediaTicket);
+}
+function videoHlsSrc(preview, mediaTicket = "") {
+	if (!preview || preview.hlsAvailable === false || preview._transcodeVideo) return "";
+	const raw = preview.streamUrl || "";
+	if (!raw || !raw.includes("/fs/stream")) return "";
+	const hlsBase = raw.replace("/fs/stream", "/fs/hls/index.m3u8");
+	const sep = hlsBase.includes("?") ? "&" : "?";
+	return appendMediaAuth(preview._rawVideo ? `${hlsBase}${sep}raw=1` : hlsBase, mediaTicket);
 }
 function buildBreadcrumbSegments(subDir) {
 	const clean = String(subDir || "").replace(/^\/+|\/+$/g, "");
@@ -1416,6 +1448,184 @@ function fileLoadingSpinnerHtml(text) {
     <div class="file-loading-dot"></div>
     <div>${esc$1(text)}</div>
   </div>`;
+}
+// \0vite/preload-helper.js
+var scriptRel = "modulepreload";
+var assetsURL = function(dep) {
+	return "/" + dep;
+};
+var seen = {};
+var isCssPreloadUrl = function isCssPreloadUrl(url) {
+	return url.pathname.endsWith(".css");
+};
+var preloadOnce = function preloadOnce(seen, href, preload) {
+	if (href in seen) return seen[href];
+	const promise = preload();
+	if (!promise) {
+		seen[href] = void 0;
+		return;
+	}
+	const preloadPromise = promise.then(() => {
+		seen[href] = void 0;
+	}, (err) => {
+		seen[href] = void 0;
+		throw err;
+	});
+	seen[href] = preloadPromise;
+	return preloadPromise;
+};
+var __vitePreload = function preload(baseModule, deps, importerUrl) {
+	let promise = Promise.resolve();
+	if (deps && deps.length > 0) {
+		let preloadedHrefs;
+		const cspNonceMeta = document.querySelector("meta[property=csp-nonce]");
+		const cspNonce = cspNonceMeta?.nonce || cspNonceMeta?.getAttribute("nonce");
+		function allSettled(promises) {
+			return Promise.all(promises.map((p) => Promise.resolve(p).then((value) => ({
+				status: "fulfilled",
+				value
+			}), (reason) => ({
+				status: "rejected",
+				reason
+			}))));
+		}
+		function importMetaResolve(specifier) {
+			if (import.meta.resolve) return new URL(import.meta.resolve(specifier));
+			return new URL(
+				specifier,
+				/** #__KEEP__ */
+				import.meta.url
+			);
+		}
+		promise = allSettled(deps.map((depString) => {
+			depString = assetsURL(depString, importerUrl);
+			const dep = importMetaResolve(depString);
+			const isCss = isCssPreloadUrl(dep);
+			return preloadOnce(seen, dep.href, () => {
+				if (preloadedHrefs === void 0) {
+					preloadedHrefs = {
+						all: /* @__PURE__ */ new Set(),
+						styles: /* @__PURE__ */ new Set()
+					};
+					const links = document.getElementsByTagName("link");
+					for (let i = links.length - 1; i >= 0; i--) {
+						const link = links[i];
+						preloadedHrefs.all.add(link.href);
+						if (link.rel === "stylesheet") preloadedHrefs.styles.add(link.href);
+					}
+				}
+				if ((isCss ? preloadedHrefs.styles : preloadedHrefs.all).has(dep.href)) return;
+				const link = document.createElement("link");
+				link.rel = isCss ? "stylesheet" : scriptRel;
+				if (!isCss) link.as = "script";
+				link.crossOrigin = "";
+				link.href = dep.href;
+				if (cspNonce) link.setAttribute("nonce", cspNonce);
+				document.head.appendChild(link);
+				if (isCss) return new Promise((res, rej) => {
+					link.addEventListener("load", res);
+					link.addEventListener("error", () => rej(/* @__PURE__ */ new Error(`Unable to preload CSS for ${dep}`)));
+				});
+			});
+		}).filter((p) => p !== void 0));
+	}
+	function handlePreloadError(err) {
+		const e = new Event("vite:preloadError", { cancelable: true });
+		e.payload = err;
+		window.dispatchEvent(e);
+		if (!e.defaultPrevented) throw err;
+	}
+	return promise.then((res) => {
+		for (const item of res || []) {
+			if (item.status !== "rejected") continue;
+			handlePreloadError(item.reason);
+		}
+		return baseModule().catch(handlePreloadError);
+	});
+};
+// hub/web/src/utils/hlsPlayer.js
+var hlsModulePromise = null;
+function loadHlsConstructor() {
+	if (!hlsModulePromise) hlsModulePromise = __vitePreload(() => import("./vendor-hls.light-DW8pWxy7.js").then((mod) => mod?.default || mod), []).catch(() => null);
+	return hlsModulePromise;
+}
+function isAppleSafariOrIosWebKit() {
+	if (typeof navigator === "undefined") return false;
+	const ua = navigator.userAgent || "";
+	if (/iPad|iPhone|iPod/i.test(ua) || navigator.platform === "MacIntel" && Number(navigator.maxTouchPoints) > 1) return true;
+	return /AppleWebKit/i.test(ua) && /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|FxiOS/i.test(ua);
+}
+function destroyHlsPlayer(videoEl) {
+	if (!videoEl) return;
+	const existing = videoEl.__dshHlsInstance;
+	if (existing) {
+		delete videoEl.__dshHlsInstance;
+		try {
+			existing.destroy();
+		} catch {}
+	}
+}
+async function attachSmartHlsPlayer(videoEl, { hlsUrl = "", fallbackSrc = "", onFallback = null } = {}) {
+	if (!videoEl) return false;
+	destroyHlsPlayer(videoEl);
+	if (!hlsUrl) {
+		if (fallbackSrc && videoEl.getAttribute("src") !== fallbackSrc) videoEl.src = fallbackSrc;
+		return false;
+	}
+	const canNative = Boolean(videoEl.canPlayType?.("application/vnd.apple.mpegurl") || videoEl.canPlayType?.("application/x-mpegURL"));
+	if (canNative && isAppleSafariOrIosWebKit()) {
+		videoEl.dataset.dshHlsActive = "native";
+		videoEl.src = hlsUrl;
+		return true;
+	}
+	const Hls = await loadHlsConstructor();
+	if (!videoEl.isConnected) return false;
+	if (Hls && typeof Hls.isSupported === "function" && Hls.isSupported()) {
+		const hls = new Hls({
+			enableWorker: true,
+			lowLatencyMode: false,
+			backBufferLength: 30,
+			maxBufferLength: 18,
+			maxMaxBufferLength: 36,
+			manifestLoadingMaxRetry: 2,
+			manifestLoadingRetryDelay: 500,
+			fragLoadingMaxRetry: 4,
+			fragLoadingRetryDelay: 600
+		});
+		videoEl.__dshHlsInstance = hls;
+		videoEl.dataset.dshHlsActive = "mse";
+		let mediaRecoveredOnce = false;
+		hls.on(Hls.Events.ERROR, (_event, data) => {
+			if (!data?.fatal) return;
+			if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !mediaRecoveredOnce) {
+				mediaRecoveredOnce = true;
+				try {
+					hls.recoverMediaError();
+					return;
+				} catch {}
+			}
+			destroyHlsPlayer(videoEl);
+			delete videoEl.dataset.dshHlsActive;
+			if (fallbackSrc && videoEl.isConnected) {
+				videoEl.dataset.dshHlsFailed = "1";
+				videoEl.src = fallbackSrc;
+				try {
+					videoEl.load();
+				} catch {}
+				onFallback?.();
+			}
+		});
+		hls.loadSource(hlsUrl);
+		hls.attachMedia(videoEl);
+		return true;
+	}
+	if (canNative) {
+		videoEl.dataset.dshHlsActive = "native";
+		videoEl.src = hlsUrl;
+		return true;
+	}
+	if (fallbackSrc) videoEl.src = fallbackSrc;
+	return false;
 }
 // hub/web/src/utils/webrtcMedia.js
 var DEFAULT_ICE_SERVERS = [{ urls: [
@@ -3494,10 +3704,51 @@ var EXACT_ZH_TO_EN = {
 	"📲 已缓存 · 再点存入相册/文件": "📲 Ready · Tap to Save",
 	"⏳ 准备中…": "⏳ Preparing…",
 	"✨ 切回智能兼容秒播": "✨ Back to Smart Stream",
+	"✨ 切回自适应秒播流": "✨ Adaptive HLS Stream",
+	"🎞️ 切换无损原画流": "🎞️ Lossless Raw Stream",
 	"🎞️ 尝试原片直出": "🎞️ Raw Original Stream",
 	"🔄 强制重编码兼容流": "🔄 Force Compat Transcode",
 	"🔄 播不出？转码兼容播放": "🔄 Compat Transcode",
-	"⬇️ 保存原视频到本地播放": "⬇️ Save Original Video"
+	"⬇️ 保存原视频到本地播放": "⬇️ Save Original Video",
+	"滑卡批阅模式": "Swipe Triage Mode",
+	"滑卡批阅": "Swipe Triage",
+	"↩ 撤回": "↩ Undo",
+	"☰ 列表模式": "☰ List View",
+	"☰ 返回会话列表": "☰ Back to Session List",
+	"对话 ›": "Chat ›",
+	"↪ 稍后看": "↪ Snoozed",
+	"我：": "Me: ",
+	"搁置": "Snooze",
+	"点此查看": "View",
+	"查看 ›": "View ›",
+	"⤢ 全屏": "⤢ Full",
+	"⤡ 半屏": "⤡ Half",
+	"收起 ✕": "Close ✕",
+	"详情": "Details",
+	"点击查看完整提问 ›": "Tap to view full prompt ›",
+	"点击查看完整提问与截图 ›": "Tap to view full prompt & image ›",
+	"点击展开完整回复全文 ›": "Tap to read full reply ›",
+	"短按弹键盘打字 · 长按直接说话": "Tap to type · Hold to speak",
+	"🎙️ 正在聆听语音… 松手落入输入框": "🎙️ Listening… Release to insert text",
+	"🎙️ 长按说": "🎙️ Hold",
+	"🔴 听写中": "🔴 Live",
+	"输入你的方案，或继续长按上方追加语音…": "Type your instructions, or hold above to append voice…",
+	"发送新方案 👉": "Send New Plan 👉",
+	"可点此 或 右滑卡片": "Tap here or swipe right",
+	"✍️ 请先输入或长按说话": "✍️ Type or hold to speak first",
+	"填写方案后即可点此或右滑发送": "Enter your instructions to unlock",
+	"长按此钮 或 右拉稳住0.8s": "Hold button or pull right 0.8s",
+	"待处理卡片已全部清零！": "All Pending Cards Cleared!",
+	"所有待授权与未读完结会话均已处理完毕。": "All pending approvals and unread conclusions are done.",
+	"💬 我发送的完整提问": "💬 My Full Prompt",
+	"🔍 点击打开高清原图预览器": "🔍 Tap to open full-res image viewer",
+	"⏳ 正在同步完整提问内容…": "⏳ Syncing full prompt…",
+	"💻 待执行完整命令": "💻 Full Command to Execute",
+	"📖 AI 最新完整回复": "📖 Latest Full AI Reply",
+	"⏳ 正在从云端拉取完整未截断全文…": "⏳ Fetching full untruncated reply…",
+	"💬 进入完整对话上下文 ›": "💬 Open Full Conversation ›",
+	"📨 已发送新方案指令": "📨 Sent new instructions",
+	"当前浏览器环境不支持语音听写，请直接键盘输入": "Speech dictation is unavailable in this browser; please type instead"
 };
 var REGEX_ZH_TO_EN = [
 	[/^🌐 (.+)$/, (_, title) => `🌐 ${title === "对话内 HTML 交互预览" ? "Inline HTML Live Preview" : title}`],
@@ -3506,6 +3757,8 @@ var REGEX_ZH_TO_EN = [
 	[/^⚡ 已直连拉取 (.+)…$/, "⚡ P2P Direct $1…"],
 	[/^⏳ 已拉取 (.+)…$/, "⏳ Downloaded $1…"],
 	[/^🎬 (.+) · ⚡ P2P 极速直连 · 零缓冲秒播$/, "🎬 $1 · ⚡ P2P Direct Zero-Buffer"],
+	[/^🎬 (.+) · ⚡ HLS 切片秒播 · 抗弱网零卡死$/, "🎬 $1 · ⚡ Adaptive HLS Instant Stream"],
+	[/^🎬 (.+) · 无损原画 HLS 切片流$/, "🎬 $1 · Lossless HLS Original Stream"],
 	[/^🎬 (.+) · ⚡ 720p 极速秒看流 · 拖动秒播$/, "🎬 $1 · ⚡ 720p Fast Preview Stream"],
 	[/^🎬 (.+) · 智能 H\.264 兼容流 · 拖动秒播$/, "🎬 $1 · Smart H.264 Compat Stream"],
 	[/^🎬 (.+) · 无损快启重封装 · 拖动秒播$/, "🎬 $1 · Fast-Start Lossless Remux"],
@@ -3578,7 +3831,12 @@ var REGEX_ZH_TO_EN = [
 	[/^(\d+)\s*秒前$/, "$1s ago"],
 	[/^(\d+)\s*分钟前$/, "$1m ago"],
 	[/^(\d+)\s*小时前$/, "$1h ago"],
-	[/^(\d+)\s*天前$/, "$1d ago"]
+	[/^(\d+)\s*天前$/, "$1d ago"],
+	[/^↩ 撤回 \((\d+)s\)$/, "↩ Undo ($1s)"],
+	[/^(\d+)图$/, "$1 img"],
+	[/^📄 代码改动 · (\d+) 个文件$/, (_, n) => `📄 Code Changes · ${n} file${Number(n) === 1 ? "" : "s"}`],
+	[/^📄 代码改动 \((\d+) 个文件\)$/, (_, n) => `📄 Code Changes (${n} file${Number(n) === 1 ? "" : "s"})`],
+	[/^🟢 去列表查看运行中任务 \((\d+)\) ›$/, "🟢 View Running Tasks ($1) ›"]
 ];
 function getLangPref() {
 	try {
@@ -3704,8 +3962,9 @@ function applyLangToDom(root = typeof document !== "undefined" ? document.body :
 	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
 	let node = walker.nextNode();
 	while (node) {
-		const parentTag = node.parentElement?.tagName;
-		if (parentTag !== "SCRIPT" && parentTag !== "STYLE" && parentTag !== "CODE" && parentTag !== "PRE") {
+		const parentEl = node.parentElement;
+		const parentTag = parentEl?.tagName;
+		if (parentTag !== "SCRIPT" && parentTag !== "STYLE" && parentTag !== "CODE" && parentTag !== "PRE" && parentTag !== "TEXTAREA" && !parentEl?.closest?.("#triageDeckOverlay")) {
 			const curVal = node.nodeValue || "";
 			if (node.__origZh === void 0) node.__origZh = curVal;
 			else if (!isEn && curVal !== node.__origZh && /[\u4e00-\u9fa5]/.test(curVal)) node.__origZh = curVal;
@@ -5109,7 +5368,8 @@ function isHighRiskCommand(commandLine = "", reason = "") {
 function highlightDangerousCommandHtml(rawCmd = "") {
 	return esc(String(rawCmd || "")).replace(DANGER_TOKEN_RE, "<span class=\"dsh-triage-hl-danger\">$1</span>");
 }
-function extractLastUserPromptAndMedia(transcript = []) {
+function extractLastUserPromptAndMedia(transcript = [], lang = "zh") {
+	const en = lang === "en";
 	const list = Array.isArray(transcript) ? transcript : [];
 	for (let i = list.length - 1; i >= 0; i -= 1) {
 		const m = list[i];
@@ -5142,7 +5402,7 @@ function extractLastUserPromptAndMedia(transcript = []) {
 		const cleanText = raw.replace(/\n{3,}/g, "\n\n").trim();
 		const imageCount = Math.max(mediaPaths.length, optimisticImgCount);
 		if (cleanText || imageCount > 0) return {
-			text: cleanText || "（发送了图片附件）",
+			text: cleanText || (en ? "(Image attached)" : "（发送了图片附件）"),
 			mediaPaths,
 			imageCount
 		};
@@ -5161,17 +5421,35 @@ function extractSessionChangedFiles(s) {
 		totalDel: 0
 	};
 	if (Array.isArray(s.changedFiles) && s.changedFiles.length > 0) {
-		const files = s.changedFiles.map((fc) => ({
-			name: fc.displayPath || fc.name || fc.path || "file",
-			path: fc.path || fc.name || "",
-			added: Number(fc.added) || 0,
-			removed: Number(fc.removed) || 0
-		}));
+		let anyExplicitCount = false;
+		const files = s.changedFiles.map((fc) => {
+			if (typeof fc === "string") return {
+				name: fc.split("/").slice(-2).join("/") || fc,
+				path: fc,
+				added: 0,
+				removed: 0
+			};
+			const rawAdd = fc?.additions ?? fc?.added ?? fc?.linesAdded;
+			const rawDel = fc?.deletions ?? fc?.removed ?? fc?.linesRemoved;
+			const addNum = Number(rawAdd) || 0;
+			const delNum = Number(rawDel) || 0;
+			if (addNum > 0 || delNum > 0) anyExplicitCount = true;
+			const rawPath = fc?.path || fc?.name || "";
+			const fallbackName = rawPath ? rawPath.split("/").slice(-2).join("/") : "file";
+			return {
+				name: fc?.displayPath || fc?.name || fallbackName || "file",
+				path: rawPath,
+				added: addNum,
+				removed: delNum
+			};
+		});
+		const totalAdd = files.reduce((acc, f) => acc + f.added, 0);
+		const totalDel = files.reduce((acc, f) => acc + f.removed, 0);
 		return {
 			files,
-			hasLineCounts: true,
-			totalAdd: files.reduce((acc, f) => acc + f.added, 0),
-			totalDel: files.reduce((acc, f) => acc + f.removed, 0)
+			hasLineCounts: anyExplicitCount,
+			totalAdd,
+			totalDel
 		};
 	}
 	const seen = /* @__PURE__ */ new Map();
@@ -5210,33 +5488,46 @@ function extractSessionChangedFiles(s) {
 		totalDel: 0
 	};
 }
-function localizeApprovalOptionLabel(rawLabel = "", idx = 1) {
+function localizeApprovalOptionLabel(rawLabel = "", idx = 1, lang = "zh") {
+	const en = lang === "en";
 	const s = String(rawLabel || "").trim();
-	if (!s) return `${idx}. 允许执行`;
-	let m = /^Yes,\s*allow\s+this\s+time$/i.exec(s);
-	if (m) return `${idx}. 本次允许执行`;
-	m = /^Yes,\s*and\s+always\s+allow\s+'([^']+)'\s+in\s+this\s+conversation$/i.exec(s);
-	if (m) return `${idx}. 本对话内始终允许 '${m[1]}'`;
-	m = /^Yes,\s*and\s+always\s+allow\s+in\s+this\s+conversation$/i.exec(s);
-	if (m) return `${idx}. 本对话内始终允许`;
-	m = /^Yes,\s*and\s+always\s+allow\s+'([^']+)'$/i.exec(s);
-	if (m) return `${idx}. 始终允许 '${m[1]}'`;
-	m = /^Yes,\s*and\s+always\s+allow$/i.exec(s);
-	if (m) return `${idx}. 始终允许该操作`;
+	if (!s) return en ? `${idx}. Allow this time` : `${idx}. 允许执行`;
+	const clean = s.replace(/^\d+\.\s*/, "");
+	let m = /^(?:Yes,\s*allow\s+this\s+time|本次允许执行|允许执行)$/i.exec(clean);
+	if (m) return en ? `${idx}. Allow this time` : `${idx}. 本次允许执行`;
+	m = /^(?:Yes,\s*and\s+always\s+allow\s+'([^']+)'\s+in\s+this\s+conversation|本对话内始终允许\s*'([^']+)')$/i.exec(clean);
+	if (m) {
+		const target = m[1] || m[2];
+		return en ? `${idx}. Always allow '${target}' in this chat` : `${idx}. 本对话内始终允许 '${target}'`;
+	}
+	m = /^(?:Yes,\s*and\s+always\s+allow\s+in\s+this\s+conversation|本对话内始终允许)$/i.exec(clean);
+	if (m) return en ? `${idx}. Always allow in this chat` : `${idx}. 本对话内始终允许`;
+	m = /^(?:Yes,\s*and\s+always\s+allow\s+'([^']+)'|始终允许\s*'([^']+)')$/i.exec(clean);
+	if (m) {
+		const target = m[1] || m[2];
+		return en ? `${idx}. Always allow '${target}'` : `${idx}. 始终允许 '${target}'`;
+	}
+	m = /^(?:Yes,\s*and\s+always\s+allow|始终允许该操作)$/i.exec(clean);
+	if (m) return en ? `${idx}. Always allow` : `${idx}. 始终允许该操作`;
 	return /^\d+\./.test(s) ? s : `${idx}. ${s}`;
 }
-function shortenButtonOptionText(label = "") {
+function shortenButtonOptionText(label = "", lang = "zh") {
+	const en = lang === "en";
 	const clean = String(label || "").replace(/^[0-9A-Za-z]+\.\s*/, "").replace(/（推荐）|\(Recommended\)/gi, "").trim();
-	return clean.length > 13 ? `${clean.slice(0, 12)}…` : clean || "确认";
+	const maxLen = en ? 18 : 13;
+	return clean.length > maxLen ? `${clean.slice(0, maxLen - 1)}…` : clean || (en ? "Confirm" : "确认");
 }
-function extractPlainSummaryFromMarkdown(md = "") {
-	return String(md || "").replace(/```[\s\S]*?```/g, " [代码块] ").replace(/!\[[^\]]*\]\([^)]+\)/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/^#{1,6}\s+/gm, "").replace(/[*_`>~]/g, "").replace(/\n{2,}/g, "\n").trim();
+function extractPlainSummaryFromMarkdown(md = "", lang = "zh") {
+	return String(md || "").replace(/```[\s\S]*?```/g, lang === "en" ? " [code] " : " [代码块] ").replace(/!\[[^\]]*\]\([^)]+\)/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/^#{1,6}\s+/gm, "").replace(/[*_`>~]/g, "").replace(/\n{2,}/g, "\n").trim();
 }
-function buildTriageCardViewModel(s, shortHostMap = {}) {
-	const hostShort = shortHostMap[s.hostId] || s.hostName || s.hostId || "电脑";
+function buildTriageCardViewModel(s, shortHostMap = {}, lang = "zh") {
+	const en = lang === "en";
+	const fallbackHost = en ? "Computer" : "电脑";
+	const fallbackTitle = en ? "Untitled Session" : "未命名会话";
+	const hostShort = shortHostMap[s.hostId] || s.hostName || s.hostId || fallbackHost;
 	const projShort = formatCompactProjectLabel(s.project || "");
-	const cleanTitle = stripRedundantProjectPrefix(s.title || "未命名会话", s.project || "") || "未命名会话";
-	const promptInfo = extractLastUserPromptAndMedia(s.transcript);
+	const cleanTitle = stripRedundantProjectPrefix(s.title || fallbackTitle, s.project || "") || fallbackTitle;
+	const promptInfo = extractLastUserPromptAndMedia(s.transcript, lang);
 	const diffInfo = extractSessionChangedFiles(s);
 	const canSendPrompt = s.controlMode !== "observe-only" && s.capabilities?.canSendPrompt !== false;
 	const tr = Array.isArray(s.transcript) ? s.transcript : [];
@@ -5247,9 +5538,10 @@ function buildTriageCardViewModel(s, shortHostMap = {}) {
 	}
 	const app = s.approvalObj;
 	if (Boolean(s.status === "approval" && app && (app.kind === "question" || Array.isArray(app.questions)))) {
+		const defaultQText = en ? "Please select an option to continue" : "请做出选择以继续";
 		const questions = Array.isArray(app.questions) && app.questions.length > 0 ? app.questions : [{
 			id: "q_1",
-			question: app.promptTitle || "请做出选择以继续",
+			question: app.promptTitle || defaultQText,
 			options: []
 		}];
 		const primaryQ = questions[0];
@@ -5257,22 +5549,22 @@ function buildTriageCardViewModel(s, shortHostMap = {}) {
 		const rawOpts = Array.isArray(primaryQ.options) ? primaryQ.options : [];
 		const alpha = "ABCDEFGH";
 		const options = rawOpts.map((o, idx) => {
-			const rawLbl = String(o?.label || o || `选项 ${idx + 1}`);
+			const rawLbl = String(o?.label || o || (en ? `Option ${idx + 1}` : `选项 ${idx + 1}`));
 			return {
 				value: rawLbl,
 				label: /^[0-9A-Z]+\.\s/.test(rawLbl) ? rawLbl : `${alpha[idx] || idx + 1}. ${rawLbl}`,
-				shortBtn: shortenButtonOptionText(rawLbl),
+				shortBtn: shortenButtonOptionText(rawLbl, lang),
 				desc: o?.description ? String(o.description) : ""
 			};
 		});
-		const extraCount = questions.length > 1 ? `（共 ${questions.length} 个问题）` : "";
+		const extraCount = questions.length > 1 ? en ? ` (${questions.length} questions)` : `（共 ${questions.length} 个问题）` : "";
 		return {
 			cardKey: `q:${s.id}:${app.code || ""}`,
 			sessionId: s.id,
 			hostId: s.hostId,
 			harness: s.harness,
 			title: cleanTitle,
-			sub: `${hostShort} · ${projShort} · 待你选择`,
+			sub: `${hostShort} · ${projShort} · ${en ? "Needs Input" : "待你选择"}`,
 			promptInfo,
 			diffInfo,
 			kind: "question",
@@ -5281,26 +5573,27 @@ function buildTriageCardViewModel(s, shortHostMap = {}) {
 			qId,
 			questions,
 			multi: Boolean(primaryQ.multiSelect),
-			headline: `${primaryQ.question || app.promptTitle || "请做出选择以继续"}${extraCount}`,
+			headline: `${primaryQ.question || app.promptTitle || defaultQText}${extraCount}`,
 			cmdLine: "",
 			cmdReason: "",
 			replyPreview: "",
 			fullReplyMarkdown: latestAssistantMsg?.text || "",
 			options,
 			canCustom: true,
-			customLabel: "其他方案 / 补充说明…"
+			customLabel: en ? "Other plan / Add note…" : "其他方案 / 补充说明…"
 		};
 	}
 	if (s.status === "approval" && app) {
 		const cmdLine = String(app.commandLine || app.reason || "").trim();
-		const cmdReason = String(app.subtitle || app.promptTitle || `请求调用 ${app.toolName || "工具"}`).trim();
+		const defaultReason = en ? `Requesting ${app.toolName || "tool"}` : `请求调用 ${app.toolName || "工具"}`;
+		const cmdReason = String(app.subtitle || app.promptTitle || defaultReason).trim();
 		const risk = isHighRiskCommand(cmdLine, cmdReason) ? "high" : "normal";
 		const rawOpts = Array.isArray(app.options) && app.options.length > 0 ? app.options : [{
 			index: 1,
-			label: "1. 本次允许执行"
+			label: en ? "Yes, allow this time" : "1. 本次允许执行"
 		}, {
 			index: 4,
-			label: "不执行，告诉 AI 改怎么做…"
+			label: en ? "Skip & tell AI what to do instead…" : "不执行，告诉 AI 改怎么做…"
 		}];
 		const positiveOpts = [];
 		let denyOptIndex = 4;
@@ -5313,29 +5606,31 @@ function buildTriageCardViewModel(s, shortHostMap = {}) {
 			const lbl = String(optObj.label || "");
 			if (optIdx === 4 || /^(?:no\b|skip\b|deny\b|reject\b|拒绝|不执行|取消)/i.test(lbl)) denyOptIndex = optIdx;
 			else {
-				const localized = localizeApprovalOptionLabel(lbl, positiveOpts.length + 1);
+				const localized = localizeApprovalOptionLabel(lbl, positiveOpts.length + 1, lang);
 				positiveOpts.push({
 					optionIndex: optIdx,
 					label: localized,
-					shortBtn: shortenButtonOptionText(localized),
+					shortBtn: shortenButtonOptionText(localized, lang),
 					desc: ""
 				});
 			}
 		});
 		if (positiveOpts.length === 0) positiveOpts.push({
 			optionIndex: 1,
-			label: "1. 本次允许执行",
-			shortBtn: "本次允许执行",
+			label: en ? "1. Allow this time" : "1. 本次允许执行",
+			shortBtn: en ? "Allow this time" : "本次允许执行",
 			desc: ""
 		});
-		const headline = (latestAssistantMsg?.text ? extractPlainSummaryFromMarkdown(latestAssistantMsg.text).split("\n")[0]?.slice(0, 68) : "") || app.promptTitle || `等待确认工具调用：${app.toolName || "命令"}`;
+		const rawLead = latestAssistantMsg?.text ? extractPlainSummaryFromMarkdown(latestAssistantMsg.text, lang).split("\n")[0] || "" : "";
+		const leadLimit = en ? 108 : 68;
+		const headline = (rawLead.length > leadLimit ? `${rawLead.slice(0, leadLimit - 1)}…` : rawLead) || app.promptTitle || (en ? `Waiting for tool approval: ${app.toolName || "command"}` : `等待确认工具调用：${app.toolName || "命令"}`);
 		return {
 			cardKey: `app:${s.id}:${app.code || ""}`,
 			sessionId: s.id,
 			hostId: s.hostId,
 			harness: s.harness,
 			title: cleanTitle,
-			sub: `${hostShort} · ${projShort} · ${risk === "high" ? "高危授权" : "命令授权"}`,
+			sub: `${hostShort} · ${projShort} · ${risk === "high" ? en ? "High-Risk Approval" : "高危授权" : en ? "Tool Approval" : "命令授权"}`,
 			promptInfo,
 			diffInfo,
 			kind: "approval",
@@ -5344,20 +5639,25 @@ function buildTriageCardViewModel(s, shortHostMap = {}) {
 			multi: false,
 			headline,
 			cmdLine,
-			cmdReason: risk === "high" ? `⚠️ 高危操作拦截 · ${cmdReason}` : `🔧 ${cmdReason}`,
+			cmdReason: risk === "high" ? en ? `⚠️ High-Risk Guard · ${cmdReason}` : `⚠️ 高危操作拦截 · ${cmdReason}` : `🔧 ${cmdReason}`,
 			replyPreview: "",
 			fullReplyMarkdown: latestAssistantMsg?.text || "",
 			options: positiveOpts,
 			denyOptionIndex: denyOptIndex,
 			canCustom: canSendPrompt,
-			customLabel: `${positiveOpts.length + 1}. 不执行，告诉 AI 改怎么做…`
+			customLabel: en ? `${positiveOpts.length + 1}. Skip & tell AI what to do instead…` : `${positiveOpts.length + 1}. 不执行，告诉 AI 改怎么做…`
 		};
 	}
 	const isInterrupted = Boolean(s.isUnreadInterrupted);
 	const fullMd = latestAssistantMsg?.text || s.rawLastPreview || s.lastPreview || "";
-	const plainBody = extractPlainSummaryFromMarkdown(fullMd);
+	const plainBody = extractPlainSummaryFromMarkdown(fullMd, lang);
 	const lines = plainBody.split("\n").map((l) => l.trim()).filter(Boolean);
-	const headline = isInterrupted ? `⚠️ 任务异常中断：${(lines[0] || s.lastPreview || "请查看详情").slice(0, 56)}` : `✅ 已完工待阅：${(lines[0] || cleanTitle).slice(0, 56)}`;
+	const headLimit = en ? 88 : 56;
+	const clipHead = (txt) => {
+		const t = String(txt || "").trim();
+		return t.length > headLimit ? `${t.slice(0, headLimit - 1)}…` : t;
+	};
+	const headline = isInterrupted ? en ? `⚠️ Interrupted: ${clipHead(lines[0] || s.lastPreview || "View details")}` : `⚠️ 任务异常中断：${clipHead(lines[0] || s.lastPreview || "请查看详情")}` : en ? `✅ Ready to review: ${clipHead(lines[0] || cleanTitle)}` : `✅ 已完工待阅：${clipHead(lines[0] || cleanTitle)}`;
 	const replyPreview = lines.slice(1, 4).join(" ") || plainBody.slice(0, 140);
 	return {
 		cardKey: `conc:${s.id}:${s.conclusionSig || s.updatedAt || ""}`,
@@ -5365,7 +5665,7 @@ function buildTriageCardViewModel(s, shortHostMap = {}) {
 		hostId: s.hostId,
 		harness: s.harness,
 		title: cleanTitle,
-		sub: `${hostShort} · ${projShort} · ${isInterrupted ? "异常中断" : "已出结论"}`,
+		sub: `${hostShort} · ${projShort} · ${isInterrupted ? en ? "Interrupted" : "异常中断" : en ? "Completed" : "已出结论"}`,
 		promptInfo,
 		diffInfo,
 		kind: isInterrupted ? "interrupted" : "conclusion",
@@ -5380,12 +5680,12 @@ function buildTriageCardViewModel(s, shortHostMap = {}) {
 		artifacts: Array.isArray(s.artifacts) ? s.artifacts : [],
 		options: [{
 			optionIndex: 1,
-			label: "1. 已阅归档（消除未读蓝点）",
-			shortBtn: "标为已阅归档",
+			label: en ? "1. Mark as Read & Archive" : "1. 已阅归档（消除未读蓝点）",
+			shortBtn: en ? "Mark as Read" : "标为已阅归档",
 			desc: ""
 		}],
 		canCustom: canSendPrompt,
-		customLabel: "2. 继续追问 / 交代修改意见…"
+		customLabel: en ? "2. Follow up / Request changes…" : "2. 继续追问 / 交代修改意见…"
 	};
 }
 function createTriageDeckController(deps) {
@@ -5402,6 +5702,10 @@ function createTriageDeckController(deps) {
 	let sy = 0;
 	let dx = 0;
 	let dy = 0;
+	let maxDx = 0;
+	let dragStartAt = 0;
+	let startedInDock = false;
+	let startedOnConfirmBtn = false;
 	let axisLocked = "";
 	let holdTimer = null;
 	let holdPct = 0;
@@ -5412,6 +5716,11 @@ function createTriageDeckController(deps) {
 	let isRecording = false;
 	let speechRec = null;
 	let listenersBound = false;
+	let modalSheetBound = false;
+	let activeModalKind = "";
+	let activeModalSessionId = "";
+	let modalExpanded = false;
+	let lastModalRenderedLen = -1;
 	let lastRenderedSig = "";
 	function appendMediaAuthUrl(url) {
 		const mt = deps.getMediaTicket?.() || "";
@@ -5436,15 +5745,29 @@ function createTriageDeckController(deps) {
 		clearInterval(graceCountdownTimer);
 		graceCountdownTimer = null;
 	}
+	const curLang = () => deps.getLang?.() === "en" ? "en" : "zh";
+	const isEn = () => curLang() === "en";
+	function syncStaticChromeLang() {
+		const en = isEn();
+		const titleSpan = document.getElementById("triageCenterTitleText");
+		if (titleSpan) titleSpan.textContent = en ? "Swipe Triage" : "滑卡批阅";
+		const backBtn = document.getElementById("triageBackToListBtn");
+		if (backBtn) backBtn.textContent = en ? "☰ List View" : "☰ 列表模式";
+		const closeBtn = document.getElementById("triageModalCloseBtn");
+		if (closeBtn) closeBtn.textContent = en ? "Close ✕" : "收起 ✕";
+		const expBtn = document.getElementById("triageModalExpandBtn");
+		if (expBtn) expBtn.textContent = modalExpanded ? en ? "⤡ Half" : "⤡ 半屏" : en ? "⤢ Full" : "⤢ 全屏";
+	}
 	function getOrderedActiveCards() {
 		const now = Date.now();
 		for (const [k, expAt] of dismissedKeys.entries()) if (now > expAt) dismissedKeys.delete(k);
+		const lang = curLang();
 		const allSessions = deps.getSessions?.() || [];
 		const shortHostMap = deps.getShortHostMap?.() || {};
 		const eligible = allSessions.filter(isTriageEligibleSession);
 		const models = [];
 		for (const s of eligible) {
-			const vm = buildTriageCardViewModel(s, shortHostMap);
+			const vm = buildTriageCardViewModel(s, shortHostMap, lang);
 			if (dismissedKeys.has(vm.cardKey)) continue;
 			models.push({
 				session: s,
@@ -5492,43 +5815,46 @@ function createTriageDeckController(deps) {
 		else setTimeout(() => el.classList.remove("show"), delay);
 	}
 	function computeConfirmBtnModel(vm, draft) {
+		const en = isEn();
+		const tapOrSwipeSub = en ? "Tap here or swipe right" : "可点此 或 右滑卡片";
 		if (vm.canCustom && (vm.multi ? draft.useCustom : draft.sel === vm.options.length)) {
 			if (String(draft.customText || "").trim()) return {
 				cls: "orange",
-				t1: "发送新方案 👉",
-				t2: "可点此 或 右滑卡片"
+				t1: en ? "Send New Plan 👉" : "发送新方案 👉",
+				t2: tapOrSwipeSub
 			};
 			return {
 				cls: "locked",
-				t1: "✍️ 请先输入或长按说话",
-				t2: "填写方案后即可点此或右滑发送"
+				t1: en ? "✍️ Type or hold to speak first" : "✍️ 请先输入或长按说话",
+				t2: en ? "Enter your instructions to unlock" : "填写方案后即可点此或右滑发送"
 			};
 		}
 		if (vm.multi) return {
 			cls: "blue",
-			t1: `确认 (${draft.multiSel.length}项) 👉`,
-			t2: "可点此 或 右滑卡片"
+			t1: en ? `Confirm (${draft.multiSel.length}) 👉` : `确认 (${draft.multiSel.length}项) 👉`,
+			t2: tapOrSwipeSub
 		};
-		const shortTxt = (vm.options[draft.sel] || vm.options[0] || {}).shortBtn || "确认";
+		const shortTxt = (vm.options[draft.sel] || vm.options[0] || {}).shortBtn || (en ? "Confirm" : "确认");
 		if (vm.risk === "high" && draft.sel === 0) return {
 			cls: "crimson",
-			t1: `🛡️ 按住0.8s：${shortTxt} 👉`,
-			t2: "长按此钮 或 右拉稳住0.8s"
+			t1: en ? `🛡️ Hold 0.8s: ${shortTxt} 👉` : `🛡️ 按住0.8s：${shortTxt} 👉`,
+			t2: en ? "Hold button or pull right 0.8s" : "长按此钮 或 右拉稳住0.8s"
 		};
 		return {
 			cls: vm.kind === "question" ? "blue" : "",
 			t1: `${shortTxt} 👉`,
-			t2: "可点此 或 右滑卡片"
+			t2: tapOrSwipeSub
 		};
 	}
 	function updateUndoBtnDom() {
 		const undoBtn = document.getElementById("triageUndoBtn");
 		if (!undoBtn) return;
+		const en = isEn();
 		while (undoStack.length > 0 && undoStack[undoStack.length - 1].type === "grace" && undoStack[undoStack.length - 1].flushed) undoStack.pop();
 		if (undoStack.length === 0) {
 			undoBtn.disabled = true;
 			undoBtn.classList.remove("grace-active");
-			undoBtn.textContent = "↩ 撤回";
+			undoBtn.textContent = en ? "↩ Undo" : "↩ 撤回";
 			return;
 		}
 		const top = undoStack[undoStack.length - 1];
@@ -5536,10 +5862,10 @@ function createTriageDeckController(deps) {
 		if (top.type === "grace" && !top.flushed) {
 			const remSec = Math.max(1, Math.ceil((top.expiresAt - Date.now()) / 1e3));
 			undoBtn.classList.add("grace-active");
-			undoBtn.textContent = `↩ 撤回 (${remSec}s)`;
+			undoBtn.textContent = en ? `↩ Undo (${remSec}s)` : `↩ 撤回 (${remSec}s)`;
 		} else {
 			undoBtn.classList.remove("grace-active");
-			undoBtn.textContent = "↩ 撤回";
+			undoBtn.textContent = en ? "↩ Undo" : "↩ 撤回";
 		}
 	}
 	function syncConfirmBtnOnly() {
@@ -5555,13 +5881,16 @@ function createTriageDeckController(deps) {
 		if (t2) t2.textContent = m.t2;
 	}
 	function preHydrateTopCards(cards) {
-		for (const item of cards.slice(0, 2)) {
+		for (const item of cards.slice(0, 3)) {
 			const s = item.session;
-			if (!item.vm.promptInfo.text && (s.omittedTranscriptCount > 0 || s.hasMoreTranscript)) deps.hydrateColdSession?.(s.hostId, s.id, s.sessionRev);
+			if (s._wireTruncated || !item.vm.promptInfo.text || s.omittedTranscriptCount > 0 || s.hasMoreTranscript) deps.hydrateColdSession?.(s.hostId, s.id, s.sessionRev);
 		}
 	}
 	function render({ force = false } = {}) {
 		if (!isOpen) return;
+		syncStaticChromeLang();
+		const en = isEn();
+		const lang = curLang();
 		if (!force && (dragging || isRecording || document.activeElement?.id === "triageCustomTextarea")) {
 			const countEl = document.getElementById("triageCountChip");
 			if (countEl) countEl.textContent = String(getOrderedActiveCards().length);
@@ -5570,6 +5899,7 @@ function createTriageDeckController(deps) {
 		}
 		const cards = getOrderedActiveCards();
 		preHydrateTopCards(cards);
+		refreshOpenModalIfNeeded(cards);
 		updateUndoBtnDom();
 		const countChip = document.getElementById("triageCountChip");
 		if (countChip) countChip.textContent = String(cards.length);
@@ -5579,9 +5909,9 @@ function createTriageDeckController(deps) {
 		const lLeft = document.getElementById("triageLayerLeft");
 		const lDeep = document.getElementById("triageLayerDeep");
 		if (!fgCard || !lRight || !lRightInner || !lLeft || !lDeep) return;
-		const sig = cards.map((c) => {
+		const sig = `${lang}::` + cards.map((c) => {
 			const d = ensureDraft(c.vm);
-			return `${c.vm.cardKey}:${c.vm.promptInfo.text.slice(0, 30)}:${c.vm.diffInfo.files.length}:${d.sel}:${d.multiSel.join(",")}:${d.useCustom ? 1 : 0}:${d.customOpen ? 1 : 0}:${d.snoozedCount}:${isRecording ? 1 : 0}`;
+			return `${c.vm.cardKey}:${c.vm.promptInfo.text.length}:${c.vm.fullReplyMarkdown.length}:${c.vm.diffInfo.files.length}:${d.sel}:${d.multiSel.join(",")}:${d.useCustom ? 1 : 0}:${d.customOpen ? 1 : 0}:${d.snoozedCount}:${isRecording ? 1 : 0}`;
 		}).join("|");
 		if (!force && sig === lastRenderedSig && fgCard.children.length > 0) return;
 		lastRenderedSig = sig;
@@ -5606,14 +5936,17 @@ function createTriageDeckController(deps) {
 		if (cards.length === 0) {
 			const runningCount = (deps.getSessions?.() || []).filter((s) => s.status === "running").length;
 			fgCard.classList.remove("is-high");
+			const emptyTitle = en ? "All Pending Cards Cleared!" : "待处理卡片已全部清零！";
+			const emptyDesc = runningCount > 0 ? en ? `<strong>${runningCount} task${runningCount === 1 ? " is" : "s are"} running</strong> in the background. Switch to List View for live progress.` : `目前还有 <strong>${runningCount} 个任务正在后台运行</strong>，切回列表模式即可查看实时进度。` : en ? "All pending approvals and unread conclusions are done." : "所有待授权与未读完结会话均已处理完毕。";
+			const runBtnLbl = en ? `🟢 View Running Tasks (${runningCount}) ›` : `🟢 去列表查看运行中任务 (${runningCount}) ›`;
 			fgCard.innerHTML = `
         <div style="margin:auto;text-align:center;padding:28px 18px;display:flex;flex-direction:column;gap:14px;align-items:center;">
           <div style="font-size:44px;">🎉</div>
-          <div style="font-size:18px;font-weight:800;color:#0f172a;">待处理卡片已全部清零！</div>
+          <div style="font-size:18px;font-weight:800;color:#0f172a;">${emptyTitle}</div>
           <div style="font-size:13px;color:#64748b;line-height:1.55;">
-            ${runningCount > 0 ? `目前还有 <strong>${runningCount} 个任务正在后台运行</strong>，切回列表模式即可查看实时进度。` : "所有待授权与未读完结会话均已处理完毕。"}
+            ${emptyDesc}
           </div>
-          ${runningCount > 0 ? `<button type="button" onclick="triageSwitchToRunningList()" style="width:100%;margin-top:6px;height:50px;border:none;border-radius:25px;background:linear-gradient(90deg,#2563eb,#4f46e5);color:#fff;font-size:14.5px;font-weight:800;cursor:pointer;box-shadow:0 6px 16px rgba(37,99,235,0.25);">🟢 去列表查看运行中任务 (${runningCount}) ›</button>` : `<button type="button" onclick="closeTriageDeckMode()" style="width:100%;margin-top:6px;height:50px;border:none;border-radius:25px;background:#0f172a;color:#fff;font-size:14.5px;font-weight:800;cursor:pointer;">☰ 返回会话列表</button>`}
+          ${runningCount > 0 ? `<button type="button" onclick="triageSwitchToRunningList()" style="width:100%;margin-top:6px;height:50px;border:none;border-radius:25px;background:linear-gradient(90deg,#2563eb,#4f46e5);color:#fff;font-size:14.5px;font-weight:800;cursor:pointer;box-shadow:0 6px 16px rgba(37,99,235,0.25);">${runBtnLbl}</button>` : `<button type="button" onclick="closeTriageDeckMode()" style="width:100%;margin-top:6px;height:50px;border:none;border-radius:25px;background:#0f172a;color:#fff;font-size:14.5px;font-weight:800;cursor:pointer;">${en ? "☰ Back to Session List" : "☰ 返回会话列表"}</button>`}
         </div>`;
 			return;
 		}
@@ -5624,15 +5957,18 @@ function createTriageDeckController(deps) {
 		const btnModel = computeConfirmBtnModel(vm, draft);
 		const firstImgPath = vm.promptInfo.mediaPaths[0] || "";
 		const thumbSrc = firstImgPath ? buildLocalThumbSrc(vm.hostId, firstImgPath) : "";
+		const thumbCountLbl = en ? `${vm.promptInfo.imageCount} img` : `${vm.promptInfo.imageCount}图`;
 		const thumbHtml = vm.promptInfo.imageCount > 0 ? `<div class="dsh-triage-thumb">
-          ${thumbSrc ? `<img src="${esc(thumbSrc)}" alt="附件图" onerror="this.style.display='none'" />` : "<span>🖼️</span>"}
-          <span class="dsh-triage-thumb-count">${vm.promptInfo.imageCount}图</span>
+          ${thumbSrc ? `<img src="${esc(thumbSrc)}" alt="${en ? "Image" : "附件图"}" onerror="this.style.display='none'" />` : "<span>🖼️</span>"}
+          <span class="dsh-triage-thumb-count">${thumbCountLbl}</span>
          </div>` : "";
-		const myPromptText = vm.promptInfo.text || s.title || "点击查看对话详情";
-		const diffBarHtml = vm.diffInfo.files.length > 0 ? `<div class="dsh-triage-diff-bar" onclick="openTriageFilesModal()">
-          <span>📄 代码改动 · ${vm.diffInfo.files.length} 个文件</span>
+		const myPromptText = vm.promptInfo.text || s.title || (en ? "Tap to view conversation" : "点击查看对话详情");
+		const fileCount = vm.diffInfo.files.length;
+		const diffLabel = en ? `📄 Code Changes · ${fileCount} file${fileCount === 1 ? "" : "s"}` : `📄 代码改动 · ${fileCount} 个文件`;
+		const diffBarHtml = fileCount > 0 ? `<div class="dsh-triage-diff-bar" onclick="openTriageFilesModal()">
+          <span>${diffLabel}</span>
           <span style="font-family:var(--mono,monospace);font-weight:700;">
-            ${vm.diffInfo.hasLineCounts ? `<span style="color:#16a34a">+${vm.diffInfo.totalAdd}</span><span style="color:#dc2626;margin-left:5px;">-${vm.diffInfo.totalDel}</span>` : `<span style="color:#64748b">点此查看</span>`}
+            ${vm.diffInfo.hasLineCounts ? `<span style="color:#16a34a">+${vm.diffInfo.totalAdd}</span><span style="color:#dc2626;margin-left:5px;">-${vm.diffInfo.totalDel}</span>` : `<span style="color:#64748b">${en ? "View" : "点此查看"}</span>`}
             <span style="color:#2563eb;margin-left:6px;">▾</span>
           </span>
         </div>` : "";
@@ -5641,8 +5977,9 @@ function createTriageDeckController(deps) {
           <div class="dsh-triage-cmd-mono">${highlightDangerousCommandHtml(vm.cmdLine)}</div>
         </div>` : vm.replyPreview ? `<div class="dsh-triage-reply-card ${vm.kind === "interrupted" ? "interrupted" : ""}" onclick="openTriageReplyModal()">
             <div class="dsh-triage-clamp3">${esc(vm.replyPreview)}</div>
-            <div style="color:#2563eb;font-size:11px;font-weight:700;margin-top:4px;">点击展开完整回复全文 ›</div>
+            <div style="color:#2563eb;font-size:11px;font-weight:700;margin-top:4px;">${en ? "Tap to read full reply ›" : "点击展开完整回复全文 ›"}</div>
           </div>` : "";
+		const expandAskLbl = en ? `Tap to view full prompt${vm.promptInfo.imageCount > 0 ? " & image" : ""} ›` : `点击查看完整提问${vm.promptInfo.imageCount > 0 ? "与截图" : ""} ›`;
 		fgCard.innerHTML = `
       <div class="dsh-triage-body" id="triageCardBody">
         <div class="dsh-triage-hdr">
@@ -5650,19 +5987,19 @@ function createTriageDeckController(deps) {
           <div class="dsh-triage-hdr-info">
             <div class="dsh-triage-title-row">
               <div class="dsh-triage-title">${esc(vm.title)}</div>
-              <button type="button" class="dsh-triage-open-chat" onclick="event.stopPropagation(); triageOpenFullSession('${esc(vm.sessionId)}')">对话 ›</button>
+              <button type="button" class="dsh-triage-open-chat" onclick="event.stopPropagation(); triageOpenFullSession('${esc(vm.sessionId)}')">${en ? "Chat ›" : "对话 ›"}</button>
             </div>
             <div class="dsh-triage-sub">
               <span>${esc(vm.sub)}</span>
-              ${draft.snoozedCount > 0 ? `<span class="dsh-triage-snooze-tag">↪ 稍后看</span>` : ""}
+              ${draft.snoozedCount > 0 ? `<span class="dsh-triage-snooze-tag">${en ? "↪ Snoozed" : "↪ 稍后看"}</span>` : ""}
             </div>
           </div>
         </div>
 
         <div class="dsh-triage-my-ask" onclick="openTriagePromptModal()">
           <div class="dsh-triage-my-ask-body">
-            <div class="dsh-triage-clamp2"><strong>我：</strong>${esc(myPromptText)}</div>
-            <div style="color:#2563eb;font-size:11px;font-weight:700;margin-top:2px;">点击查看完整提问${vm.promptInfo.imageCount > 0 ? "与截图" : ""} ›</div>
+            <div class="dsh-triage-clamp2"><strong>${en ? "Me: " : "我："}</strong>${esc(myPromptText)}</div>
+            <div style="color:#2563eb;font-size:11px;font-weight:700;margin-top:2px;">${expandAskLbl}</div>
           </div>
           ${thumbHtml}
         </div>
@@ -5695,14 +6032,14 @@ function createTriageDeckController(deps) {
                   <div style="min-width:0;">
                     <div style="font-size:13px;font-weight:700;color:#9a3412;">${esc(vm.customLabel)}</div>
                     <div style="font-size:11px;color:#ea580c;font-weight:600;">
-                      ${isRecording ? "🎙️ 正在聆听语音… 松手落入输入框" : "短按弹键盘打字 · 长按直接说话"}
+                      ${isRecording ? en ? "🎙️ Listening… Release to insert text" : "🎙️ 正在聆听语音… 松手落入输入框" : en ? "Tap to type · Hold to speak" : "短按弹键盘打字 · 长按直接说话"}
                     </div>
                   </div>
                 </div>
-                <span class="dsh-triage-mic-chip">${isRecording ? "🔴 听写中" : "🎙️ 长按说"}</span>
+                <span class="dsh-triage-mic-chip">${isRecording ? en ? "🔴 Live" : "🔴 听写中" : en ? "🎙️ Hold" : "🎙️ 长按说"}</span>
               </div>
               ${draft.customOpen ? `
-                <textarea class="dsh-triage-ta" id="triageCustomTextarea" rows="2" placeholder="输入你的方案，或继续长按上方追加语音…"
+                <textarea class="dsh-triage-ta" id="triageCustomTextarea" rows="2" placeholder="${en ? "Type your instructions, or hold above to append voice…" : "输入你的方案，或继续长按上方追加语音…"}"
                   onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"
                   oninput="triageUpdateCustomText(this.value)">${esc(draft.customText)}</textarea>` : ""}
             </div>` : ""}
@@ -5712,7 +6049,7 @@ function createTriageDeckController(deps) {
       <div class="dsh-triage-dock">
         <button type="button" class="dsh-triage-btn-snooze" onclick="triageTapSnooze()">
           <span>👈</span>
-          <span>搁置</span>
+          <span>${en ? "Snooze" : "搁置"}</span>
         </button>
         <button type="button" class="dsh-triage-btn-confirm ${btnModel.cls}" id="triageConfirmBtn"
           onmousedown="triageConfirmBtnDown(event)" onmouseup="triageConfirmBtnUp(event)" onmouseleave="triageConfirmBtnCancel()"
@@ -5731,7 +6068,7 @@ function createTriageDeckController(deps) {
 			box.offsetWidth;
 			box.classList.add("dsh-triage-shake");
 		}
-		showDragPill("✍️ 内容为空，请先打字或长按说话", "#ea580c", "#ffffff");
+		showDragPill(isEn() ? "✍️ Empty input — type or hold to speak first" : "✍️ 内容为空，请先打字或长按说话", "#ea580c", "#ffffff");
 		hideDragPill(1e3);
 		setTimeout(() => document.getElementById("triageCustomTextarea")?.focus(), 50);
 	}
@@ -5739,7 +6076,7 @@ function createTriageDeckController(deps) {
 		const SpeechCtor = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
 		if (!SpeechCtor) {
 			isRecording = false;
-			deps.showToast?.("当前浏览器环境不支持语音听写，请直接键盘输入");
+			deps.showToast?.(isEn() ? "Speech dictation is unavailable in this browser; please type instead" : "当前浏览器环境不支持语音听写，请直接键盘输入");
 			render({ force: true });
 			setTimeout(() => document.getElementById("triageCustomTextarea")?.focus(), 40);
 			return;
@@ -5749,7 +6086,7 @@ function createTriageDeckController(deps) {
 				speechRec.abort();
 			} catch {}
 			const rec = new SpeechCtor();
-			rec.lang = "zh-CN";
+			rec.lang = isEn() ? "en-US" : "zh-CN";
 			rec.continuous = true;
 			rec.interimResults = true;
 			const baseText = String(draft.customText || "").trim();
@@ -5875,11 +6212,11 @@ function createTriageDeckController(deps) {
 				sessionId: session.id,
 				prevSnapshot
 			});
-			showDragPill("✓ 已标为已读", "#059669", "#ffffff");
+			showDragPill(isEn() ? "✓ Marked as read" : "✓ 已标为已读", "#059669", "#ffffff");
 			hideDragPill(650);
 		} else {
 			scheduleGraceCommit(vm, session, commitFn);
-			showDragPill("✓ 已确认（2秒内可点左上角撤回）", "#059669", "#ffffff");
+			showDragPill(isEn() ? "✓ Confirmed (tap Undo within 2s to cancel)" : "✓ 已确认（2秒内可点左上角撤回）", "#059669", "#ffffff");
 			hideDragPill(1100);
 		}
 		if (fgCard && lRight) {
@@ -5904,7 +6241,7 @@ function createTriageDeckController(deps) {
 		const cards = getOrderedActiveCards();
 		if (!cards.length) return;
 		if (cards.length === 1) {
-			showDragPill("只剩最后 1 张待处理啦", "#475569", "#ffffff");
+			showDragPill(isEn() ? "Only 1 pending card left" : "只剩最后 1 张待处理啦", "#475569", "#ffffff");
 			hideDragPill(700);
 			return;
 		}
@@ -5920,7 +6257,7 @@ function createTriageDeckController(deps) {
 			sessionId: session.id,
 			prevSnooze
 		});
-		showDragPill("↪ 已搁置到牌堆后面", "#475569", "#ffffff");
+		showDragPill(isEn() ? "↪ Snoozed to back of deck" : "↪ 已搁置到牌堆后面", "#475569", "#ffffff");
 		hideDragPill(700);
 		const fgCard = document.getElementById("triageFgCard");
 		const lRight = document.getElementById("triageLayerRight");
@@ -5939,6 +6276,7 @@ function createTriageDeckController(deps) {
 		} else render({ force: true });
 	}
 	function undoLast() {
+		const en = isEn();
 		while (undoStack.length > 0 && undoStack[undoStack.length - 1].type === "grace" && undoStack[undoStack.length - 1].flushed) undoStack.pop();
 		if (!undoStack.length) return;
 		const last = undoStack.pop();
@@ -5946,36 +6284,248 @@ function createTriageDeckController(deps) {
 			if (last.graceTimer) clearTimeout(last.graceTimer);
 			last.graceTimer = null;
 			dismissedKeys.delete(last.cardKey);
-			showDragPill("↩ 已成功拦截撤回！尚未发往电脑", "#ea580c", "#ffffff");
+			showDragPill(en ? "↩ Cancelled in time! Not sent to computer" : "↩ 已成功拦截撤回！尚未发往电脑", "#ea580c", "#ffffff");
 			hideDragPill(1e3);
 		} else if (last.type === "snooze") {
 			if (last.prevSnooze) snoozeOrder.set(last.cardKey, last.prevSnooze);
 			else snoozeOrder.delete(last.cardKey);
-			showDragPill("↩ 已撤回上一张卡片", "#334155", "#ffffff");
+			showDragPill(en ? "↩ Restored previous card" : "↩ 已撤回上一张卡片", "#334155", "#ffffff");
 			hideDragPill(700);
 		} else if (last.type === "read") {
 			dismissedKeys.delete(last.cardKey);
 			deps.restoreSessionUnread?.(last.sessionId, last.prevSnapshot);
-			showDragPill("↩ 已恢复为未读待阅", "#334155", "#ffffff");
+			showDragPill(en ? "↩ Restored as unread" : "↩ 已恢复为未读待阅", "#334155", "#ffffff");
 			hideDragPill(700);
 		}
 		render({ force: true });
 		deps.onDeckChanged?.();
 	}
-	function openModalHtml(html) {
+	function setModalExpanded(nextExpanded) {
+		modalExpanded = Boolean(nextExpanded);
+		const en = isEn();
+		const sheet = document.getElementById("triageDetailModalContent");
+		const expBtn = document.getElementById("triageModalExpandBtn");
+		if (sheet) {
+			sheet.classList.remove("sheet-dragging");
+			sheet.style.height = "";
+			sheet.style.transform = "";
+			sheet.classList.toggle("expanded", modalExpanded);
+		}
+		if (expBtn) expBtn.textContent = modalExpanded ? en ? "⤡ Half" : "⤡ 半屏" : en ? "⤢ Full" : "⤢ 全屏";
+	}
+	function buildPromptModalBodyHtml(top) {
+		const en = isEn();
+		const { vm, session } = top;
+		const imgsHtml = vm.promptInfo.mediaPaths.map((p) => {
+			const enc = encodeURIComponent(p).replace(/'/g, "%27");
+			const fullSrc = buildLocalThumbSrc(vm.hostId, p);
+			return `<div style="margin-top:10px;" onclick="closeTriageDetailModal(); triageInspectSessionFile('${esc(vm.sessionId)}', '${enc}')">
+        <img src="${esc(fullSrc)}" alt="${en ? "Prompt Image" : "提问原图"}" style="max-width:100%;max-height:48vh;border-radius:12px;border:1px solid #cbd5e1;cursor:pointer;" />
+        <div style="font-size:11.5px;color:#2563eb;font-weight:700;margin-top:4px;">${en ? "🔍 Tap to open full-res image viewer" : "🔍 点击打开高清原图预览器"}</div>
+      </div>`;
+		}).join("");
+		const loadingHint = session._wireTruncated ? `<div style="margin-top:10px;padding:8px 12px;border-radius:10px;background:#f8fafc;color:#64748b;font-size:12px;text-align:center;">${en ? "⏳ Syncing full prompt…" : "⏳ 正在同步完整提问内容…"}</div>` : "";
+		return `<div style="font-size:14px;line-height:1.65;color:#1e293b;background:#f8fafc;padding:13px;border-radius:14px;white-space:pre-wrap;word-break:break-word;">${esc(vm.promptInfo.text || session.title)}</div>${imgsHtml}${loadingHint}`;
+	}
+	function buildReplyModalBodyHtml(top) {
+		const en = isEn();
+		const { vm, session } = top;
+		const rawMd = vm.fullReplyMarkdown || vm.headline;
+		return `<div class="md-body" style="font-size:14px;line-height:1.68;padding:2px 2px 6px;color:#0f172a;">${deps.formatAssistantText ? deps.formatAssistantText(rawMd, vm.artifacts) : `<div style="white-space:pre-wrap;">${esc(rawMd)}</div>`}</div>${session._wireTruncated ? `<div style="margin-top:12px;padding:9px 12px;border-radius:10px;background:#f8fafc;color:#64748b;font-size:12px;text-align:center;">${en ? "⏳ Fetching full untruncated reply…" : "⏳ 正在从云端拉取完整未截断全文…"}</div>` : ""}${`<div style="margin-top:14px;padding-top:12px;border-top:1px solid #f1f5f9;display:flex;justify-content:center;">
+      <button type="button" class="dsh-triage-open-chat" style="padding:7px 14px;font-size:12.5px;" onclick="closeTriageDetailModal(); triageOpenFullSession('${esc(vm.sessionId)}')">${en ? "💬 Open Full Conversation ›" : "💬 进入完整对话上下文 ›"}</button>
+    </div>`}`;
+	}
+	function refreshOpenModalIfNeeded(cards) {
+		if (!activeModalKind) return;
 		const modal = document.getElementById("triageDetailModal");
-		const box = document.getElementById("triageDetailModalContent");
-		if (!modal || !box) return;
-		box.innerHTML = html;
+		const titleEl = document.getElementById("triageModalTitle");
+		const scrollBody = document.getElementById("triageModalScrollBody");
+		if (!modal?.classList.contains("open") || !scrollBody) return;
+		const target = cards.find((c) => c.vm.sessionId === activeModalSessionId) || cards[0];
+		if (!target) return;
+		const en = isEn();
+		const langFlag = en ? 4 : 0;
+		if (activeModalKind === "reply") {
+			if (titleEl) titleEl.textContent = en ? "📖 Latest Full AI Reply" : "📖 AI 最新完整回复";
+			const nextSigLen = (target.vm.fullReplyMarkdown || "").length * 8 + (target.session._wireTruncated ? 1 : 0) + langFlag;
+			if (nextSigLen !== lastModalRenderedLen) {
+				const prevTop = scrollBody.scrollTop;
+				lastModalRenderedLen = nextSigLen;
+				scrollBody.innerHTML = buildReplyModalBodyHtml(target);
+				scrollBody.scrollTop = prevTop;
+			}
+		} else if (activeModalKind === "prompt") {
+			if (titleEl) titleEl.textContent = en ? "💬 My Full Prompt" : "💬 我发送的完整提问";
+			const nextSigLen = (target.vm.promptInfo.text || "").length * 8 + (target.session._wireTruncated ? 1 : 0) + langFlag;
+			if (nextSigLen !== lastModalRenderedLen) {
+				const prevTop = scrollBody.scrollTop;
+				lastModalRenderedLen = nextSigLen;
+				scrollBody.innerHTML = buildPromptModalBodyHtml(target);
+				scrollBody.scrollTop = prevTop;
+			}
+		}
+	}
+	function bindModalSheetGestures() {
+		if (modalSheetBound || typeof window === "undefined") return;
+		const modal = document.getElementById("triageDetailModal");
+		const sheet = document.getElementById("triageDetailModalContent");
+		const hdr = document.getElementById("triageModalHeader");
+		const scrollBody = document.getElementById("triageModalScrollBody");
+		if (!modal || !sheet || !hdr || !scrollBody) return;
+		modalSheetBound = true;
+		let hDragging = false;
+		let hStartY = 0;
+		let hLastY = 0;
+		let hStartAt = 0;
+		let hStartHeight = 0;
+		let hOverlayHeight = 0;
+		function onHdrStart(clientY, target) {
+			if (target?.closest?.("button")) return;
+			hDragging = true;
+			hStartY = clientY;
+			hLastY = clientY;
+			hStartAt = Date.now();
+			hOverlayHeight = modal.getBoundingClientRect().height || window.innerHeight || 700;
+			hStartHeight = sheet.getBoundingClientRect().height || hOverlayHeight * .68;
+			sheet.classList.add("sheet-dragging");
+		}
+		function onHdrMove(clientY, ev) {
+			if (!hDragging) return;
+			if (ev && ev.cancelable) ev.preventDefault();
+			hLastY = clientY;
+			const deltaY = clientY - hStartY;
+			const candidateH = hStartHeight - deltaY;
+			const minResizeH = hOverlayHeight * .46;
+			const maxResizeH = hOverlayHeight * .94;
+			if (candidateH < minResizeH) {
+				sheet.style.height = `${minResizeH}px`;
+				sheet.style.transform = `translateY(${Math.max(0, minResizeH - candidateH)}px)`;
+			} else {
+				sheet.style.transform = "";
+				sheet.style.height = `${Math.min(maxResizeH, candidateH)}px`;
+			}
+		}
+		function onHdrEnd() {
+			if (!hDragging) return;
+			hDragging = false;
+			const deltaY = hLastY - hStartY;
+			const vy = deltaY / Math.max(1, Date.now() - hStartAt);
+			const curH = sheet.getBoundingClientRect().height || hStartHeight;
+			sheet.classList.remove("sheet-dragging");
+			sheet.style.height = "";
+			sheet.style.transform = "";
+			if (deltaY < -24 || vy < -.28 || curH > hOverlayHeight * .8) {
+				setModalExpanded(true);
+				return;
+			}
+			if (deltaY > 28 || vy > .35) {
+				if (modalExpanded && deltaY < 190 && vy < .7) setModalExpanded(false);
+				else if (deltaY > 65 || vy > .42) closeDetailModal();
+				else setModalExpanded(modalExpanded);
+				return;
+			}
+			setModalExpanded(modalExpanded);
+		}
+		hdr.addEventListener("touchstart", (e) => {
+			if (e.touches?.[0]) onHdrStart(e.touches[0].clientY, e.target);
+		}, { passive: true });
+		window.addEventListener("touchmove", (e) => {
+			if (hDragging && e.touches?.[0]) onHdrMove(e.touches[0].clientY, e);
+		}, { passive: false });
+		window.addEventListener("touchend", onHdrEnd);
+		window.addEventListener("touchcancel", onHdrEnd);
+		hdr.addEventListener("mousedown", (e) => {
+			if (e.button === 0) onHdrStart(e.clientY, e.target);
+		});
+		window.addEventListener("mousemove", (e) => {
+			if (hDragging) onHdrMove(e.clientY, null);
+		});
+		window.addEventListener("mouseup", onHdrEnd);
+		let bTracking = false;
+		let bPullingDown = false;
+		let bStartX = 0;
+		let bStartY = 0;
+		let bLastY = 0;
+		let bStartTop = 0;
+		let bStartAt = 0;
+		scrollBody.addEventListener("touchstart", (e) => {
+			if (!e.touches?.[0]) return;
+			bTracking = true;
+			bPullingDown = false;
+			bStartX = e.touches[0].clientX;
+			bStartY = e.touches[0].clientY;
+			bLastY = bStartY;
+			bStartTop = scrollBody.scrollTop;
+			bStartAt = Date.now();
+		}, { passive: true });
+		scrollBody.addEventListener("touchmove", (e) => {
+			if (!bTracking || !e.touches?.[0]) return;
+			const cx = e.touches[0].clientX;
+			const cy = e.touches[0].clientY;
+			const bDx = cx - bStartX;
+			const bDy = cy - bStartY;
+			bLastY = cy;
+			if (!bPullingDown && bDy < -24 && Math.abs(bDy) > Math.abs(bDx)) {
+				if (!modalExpanded && scrollBody.scrollHeight > scrollBody.clientHeight + 12) setModalExpanded(true);
+				return;
+			}
+			if (bStartTop <= 1 && scrollBody.scrollTop <= 1 && bDy > 14 && bDy > Math.abs(bDx) * 1.15) {
+				bPullingDown = true;
+				if (e.cancelable) e.preventDefault();
+				sheet.classList.add("sheet-dragging");
+				sheet.style.transform = `translateY(${Math.max(0, bDy * .78)}px)`;
+			}
+		}, { passive: false });
+		const finishBodyTouch = () => {
+			if (!bTracking) return;
+			bTracking = false;
+			if (!bPullingDown) return;
+			bPullingDown = false;
+			const bDy = bLastY - bStartY;
+			const vy = bDy / Math.max(1, Date.now() - bStartAt);
+			sheet.classList.remove("sheet-dragging");
+			sheet.style.transform = "";
+			if (bDy > 68 || vy > .5) {
+				if (modalExpanded && bDy < 180 && vy < .75) setModalExpanded(false);
+				else closeDetailModal();
+			}
+		};
+		scrollBody.addEventListener("touchend", finishBodyTouch);
+		scrollBody.addEventListener("touchcancel", finishBodyTouch);
+	}
+	function openModalView({ title, bodyHtml, kind = "", sessionId = "", sigLen = 0, defaultExpanded = false }) {
+		const modal = document.getElementById("triageDetailModal");
+		const titleEl = document.getElementById("triageModalTitle");
+		const scrollBody = document.getElementById("triageModalScrollBody");
+		if (!modal || !scrollBody) return;
+		bindModalSheetGestures();
+		activeModalKind = kind;
+		activeModalSessionId = sessionId;
+		lastModalRenderedLen = sigLen;
+		if (titleEl) titleEl.textContent = title;
+		scrollBody.innerHTML = bodyHtml;
+		scrollBody.scrollTop = 0;
+		setModalExpanded(defaultExpanded);
 		modal.classList.add("open");
 	}
 	function closeDetailModal() {
-		document.getElementById("triageDetailModal")?.classList.remove("open");
+		activeModalKind = "";
+		activeModalSessionId = "";
+		lastModalRenderedLen = -1;
+		const modal = document.getElementById("triageDetailModal");
+		const sheet = document.getElementById("triageDetailModalContent");
+		if (sheet) {
+			sheet.classList.remove("sheet-dragging", "expanded");
+			sheet.style.height = "";
+			sheet.style.transform = "";
+		}
+		modal?.classList.remove("open");
 	}
 	function bindCardGestureListeners() {
 		if (listenersBound || typeof window === "undefined") return;
+		const stackEl = document.getElementById("triageCardStack");
 		const fgCard = document.getElementById("triageFgCard");
-		if (!fgCard) return;
+		if (!stackEl || !fgCard) return;
 		listenersBound = true;
 		function resetCardPos() {
 			const lRight = document.getElementById("triageLayerRight");
@@ -5984,7 +6534,8 @@ function createTriageDeckController(deps) {
 		}
 		function onPointerStart(clientX, clientY, target) {
 			if (!isOpen) return;
-			if (target.closest(".dsh-triage-custom, textarea")) return;
+			if (document.getElementById("triageDetailModal")?.classList.contains("open")) return;
+			if (target?.closest?.(".dsh-triage-custom, textarea")) return;
 			if (!getOrderedActiveCards().length) return;
 			dragging = true;
 			axisLocked = "";
@@ -5992,6 +6543,10 @@ function createTriageDeckController(deps) {
 			sy = clientY;
 			dx = 0;
 			dy = 0;
+			maxDx = 0;
+			dragStartAt = Date.now();
+			startedInDock = Boolean(target?.closest?.(".dsh-triage-dock"));
+			startedOnConfirmBtn = Boolean(target?.closest?.("#triageConfirmBtn"));
 			rightDragUnlocked = false;
 			clearInterval(rightDragHoldTimer);
 			rightDragHoldTimer = null;
@@ -6000,22 +6555,25 @@ function createTriageDeckController(deps) {
 			if (!dragging || !isOpen) return;
 			dx = clientX - sx;
 			dy = clientY - sy;
+			if (dx > maxDx) maxDx = dx;
 			if (!axisLocked) {
-				if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-				axisLocked = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
+				if (Math.abs(dx) < 7 && Math.abs(dy) < 7) return;
+				axisLocked = Math.abs(dx) >= Math.abs(dy) * .92 ? "x" : "y";
 			}
 			if (axisLocked !== "x") return;
 			if (ev && ev.cancelable) ev.preventDefault();
-			btnPressMoved = true;
-			clearInterval(holdTimer);
-			holdTimer = null;
+			if (Math.abs(dx) >= 12) {
+				btnPressMoved = true;
+				clearInterval(holdTimer);
+				holdTimer = null;
+			}
 			const progBar = document.getElementById("triageBtnProg");
 			const stackDom = document.getElementById("triageCardStack");
 			const lRight = document.getElementById("triageLayerRight");
 			fgCard.classList.add("dragging");
 			lRight?.classList.add("following");
-			stackDom?.classList.toggle("dragging-right", dx > 20);
-			stackDom?.classList.toggle("dragging-left", dx < -20);
+			stackDom?.classList.toggle("dragging-right", dx > 16);
+			stackDom?.classList.toggle("dragging-left", dx < -16);
 			const cards = getOrderedActiveCards();
 			if (!cards.length) return;
 			const { vm } = cards[0];
@@ -6023,19 +6581,22 @@ function createTriageDeckController(deps) {
 			if (dx > 0 && isEmptyCustomSelected(vm, draft)) {
 				const lockedX = Math.min(24, Math.pow(dx, .52) * 1.6);
 				fgCard.style.transform = `translate3d(${lockedX}px, 0, 0)`;
-				showDragPill("✍️ 手工填写为空，请先打字或长按说话", "#ea580c", "#ffffff");
+				showDragPill(isEn() ? "✍️ Empty input — type or hold to speak first" : "✍️ 手工填写为空，请先打字或长按说话", "#ea580c", "#ffffff");
 				return;
 			}
-			const ratio = Math.min(1, Math.abs(dx) / 110);
+			const ratio = Math.min(1, Math.abs(dx) / (startedInDock ? 64 : 105));
 			if (lRight) lRight.style.transform = `translate3d(${REST_X * (1 - ratio)}px, ${REST_Y * (1 - ratio)}px, 0) scale(${REST_SCALE + .016000000000000014 * ratio}) rotate(${REST_ROT * (1 - ratio)}deg)`;
 			const customActive = vm.canCustom && (vm.multi ? draft.useCustom : draft.sel === vm.options.length);
-			if (dx > 0 && !customActive && !vm.multi && vm.risk === "high" && draft.sel === 0) {
-				const dampedX = Math.min(104, Math.pow(dx, .72) * 2.05);
+			const isHighRiskConfirm = dx > 0 && !customActive && !vm.multi && vm.risk === "high" && draft.sel === 0;
+			const highRiskHoldZone = startedInDock ? 32 : 68;
+			const en = isEn();
+			if (isHighRiskConfirm) {
+				const dampedX = Math.min(104, Math.pow(dx, .75) * 2.15);
 				fgCard.style.transform = `translate3d(${dampedX}px, 0, 0) rotate(${dampedX * .045}deg)`;
-				if (dx > 100 && !rightDragHoldTimer && !rightDragUnlocked) {
+				if (dx > highRiskHoldZone && !rightDragHoldTimer && !rightDragUnlocked) {
 					let pct = 15;
 					if (progBar) progBar.style.width = `${pct}%`;
-					showDragPill("🛡️ 高危防手滑 · 稳住 0.8s 蓄力中…", "#e11d48", "#ffffff");
+					showDragPill(en ? "🛡️ High-risk guard · Hold steady 0.8s…" : "🛡️ 高危防手滑 · 稳住 0.8s 蓄力中…", "#e11d48", "#ffffff");
 					rightDragHoldTimer = setInterval(() => {
 						pct += 14;
 						const b = document.getElementById("triageBtnProg");
@@ -6045,25 +6606,25 @@ function createTriageDeckController(deps) {
 							rightDragHoldTimer = null;
 							rightDragUnlocked = true;
 							navigator.vibrate?.(25);
-							showDragPill("🔓 蓄力完成！松手确认放行", "#059669", "#ffffff");
+							showDragPill(isEn() ? "🔓 Unlocked! Release to confirm" : "🔓 蓄力完成！松手确认放行", "#059669", "#ffffff");
 						}
 					}, 85);
-				} else if (dx <= 100 && !rightDragUnlocked) {
+				} else if (dx <= highRiskHoldZone && !rightDragUnlocked) {
 					clearInterval(rightDragHoldTimer);
 					rightDragHoldTimer = null;
-					if (progBar) progBar.style.width = `${Math.min(30, dx * .25)}%`;
-					showDragPill("🛡️ 继续右拉稳住 0.8s 确认", "#e11d48", "#ffffff");
+					if (progBar) progBar.style.width = `${Math.min(30, dx * .35)}%`;
+					showDragPill(en ? "🛡️ Pull right & hold 0.8s to confirm" : "🛡️ 继续右拉稳住 0.8s 确认", "#e11d48", "#ffffff");
 				}
 			} else {
-				const moveX = dx * .84;
+				const moveX = startedInDock ? dx * 1.05 : dx * .86;
 				fgCard.style.transform = `translate3d(${moveX}px, 0, 0) rotate(${moveX * .045}deg)`;
-				if (dx > 40) showDragPill("👉 松手确认提交", "#059669", "#ffffff");
-				else if (dx < -40) showDragPill("👈 松手搁置到后面", "#475569", "#ffffff");
+				const pillThreshold = startedInDock ? 20 : 34;
+				if (dx > pillThreshold) showDragPill(en ? "👉 Release to confirm" : "👉 松手确认提交", "#059669", "#ffffff");
+				else if (dx < -pillThreshold) showDragPill(en ? "👈 Release to snooze" : "👈 松手搁置到后面", "#475569", "#ffffff");
 				else hideDragPill();
 			}
 		}
-		function onPointerEnd() {
-			if (!dragging) return;
+		function cleanupDragVisuals() {
 			dragging = false;
 			clearInterval(rightDragHoldTimer);
 			rightDragHoldTimer = null;
@@ -6072,26 +6633,33 @@ function createTriageDeckController(deps) {
 			if (progBar) progBar.style.width = "0%";
 			fgCard.classList.remove("dragging");
 			document.getElementById("triageLayerRight")?.classList.remove("following");
+		}
+		function onPointerEnd() {
+			if (!dragging) return;
+			cleanupDragVisuals();
 			if (axisLocked === "x") {
 				const top = getOrderedActiveCards()[0];
 				if (top) {
 					const { vm } = top;
 					const draft = ensureDraft(vm);
-					if (dx > 35 && isEmptyCustomSelected(vm, draft)) {
+					const dt = Math.max(1, Date.now() - dragStartAt);
+					const vx = dx / dt;
+					if (dx > (startedInDock ? 18 : 30) && isEmptyCustomSelected(vm, draft)) {
 						resetCardPos();
 						nudgeEmptyCustom();
 						return;
 					}
-					if (dx > 80) {
+					if (startedOnConfirmBtn && dx >= 12 && dx >= maxDx - 10 || startedInDock && (dx >= 28 || dx >= 16 && vx > .24) || dx >= 56 || dx >= 30 && vx > .32) {
 						if (!(vm.canCustom && (vm.multi ? draft.useCustom : draft.sel === vm.options.length)) && !vm.multi && vm.risk === "high" && draft.sel === 0 && !rightDragUnlocked) {
 							resetCardPos();
-							hideDragPill(400);
+							showDragPill(isEn() ? "🛡️ High-risk: hold 0.8s or pull right & hold" : "🛡️ 高危操作请按住 0.8s 或右拉稳住 0.8s", "#e11d48", "#ffffff");
+							hideDragPill(800);
 							return;
 						}
 						confirmTopCard();
 						return;
 					}
-					if (dx < -80) {
+					if (startedInDock && (dx <= -32 || dx <= -18 && vx < -.24) || dx <= -56 || dx <= -30 && vx < -.32) {
 						snoozeTopCard();
 						return;
 					}
@@ -6100,14 +6668,21 @@ function createTriageDeckController(deps) {
 			resetCardPos();
 			hideDragPill();
 		}
-		fgCard.addEventListener("touchstart", (e) => {
+		function onPointerCancel() {
+			if (!dragging) return;
+			cleanupDragVisuals();
+			resetCardPos();
+			hideDragPill();
+		}
+		stackEl.addEventListener("touchstart", (e) => {
 			if (e.touches?.[0]) onPointerStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
 		}, { passive: true });
 		window.addEventListener("touchmove", (e) => {
 			if (isOpen && dragging && e.touches?.[0]) onPointerMove(e.touches[0].clientX, e.touches[0].clientY, e);
 		}, { passive: false });
 		window.addEventListener("touchend", onPointerEnd);
-		fgCard.addEventListener("mousedown", (e) => {
+		window.addEventListener("touchcancel", onPointerCancel);
+		stackEl.addEventListener("mousedown", (e) => {
 			if (e.button === 0) onPointerStart(e.clientX, e.clientY, e.target);
 		});
 		window.addEventListener("mousemove", (e) => {
@@ -6122,6 +6697,7 @@ function createTriageDeckController(deps) {
 			lastRenderedSig = "";
 			document.getElementById("triageDeckOverlay")?.classList.add("open");
 			bindCardGestureListeners();
+			bindModalSheetGestures();
 			render({ force: true });
 		},
 		closeTriageDeckMode() {
@@ -6245,7 +6821,7 @@ function createTriageDeckController(deps) {
 			}
 			if (!(top.vm.canCustom && (top.vm.multi ? draft.useCustom : draft.sel === top.vm.options.length)) && !top.vm.multi && top.vm.risk === "high" && draft.sel === 0) {
 				if (wasHolding && holdPct < 100) {
-					showDragPill("🛡️ 高危操作请按住 0.8 秒确认", "#e11d48", "#ffffff");
+					showDragPill(isEn() ? "🛡️ High-risk: hold for 0.8s to confirm" : "🛡️ 高危操作请按住 0.8 秒确认", "#e11d48", "#ffffff");
 					hideDragPill(800);
 				}
 				return;
@@ -6258,50 +6834,51 @@ function createTriageDeckController(deps) {
 			const bar = document.getElementById("triageBtnProg");
 			if (bar) bar.style.width = "0%";
 		},
+		toggleTriageModalExpand() {
+			setModalExpanded(!modalExpanded);
+		},
 		closeTriageDetailModal: closeDetailModal,
 		openTriagePromptModal() {
 			const top = getOrderedActiveCards()[0];
 			if (!top) return;
-			const { vm } = top;
-			const imgsHtml = vm.promptInfo.mediaPaths.map((p) => {
-				const enc = encodeURIComponent(p).replace(/'/g, "%27");
-				const fullSrc = buildLocalThumbSrc(vm.hostId, p);
-				return `<div style="margin-top:8px;" onclick="closeTriageDetailModal(); triageInspectSessionFile('${esc(vm.sessionId)}', '${enc}')">
-            <img src="${esc(fullSrc)}" alt="提问原图" style="max-width:100%;max-height:46vh;border-radius:12px;border:1px solid #cbd5e1;cursor:pointer;" />
-            <div style="font-size:11.5px;color:#2563eb;font-weight:700;margin-top:4px;">🔍 点击打开高清原图预览器</div>
-          </div>`;
-			}).join("");
-			openModalHtml(`
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <strong style="font-size:15px;">我发送的完整提问</strong>
-            <button type="button" class="dsh-triage-open-chat" onclick="closeTriageDetailModal()">收起 ✕</button>
-          </div>
-          <div style="font-size:14px;line-height:1.62;color:#1e293b;background:#f8fafc;padding:12px;border-radius:14px;white-space:pre-wrap;word-break:break-word;">${esc(vm.promptInfo.text || top.session.title)}</div>
-          ${imgsHtml}
-        `);
+			const en = isEn();
+			const { vm, session } = top;
+			if (session._wireTruncated || session.omittedTranscriptCount > 0 || session.hasMoreTranscript) deps.hydrateColdSession?.(session.hostId, session.id, session.sessionRev);
+			const sigLen = (vm.promptInfo.text || "").length * 8 + (session._wireTruncated ? 1 : 0) + (en ? 4 : 0);
+			openModalView({
+				title: en ? "💬 My Full Prompt" : "💬 我发送的完整提问",
+				bodyHtml: buildPromptModalBodyHtml(top),
+				kind: "prompt",
+				sessionId: vm.sessionId,
+				sigLen,
+				defaultExpanded: false
+			});
 		},
 		openTriageFilesModal() {
 			const top = getOrderedActiveCards()[0];
 			if (!top || !top.vm.diffInfo.files.length) return;
+			const en = isEn();
 			const { vm } = top;
-			openModalHtml(`
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <strong style="font-size:15px;">📄 代码改动 (${vm.diffInfo.files.length} 个文件)</strong>
-            <button type="button" class="dsh-triage-open-chat" onclick="closeTriageDetailModal()">收起 ✕</button>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:6px;">
-            ${vm.diffInfo.files.map((f) => {
+			const n = vm.diffInfo.files.length;
+			const bodyHtml = `<div style="display:flex;flex-direction:column;gap:7px;">
+          ${vm.diffInfo.files.map((f) => {
 				const enc = encodeURIComponent(f.path || f.name).replace(/'/g, "%27");
 				return `<div class="dsh-triage-file-row" onclick="closeTriageDetailModal(); triageInspectSessionFile('${esc(vm.sessionId)}', '${enc}')">
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;">${esc(f.name)}</span>
-                <span style="flex-shrink:0;">
-                  ${vm.diffInfo.hasLineCounts ? `<b style="color:#16a34a">+${f.added}</b> <b style="color:#dc2626">-${f.removed}</b>` : ""}
-                  <span style="color:#2563eb;margin-left:4px;">查看 ›</span>
-                </span>
-              </div>`;
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;">${esc(f.name)}</span>
+              <span style="flex-shrink:0;">
+                ${vm.diffInfo.hasLineCounts ? `<b style="color:#16a34a">+${f.added}</b> <b style="color:#dc2626">-${f.removed}</b>` : ""}
+                <span style="color:#2563eb;margin-left:4px;">${en ? "View ›" : "查看 ›"}</span>
+              </span>
+            </div>`;
 			}).join("")}
-          </div>
-        `);
+        </div>`;
+			openModalView({
+				title: en ? `📄 Code Changes (${n} file${n === 1 ? "" : "s"})` : `📄 代码改动 (${n} 个文件)`,
+				bodyHtml,
+				kind: "files",
+				sessionId: vm.sessionId,
+				defaultExpanded: false
+			});
 		},
 		triageInspectSessionFile(sessionId, encodedPath) {
 			deps.openFileForSession?.(sessionId, decodeURIComponent(encodedPath));
@@ -6309,26 +6886,34 @@ function createTriageDeckController(deps) {
 		openTriageCommandModal() {
 			const top = getOrderedActiveCards()[0];
 			if (!top || !top.vm.cmdLine) return;
-			openModalHtml(`
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <strong style="font-size:15px;">💻 待执行完整命令</strong>
-            <button type="button" class="dsh-triage-open-chat" onclick="closeTriageDetailModal()">收起 ✕</button>
-          </div>
-          <div style="font-size:12px;color:#64748b;">执行目录：<code>${esc(top.session.cwd || "-")}</code></div>
-          <pre style="margin:0;padding:12px;border-radius:14px;background:#0f172a;color:#f8fafc;font-family:var(--mono,monospace);font-size:12px;line-height:1.55;white-space:pre-wrap;word-break:break-all;">${esc(top.vm.cmdLine)}</pre>
-        `);
+			const en = isEn();
+			const bodyHtml = `
+          <div style="font-size:12px;color:#64748b;margin-bottom:8px;">${en ? "Working Dir: " : "执行目录："}<code>${esc(top.session.cwd || "-")}</code></div>
+          <pre style="margin:0;padding:13px;border-radius:14px;background:#0f172a;color:#f8fafc;font-family:var(--mono,monospace);font-size:12.5px;line-height:1.58;white-space:pre-wrap;word-break:break-all;">${esc(top.vm.cmdLine)}</pre>
+        `;
+			openModalView({
+				title: en ? "💻 Full Command to Execute" : "💻 待执行完整命令",
+				bodyHtml,
+				kind: "command",
+				sessionId: top.vm.sessionId,
+				defaultExpanded: false
+			});
 		},
 		openTriageReplyModal() {
 			const top = getOrderedActiveCards()[0];
 			if (!top) return;
-			const rawMd = top.vm.fullReplyMarkdown || top.vm.headline;
-			openModalHtml(`
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <strong style="font-size:15px;">📖 AI 最新完整回复</strong>
-            <button type="button" class="dsh-triage-open-chat" onclick="closeTriageDetailModal()">收起 ✕</button>
-          </div>
-          <div class="md-body" style="font-size:13.5px;line-height:1.62;padding:4px 2px;color:#0f172a;">${deps.formatAssistantText ? deps.formatAssistantText(rawMd, top.vm.artifacts) : `<div style="white-space:pre-wrap;">${esc(rawMd)}</div>`}</div>
-        `);
+			const en = isEn();
+			const { vm, session } = top;
+			if (session._wireTruncated || session.omittedTranscriptCount > 0 || session.hasMoreTranscript) deps.hydrateColdSession?.(session.hostId, session.id, session.sessionRev);
+			const sigLen = (vm.fullReplyMarkdown || "").length * 8 + (session._wireTruncated ? 1 : 0) + (en ? 4 : 0);
+			openModalView({
+				title: en ? "📖 Latest Full AI Reply" : "📖 AI 最新完整回复",
+				bodyHtml: buildReplyModalBodyHtml(top),
+				kind: "reply",
+				sessionId: vm.sessionId,
+				sigLen,
+				defaultExpanded: false
+			});
 		}
 	});
 	return {
@@ -9437,16 +10022,16 @@ function initHubController() {
 				const relPath = resolveLocalRelPath(vPath);
 				const baseName = relPath.split("/").filter(Boolean).pop() || "video.mp4";
 				const encodedPath = encodeURIComponent(vPath).replace(/'/g, "%27");
-				const vSrc = buildFastStreamUrl(session.hostId, relPath, {
+				const vFallbackSrc = buildFastStreamUrl(session.hostId, relPath, {
 					cwd: session.cwd || "",
 					agentId: session.id || "",
-					preview: true,
 					mediaTicket: mt
 				});
-				window.__dshInlineVideoCache[vPath] = vSrc;
+				const vHlsSrc = vFallbackSrc.replace("/fs/stream?", "/fs/hls/index.m3u8?");
+				window.__dshInlineVideoCache[vPath] = vFallbackSrc;
 				vNode.classList.remove("md-local-video-pending");
 				vNode.removeAttribute("onclick");
-				vNode.innerHTML = `<video class="md-inline-video" src="${vSrc}" controls playsinline webkit-playsinline preload="none" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc$1(baseName)} · 点此打开大屏预览</span>`;
+				vNode.innerHTML = `<video class="md-inline-video" data-hls-src="${vHlsSrc}" data-fallback-src="${vFallbackSrc}" controls playsinline webkit-playsinline preload="none" onplay="mountSmartVideoElement(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video><span class="md-inline-img-cap" onclick="event.stopPropagation(); openChatFileLink('${encodedPath}')">🎬 ${esc$1(baseName)} · 点此打开大屏预览</span>`;
 			}
 		}
 		const pendingNodes = Array.from(containerEl.querySelectorAll(".md-local-img-pending[data-local-img-path]"));
@@ -9561,7 +10146,7 @@ function initHubController() {
 				origin: typeof location !== "undefined" ? location.origin : ""
 			})) : "";
 			const previewBodyHtml = kind === "video" ? `<div class="file-preview-body" style="padding:16px 12px;background:#0f172a;min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
-               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? "1" : "0"}" controls playsinline webkit-playsinline preload="metadata" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
+               <video class="file-preview-video" data-hls-src="${esc$1(videoHlsSrc(preview, mt))}" data-fallback-src="${esc$1(videoPreviewSrc(preview, mt))}" data-video-bytes="${Number(preview.size || 0)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? "1" : "0"}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
                  <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc$1(formatBytes(preview.size))} · ${esc$1(videoMetaUi.badge)}</span>
                  <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc$1(host.hostId)}', true)">${esc$1(videoMetaUi.toggleLabel)}</button>
@@ -9601,7 +10186,7 @@ function initHubController() {
 			if (isMarkdown && !rawMdMode) hydrateInlineChatImages(found.session, body);
 			else if (kind === "video") {
 				const vidEl = body.querySelector("video.file-preview-video");
-				if (vidEl) maybeAccelerateVideoViaP2p(vidEl);
+				if (vidEl) mountSmartVideoElement(vidEl);
 			}
 			return;
 		}
@@ -9688,17 +10273,18 @@ function initHubController() {
 	}
 	function describeVideoPreviewStatus(preview) {
 		const strategy = preview?.videoProbe?.strategy || "";
+		const canHls = preview?.hlsAvailable !== false && !preview?._transcodeVideo;
 		if (preview?._rawVideo) return {
-			badge: "原始视频字节直出流",
-			toggleLabel: "✨ 切回智能兼容秒播"
+			badge: canHls ? "无损原画 HLS 切片流" : "原始视频字节直出流",
+			toggleLabel: "✨ 切回自适应秒播流"
 		};
-		if (preview?._transcodeVideo || strategy === "transcode") return {
+		if (preview?._transcodeVideo) return {
 			badge: "智能 H.264 兼容流 · 拖动秒播",
-			toggleLabel: "🎞️ 尝试原片直出"
+			toggleLabel: "🎞️ 切换无损原画流"
 		};
-		if (Number(preview?.size || 0) > 4194304) return {
-			badge: "⚡ 720p 极速秒看流 · 拖动秒播",
-			toggleLabel: "🎞️ 尝试原片直出"
+		if (canHls) return {
+			badge: "⚡ HLS 切片秒播 · 抗弱网零卡死",
+			toggleLabel: "🎞️ 切换无损原画流"
 		};
 		if (strategy === "remux") return {
 			badge: "无损快启重封装 · 拖动秒播",
@@ -9747,11 +10333,23 @@ function initHubController() {
 			} catch {}
 		});
 	}
+	async function mountSmartVideoElement(videoEl) {
+		if (!videoEl || videoEl.dataset?.dshMounted === "1") return;
+		videoEl.dataset.dshMounted = "1";
+		const hlsSrc = videoEl.dataset?.hlsSrc || "";
+		const fallbackSrc = videoEl.dataset?.fallbackSrc || videoEl.getAttribute("src") || "";
+		const videoBytes = Number(videoEl.dataset?.videoBytes || 0);
+		await attachSmartHlsPlayer(videoEl, {
+			hlsUrl: hlsSrc,
+			fallbackSrc
+		});
+		if (videoBytes > 0 && videoBytes <= 25165824 && fallbackSrc) maybeAccelerateVideoViaP2p(videoEl);
+	}
 	async function maybeAccelerateVideoViaP2p(videoEl, { fromErrorFallback = false } = {}) {
 		if (!videoEl) return false;
 		if (videoEl.dataset?.dshP2pUpgraded === "1") return true;
 		if (videoEl.__dshP2pPromise) return videoEl.__dshP2pPromise;
-		const rawSrc = videoEl.getAttribute("src") || videoEl.currentSrc || "";
+		const rawSrc = videoEl.dataset?.fallbackSrc || videoEl.getAttribute("src") || videoEl.currentSrc || "";
 		if (!rawSrc || rawSrc.startsWith("blob:") || !rawSrc.includes("/fs/stream")) return false;
 		const cacheKey = rawSrc.replace(/([?&])_r=[^&]+/g, "").replace(/[?&]$/, "");
 		const cachedBlobUrl = p2pVideoBlobCache.get(cacheKey);
@@ -9765,8 +10363,8 @@ function initHubController() {
 				const p2pRes = await fetchMediaViaWebRtc(rawSrc, {
 					token: getToken(),
 					mediaTicket: hubState.mediaTicket || "",
-					maxBytes: 50331648,
-					connectTimeoutMs: fromErrorFallback ? 2e3 : 1400
+					maxBytes: 25165824,
+					connectTimeoutMs: fromErrorFallback ? 1800 : 1200
 				});
 				if (!p2pRes?.ok || !p2pRes.blob || !videoEl.isConnected) return false;
 				const blobUrl = URL.createObjectURL(p2pRes.blob);
@@ -9796,6 +10394,8 @@ function initHubController() {
 		const wasPaused = videoEl.paused;
 		const savedTime = Number(videoEl.currentTime) || 0;
 		const savedRate = Number(videoEl.playbackRate) || 1;
+		destroyHlsPlayer(videoEl);
+		delete videoEl.dataset.dshHlsActive;
 		clearSmartVideoErrorBanner(videoEl);
 		videoEl.dataset.dshP2pUpgraded = "1";
 		videoEl.src = blobUrl;
@@ -9831,8 +10431,19 @@ function initHubController() {
 	async function onSmartVideoError(videoEl) {
 		if (!videoEl) return;
 		if (videoEl.error?.code === 1) return;
+		if (videoEl.__dshHlsInstance) return;
 		const currentSrc = videoEl.getAttribute("src") || videoEl.currentSrc || "";
 		if (!currentSrc || currentSrc.startsWith("blob:") || videoEl.dataset?.dshP2pUpgraded === "1") return;
+		if (currentSrc.includes("/fs/hls/") && videoEl.dataset?.fallbackSrc && videoEl.dataset?.dshHlsFailed !== "1") {
+			destroyHlsPlayer(videoEl);
+			delete videoEl.dataset.dshHlsActive;
+			videoEl.dataset.dshHlsFailed = "1";
+			videoEl.src = videoEl.dataset.fallbackSrc;
+			try {
+				videoEl.load();
+			} catch {}
+			return;
+		}
 		if (videoEl.dataset?.dshP2pFallbackTried !== "1" || videoEl.__dshP2pPromise) {
 			videoEl.dataset.dshP2pFallbackTried = "1";
 			if (await maybeAccelerateVideoViaP2p(videoEl, { fromErrorFallback: true }) || videoEl.dataset?.dshP2pUpgraded === "1") return;
@@ -9915,16 +10526,14 @@ function initHubController() {
 		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
 		const preview = target || host?.lastFilePreview;
 		if (!preview) return;
-		const autoTranscode = preview?.videoProbe?.strategy === "transcode";
-		const isLargeFastPreview = Number(preview?.size || 0) > 4194304 && !autoTranscode;
-		if (autoTranscode || isLargeFastPreview) {
+		if (preview?.hlsAvailable !== false) {
 			preview._rawVideo = !preview._rawVideo;
 			preview._transcodeVideo = false;
-			showToast(preview._rawVideo ? "🎞️ 已切换为无损原片直出流" : isLargeFastPreview ? "⚡ 已切回 720p 手机极速秒看流" : "⚡ 已切回电脑端智能 H.264 兼容流");
+			showToast(preview._rawVideo ? "🎞️ 已切换为无损原画 HLS 切片流" : "⚡ 已切回自适应抗弱网 HLS 秒播流");
 		} else {
 			preview._rawVideo = false;
 			preview._transcodeVideo = !preview._transcodeVideo;
-			showToast(preview._transcodeVideo ? "🔄 正在用电脑端 H.264 兼容转码流加载（首次可能需数秒）…" : "✨ 已切回智能秒播模式");
+			showToast(preview._transcodeVideo ? "🔄 正在用电脑端 H.264 兼容转码流加载…" : "✨ 已切回智能秒播模式");
 		}
 		renderAll();
 		renderFilePanes();
@@ -10482,7 +11091,7 @@ function initHubController() {
 				origin: typeof location !== "undefined" ? location.origin : ""
 			})) : "";
 			const previewBodyHtml = kind === "video" ? `<div class="file-preview-body" style="padding:18px 14px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
-               <video class="file-preview-video" src="${videoPreviewSrc(preview, mt)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? "1" : "0"}" controls playsinline webkit-playsinline preload="metadata" onplay="maybeAccelerateVideoViaP2p(this)" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
+               <video class="file-preview-video" data-hls-src="${esc$1(videoHlsSrc(preview, mt))}" data-fallback-src="${esc$1(videoPreviewSrc(preview, mt))}" data-video-bytes="${Number(preview.size || 0)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? "1" : "0"}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
                  <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc$1(formatBytes(preview.size))} · ${esc$1(videoMetaUi.badge)}</span>
                  <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc$1(host.hostId)}', false)">${esc$1(videoMetaUi.toggleLabel)}</button>
@@ -10526,7 +11135,7 @@ function initHubController() {
 			}, container);
 			else if (kind === "video") {
 				const vidEl = container.querySelector("video.file-preview-video");
-				if (vidEl) maybeAccelerateVideoViaP2p(vidEl);
+				if (vidEl) mountSmartVideoElement(vidEl);
 			}
 			return;
 		}
@@ -13284,6 +13893,7 @@ function initHubController() {
 		downloadPreviewMedia,
 		toggleOriginalPreviewImage,
 		switchVideoTranscodeMode,
+		mountSmartVideoElement,
 		maybeAccelerateVideoViaP2p,
 		onSmartVideoLoadedMeta,
 		onSmartVideoError,
@@ -13318,6 +13928,7 @@ function initHubController() {
 		getSessions: () => getNormalizedSessions(),
 		getShortHostMap: () => buildShortHostNameMap(hubState.hosts || []),
 		getMediaTicket: () => hubState.mediaTicket || "",
+		getLang: () => langPref,
 		showToast,
 		formatAssistantText,
 		punctuateSpeechText,

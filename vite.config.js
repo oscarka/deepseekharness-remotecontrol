@@ -13,5 +13,10 @@ export default defineConfig({
     outDir: '../public',
     emptyOutDir: true,
     minify: false,
+    rollupOptions: {
+      output: {
+        chunkFileNames: 'assets/vendor-[name]-[hash].js',
+      },
+    },
   },
 });

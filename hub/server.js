@@ -698,7 +698,8 @@ export function createHubServer({
       const isReadOnlyMediaEndpoint =
         (method === 'GET' &&
           (/^\/api\/hosts\/([^/]+)\/file-preview$/.test(pathname) ||
-            /^\/api\/hosts\/([^/]+)\/fs\/(?:list|read|stream)$/.test(pathname))) ||
+            /^\/api\/hosts\/([^/]+)\/fs\/(?:list|read|stream)$/.test(pathname) ||
+            /^\/api\/hosts\/([^/]+)\/fs\/hls\/(?:index\.m3u8|seg_\d{5}\.ts)$/.test(pathname))) ||
         (method === 'POST' && /^\/api\/hosts\/([^/]+)\/fs\/rtc-offer$/.test(pathname))
 
       if (isSharedHostEndpoint) {
@@ -868,6 +869,114 @@ export function createHubServer({
         }
       }
 
+      const hostHlsMatch = /^\/api\/hosts\/([^/]+)\/fs\/hls\/(index\.m3u8|seg_\d{5}\.ts)$/.exec(pathname)
+      if (method === 'GET' && hostHlsMatch) {
+        const hostId = decodeURIComponent(hostHlsMatch[1])
+        const hlsItem = hostHlsMatch[2]
+        const reqPath = urlObj.searchParams.get('path') || ''
+        const cwd = urlObj.searchParams.get('cwd') || ''
+        const agentId = urlObj.searchParams.get('agentId') || ''
+        const raw = urlObj.searchParams.get('raw') === '1'
+        const mtParam = String(urlObj.searchParams.get('mt') ?? '').trim()
+        const tokenParam = String(urlObj.searchParams.get('token') ?? '').trim()
+        const effectiveMt = (mtParam && hub.verifyMediaTicket(mtParam)) ? mtParam : hub.getMediaTicket()
+
+        if (hlsItem === 'index.m3u8') {
+          const out = await hub.dispatchFastFsRequest(
+            hostId,
+            {
+              op: 'hls_playlist',
+              path: reqPath,
+              cwd,
+              agentId,
+              raw,
+            },
+            { timeoutMs: 18_000, signal },
+          )
+          if (!out.ok || !out.meta?.m3u8) {
+            return {
+              status: out.status || 404,
+              headers: { 'access-control-allow-origin': '*' },
+              json: out.meta || { ok: false, error: 'HLS playlist unavailable' },
+            }
+          }
+          const segQuery = new URLSearchParams({
+            path: reqPath,
+            ...(cwd ? { cwd } : {}),
+            ...(agentId ? { agentId } : {}),
+            ...(raw ? { raw: '1' } : {}),
+            ...(effectiveMt ? { mt: effectiveMt } : tokenParam ? { token: tokenParam } : {}),
+          }).toString()
+          const rewrittenM3u8 = String(out.meta.m3u8).replace(
+            /^(seg_\d{5}\.ts)[ \t\r]*$/gm,
+            `/api/hosts/${encodeURIComponent(hostId)}/fs/hls/$1?${segQuery}`,
+          )
+          return {
+            status: 200,
+            headers: {
+              'content-type': 'application/vnd.apple.mpegurl; charset=utf-8',
+              'cache-control': 'no-store',
+              'x-accel-buffering': 'no',
+              'access-control-allow-origin': '*',
+              ...(out.meta.mode ? { 'x-dsh-hls-mode': String(out.meta.mode) } : {}),
+            },
+            body: rewrittenM3u8,
+          }
+        }
+
+        const out = await hub.dispatchFastFsRequest(
+          hostId,
+          {
+            op: 'hls_segment',
+            segment: hlsItem,
+            path: reqPath,
+            cwd,
+            agentId,
+            raw,
+          },
+          { timeoutMs: 25_000, signal },
+        )
+        if (!out.ok) {
+          out.stream?.resume?.()
+          out.onStreamDone?.()
+          return {
+            status: out.status || 404,
+            headers: { 'access-control-allow-origin': '*' },
+            json: out.meta || { ok: false, error: 'HLS segment failed' },
+          }
+        }
+        const segHeaders = {
+          'content-type': 'video/mp2t',
+          'cache-control': 'private, max-age=3600',
+          'x-accel-buffering': 'no',
+          'access-control-allow-origin': '*',
+          ...(out.meta?.variant ? { 'x-dsh-media-variant': String(out.meta.variant) } : {}),
+        }
+        if (out.stream) {
+          const declaredByteLen = Number(out.meta?.byteLength)
+          return {
+            status: 200,
+            headers: {
+              ...segHeaders,
+              ...(Number.isFinite(declaredByteLen) && declaredByteLen >= 0
+                ? { 'content-length': String(declaredByteLen) }
+                : {}),
+            },
+            stream: out.stream,
+            onStreamDone: out.onStreamDone,
+          }
+        }
+        const buf = out.buffer ?? Buffer.alloc(0)
+        return {
+          status: 200,
+          headers: {
+            ...segHeaders,
+            'content-length': String(buf.length),
+          },
+          buffer: buf,
+        }
+      }
+
       const hostFsMatch = /^\/api\/hosts\/([^/]+)\/fs\/(list|read|stream)$/.exec(pathname)
       if (method === 'GET' && hostFsMatch) {
         const hostId = decodeURIComponent(hostFsMatch[1])
@@ -997,6 +1106,7 @@ export function createHubServer({
           'content-type': out.meta?.mime || 'application/octet-stream',
           'accept-ranges': 'bytes',
           'cache-control': 'private, max-age=300',
+          'x-accel-buffering': 'no',
           'access-control-expose-headers': exposeHeaders,
           ...(hasMediaTicket && !download ? { 'access-control-allow-origin': '*' } : {}),
           ...(out.meta?.etag ? { etag: out.meta.etag } : {}),
@@ -1229,12 +1339,15 @@ export function createHubServer({
         const watchHostId = String(urlObj.searchParams.get('hostId') || '').trim()
 
         if (isHostMode) {
+          req.socket?.setNoDelay?.(true)
           res.writeHead(200, {
             'content-type': 'text/event-stream; charset=utf-8',
             'cache-control': 'no-cache, no-transform',
+            'x-accel-buffering': 'no',
             connection: 'keep-alive',
             'access-control-allow-origin': '*',
           })
+          res.flushHeaders?.()
           let closed = false
           const safeWrite = chunk => {
             if (closed || res.writableEnded || res.destroyed) return

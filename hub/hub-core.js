@@ -2766,6 +2766,7 @@ export class HubCore {
       fastPreview: Boolean(reqSpec.fastPreview),
       download: Boolean(reqSpec.download),
       raw: Boolean(reqSpec.raw),
+      ...(reqSpec.segment ? { segment: String(reqSpec.segment) } : {}),
       ...(reqSpec.sdp ? { sdp: String(reqSpec.sdp) } : {}),
       createdAt: now,
     }

@@ -201,6 +201,13 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.2</code> — 全面升级行业标准 HLS 切片视频流（<code>m3u8</code> + <code>2s .ts</code> + 全平台 <code>hls.js</code> &amp; 本地缓存自动清理）</strong></summary>
+
+- **行业标准 HLS 切片流媒体引擎与缓存自动回收（`v0.8.2`）**：摒弃单文件整片重压等待方案，全面切换至工业级 **RFC 8216 HLS（`index.m3u8` + `2 秒 .ts` 原子切片）** 流架构（[`hls-streamer.js`](dsh-feishu/lib/hls-streamer.js) / [`server.js`](hub/server.js) / [`hlsPlayer.js`](hub/web/src/utils/hlsPlayer.js)）——毫秒级解析 MP4 `mvhd` 真实总时长直出完整 VOD 进度条，低码率兼容片源直接 `-c:v copy` 零重编码秒切，百 MB 级高码率渲染成片按 `2 秒` 一片（仅约 `300 KB`）边播边切（首片 `< 300ms` 就绪、支持任意拖动进度条按需跳切与停止观看 `25s` 自动停编码释放 CPU）；苹果 Safari 原生直读，Windows / Linux / 安卓 / Chrome / 飞书 WebView 按需懒加载内置 `hls.js` 播放，旧版守护进程自动无感回退 `/fs/stream`；全链路补齐 Host SSE 与媒体流 `X-Accel-Buffering: no` 反代零缓冲头，并内置 `~/.dsh/cache/hls` 自动垃圾回收（`2 小时` 空闲过期、`512 MiB` / `24` 目录上限与每 `10 分钟` 后台巡检自动清扫）。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.1</code> — 根治每次升级后首次打开慢（SW 本地壳秒开、HTTP/2 并行预拉取、Brotli 内存预压 &amp; 启动自动暖 CDN）</strong></summary>
 
 - **升级后首次打开零等待加速（`v0.8.1`）**：彻底打掉每次升级后「跨洋拉 HTML → 新哈希 JS/CSS 冷缓存回源 → 等 JS 解析完才串行拉状态」的三段式慢启动瀑布流（[`server.js`](hub/server.js) / [`hub-core.js`](hub/hub-core.js) / [`index.html`](hub/web/index.html) / [`controller.js`](hub/web/src/controller.js)）——为 `/sw.js` 增配自动注册的原子级 **Stale-While-Revalidate 本地应用壳缓存（`dsh-app-shell-v1`）**，即使服务端刚升完级，手机点开也直接从本地闪存 `< 100ms` 秒出界面并在后台静默预热新包；在 `<head>` 内联脚本中与下载 JS/CSS **同一毫秒并行发起** `/api/state?lite=1`（`window.__dshPreloadState`），省去一整趟跨洋 RTT；进一步剥离 `lite=1` 中未使用的历史文件预览/目录缓存与冗余字段，首屏状态包体积再降约 65%；服务端新增静态资源内存级 Brotli-6 / Gzip-9 预压缩直出，并在进程启动 `800ms` 后自动访问 `PUBLIC_URL` 预热 Cloudflare 分层边缘缓存，确保第一个真实用户点开即命中边缘缓存。

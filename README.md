@@ -201,6 +201,13 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.2</code> — Industry-Standard HLS Segmented Video Streaming (<code>m3u8</code> + <code>2s .ts</code> + Cross-Platform <code>hls.js</code> &amp; Auto Cache GC)</strong></summary>
+
+- **Standard HLS Video Streaming Engine &amp; Automatic Cache Garbage Collection (`v0.8.2`)**: Replaced single-file whole-MP4 preview re-encoding with an industry-standard **RFC 8216 HLS (`index.m3u8` + atomic `2s .ts` segments)** pipeline (`dsh-feishu/lib/hls-streamer.js` / `hub/server.js` / `hub/web/src/utils/hlsPlayer.js`): parses exact ISO BMFF `mvhd` duration in `< 1ms` to serve a complete `#EXT-X-ENDLIST` VOD timeline upfront, streams `-c:v copy` losslessly on lightweight compatible H.264 files or progressive `720p` segments (`~300 KB` per 2s, first segment ready in `< 300ms` with on-demand `-ss` seek-anywhere restarting and `25s` idle encoder auto-stop) on multi-hundred-MB high-bitrate renders; plays natively in iOS/macOS Safari with lazy on-demand `hls.js` MSE support for Windows/Linux/Android/Chrome/Feishu WebViews and automatic `/fs/stream` fallback for older hosts; adds `X-Accel-Buffering: no` across Host SSE &amp; media routes plus automatic `~/.dsh/cache/hls` cleanup (`2h` idle TTL, `512 MiB` / `24`-folder cap, and `10m` background sweeps).
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.1</code> — Zero-Wait Post-Upgrade Cold/Warm Open (Service Worker App-Shell, Parallel HTTP/2 State Preload &amp; Edge Self-Warm)</strong></summary>
 
 - **Zero-Wait Post-Upgrade Launch (`v0.8.1`)**: Eliminated the 3-stage trans-ocean waterfall (`GET /` → cold `cf-cache: MISS` bundle → sequential `GET /api/state?lite=1`) that slowed down the first open after every upgrade (`server.js` / `hub-core.js` / `index.html` / `controller.js`): upgraded `/sw.js` with an atomic **Stale-While-Revalidate App-Shell Cache (`dsh-app-shell-v1`)** registered automatically after boot so repeat opens render in `< 100ms` from local device storage while pre-caching new hashed bundles silently in the background; added inline `<head>` HTTP/2 parallel `/api/state?lite=1` preloading (`window.__dshPreloadState`) concurrently with JS/CSS download; trimmed `/api/state?lite=1` wire weight by another ~65% (omitting unused file-preview/listing blobs and verbose idle metadata); and added in-memory Brotli-6/Gzip-9 static pre-compression plus automatic `PUBLIC_URL` CDN edge self-warming `800ms` after server startup.
