@@ -201,6 +201,13 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.8</code> — 发前防丢件箱（WAL）&amp; 严禁选图/上传中途后台自动重载</strong></summary>
+
+- **带图消息防丢件箱（WAL）与上传防打断保护（`v0.8.8`）**：移除 `/sw.js` 激活时的强制 `client.navigate()` 刷新（[`server.js`](hub/server.js)），并在 [`controller.js`](hub/web/src/controller.js) 中严禁在**会话打开中、系统相册选图中、带有待发截图或上传请求未完成**时触发后台版本重载；新增 `dsh_inflight_outbox_v1` 预写式发件箱并将带图上传超时延长至 `45s`——点击发送后仅在服务端真正返回 `200 OK` 后才销账并提示已发送，若中途遭遇切后台重载或断网中断，重进后自动将文字与截图无损还原回输入框。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.7</code> — 点开会话零跳变直出完整全文 &amp; 根治底部交付卡片被压成细线</strong></summary>
 
 - **点进会话第 0 秒直出完整全文与底部卡片防挤压修复（`v0.8.7`）**：修复此前移动端长期停留在 `lite=1`（280 字预览）导致点开会话第 1 秒显示半截断句、1 秒后才突变全文并跳动滚动条的问题——首屏通过 `lite=1` 秒开列表后，立即在后台静默补齐热会话完整正文（48,000 字无截断）并将 SSE 切至完整增量流（[`controller.js`](hub/web/src/controller.js) / [`hub-core.js`](hub/hub-core.js)）；同时为 `.chat-messages > *` 增加 `flex-shrink: 0`（[`app.css`](hub/web/src/styles/app.css)），彻底消除长回复超出屏高时底部 `AI 交付文档` 与 `Files With Changes` 卡片被 Flexbox 压扁成两条横线的 Bug。

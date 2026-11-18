@@ -1896,13 +1896,6 @@ self.addEventListener('activate', event => {
             try {
               client.postMessage({ type: 'DSH_SW_UPDATED', uiBuild: SW_UI_BUILD });
             } catch {}
-            if (typeof client.navigate === 'function') {
-              try {
-                const navUrl = new URL(client.url);
-                navUrl.searchParams.set('_r', String(Date.now()));
-                await client.navigate(navUrl.toString());
-              } catch {}
-            }
           }
         } catch {}
       }

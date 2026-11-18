@@ -2,6 +2,15 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.8] - 2026-11-18
+
+### Fixed
+
+- **彻底根治手机发送带图消息中途被后台升级重载打断导致文字与图片丢失的问题（`hub/server.js` / `hub/web/src/controller.js`）**：
+  - 移除 `/sw.js` `activate` 阶段的强制 `client.navigate()` 页面跳转，并在前端 `hasActiveUserInputInProgress()` 中严禁在**会话页打开、相册选图中、存在未发图片附件或上传请求进行中**时执行任何后台自动重载；
+  - 新增发前持久化保护发件箱（`dsh_inflight_outbox_v1` WAL）：点击发送后先将文字与压缩截图写入 `sessionStorage`，仅在服务端确认 `200 OK` 后才清除——即便发送中途断网、切后台被回收或强刷页面，重进后也会自动将未送达的文字与截图恢复回输入框；
+  - 将带图指令跨洋上传超时从 `15s` 放宽至 `45s`，并将提示优化为发前显示 `⏳ 正在上传截图并发送…`、服务端确认送达后才提示 `🖼️ 已发送截图与指令`。
+
 ## [0.8.7] - 2026-11-18
 
 ### Fixed

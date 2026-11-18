@@ -2913,6 +2913,33 @@ export function initHubController() {
     }
   }
 
+  let inFlightCommandCount = 0;
+  let imagePickerActiveUntil = 0;
+  const INFLIGHT_OUTBOX_KEY = 'dsh_inflight_outbox_v1';
+
+  function saveInflightOutboxEntry(entry) {
+    if (!entry?.cmdId) return;
+    try {
+      const raw = sessionStorage.getItem(INFLIGHT_OUTBOX_KEY);
+      const map = raw ? JSON.parse(raw) || {} : {};
+      map[entry.cmdId] = entry;
+      sessionStorage.setItem(INFLIGHT_OUTBOX_KEY, JSON.stringify(map));
+    } catch { }
+  }
+
+  function removeInflightOutboxEntry(cmdId) {
+    if (!cmdId) return;
+    try {
+      const raw = sessionStorage.getItem(INFLIGHT_OUTBOX_KEY);
+      if (!raw) return;
+      const map = JSON.parse(raw) || {};
+      if (Object.prototype.hasOwnProperty.call(map, cmdId)) {
+        delete map[cmdId];
+        sessionStorage.setItem(INFLIGHT_OUTBOX_KEY, JSON.stringify(map));
+      }
+    } catch { }
+  }
+
   async function dispatchHostCommand(hostId, payload) {
     const cmdPayload =
       payload && typeof payload === 'object' && !payload.id
@@ -2920,22 +2947,27 @@ export function initHubController() {
         : payload;
     const hasAttachments =
       Array.isArray(cmdPayload?.attachments) && cmdPayload.attachments.length > 0;
-    const timeoutMs = hasAttachments ? 15000 : 10000;
+    const timeoutMs = hasAttachments ? 45000 : 12000;
     const reqInit = {
       method: 'POST',
       body: JSON.stringify(cmdPayload),
     };
     const url = `/api/hosts/${encodeURIComponent(hostId)}/command`;
+    inFlightCommandCount += 1;
     try {
-      const res = await apiFetchWithTimeout(url, reqInit, timeoutMs);
-      return await res.json();
-    } catch (err) {
-      if (err && err.message === 'Unauthorized') throw err;
-      // iOS Safari / PWA 从后台唤醒、长连接轮转或代理偶发卡包时，带超时中断后使用相同幂等 id 自动重试一次，
-      // 防止无超时大 POST 卡死 WebKit 复用的单条 HTTP/2 连接。
-      await new Promise(r => setTimeout(r, 250));
-      const retryRes = await apiFetchWithTimeout(url, reqInit, timeoutMs);
-      return await retryRes.json();
+      try {
+        const res = await apiFetchWithTimeout(url, reqInit, timeoutMs);
+        return await res.json();
+      } catch (err) {
+        if (err && err.message === 'Unauthorized') throw err;
+        // iOS Safari / PWA 从后台唤醒、长连接轮转或代理偶发卡包时，带超时中断后使用相同幂等 id 自动重试一次，
+        // 防止无超时大 POST 卡死 WebKit 复用的单条 HTTP/2 连接。
+        await new Promise(r => setTimeout(r, 250));
+        const retryRes = await apiFetchWithTimeout(url, reqInit, timeoutMs);
+        return await retryRes.json();
+      }
+    } finally {
+      inFlightCommandCount = Math.max(0, inFlightCommandCount - 1);
     }
   }
 
@@ -3296,6 +3328,7 @@ export function initHubController() {
         return;
       }
     }
+    imagePickerActiveUntil = Date.now() + 90000;
     const inputId = target === 'newTask' ? 'newTaskImageInput' : 'chatImageInput';
     const el = document.getElementById(inputId);
     if (el) {
@@ -3381,6 +3414,7 @@ export function initHubController() {
   }
 
   async function onChatImageSelected(event, target = 'chat') {
+    imagePickerActiveUntil = 0;
     const files = event?.target?.files;
     if (files && files.length > 0) {
       await addFilesToComposer(files, target);
@@ -3533,10 +3567,27 @@ export function initHubController() {
 
     const cmdType = s.status === 'running' ? 'steer' : 'prompt';
     const isHostActivelyOnline = Boolean(host && host.online !== false && host.activelyConnected !== false);
+    // 发送前写入断电/刷新保护发件箱：若上传图片中途页面被系统回收或重载，重启后自动无损恢复草稿与截图！
+    saveInflightOutboxEntry({
+      cmdId: clientCmdId,
+      hostId: s.hostId,
+      sessionId: s.id,
+      rawText,
+      text,
+      baselineSameUserCount,
+      baselineTotalCount,
+      savedAt: Date.now(),
+      attachments: pendingAttachments.map(a => ({
+        name: a.name,
+        mimeType: a.mimeType,
+        dataBase64: a.dataBase64,
+        sizeBytes: Number(a.sizeBytes || 0),
+      })),
+    });
     if (isHostActivelyOnline) {
       showToast(
         pendingAttachments.length > 0
-          ? `🖼️ 已发送截图与指令 (${pendingAttachments.length} 张)`
+          ? `⏳ 正在上传截图并发送 (${pendingAttachments.length} 张)…`
           : cmdType === 'steer'
             ? '⚡ 已发送实时插话'
             : '📨 已发送指令'
@@ -3587,11 +3638,13 @@ export function initHubController() {
           baselineTotalCount
         )
       ) {
+        removeInflightOutboxEntry(clientCmdId);
         clearComposerDraft(s.id);
         scheduleFallbackStateSync();
         return;
       }
 
+      removeInflightOutboxEntry(clientCmdId);
       optMap[s.id] = (optMap[s.id] || []).filter(item => item.id !== optEntry.id);
       persistOptimisticMsgsMap();
       lastRenderedChatKey = '';
@@ -3619,8 +3672,11 @@ export function initHubController() {
       return;
     }
 
+    removeInflightOutboxEntry(clientCmdId);
     if (dispatchRes.queued) {
       showToast('⏳ 电脑当前休眠/离线，指令已排队（10分钟内上线自动执行，可随时取消）');
+    } else if (pendingAttachments.length > 0) {
+      showToast(`🖼️ 已发送截图与指令 (${pendingAttachments.length} 张)`);
     }
 
     const cmdId = dispatchRes?.command?.id || clientCmdId;
@@ -8549,12 +8605,103 @@ export function initHubController() {
 
   function hasActiveUserInputInProgress() {
     if (typeof document === 'undefined') return false;
+    if (inFlightCommandCount > 0) return true;
+    if (imagePickerActiveUntil > Date.now()) return true;
     if (isVoiceRecording()) return true;
+    if (document.body.classList.contains('mobile-chat-open')) return true;
+    if (document.querySelector('.sheet-backdrop.open, #triageDeckOverlay.open')) return true;
     const chatInput = document.getElementById('globalPromptInput');
     if (chatInput && String(chatInput.value || '').trim().length > 0) return true;
     const newInput = document.getElementById('newTaskInput') || document.getElementById('newTaskPromptInput');
     if (newInput && String(newInput.value || '').trim().length > 0) return true;
+    if (composerAttachments.newTask.length > 0) return true;
+    for (const list of chatAttachmentsBySession.values()) {
+      if (Array.isArray(list) && list.length > 0) return true;
+    }
     return false;
+  }
+
+  function recoverInterruptedOutboxEntries() {
+    if (!hasLoadedInitialState) return;
+    let raw = null;
+    try {
+      raw = sessionStorage.getItem(INFLIGHT_OUTBOX_KEY);
+    } catch { }
+    if (!raw) return;
+    let map = null;
+    try {
+      map = JSON.parse(raw);
+    } catch { }
+    if (!map || typeof map !== 'object') return;
+    const now = Date.now();
+    let changed = false;
+    let restoredAny = false;
+    for (const [cmdId, entry] of Object.entries(map)) {
+      if (!entry || now - Number(entry.savedAt || 0) > 15 * 60 * 1000) {
+        delete map[cmdId];
+        changed = true;
+        continue;
+      }
+      if (now - Number(entry.savedAt || 0) < 2500 && inFlightCommandCount > 0) {
+        continue;
+      }
+      const found = findSessionGlobal(entry.sessionId);
+      const delivered = found
+        ? hasCommandOrPromptDelivered(
+          found.session,
+          found.host,
+          cmdId,
+          entry.text || entry.rawText || '',
+          entry.baselineSameUserCount || 0,
+          entry.baselineTotalCount || 0
+        )
+        : false;
+      delete map[cmdId];
+      changed = true;
+      if (delivered) continue;
+      if (entry.rawText) {
+        writeComposerDraftValue(entry.sessionId, entry.rawText, {
+          wireSameCount: entry.baselineSameUserCount || 0,
+          wireTotalCount: entry.baselineTotalCount || 0,
+          savedAt: now,
+          fromErrorRestore: true,
+          cmdId,
+        });
+      }
+      if (Array.isArray(entry.attachments) && entry.attachments.length > 0) {
+        const curList = getAttachmentList('chat', entry.sessionId);
+        if (curList.length === 0) {
+          for (const a of entry.attachments) {
+            if (!a?.dataBase64) continue;
+            const mime = String(a.mimeType || 'image/jpeg');
+            const b64 = String(a.dataBase64);
+            curList.push({
+              name: a.name || 'screenshot.jpg',
+              mimeType: mime,
+              dataBase64: b64,
+              sizeBytes: Number(a.sizeBytes || 0),
+              previewUrl: b64.startsWith('data:') ? b64 : `data:${mime};base64,${b64}`,
+            });
+          }
+          persistChatAttachmentsDraft(entry.sessionId);
+        }
+      }
+      const optMap = ensureOptimisticMsgsMap();
+      if (optMap[entry.sessionId]) {
+        optMap[entry.sessionId] = optMap[entry.sessionId].filter(it => it.cmdId !== cmdId);
+        persistOptimisticMsgsMap();
+      }
+      restoredAny = true;
+    }
+    if (changed) {
+      try {
+        sessionStorage.setItem(INFLIGHT_OUTBOX_KEY, JSON.stringify(map));
+      } catch { }
+    }
+    if (restoredAny) {
+      showToast('⚠️ 上次发送被页面刷新中断，已为你自动恢复文字与截图草稿');
+      renderAll();
+    }
   }
 
   function reloadWithFreshAppShell(targetBuild = '') {
@@ -8705,6 +8852,9 @@ export function initHubController() {
         consecutiveStateFetchFailures = 0;
         setConnectionBanner(false);
         applyHubState(data);
+        if (isFullPayload) {
+          recoverInterruptedOutboxEntries();
+        }
         renderAll();
         flushPendingDeepLink();
         void ensureLocalPushSubscriptionSynced();

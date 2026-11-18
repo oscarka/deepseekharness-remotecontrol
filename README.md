@@ -201,6 +201,13 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-18 · v0.8.8</code> — Zero-Loss Image/Prompt Outbox WAL &amp; Anti-Mid-Upload Reload Guard</strong></summary>
+
+- **Zero-Loss Outbox WAL &amp; Anti-Interruption Reload Guard (`v0.8.8`)**: Removed unconditional `client.navigate()` from `/sw.js` (`hub/server.js`) and hardened `hasActiveUserInputInProgress` (`controller.js`) so background bundle updates never reload an open chat session, active iOS Photo Picker, attached screenshots, or in-flight upload; added a write-ahead outbox (`dsh_inflight_outbox_v1`), raised multi-image upload timeout from `15s` to `45s`, and automatically restores both text and screenshots if a page reload or crash interrupts an upload before server acknowledgment.
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-18 · v0.8.7</code> — Zero-Jump Session Open (Instant Full Reply &amp; Uncrushed Artifact/Diff Cards)</strong></summary>
 
 - **Zero-Jump Session Open &amp; Flexbox Card Fix (`v0.8.7`)**: Eliminated the 1-second 280-char stub -> full-reply jump when opening sessions (`controller.js` / `hub-core.js`) by silently upgrading from initial `lite=1` list bootstrap to full 48,000-char hot-session state + non-lite SSE deltas right after first paint, keeping 14-message hot sessions `wireTruncated: false`, and caching full recent replies in `localStorage`; added `.chat-messages > * { flex-shrink: 0 }` in `app.css` so long replies never squash bottom `.agy-session-artifacts-card` and `.agy-files-changed-card` blocks into flat 0px lines.
