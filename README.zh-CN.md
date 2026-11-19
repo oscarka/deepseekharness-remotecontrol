@@ -201,6 +201,14 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-19 · v0.8.12</code> — 用户已发截图气泡缩略图与点击大图预览 &amp; 根治消息流突变跳回旧对话顽疾</strong></summary>
+
+- **用户气泡内已发图片直接展示缩略图并支持点开大图（`v0.8.12`）**：移除蓝色用户消息气泡中裸露的 `[手机端上传图片附件...]` 本地路径长文本，自动解析并渲染为固定比例缩略图卡片（同时兼容刚发送时的本地即时预览与历史会话落盘读取，支持 `.dsh-uploads` 与 `.user_uploaded` 主备路径自动回退），点击即可在抽屉中打开高清大图、缩放或长按保存（[`controller.js`](hub/web/src/controller.js) / [`app.css`](hub/web/src/styles/app.css) / [`workspace-ops.js`](dsh-feishu/lib/workspace-ops.js)）。
+- **根治看会话时因图片加载或正文补齐突然跳回早先对话的 Bug（`v0.8.12`）**：升级为基于真实上滑手势的贴底状态机（`chatPinnedToBottom`）+ 捕获阶段 `<img>` 解码 `load` 与 `ResizeObserver` 实时贴底锁——只要未主动手势上滑翻历史，前序多张截图异步撑高或全文补齐时始终稳稳钉在最新消息底部；主动上滑阅读或加载早先记录时保持当前位置不乱跳（[`controller.js`](hub/web/src/controller.js)）。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-19 · v0.8.11</code> — 交付文档与改动文件默认收起不占屏 &amp; 补齐交付文档折叠按钮 &amp; 确认后按钮消失</strong></summary>
 
 - **双卡片默认缩略收起与确认按钮清理（`v0.8.11`）**：点进任意会话时，「📋 AI 交付文档 / Walkthrough (N)」与「📄 N Files With Changes」默认均以单行缩略栏呈现（不再把 10+ 份文档直接撑满屏幕）；为「AI 交付文档」新增 `展开 ⌄` / `收起 ⌃` 缩略切换按钮，并使「确认已阅」在点击确认后直接消失不再常驻占屏（仅在后续产生新文件改动时重新出现）（[`controller.js`](hub/web/src/controller.js) / [`app.css`](hub/web/src/styles/app.css)）。

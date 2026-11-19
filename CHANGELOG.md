@@ -2,6 +2,17 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.12] - 2026-11-19
+
+### Fixed
+
+- **用户发送的图片气泡内直接渲染高清缩略图并支持随时点开大图预览（`hub/web/src/controller.js` / `hub/web/src/styles/app.css` / `dsh-feishu/lib/workspace-ops.js`）**：
+  - 彻底清除此前用户蓝色气泡内裸露的长串 `[手机端上传图片附件 (N 张)...]: - 📎 ... /Users/.../.dsh-uploads/...` 路径文本，改为自动解析并渲染为固定尺寸防抖缩略图卡片（同时支持发送瞬间的本地乐观预览与历史会话落盘加载）；
+  - 点击任意自己发过的截图即可直接唤起文件预览抽屉查看高清大图、双指缩放或长按保存，并支持 `.dsh-uploads` 主路径与 `.user_uploaded` 备用路径双保险自动回退。
+- **彻底根治查看会话时（图片加载 / 全文补齐 / 流式更新）突然往上跳回好几屏旧对话的顽疾（`hub/web/src/controller.js`）**：
+  - 废弃以静态 `scrollHeight - scrollTop < 120` 判断是否在底部的脆弱逻辑（前序图片解码撑高或正文补齐会瞬间放大 `scrollHeight` 导致误判离开底部，进而在下次重绘时锁死旧 `prevScrollTop` 把画面拽回早期对话）；
+  - 升级为基于**真实手势意图的状态机贴底锁（`chatPinnedToBottom`）** + `#chatMessages` 捕获阶段 `load` 事件与 `ResizeObserver` 实时贴底补偿：只要用户未主动手势上滑翻看历史，无论前序多少张截图陆续加载完毕还是流式消息持续增长，视口始终稳稳停留在最新消息底部；当用户主动上滑阅读历史或点击「加载早先记录」时，按底部相对高度差保持当前阅读段落纹丝不动。
+
 ## [0.8.11] - 2026-11-19
 
 ### Changed & Fixed

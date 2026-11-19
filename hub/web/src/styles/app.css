@@ -1123,8 +1123,83 @@
       background: var(--primary);
       color: #fff;
       border-bottom-right-radius: 6px;
-      white-space: pre-wrap;
+      white-space: normal;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
       box-shadow: 0 2px 8px rgba(37, 99, 235, 0.14);
+    }
+
+    .user-bubble-text {
+      white-space: pre-wrap;
+    }
+
+    .user-msg-media-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 2px;
+    }
+
+    .user-msg-img-card {
+      width: 122px;
+      height: 162px;
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      background: rgba(15, 23, 42, 0.28);
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      cursor: pointer;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.12s ease, opacity 0.12s ease;
+    }
+
+    .user-msg-media-grid .user-msg-img-card:only-child {
+      width: 164px;
+      height: 214px;
+    }
+
+    .user-msg-img-card:active {
+      transform: scale(0.97);
+    }
+
+    .user-msg-thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .user-msg-img-placeholder {
+      font-size: 11.5px;
+      color: rgba(255, 255, 255, 0.85);
+      text-align: center;
+      padding: 8px;
+      line-height: 1.4;
+    }
+
+    .user-msg-img-badge {
+      position: absolute;
+      right: 6px;
+      bottom: 6px;
+      max-width: calc(100% - 12px);
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.68);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      color: #ffffff;
+      font-size: 10.5px;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      pointer-events: none;
     }
 
     .bubble.assistant {

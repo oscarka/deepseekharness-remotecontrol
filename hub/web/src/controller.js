@@ -901,7 +901,7 @@ export function initHubController() {
             continue;
           }
           renderedOptItems.push(opt);
-          baseTranscript.push({ role: 'user', text: opt.text, time: opt.time });
+          baseTranscript.push({ role: 'user', text: opt.text, time: opt.time, optId: opt.id });
         }
         for (const dc of [...dispatchingCmds, ...inflightPromptCmds]) {
           const alreadyRendered = renderedOptItems.some(
@@ -1567,22 +1567,98 @@ export function initHubController() {
   }
 
   let chatPaintSyncTimer = null;
+  let chatPinnedToBottom = true;
+  let programmaticChatScrollUntil = 0;
+  let lastUserUpwardGestureAt = 0;
+  let lastChatScrollTop = 0;
+  const lastFirstMsgSigBySession = new Map();
+  const optimisticPreviewImagesByOptId = new Map();
+
+  function parseUserMessageAndMedia(m) {
+    let raw = String(m?.text || '').trim();
+    const reqMatch = /<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i.exec(raw);
+    if (reqMatch) {
+      raw = reqMatch[1].trim();
+    } else {
+      raw = raw.replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/gi, '').trim();
+    }
+
+    const mediaItems = [];
+    const seenPaths = new Set();
+    const pushDiskMedia = (primaryPath, backupPath = '', rawLabel = '') => {
+      const cleanPrimary = String(primaryPath || '').replace(/^file:\/\//i, '').trim();
+      const cleanBackup = String(backupPath || '').replace(/^file:\/\//i, '').trim();
+      const mainPath = cleanPrimary || cleanBackup;
+      if (!mainPath || seenPaths.has(mainPath)) return;
+      seenPaths.add(mainPath);
+      const fallbackName = mainPath.split('/').filter(Boolean).pop() || 'image.jpg';
+      mediaItems.push({
+        label: String(rawLabel || fallbackName).trim() || fallbackName,
+        primaryPath: mainPath,
+        backupPath: cleanPrimary && cleanBackup && cleanBackup !== cleanPrimary ? cleanBackup : '',
+      });
+    };
+
+    raw = raw.replace(
+      /\[手机端上传图片附件\s*\(\d+\s*张\)[^\]]*\]:?([\s\S]*)$/i,
+      (_full, tail) => {
+        const lines = String(tail || '').split('\n');
+        for (const ln of lines) {
+          const labelMatch = /\(([^()]+\.(?:jpe?g|png|webp|gif|heic|heif|svg|bmp|avif))\)\s*:/i.exec(ln);
+          const primaryMatch = /:\s*(\/[^\s()]+?\.(?:jpe?g|png|webp|gif|heic|heif|svg|bmp|avif))/i.exec(ln);
+          const backupMatch = /备用路径:\s*(\/[^\s()]+?\.(?:jpe?g|png|webp|gif|heic|heif|svg|bmp|avif))/i.exec(ln);
+          if (primaryMatch?.[1] || backupMatch?.[1]) {
+            pushDiskMedia(primaryMatch?.[1] || '', backupMatch?.[1] || '', labelMatch?.[1] || '');
+          }
+        }
+        return '';
+      }
+    );
+
+    const optImgs = m?.optId ? optimisticPreviewImagesByOptId.get(m.optId) : null;
+    let pendingRemoteImgCount = 0;
+    raw = raw.replace(/\[🖼️\s*已附带\s*(\d+)\s*张截图\]/g, (_m, n) => {
+      pendingRemoteImgCount += Number(n) || 1;
+      return '';
+    });
+
+    for (const med of [...(Array.isArray(m?.media) ? m.media : []), ...(Array.isArray(m?.images) ? m.images : [])]) {
+      if (typeof med === 'string') pushDiskMedia(med);
+      else if (med?.uri || med?.path) pushDiskMedia(med.uri || med.path, '', med.name || '');
+    }
+
+    const cleanText = raw.replace(/\n{3,}/g, '\n\n').trim();
+    return {
+      text: cleanText,
+      mediaItems,
+      optImgs: Array.isArray(optImgs) && optImgs.length > 0 ? optImgs : null,
+      pendingRemoteImgCount: (!optImgs || optImgs.length === 0) && mediaItems.length === 0 ? pendingRemoteImgCount : 0,
+    };
+  }
+  function pinChatToBottomImmediate(boxEl = null) {
+    const box = boxEl || document.getElementById('chatMessages');
+    if (!box) return;
+    programmaticChatScrollUntil = Date.now() + 150;
+    const maxTop = Math.max(0, box.scrollHeight - box.clientHeight);
+    box.scrollTop = maxTop;
+    if (maxTop > 1) {
+      box.scrollTop = maxTop - 1;
+      box.scrollTop = maxTop;
+    } else {
+      box.style.transform = 'translateZ(0.01px)';
+      void box.offsetHeight;
+      box.style.transform = 'translateZ(0)';
+    }
+    lastChatScrollTop = box.scrollTop;
+    setScrollBottomVisible(false);
+  }
+
   function scheduleChatPaintAndScrollSync(targetSessionId) {
     const flushOnce = () => {
-      if (activeSessionId !== targetSessionId) return;
+      if (activeSessionId !== targetSessionId || !chatPinnedToBottom) return;
       const box = document.getElementById('chatMessages');
       if (!box) return;
-      const maxTop = Math.max(0, box.scrollHeight - box.clientHeight);
-      box.scrollTop = maxTop;
-      if (maxTop > 1) {
-        box.scrollTop = maxTop - 1;
-        box.scrollTop = maxTop;
-      } else {
-        box.style.transform = 'translateZ(0.01px)';
-        void box.offsetHeight;
-        box.style.transform = 'translateZ(0)';
-      }
-      setScrollBottomVisible(false);
+      pinChatToBottomImmediate(box);
     };
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(() => {
@@ -1638,6 +1714,7 @@ export function initHubController() {
     document.body.classList.add('mobile-chat-open');
     artifactsExpandedSessionIds.delete(found.session.id);
     filesExpandedSessionIds.delete(found.session.id);
+    chatPinnedToBottom = true;
     lastRenderedChatKey = ''; // 切换会话时强制渲染
     renderActiveChatStage(found);
     scheduleChatPaintAndScrollSync(found.session.id);
@@ -2337,10 +2414,14 @@ export function initHubController() {
     const openDetailIds = new Set(
       Array.from(box.querySelectorAll('details[open][data-detail-id]')).map(el => el.dataset.detailId)
     );
-    // 用户正往上翻旧消息时，新内容不要把他强行拉回底部，只浮出「最新消息」
-    const nearBottom = box.dataset.dshSession !== String(activeSessionId)
-      || (box.scrollHeight - box.scrollTop - box.clientHeight < 120);
+    // 仅当用户主动上滑浏览旧消息（chatPinnedToBottom === false）时保留原阅读位置；
+    // 图片异步加载、全文补齐或 SSE 追加导致的 scrollHeight 增长绝不会把用户误判为离开底部！
+    const sessionSwitched = box.dataset.dshSession !== String(activeSessionId) || lastRenderedChatSessionId !== s.id;
+    if (sessionSwitched) {
+      chatPinnedToBottom = true;
+    }
     const prevScrollTop = box.scrollTop;
+    const prevScrollHeight = box.scrollHeight;
     box.dataset.dshSession = String(activeSessionId);
     const rawMsgs = s.transcript.length > 0
       ? s.transcript
@@ -2409,7 +2490,26 @@ export function initHubController() {
           : m.expiredCmdId
             ? `<div class="queued-cmd-pill" style="background:rgba(239,68,68,0.18);color:#fecaca;"><span>⚠️ 电脑超过 10 分钟未上线，该指令已超时未执行</span></div>`
             : '';
-        return `<div class="bubble user"><div>${esc(m.text)}</div>${queuedBadge}</div>`;
+        const parsedUser = parseUserMessageAndMedia(m);
+        const textHtml = parsedUser.text ? `<div class="user-bubble-text">${esc(parsedUser.text)}</div>` : '';
+        let mediaGridHtml = '';
+        if (parsedUser.optImgs && parsedUser.optImgs.length > 0) {
+          mediaGridHtml = `<div class="user-msg-media-grid">${parsedUser.optImgs.map((it, idx) => `
+            <div class="user-msg-img-card" onclick="openOptimisticImagePreview('${esc(m.optId)}', ${idx})">
+              <img class="user-msg-thumb saveable-preview-img" src="${it.dataUrl}" alt="${esc(it.name)}" />
+              <span class="user-msg-img-badge">🔍 ${esc(it.name)}</span>
+            </div>
+          `).join('')}</div>`;
+        } else if (parsedUser.mediaItems.length > 0) {
+          mediaGridHtml = `<div class="user-msg-media-grid">${parsedUser.mediaItems.map(it => {
+            const encPrimary = encodeURIComponent(it.primaryPath).replace(/'/g, '%27');
+            const encBackup = encodeURIComponent(it.backupPath || '').replace(/'/g, '%27');
+            return `<div class="user-msg-img-card md-user-img-pending" data-local-img-path="${esc(it.primaryPath)}" data-backup-img-path="${esc(it.backupPath || '')}" data-img-label="${esc(it.label)}" onclick="openUserBubbleImage(this, '${encPrimary}', '${encBackup}')"><span class="user-msg-img-placeholder">🖼️ ${esc(it.label)}</span></div>`;
+          }).join('')}</div>`;
+        } else if (parsedUser.pendingRemoteImgCount > 0) {
+          mediaGridHtml = `<div class="queued-cmd-pill"><span>🖼️ 已附带 ${parsedUser.pendingRemoteImgCount} 张截图</span></div>`;
+        }
+        return `<div class="bubble user">${textHtml}${mediaGridHtml}${queuedBadge}</div>`;
       }
       const thinkId = `think-${msgIdx}`;
       const stepCountLabel = m.thinkingStepCount > 1 ? ` · 共 ${m.thinkingStepCount} 步` : '';
@@ -2745,16 +2845,24 @@ export function initHubController() {
         ? `<div style="text-align:center;font-size:11.5px;color:var(--muted);margin:4px 0 10px;">✅ 已加载全部历史对话（共 ${s.transcript.length} 条）</div>`
         : '';
 
-    // 正在往上翻历史时，新内容到达不要把用户拽回底部
-    const sessionChanged = lastRenderedChatSessionId !== s.id;
+    // 正在往上翻历史时，新内容到达不要把用户拽回底部；否则始终稳稳锚定在最新消息底部
+    const firstMsg = msgs[0];
+    const nextFirstMsgSig = firstMsg ? `${firstMsg.role}:${String(firstMsg.text || '').slice(0, 36)}` : '';
+    const prevFirstMsgSig = lastFirstMsgSigBySession.get(s.id) || '';
+    lastFirstMsgSigBySession.set(s.id, nextFirstMsgSig);
     box.innerHTML = loadEarlierHtml + bubblesHtml + sessionArtifactsHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
     void hydrateInlineChatImages(s, box);
-    if (sessionChanged || nearBottom) {
-      box.scrollTop = box.scrollHeight;
-      setScrollBottomVisible(false);
+    if (sessionSwitched || chatPinnedToBottom) {
+      pinChatToBottomImmediate(box);
     } else {
-      // innerHTML 重绘会丢掉滚动位置，这里恢复回用户正在看的位置
-      box.scrollTop = prevScrollTop;
+      programmaticChatScrollUntil = Date.now() + 150;
+      // 若顶部新加载了早先历史记录（loadEarlierTranscript），按底部相对距离补偿，保持当前阅读段落纹丝不动
+      if (prevFirstMsgSig && nextFirstMsgSig !== prevFirstMsgSig && box.scrollHeight > prevScrollHeight) {
+        box.scrollTop = Math.max(0, prevScrollTop + (box.scrollHeight - prevScrollHeight));
+      } else {
+        box.scrollTop = prevScrollTop;
+      }
+      lastChatScrollTop = box.scrollTop;
       setScrollBottomVisible(true);
     }
     lastRenderedChatSessionId = s.id;
@@ -2785,11 +2893,9 @@ export function initHubController() {
     } finally {
       hydratingWireSessionIds.delete(sessionId);
       if (activeSessionId === sessionId || triageCtrl?.isOpen()) {
-        const box = document.getElementById('chatMessages');
-        const wasNearBottom = !box || (box.scrollHeight - box.scrollTop - box.clientHeight < 140);
         lastRenderedChatKey = '';
         renderAll();
-        if (activeSessionId === sessionId && wasNearBottom) {
+        if (activeSessionId === sessionId && chatPinnedToBottom) {
           scheduleChatPaintAndScrollSync(sessionId);
         }
       }
@@ -2878,13 +2984,16 @@ export function initHubController() {
   }
 
   function scrollToChatBottom() {
+    chatPinnedToBottom = true;
     const box = document.getElementById('chatMessages');
     if (box) {
+      programmaticChatScrollUntil = Date.now() + 450;
       if (typeof box.scrollTo === 'function') {
         box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
       } else {
         box.scrollTop = box.scrollHeight;
       }
+      lastChatScrollTop = box.scrollTop;
     }
     setScrollBottomVisible(false);
   }
@@ -2900,12 +3009,68 @@ export function initHubController() {
   function setupChatScrollWatcher() {
     const box = document.getElementById('chatMessages');
     if (!box) return;
-    // 手指滚回底部时自动收起提示
-    box.addEventListener('scroll', () => {
-      if (box.scrollHeight - box.scrollTop - box.clientHeight < 40) {
-        setScrollBottomVisible(false);
+    let gestureStartY = 0;
+    box.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches.length === 1) {
+        gestureStartY = e.touches[0].clientY;
       }
     }, { passive: true });
+    box.addEventListener('touchmove', (e) => {
+      if (e.touches && e.touches.length === 1) {
+        const dy = e.touches[0].clientY - gestureStartY;
+        // dy > 10 表示手指向下拖（页面向上滚去看早先历史消息）
+        if (dy > 10) {
+          lastUserUpwardGestureAt = Date.now();
+        }
+      }
+    }, { passive: true });
+    box.addEventListener('wheel', (e) => {
+      if (e.deltaY < -4) {
+        lastUserUpwardGestureAt = Date.now();
+      }
+    }, { passive: true });
+
+    box.addEventListener('scroll', () => {
+      const dist = box.scrollHeight - box.scrollTop - box.clientHeight;
+      if (dist < 48) {
+        chatPinnedToBottom = true;
+        setScrollBottomVisible(false);
+      } else if (
+        Date.now() >= programmaticChatScrollUntil &&
+        Date.now() - lastUserUpwardGestureAt < 1600 &&
+        box.scrollTop < lastChatScrollTop - 4 &&
+        dist >= 96
+      ) {
+        chatPinnedToBottom = false;
+        setScrollBottomVisible(true);
+      }
+      lastChatScrollTop = box.scrollTop;
+    }, { passive: true });
+
+    // 捕获阶段监听消息流内所有 <img> / <iframe> 异步解码完成：
+    // 只要用户当前处于底部阅读状态（未手动上滑翻历史），前序图片撑高布局时立即同步贴底，彻底根治跳回早期消息！
+    box.addEventListener('load', () => {
+      if (!chatPinnedToBottom || chatTouchDownAt > 0) return;
+      pinChatToBottomImmediate(box);
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          if (chatPinnedToBottom && chatTouchDownAt === 0) {
+            pinChatToBottomImmediate(box);
+          }
+        });
+      }
+    }, true);
+
+    if (typeof ResizeObserver === 'function') {
+      try {
+        const ro = new ResizeObserver(() => {
+          if (chatPinnedToBottom && chatTouchDownAt === 0) {
+            pinChatToBottomImmediate(box);
+          }
+        });
+        ro.observe(box);
+      } catch { }
+    }
   }
 
   // ==================== 6. 发送指令 / 实时插话 / 停止 / 审批 ====================
@@ -3575,10 +3740,29 @@ export function initHubController() {
       baselineSameUserCount,
       baselineTotalCount,
     };
+    if (pendingAttachments.length > 0) {
+      const localThumbs = pendingAttachments
+        .map((a, idx) => ({
+          name: a.name || `screenshot-${idx + 1}.jpg`,
+          mime: a.mimeType || 'image/jpeg',
+          size: Number(a.sizeBytes || 0),
+          dataBase64: String(a.dataBase64 || '').replace(/^data:[^;]+;base64,/, ''),
+          dataUrl: a.previewUrl || (a.dataBase64 ? (String(a.dataBase64).startsWith('data:') ? a.dataBase64 : `data:${a.mimeType || 'image/jpeg'};base64,${a.dataBase64}`) : ''),
+        }))
+        .filter(x => x.dataUrl);
+      if (localThumbs.length > 0) {
+        optimisticPreviewImagesByOptId.set(optEntry.id, localThumbs);
+        if (optimisticPreviewImagesByOptId.size > 24) {
+          const oldestKey = optimisticPreviewImagesByOptId.keys().next().value;
+          if (oldestKey) optimisticPreviewImagesByOptId.delete(oldestKey);
+        }
+      }
+    }
     const optList = optMap[s.id] || [];
     optList.push(optEntry);
     optMap[s.id] = optList.slice(-8);
     persistOptimisticMsgsMap();
+    chatPinnedToBottom = true;
     lastRenderedChatKey = '';
     renderActiveChatStage();
 
@@ -4172,6 +4356,33 @@ export function initHubController() {
       }
     }
 
+    const pendingUserNodes = Array.from(containerEl.querySelectorAll('.md-user-img-pending[data-local-img-path]'));
+    for (const uNode of pendingUserNodes) {
+      const primaryPath = uNode.getAttribute('data-local-img-path') || '';
+      const backupPath = uNode.getAttribute('data-backup-img-path') || '';
+      const label = uNode.getAttribute('data-img-label') || 'image';
+      if (!primaryPath) continue;
+      const relPrimary = resolveLocalRelPath(primaryPath);
+      const isLosslessAnim = /\.(svg|gif)$/i.test(label);
+      const primarySrc = buildFastStreamUrl(session.hostId, relPrimary, {
+        cwd: session.cwd || '',
+        agentId: session.id || '',
+        thumb: !isLosslessAnim,
+        mediaTicket: mt,
+      });
+      const backupSrc = backupPath
+        ? buildFastStreamUrl(session.hostId, resolveLocalRelPath(backupPath), {
+          cwd: session.cwd || '',
+          agentId: session.id || '',
+          thumb: !isLosslessAnim,
+          mediaTicket: mt,
+        })
+        : '';
+      uNode.classList.remove('md-user-img-pending');
+      uNode.dataset.activeImgPath = primaryPath;
+      uNode.innerHTML = `<img class="user-msg-thumb saveable-preview-img" src="${primarySrc}" data-fallback-src="${backupSrc}" data-backup-path="${esc(backupPath)}" alt="${esc(label)}" loading="lazy" onerror="if(this.dataset.fallbackSrc && this.src !== this.dataset.fallbackSrc){const card=this.closest('.user-msg-img-card');if(card&&this.dataset.backupPath)card.dataset.activeImgPath=this.dataset.backupPath;this.src=this.dataset.fallbackSrc;}else{this.style.display='none';}" /><span class="user-msg-img-badge">🔍 ${esc(label)}</span>`;
+    }
+
     const pendingNodes = Array.from(containerEl.querySelectorAll('.md-local-img-pending[data-local-img-path]'));
     if (pendingNodes.length === 0) return;
     window.__dshInlineImgCache = window.__dshInlineImgCache || {};
@@ -4191,6 +4402,50 @@ export function initHubController() {
       window.__dshInlineImgCache[imgPath] = srcUrl;
       node.classList.remove('md-local-img-pending');
       node.innerHTML = `<img class="md-inline-img" src="${srcUrl}" alt="${esc(baseName)}" loading="lazy" />`;
+    }
+  }
+
+  function openOptimisticImagePreview(optId, idx = 0) {
+    const list = optimisticPreviewImagesByOptId.get(String(optId || ''));
+    const item = Array.isArray(list) ? list[Number(idx) || 0] : null;
+    const found = findSessionGlobal(activeSessionId);
+    if (!item || !found?.host) return;
+    drawerChangedFilesSessionId = null;
+    filePreviewLoading = null;
+    found.host.lastFilePreview = {
+      at: Date.now(),
+      agentId: found.session.id,
+      relPath: item.name,
+      name: item.name,
+      kind: 'image',
+      mime: item.mime || 'image/jpeg',
+      size: item.size || 0,
+      dataBase64: item.dataBase64,
+      _showInDrawer: true,
+      _showInMain: false,
+    };
+    pinnedDrawerPreviewByHost[found.host.hostId] = found.host.lastFilePreview;
+    openSheet('inChatFileSheet');
+    document.body.classList.add('mobile-file-open');
+    const titleEl = document.getElementById('inChatFileTitle');
+    if (titleEl) titleEl.textContent = `🖼️ ${item.name}`;
+    renderInChatFileDrawerBody();
+  }
+
+  async function openUserBubbleImage(cardEl, encodedPrimary, encodedBackup = '') {
+    const activeRaw = cardEl?.dataset?.activeImgPath || '';
+    let primary = '';
+    let backup = '';
+    try { primary = decodeURIComponent(String(encodedPrimary || '')); } catch { primary = String(encodedPrimary || ''); }
+    try { backup = decodeURIComponent(String(encodedBackup || '')); } catch { backup = String(encodedBackup || ''); }
+    const firstChoice = activeRaw || primary || backup;
+    const secondChoice = firstChoice === primary && backup ? backup : (firstChoice === backup && primary ? primary : '');
+    if (!firstChoice) return;
+    await openChatFileLink(encodeURIComponent(firstChoice));
+    const found = findSessionGlobal(activeSessionId);
+    const curPreview = found?.host ? pinnedDrawerPreviewByHost[found.host.hostId] : null;
+    if (secondChoice && (!curPreview || curPreview.error)) {
+      await openChatFileLink(encodeURIComponent(secondChoice));
     }
   }
 
@@ -9462,6 +9717,8 @@ export function initHubController() {
     sendApprovalDecision,
     openInChatFileDrawer,
     openChangedFilesDrawer,
+    openUserBubbleImage,
+    openOptimisticImagePreview,
     toggleSessionArtifactsCard,
     toggleFilesChangedCard,
     reviewFilesChangedCard,

@@ -1943,6 +1943,14 @@ async function resolveWorkspaceOrArtifactFile(workspaceRoot, relPath = '', { ext
           }
         }
       }
+      // Also allow reading mobile-uploaded images inside any `<workspace>/.dsh-uploads/` under user home
+      // even if a historical message belongs to a session whose workspace root moved or wasn't bound yet.
+      if (!matchedRoot && IMAGE_MIME[extCand] && candidateReal.includes(`${sep}.dsh-uploads${sep}`)) {
+        const homeRoot = await resolveRealRoot(homedir())
+        if (homeRoot && candidateReal.startsWith(homeRoot + sep)) {
+          matchedRoot = dirname(candidateReal)
+        }
+      }
     }
     if (matchedRoot) {
       realFile = await resolveSafeTarget(matchedRoot, candidateReal)

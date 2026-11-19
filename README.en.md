@@ -201,6 +201,14 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-19 · v0.8.12</code> — Clickable User-Bubble Image Thumbnails &amp; Zero-Jump Sticky-Bottom Scroll Lock</strong></summary>
+
+- **Inline User-Bubble Image Thumbnails &amp; Fullscreen Tap Preview (`v0.8.12`)**: Replaced raw `[手机端上传图片附件...]` file-path boilerplate inside user chat bubbles with fixed-aspect clickable image thumbnails (for both instant optimistic sends and historical `.dsh-uploads` / `.user_uploaded` dual-fallback paths) that open directly in the zoomable/saveable preview drawer (`controller.js` / `app.css` / `workspace-ops.js`).
+- **Sticky-Bottom Scroll Lock Against Async Image/Transcript Jumps (`v0.8.12`)**: Eliminated sudden upward scroll jumps into old messages by replacing static `scrollHeight - scrollTop` heuristics with a gesture-driven `chatPinnedToBottom` state machine plus capture-phase `<img>` `load` and `ResizeObserver` bottom anchoring (`controller.js`).
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-19 · v0.8.11</code> — Default-Collapsed Artifact &amp; Diff Cards, Artifact Expand Toggle &amp; Auto-Hiding Confirm Button</strong></summary>
 
 - **Default-Collapsed Cards &amp; Clean Dismiss (`v0.8.11`)**: Both `AI Artifacts / Walkthrough (N)` and `N Files With Changes` now default to compact single-line summary bars when opening any session so large artifact lists never hijack the chat viewport; added a dedicated `Expand ⌄` / `Collapse ⌃` toggle button to the Artifacts card header, and made **Mark Reviewed** (`确认已阅`) cleanly disappear once clicked instead of lingering as a green status button (`controller.js` / `app.css`).
