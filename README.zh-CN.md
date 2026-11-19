@@ -1,31 +1,39 @@
 <div align="center">
-  <img src="docs/assets/hero-banner-zh.svg" alt="DSH Remote Control — 把电脑上正在跑的 AI 编程任务装进手机口袋" width="100%" />
+  <img src="docs/assets/hero-banner-zh.svg" alt="AI 编程手机总控台 — 手机遥控 Claude Code、OpenAI Codex、Antigravity IDE 与 DeepSeek Harness" width="100%" />
 
   <p align="center">
-    <strong>你的 AI 编程工具，由你自己掌控 —— 不必依赖任何第三方厂商的固定中转服务。<br/>随时在手机上看 AI 编程进度、发指令、紧急叫停，或者点一下批准危险命令与多选弹窗。<br/>支持将控制台一键部署在你自己的 Railway 账号、VPS、NAS 或本机电脑上。</strong>
+    <strong>把电脑上正在跑的 <a href="#支持的-ai-编程工具">Claude Code、OpenAI Codex、Antigravity IDE、DeepSeek Harness (DSH) 与 WorkBuddy</a> 装进手机口袋 —— 100% 开源自托管、零第三方中继。<br/>手机滑卡批阅、一键放行命令与多选弹窗、微信式按住说话插话、或点 <code>🔊 播报</code> 直接听结论。</strong>
+  </p>
+
+  <p align="center">
+    <a href="https://harness.agentrun.vip/?demo=1&amp;lang=zh"><img src="https://img.shields.io/badge/%E2%9C%A8_%E5%9C%A8%E7%BA%BF%E4%BA%A4%E4%BA%92%E4%BD%93%E9%AA%8C_Demo-%E5%85%8D%E5%AE%89%E8%A3%85%E7%A7%92%E5%BC%80-10b981?style=for-the-badge" alt="在线交互体验 Demo" height="32" /></a>
+    &nbsp;
+    <a href="https://railway.com/deploy/dsh-remote-control-hub?referralCode=44kg1p&amp;utm_medium=integration&amp;utm_source=template&amp;utm_campaign=generic"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="32" /></a>
+  </p>
+
+  <p align="center">
+    <strong>⚡ 5 秒连上你自己的 Mac / Linux（同一 Wi-Fi · 终端直接打印二维码 · 零配置）：</strong>
+  </p>
+
+```bash
+npx deepseekharness-remotecontrol
+```
+
+  <p align="center">
+    <sub>自动启动本地总控台、自动发现本机 Claude Code / Codex / Antigravity / DSH 会话，并在终端打印手机扫码免密二维码。</sub>
   </p>
 
   <p align="center">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" />
+    <img src="https://img.shields.io/badge/npm-deepseekharness--remotecontrol-cb3837?logo=npm&logoColor=white" alt="npm package" />
     <img src="https://img.shields.io/badge/%E6%94%AF%E6%8C%81%E7%94%B5%E8%84%91-macOS%20%7C%20Linux%20%7C%20NAS%20%7C%20%E6%A0%91%E8%8E%93%E6%B4%BE-0f766e" alt="支持平台" />
     <img src="https://img.shields.io/badge/node-%3E%3D20-43853d?logo=node.js&logoColor=white" alt="Node >= 20" />
     <img src="https://img.shields.io/badge/%E6%8E%A7%E5%88%B6%E5%8F%B0%E7%95%8C%E9%9D%A2-%E4%B8%AD%E8%8B%B1%E5%8F%8C%E8%AF%AD%E8%87%AA%E5%8A%A8%E8%AF%86%E5%88%AB-2563eb" alt="中英双语控制台" />
   </p>
 
   <p align="center">
-    <a href="https://railway.com/deploy/dsh-remote-control-hub?referralCode=44kg1p&amp;utm_medium=integration&amp;utm_source=template&amp;utm_campaign=generic"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="32" /></a><br/>
-    <sub>💡 官方模板会自动生成随机强密钥 <code>HUB_TOKEN</code>（部署时也可改成你自己好记的强密码）。</sub>
+    <a href="./README.md">🇺🇸 English</a> · <strong>🇨🇳 简体中文</strong> · <a href="https://harness.agentrun.vip/?demo=1&amp;lang=zh">✨ 在线 Demo</a> · <a href="#三步快速上手">4G/5G 跨网部署</a> · <a href="#支持的-ai-编程工具">支持工具</a> · <a href="#最近版本更新记录">版本更新</a> · <a href="#常见问题">常见问题</a>
   </p>
-
-  <p align="center">
-    <a href="./README.md">🇺🇸 English</a> · <strong>🇨🇳 简体中文</strong> · <a href="#三步快速上手">三步上手</a> · <a href="#支持的-ai-编程工具">支持工具</a> · <a href="#最近版本更新记录">版本更新</a> · <a href="#常见问题">常见问题</a>
-  </p>
-</div>
-
-<div align="center">
-  <img src="docs/assets/live-demo-zh.gif" alt="15 秒真机流程演示：电脑卡在终端命令确认，手机点一下批准立即跑完单测并同步结论" width="100%" />
-  <br/>
-  <sub><strong>🎬 15 秒完整流程演示：</strong>左边电脑卡在单测命令授权 → 打开右侧手机控制台点一下 <code>Submit ↵</code> 批准 → 左边电脑瞬间继续跑完 42 项单测并把最新结论同步回手机。</sub>
 </div>
 
 <br/>
@@ -33,25 +41,32 @@
 <table align="center">
   <tr>
     <td align="center" width="33%">
-      <img src="docs/assets/screen-sessions-zh.png" width="250" alt="多工具会话总览与待审批提醒" /><br/>
-      <sub><strong>① 五大工具会话一屏总览</strong><br/>同时管理 DSH、Antigravity IDE、Codex、WorkBuddy 与 Claude，待审批与完结未读一目了然</sub>
+      <img src="docs/assets/screen-sessions-zh.png" width="250" alt="五大 AI 工具统一会话列表与置顶对话" /><br/>
+      <sub><strong>① 五大工具会话一屏总览</strong><br/>统一看管 Claude Code、Antigravity IDE、Codex、DSH 与 WorkBuddy，支持原生「📌 置顶对话」与完结未读</sub>
     </td>
     <td align="center" width="33%">
-      <img src="docs/assets/screen-approve-zh.png" width="250" alt="手机审批危险命令与多选提问弹窗" /><br/>
-      <sub><strong>② 手机拍板命令与多选题</strong><br/>遇到终端命令授权或架构选型提问弹窗，在手机上点选即可让电脑继续往下跑</sub>
+      <img src="docs/assets/screen-triage-zh.png" width="250" alt="滑卡批阅模式：右滑批准命令、多选题与未读结论" /><br/>
+      <sub><strong>② 滑卡批阅模式（Swipe Triage）</strong><br/>像刷卡片一样右滑放行命令、回答多选架构题，或长按语音告诉 AI 改怎么干</sub>
     </td>
     <td align="center" width="33%">
-      <img src="docs/assets/screen-settings-zh.png" width="250" alt="多电脑集中管理与电量网络监控" /><br/>
-      <sub><strong>③ 多电脑管理 + 电量/网络监控</strong><br/>集中查看多台电脑的电池百分比、充电状态、Wi-Fi 延迟，支持一键切换中英文与浅色/深色</sub>
+      <img src="docs/assets/screen-approve-zh.png" width="250" alt="手机审批命令、微信式按住说话与语音播报" /><br/>
+      <sub><strong>③ 审批 · 语音插话 · 听回复</strong><br/>手机点一下拍板执行，内置按住说话语音输入、<code>🔊 播报</code> 听结论与 HTML 沙盒交互预览</sub>
     </td>
   </tr>
 </table>
+
+<div align="center">
+  <br/>
+  <img src="docs/assets/live-demo-zh.gif" alt="15 秒真机流程演示：电脑卡在终端命令确认，手机点一下批准立即跑完单测并同步结论" width="100%" />
+  <br/>
+  <sub><strong>🎬 15 秒完整流程演示：</strong>左边电脑卡在单测命令授权 → 打开右侧手机控制台点一下 <code>Submit ↵</code> 批准 → 左边电脑瞬间继续跑完 42 项单测并把最新结论同步回手机。</sub>
+</div>
 
 ---
 
 ## 为什么要做这个？
 
-当你在电脑上用 **DeepSeek Harness (DSH)**、**Antigravity IDE**、**OpenAI Codex**、**腾讯 WorkBuddy** 或 **Claude Code** 跑一个长任务（重构代码、跑全量测试、部署服务）时，人一离开工位往往就会遇到这些痛点：
+当你在电脑上用 **Claude Code**、**OpenAI Codex**、**Antigravity IDE**、**DeepSeek Harness (DSH)** 或 **腾讯 WorkBuddy** 跑一个长任务（重构代码、跑全量测试、部署服务）时，人一离开工位往往就会遇到这些痛点：
 
 - **卡在弹窗干等**：AI 跑到一半弹出一个 *"是否允许执行 `npm run test:integration`？"* 或弹出一个多选确认框，你不点同意它就一直停在那里。
 - **出门在外两眼一抹黑**：下楼买咖啡、在地铁上或躺在沙发上时，想看一眼任务跑完没有、按住语音像发微信一样说一句补充指令、传一张手机截图，或者发现跑偏了立即叫停。
@@ -88,13 +103,18 @@
 
 ## 三步快速上手
 
-> **⚡ DSH 插件市场 / 一行命令零配置体验（同 Wi-Fi 免部署即装即用）**：
-> 如果你已经安装了 **DeepSeek Harness (DSH >= 0.2.0)**，可以直接在 **DSH 插件市场 (`dsh-plugin-market`)** 搜索安装，或在终端执行一行命令安装到 DSH 桌面端 / 网页端：
+> **⚡ 5 秒本机体验（一行 `npx` 终端出码 · 支持 Claude Code / Codex / Antigravity / DSH / WorkBuddy · 零配置）**：
+> ```bash
+> npx deepseekharness-remotecontrol
+> ```
+> 无需 `git clone`、无需云服务器、无需写配置：3 秒内自动启动本地总控台 + 扫描本机 AI 编程会话，并**直接在终端里打印手机可扫二维码**，手机连同一 Wi-Fi 扫一扫即刻免密遥控！
+>
+> **🔌 如果你在使用 DeepSeek Harness (DSH &gt;= 0.2.0)**，也可以直接在 **DSH 插件市场** 搜索安装，或运行：
 > ```bash
 > dsh plugin --profile desktop add github:oscarka/deepseekharness-remotecontrol
 > # 若使用 dsh web，可将 desktop 换成 web
 > ```
-> 安装启用后无需填写任何配置，插件会自动在本机启动局域网总控台（默认 `http://localhost:8788`，自动生成本机密码保存于 `~/.dsh/local-hub.token`，并在 `~/.dsh/local-hub-info.json` 与启动日志中输出手机免密配对链接），手机连同一 Wi-Fi 即可直接遥控！若想出门在外用 **4G/5G 跨网随时遥控多台电脑**，继续按下方 3 步配置云端总控台即可自动切换。
+> 想出门在外用 **4G/5G 跨网 24 小时随时遥控多台电脑**？按下面 3 步部署你自己的云端总控台：
 
 ### 第 1 步：启动你的控制台（4 种方式任选其一）
 
@@ -203,8 +223,9 @@ HUB_TOKEN="自定义一个安全密码" \
 > 💡 按**自然日**折叠汇总，每条内保留完整子版本号；逐版本详细变更请见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.9–v0.8.17</code> — 全平台原生置顶互通、零延迟结论同步、断流显式提示、已发图气泡预览 &amp; 卡片体验重构</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.9–v0.8.18</code> — 一行 <code>npx</code> 终端出码、零后端 <code>?demo=1</code> 交互沙盒、全平台原生置顶互通 &amp; 零延迟同步</strong></summary>
 
+- **一行 `npx` 终端出码 &amp; 零后端交互体验沙盒 `?demo=1`（`v0.8.18`）**：新增 `npx deepseekharness-remotecontrol`（`dsh-remote`）零配置命令行入口，3 秒拉起本地总控台 + 自动发现多引擎会话并在终端打印 ISO/IEC 18004 高对比度手机扫码二维码；上线纯浏览器内存隔离、零 API 请求零隐私泄露的 `?demo=1` 在线交互体验沙盒（双机 5 引擎、滑卡批阅、HTML 实时预览、自由发消息），全面焕新中英首屏定位与实机高清截图。
 - **断流显式提示与列表预览严格对齐（`v0.8.16–v0.8.17`）**：修复新提问到来时未重置 `lastOutput` 导致旧回复串入列表预览的问题，改为严格对齐最新一条消息；自动提取并折叠展示 Antigravity `ERROR_MESSAGE` 连续断流报错（`⚠️ 执行中断` + `⚠️ 中断待继续`），并在聊天页停在工具步骤无最终总结时直接显示琥珀色续跑提示条。
 - **零延迟结论同步（`v0.8.15`）**：移除 `/api/events` SSE 流的 `gzip` 压缩缓冲（消除 Cloudflare / 移动代理对微小增量帧的数秒缓冲，结论与审批事件 `<=30ms` 直推），打通 Service Worker `PUSH_RECEIVED` / `NOTIFICATION_CLICK` 与 `1.2s` 切回前台即刻强刷，任务出结论瞬间自动清理 `inflightCommands`，并将 Antigravity `RUNNING` RPC 缓存从 `2.5s` 压至 `350ms`。
 - **多端与各 Harness 会话置顶（Pin）双向实时互通 &amp; 零误报 CI（`v0.8.13–v0.8.14`）**：升级为云端 Hub 持久化的 `sessionPinState`（`POST /api/sessions/pin` + SSE 增量广播），手机列表新增 **「📌 置顶对话」** 独立分组栏与 `📌 置顶` 角标，双向打通 **Antigravity IDE**（`annotations/<convId>.pbtxt` + Connect-RPC `UpdateConversationAnnotations` + FSEvents 监听）、**DSH 桌面版**（`workspace.json`）、**Codex 桌面版**（`.codex-global-state.json` 含 Electron Atom 状态）、**WorkBuddy**（`workbuddy.db` + `pinned-sessions.json`）与 **豆包**（LevelDB `pinned`）；全量补齐 `sqlite3` `.timeout 5000` + WAL 与 CI `--test-concurrency=4` 根治偶发锁库邮件。

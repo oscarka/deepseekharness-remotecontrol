@@ -2,6 +2,17 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.18] - 2026-11-19
+
+### Added
+
+- **一行 `npx` 零配置终端出码秒开（`scripts/cli.mjs` / `dsh-feishu/lib/terminal-qr.js` / `package.json`）**：
+  - 在 `package.json` 暴露 `"bin"` 可执行命令（`deepseekharness-remotecontrol` 与 `dsh-remote`）：任何开发者只需在终端运行 `npx deepseekharness-remotecontrol`（无需 `git clone`、无需 Railway、无需配密码），即可在 3 秒内自动拉起本机嵌入式总控台与本地会话发现进程（自动接入 Claude Code / OpenAI Codex / Antigravity IDE / DSH / WorkBuddy / 豆包），并用零依赖 ISO/IEC 18004 Unicode 半块编码直接在终端打印手机可扫二维码（支持深/浅色终端自适应黑字白底静区）与 24h 一次性免密配对码。
+- **零后端、零数据泄露交互式沙盒演示模式 `?demo=1`（`hub/web/src/demo-sandbox.js` / `hub/web/src/controller.js` / `hub/web/src/components/TopBar.tsx`）**：
+  - 打开任意总控台网址加 `?demo=1`（如 `https://harness.agentrun.vip/?demo=1`）即刻进入纯浏览器内存沙盒，**零网络 API 请求、零读取真实 `HUB_TOKEN`、零写入真实缓存**；内置双主机（`MacBook Pro · Office` + `Mac mini · Home`）与 5 大引擎（Claude Code、Antigravity IDE、Codex、DSH、WorkBuddy）演示会话，完整可交互体验滑卡批阅、一键放行命令、多选架构提问、HTML 交互沙盒预览、`🔊 播报` 与自由发消息模拟回复，并提供顶部一键复制 `npx` 命令与重置按钮。
+- **README 首屏与视觉全面焕新（`README.md` / `README.en.md` / `README.zh-CN.md` / `docs/assets/*`）**：
+  - 重新定位首屏主叙事为 **Claude Code、OpenAI Codex、Antigravity IDE 与 DeepSeek Harness 统一手机总控台**，将「在线交互式 Demo (`?demo=1`)」与「一行 `npx` 终端扫码」前置到首屏第一折叠，替换全套最新高清移动端截图（含置顶对话、滑卡批阅与审批卡片）并补全多处英文 i18n 细节。
+
 ## [0.8.17] - 2026-11-19
 
 ### Fixed

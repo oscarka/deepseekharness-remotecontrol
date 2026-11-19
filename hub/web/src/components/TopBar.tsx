@@ -46,6 +46,39 @@ export function TopBar() {
           </div>
       </header>
 
+      {/* 交互式体验沙盒条（仅 ?demo=1 时显示，零后台数据泄露） */}
+      <div id="demoModeBanner" class="demo-mode-banner" style="display:none;">
+        <div class="demo-mode-text" id="demoModeBannerText">
+          ✨ Interactive Demo · Swipe cards or tap Approve
+        </div>
+        <div class="demo-mode-actions">
+          <button
+            type="button"
+            class="demo-pill-btn demo-pill-primary"
+            onClick={() => (window as any).demoCopyNpx?.()}
+            title="Copy npx deepseekharness-remotecontrol"
+          >
+            📋 npx
+          </button>
+          <button
+            type="button"
+            class="demo-pill-btn"
+            onClick={() => (window as any).demoResetSandbox?.()}
+            title="Reset Demo"
+          >
+            ↻
+          </button>
+          <a
+            class="demo-pill-btn"
+            href="https://github.com/oscarka/deepseekharness-remotecontrol"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            ⭐ GitHub
+          </a>
+        </div>
+      </div>
+
       {/* 断线重连状态细条 (#11) */}
       <div
         id="connectionStatusBanner"

@@ -93,12 +93,18 @@ import {
   isTriageEligibleSession,
   createTriageDeckController,
 } from './triage-deck.js';
+import {
+  createDemoHubState,
+  createDemoSandbox,
+} from './demo-sandbox.js';
 
 export function initHubController() {
   // ==================== 1. 认证与安全 Token 管理（自动清除 URL 尾巴防止截图泄露） ====================
   const urlParams = new URLSearchParams(location.search);
-  const queryToken = (urlParams.get('token') || '').trim();
-  const queryPairCode = (urlParams.get('pair') || '').trim();
+  const isDemoMode = urlParams.get('demo') === '1' || urlParams.get('demo') === 'true';
+  let demoSandbox = null;
+  const queryToken = isDemoMode ? '' : (urlParams.get('token') || '').trim();
+  const queryPairCode = isDemoMode ? '' : (urlParams.get('pair') || '').trim();
   let pendingDeepLinkHostId = (urlParams.get('host') || '').trim();
   let pendingDeepLinkTaskId = (urlParams.get('task') || urlParams.get('session') || '').trim();
   const hasRecoveryParam = urlParams.has('_r');
@@ -116,6 +122,7 @@ export function initHubController() {
   }
 
   function getToken() {
+    if (isDemoMode) return '';
     return localStorage.getItem('dsh_hub_token') || '';
   }
 
@@ -165,6 +172,11 @@ export function initHubController() {
   }
 
   async function apiFetch(path, options = {}) {
+    if (isDemoMode && demoSandbox) {
+      authLockConfirmed = false;
+      document.getElementById('authOverlay')?.classList.remove('show');
+      return demoSandbox.handleApiFetch(path, options);
+    }
     const sentToken = getToken();
     const res = await fetch(path, {
       ...options,
@@ -595,8 +607,24 @@ export function initHubController() {
 
   // 界面语言偏好 (zh | en)：支持 ?lang=en|zh、localStorage 与浏览器自动识别
   let langPref = getLangPref();
+  function updateDemoBannerCopy() {
+    if (!isDemoMode) return;
+    const bannerEl = document.getElementById('demoModeBanner');
+    const textEl = document.getElementById('demoModeBannerText');
+    if (bannerEl) bannerEl.style.display = 'flex';
+    if (textEl) {
+      textEl.textContent =
+        langPref === 'zh'
+          ? '✨ 交互演示 · 可滑卡批阅 / 审批 / 发指令'
+          : '✨ Interactive Demo · Swipe cards or tap Approve';
+    }
+  }
   function setLangPreference(nextLang) {
     langPref = persistLangPref(nextLang);
+    if (isDemoMode) {
+      hubState = createDemoHubState(langPref);
+      updateDemoBannerCopy();
+    }
     lastRenderedChatKey = '';
     lastRenderedComposerKey = '';
     lastRenderedStripKey = '';
@@ -620,9 +648,9 @@ export function initHubController() {
   let addHostPanelExpanded = false;
   let expandedHostCardIds = {};
   let liveBannerDismissed = false;
-  try { pinnedMap = JSON.parse(localStorage.getItem('dsh_pinned_v4') || '{}'); } catch { }
-  try { seenMap = JSON.parse(localStorage.getItem('dsh_seen_v4') || '{}'); } catch { }
-  try { seenSigMap = JSON.parse(localStorage.getItem('dsh_seen_sig_v1') || '{}'); } catch { }
+  try { if (!isDemoMode) pinnedMap = JSON.parse(localStorage.getItem('dsh_pinned_v4') || '{}'); } catch { }
+  try { if (!isDemoMode) seenMap = JSON.parse(localStorage.getItem('dsh_seen_v4') || '{}'); } catch { }
+  try { if (!isDemoMode) seenSigMap = JSON.parse(localStorage.getItem('dsh_seen_sig_v1') || '{}'); } catch { }
 
   function syncSessionReadToServer(sessionId, sig, at) {
     if (!sessionId) return;
@@ -642,7 +670,7 @@ export function initHubController() {
     hubState.sessionPinState = hubState.sessionPinState || {};
     hubState.sessionPinState[sessionId] = { pinned: isPinned, at: now, source: 'client' };
     pinnedMap[sessionId] = isPinned;
-    try { localStorage.setItem('dsh_pinned_v4', JSON.stringify(pinnedMap)); } catch { }
+    try { if (!isDemoMode) localStorage.setItem('dsh_pinned_v4', JSON.stringify(pinnedMap)); } catch { }
     void apiFetch('/api/sessions/pin', {
       method: 'POST',
       body: JSON.stringify({
@@ -1193,7 +1221,7 @@ export function initHubController() {
       s.unread = s.hasUnreadConclusion || s.isUnreadInterrupted;
     });
 
-    if (seenDirty) {
+    if (seenDirty && !isDemoMode) {
       try {
         localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap));
         localStorage.setItem('dsh_seen_sig_v1', JSON.stringify(seenSigMap));
@@ -1463,7 +1491,7 @@ export function initHubController() {
     try {
       step6Dismissed = localStorage.getItem('dsh_step6_qr_dismissed') === '1';
     } catch { }
-    const showStep6Banner = (hubState.hosts || []).length > 0 && !step6Dismissed;
+    const showStep6Banner = !isDemoMode && (hubState.hosts || []).length > 0 && !step6Dismissed;
     const bannerKey = pendingAppInfo
       ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.kind || ''}:${pendingAppInfo.app.promptTitle || ''}:${pendingAppInfo.app.settling ? 1 : 0}:${pendingAppInfo.app.lastError || ''}`
       : '';
@@ -1781,10 +1809,12 @@ export function initHubController() {
     if (found.session.conclusionSig) {
       seenSigMap[activeSessionId] = found.session.conclusionSig;
     }
-    try {
-      localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap));
-      localStorage.setItem('dsh_seen_sig_v1', JSON.stringify(seenSigMap));
-    } catch { }
+    if (!isDemoMode) {
+      try {
+        localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap));
+        localStorage.setItem('dsh_seen_sig_v1', JSON.stringify(seenSigMap));
+      } catch { }
+    }
     syncSessionReadToServer(activeSessionId, found.session.conclusionSig || '', readTs);
     clearHomeScreenAppBadge();
     const chatEl = document.getElementById('chatFullscreen');
@@ -2917,7 +2947,7 @@ export function initHubController() {
     const loadEarlierHtml = isHydratingColdNow
       ? `<div style="text-align:center;font-size:12px;color:var(--muted);margin:4px 0 10px;">⏳ 正在同步完整对话内容…</div>`
       : s.omittedTranscriptCount > 0
-      ? `
+        ? `
           <div style="display:flex;justify-content:center;margin:4px 0 10px;">
             <button
               type="button"
@@ -2927,9 +2957,9 @@ export function initHubController() {
             >⬆️ 为保证秒开已省略前 ${s.omittedTranscriptCount} 条早先记录 · 点击加载完整历史</button>
           </div>
         `
-      : expandedTranscriptBySession.has(s.id)
-        ? `<div style="text-align:center;font-size:11.5px;color:var(--muted);margin:4px 0 10px;">✅ 已加载全部历史对话（共 ${s.transcript.length} 条）</div>`
-        : '';
+        : expandedTranscriptBySession.has(s.id)
+          ? `<div style="text-align:center;font-size:11.5px;color:var(--muted);margin:4px 0 10px;">✅ 已加载全部历史对话（共 ${s.transcript.length} 条）</div>`
+          : '';
 
     // 正在往上翻历史时，新内容到达不要把用户拽回底部；否则始终稳稳锚定在最新消息底部
     const firstMsg = msgs[0];
@@ -4735,8 +4765,8 @@ export function initHubController() {
         </div>
         <div>
           ${files.map(fc => {
-            const encFcPath = encodeURIComponent(fc.path || fc.name || '').replace(/'/g, '%27');
-            return `
+        const encFcPath = encodeURIComponent(fc.path || fc.name || '').replace(/'/g, '%27');
+        return `
               <div class="file-row" onclick="openChatFileLink('${encFcPath}')">
                 <div class="file-row-left" style="min-width:0;flex:1;">
                   <span class="agy-file-diff" style="min-width:56px;"><span class="add">+${Number(fc.added || 0)}</span><span class="del">-${Number(fc.removed || 0)}</span></span>
@@ -4748,7 +4778,7 @@ export function initHubController() {
                 <span style="font-size:12px;color:var(--primary);font-weight:600;flex-shrink:0;">打开 ›</span>
               </div>
             `;
-          }).join('') || `<div style="padding:36px;text-align:center;color:var(--muted);">暂无文件改动记录</div>`}
+      }).join('') || `<div style="padding:36px;text-align:center;color:var(--muted);">暂无文件改动记录</div>`}
         </div>
       `;
       applyLangToDom(body, langPref);
@@ -6112,10 +6142,10 @@ export function initHubController() {
       const customChipHtml =
         newTaskCwd && !isKnownProj
           ? (() => {
-              const folderLabel = newTaskCwd.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || newTaskCwd;
-              const prefix = newTaskCustomIsNew ? `✨ 新建：${folderLabel}` : `📂 ${folderLabel}`;
-              return `<button type="button" class="new-task-proj-pill selected" title="${esc(newTaskCwd)}" onclick="selectNewTaskProject('${esc(newTaskCwd)}', ${newTaskCustomIsNew ? 'true' : 'false'})">${esc(prefix)}</button>`;
-            })()
+            const folderLabel = newTaskCwd.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || newTaskCwd;
+            const prefix = newTaskCustomIsNew ? `✨ 新建：${folderLabel}` : `📂 ${folderLabel}`;
+            return `<button type="button" class="new-task-proj-pill selected" title="${esc(newTaskCwd)}" onclick="selectNewTaskProject('${esc(newTaskCwd)}', ${newTaskCustomIsNew ? 'true' : 'false'})">${esc(prefix)}</button>`;
+          })()
           : '';
       projChips.innerHTML =
         customChipHtml +
@@ -6362,8 +6392,8 @@ export function initHubController() {
         ` : newTaskBrowseEntries.length === 0 ? `
           <div style="padding:20px 12px;text-align:center;color:var(--muted);font-size:12.5px;">此目录下暂无子文件夹</div>
         ` : newTaskBrowseEntries.map(dir => {
-          const childFull = joinRemotePath(curDir, dir.name, homeGuess);
-          return `
+        const childFull = joinRemotePath(curDir, dir.name, homeGuess);
+        return `
             <div class="host-option" onclick="browseNewTaskDir('${esc(childFull)}')">
               <div style="min-width:0;flex:1;display:flex;align-items:center;gap:8px;">
                 <span>📁</span>
@@ -6372,7 +6402,7 @@ export function initHubController() {
               <span style="font-size:12px;color:var(--muted);">›</span>
             </div>
           `;
-        }).join('')}
+      }).join('')}
       `;
       if (langPref === 'en') applyLangToDom(body, langPref);
       return;
@@ -9135,6 +9165,7 @@ export function initHubController() {
   let lastSavedStateCacheAt = 0;
 
   function saveCachedHubStateSnapshot(state) {
+    if (isDemoMode) return;
     const now = Date.now();
     if (now - lastSavedStateCacheAt < 5000) return;
     lastSavedStateCacheAt = now;
@@ -9215,6 +9246,7 @@ export function initHubController() {
   }
 
   function loadCachedHubStateSnapshot() {
+    if (isDemoMode) return null;
     try {
       const raw = localStorage.getItem('dsh_hub_state_cache_v1');
       if (!raw) return null;
@@ -9536,6 +9568,9 @@ export function initHubController() {
   }
 
   async function fetchState(opts = {}) {
+    if (isDemoMode) {
+      return { ok: true, demo: true };
+    }
     const silent = Boolean(opts && typeof opts === 'object' && opts.silent);
     const forceFresh = Boolean(opts && typeof opts === 'object' && opts.forceFresh);
     const reqToken = getToken();
@@ -9598,6 +9633,7 @@ export function initHubController() {
   }
 
   function connectSSE() {
+    if (isDemoMode) return;
     if (urlParams.get('nosse') === '1') return;
     if (!getToken() && authLockConfirmed) return;
     const prevSseEventAt = lastSseEventAt;
@@ -9962,6 +9998,8 @@ export function initHubController() {
     normalizeDeviceModelShort,
     buildShortHostNameMap,
     stripRedundantProjectPrefix,
+    demoCopyNpx: () => demoSandbox?.copyNpxCommand?.(),
+    demoResetSandbox: () => demoSandbox?.reset?.(),
   });
 
   triageCtrl = createTriageDeckController({
@@ -10101,10 +10139,12 @@ export function initHubController() {
       if (session.conclusionSig) {
         seenSigMap[session.id] = session.conclusionSig;
       }
-      try {
-        localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap));
-        localStorage.setItem('dsh_seen_sig_v1', JSON.stringify(seenSigMap));
-      } catch { }
+      if (!isDemoMode) {
+        try {
+          localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap));
+          localStorage.setItem('dsh_seen_sig_v1', JSON.stringify(seenSigMap));
+        } catch { }
+      }
       syncSessionReadToServer(session.id, session.conclusionSig || '', readTs);
       return prevSnapshot;
     },
@@ -10126,10 +10166,12 @@ export function initHubController() {
       } else {
         hubState.sessionReadState[sessionId] = { unread: true, sig: '', at: 1 };
       }
-      try {
-        localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap));
-        localStorage.setItem('dsh_seen_sig_v1', JSON.stringify(seenSigMap));
-      } catch { }
+      if (!isDemoMode) {
+        try {
+          localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap));
+          localStorage.setItem('dsh_seen_sig_v1', JSON.stringify(seenSigMap));
+        } catch { }
+      }
     },
     switchToRunningList: () => selectProject('SMART_ACTIVE'),
     onDeckChanged: () => {
@@ -10184,6 +10226,37 @@ export function initHubController() {
       resumeForegroundSync({ resetTransforms: Boolean(evt && evt.persisted) });
     });
   }
+  if (isDemoMode) {
+    demoSandbox = createDemoSandbox({
+      getHubState: () => hubState,
+      setHubState: next => {
+        hubState = next;
+      },
+      getLang: () => langPref,
+      onStateMutated: () => {
+        lastRenderedChatKey = '';
+        lastRenderedComposerKey = '';
+        lastRenderedStripKey = '';
+        lastRenderedListKey = '';
+        lastRenderedSettingsKey = '';
+        lastRenderedFilesKey = '';
+        renderAll();
+        applyLangToDom(document.body, langPref);
+      },
+      showToast,
+    });
+    hubState = createDemoHubState(langPref);
+    authLockConfirmed = false;
+    document.getElementById('authOverlay')?.classList.remove('show');
+    updateDemoBannerCopy();
+    try {
+      initWechatVoiceMode();
+      renderAll();
+      applyLangToDom(document.body, langPref);
+    } catch { }
+    return;
+  }
+
   // 首屏 0ms 瞬时渲染：先从 localStorage 恢复上次快照并立即渲染，彻底消灭等待 /api/state 期间的白屏
   if (getToken()) {
     const cachedSnapshot = loadCachedHubStateSnapshot();

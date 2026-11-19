@@ -4355,7 +4355,71 @@
         border-color: rgba(251, 191, 36, 0.35);
         color: #fde68a;
       }
-    }/* ==================== DSH 滑卡批阅模式 (Triage Swipe Deck) — 独立命名空间样式 ==================== */
+    }
+
+    .demo-mode-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 12px;
+      background: linear-gradient(90deg, rgba(37, 99, 235, 0.10), rgba(16, 185, 129, 0.10));
+      border-bottom: 1px solid rgba(59, 130, 246, 0.22);
+      font-size: 11.5px;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+
+    .demo-mode-text {
+      min-width: 0;
+      flex: 1;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .demo-mode-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    .demo-pill-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .demo-pill-btn.demo-pill-primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+    }
+
+    :root[data-theme="dark"] .demo-mode-banner {
+      background: linear-gradient(90deg, rgba(59, 130, 246, 0.18), rgba(16, 185, 129, 0.16));
+      border-bottom-color: rgba(96, 165, 250, 0.28);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .demo-mode-banner {
+        background: linear-gradient(90deg, rgba(59, 130, 246, 0.18), rgba(16, 185, 129, 0.16));
+        border-bottom-color: rgba(96, 165, 250, 0.28);
+      }
+    }
+/* ==================== DSH 滑卡批阅模式 (Triage Swipe Deck) — 独立命名空间样式 ==================== */
 
 /* 列表筛选栏最左侧：低调正方形 4 格小方块入口按钮 */
 .triage-grid-entry-btn {

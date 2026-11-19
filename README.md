@@ -1,31 +1,39 @@
 <div align="center">
-  <img src="docs/assets/hero-banner-en.svg" alt="DSH Remote Control — Put your computer's AI coding sessions in your pocket" width="100%" />
+  <img src="docs/assets/hero-banner-en.svg" alt="Mobile Remote Control for Claude Code, OpenAI Codex, Antigravity IDE &amp; DeepSeek Harness" width="100%" />
 
   <p align="center">
-    <strong>Your AI Coding Agents, Under Your Control — No Vendor-Managed Relay Required.<br/>Monitor live progress, steer running tasks, stop runaway loops, or tap to approve commands &amp; multiple-choice popups from your phone.<br/>Deploy your own self-hosted Control Hub on Railway, a VPS, NAS, or your computer.</strong>
+    <strong>Control <a href="#supported-ai-coding-tools">Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness (DSH) &amp; WorkBuddy</a> from your phone — 100% self-hosted, zero vendor relay.<br/>Swipe-approve shell commands, answer multiple-choice architecture popups, steer running tasks with Hold-to-Talk voice, or listen to replies with <code>🔊 Listen</code>.</strong>
+  </p>
+
+  <p align="center">
+    <a href="https://harness.agentrun.vip/?demo=1&amp;lang=en"><img src="https://img.shields.io/badge/%E2%9C%A8_Try_Live_Interactive_Demo-Zero_Install-10b981?style=for-the-badge" alt="Try Live Interactive Demo" height="32" /></a>
+    &nbsp;
+    <a href="https://railway.com/deploy/dsh-remote-control-hub?referralCode=44kg1p&amp;utm_medium=integration&amp;utm_source=template&amp;utm_campaign=generic"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="32" /></a>
+  </p>
+
+  <p align="center">
+    <strong>⚡ Try on your own Mac / Linux in 5 seconds (same Wi-Fi · terminal QR code · zero config):</strong>
+  </p>
+
+```bash
+npx deepseekharness-remotecontrol
+```
+
+  <p align="center">
+    <sub>Opens a local Hub, auto-discovers your Claude Code / Codex / Antigravity / DSH sessions, and prints a scannable QR code right in your terminal.</sub>
   </p>
 
   <p align="center">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" />
+    <img src="https://img.shields.io/badge/npm-deepseekharness--remotecontrol-cb3837?logo=npm&logoColor=white" alt="npm package" />
     <img src="https://img.shields.io/badge/Host-macOS%20%7C%20Linux%20%7C%20NAS%20%7C%20Raspberry%20Pi-0f766e" alt="Supported Platforms" />
     <img src="https://img.shields.io/badge/node-%3E%3D20-43853d?logo=node.js&logoColor=white" alt="Node >= 20" />
     <img src="https://img.shields.io/badge/Web%20Console-English%20%26%20%E4%B8%AD%E6%96%87%20Auto-2563eb" alt="Bilingual Web Console" />
   </p>
 
   <p align="center">
-    <a href="https://railway.com/deploy/dsh-remote-control-hub?referralCode=44kg1p&amp;utm_medium=integration&amp;utm_source=template&amp;utm_campaign=generic"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="32" /></a><br/>
-    <sub>💡 Auto-generates a strong <code>HUB_TOKEN</code> password (or customize it to your own strong password before clicking Deploy).</sub>
+    <strong>🇺🇸 English</strong> · <a href="./README.zh-CN.md">🇨🇳 简体中文</a> · <a href="https://harness.agentrun.vip/?demo=1&amp;lang=en">✨ Live Demo</a> · <a href="#get-started-in-3-steps">24/7 Cloud Setup</a> · <a href="#supported-ai-coding-tools">Supported Tools</a> · <a href="#whats-new">What's New</a> · <a href="#faq">FAQ</a>
   </p>
-
-  <p align="center">
-    <strong>🇺🇸 English</strong> · <a href="./README.zh-CN.md">🇨🇳 简体中文</a> · <a href="#get-started-in-3-steps">3-Step Setup</a> · <a href="#supported-ai-coding-tools">Supported Tools</a> · <a href="#whats-new">What's New</a> · <a href="#faq">FAQ</a>
-  </p>
-</div>
-
-<div align="center">
-  <img src="docs/assets/live-demo-en.gif" alt="15-Second Live Demo: Approve AI coding commands from your phone and manage multiple computers" width="100%" />
-  <br/>
-  <sub><strong>🎬 15-Second Live Walkthrough:</strong> Computer pauses on a test command → Open mobile PWA &amp; tap <code>Submit ↵</code> → Computer immediately runs all 42 tests &amp; syncs the conclusion back to your phone.</sub>
 </div>
 
 <br/>
@@ -33,25 +41,32 @@
 <table align="center">
   <tr>
     <td align="center" width="33%">
-      <img src="docs/assets/screen-sessions-en.png" width="250" alt="Unified Multi-Tool Session List" /><br/>
-      <sub><strong>① Unified 5-Tool Session List</strong><br/>Live tasks across DSH, Antigravity IDE, Codex, WorkBuddy &amp; Claude with approval bar &amp; unread dot</sub>
+      <img src="docs/assets/screen-sessions-en.png" width="250" alt="Unified 5-Tool Session List with Pinned Conversations" /><br/>
+      <sub><strong>① Unified 5-Tool Session List</strong><br/>Live tasks across Claude Code, Antigravity IDE, Codex, DSH &amp; WorkBuddy with Pinned Conversations &amp; unread dots</sub>
     </td>
     <td align="center" width="33%">
-      <img src="docs/assets/screen-approve-en.png" width="250" alt="Mobile Command Approval & Multiple-Choice Popups" /><br/>
-      <sub><strong>② Approve &amp; Answer on Phone</strong><br/>Tap to approve shell commands or answer interactive multiple-choice popups</sub>
+      <img src="docs/assets/screen-triage-en.png" width="250" alt="Swipe Triage Deck for Approvals and Conclusions" /><br/>
+      <sub><strong>② Swipe Triage Deck</strong><br/>Swipe right to approve shell commands, answer multiple-choice popups, or hold-to-talk an alternative instruction</sub>
     </td>
     <td align="center" width="33%">
-      <img src="docs/assets/screen-settings-en.png" width="250" alt="Multi-Host Management & Battery/Network Telemetry" /><br/>
-      <sub><strong>③ Multi-Host &amp; Telemetry</strong><br/>Monitor connected computers (battery %, AC power, Wi-Fi latency) &amp; switch EN/中文</sub>
+      <img src="docs/assets/screen-approve-en.png" width="250" alt="Mobile Command Approval, Voice Input and Reply Playback" /><br/>
+      <sub><strong>③ Approve, Voice &amp; Listen</strong><br/>1-tap approvals, WeChat-style Hold-to-Talk voice, <code>🔊 Listen</code> TTS &amp; live HTML deliverable previews</sub>
     </td>
   </tr>
 </table>
 
+<div align="center">
+  <br/>
+  <img src="docs/assets/live-demo-en.gif" alt="15-Second Live Demo: Approve AI coding commands from your phone and manage multiple computers" width="100%" />
+  <br/>
+  <sub><strong>🎬 15-Second Live Walkthrough:</strong> Computer pauses on a test command → Open mobile PWA &amp; tap <code>Submit ↵</code> → Computer immediately runs all 42 tests &amp; syncs the conclusion back to your phone.</sub>
+</div>
+
 ---
 
-## Why DSH Remote Control?
+## Why Mobile Remote Control for AI Coding Agents?
 
-When you kick off a long refactoring, test suite, or deployment in **DeepSeek Harness (DSH)**, **Antigravity IDE**, **OpenAI Codex**, **Tencent WorkBuddy**, or **Claude Code**, stepping away from your desk usually means flying blind:
+When you kick off a long refactoring, test suite, or deployment in **Claude Code**, **OpenAI Codex**, **Antigravity IDE**, **DeepSeek Harness (DSH)**, or **Tencent WorkBuddy**, stepping away from your desk usually means flying blind:
 
 - **Stuck on a popup**: The agent asks *"Allow `npm run test:integration`?"* or pops up an architecture multiple-choice question — and waits for hours until you return to your keyboard.
 - **No visibility on the go**: You want to check whether the task finished, hold-to-talk a quick voice instruction, attach a phone screenshot, or hit emergency stop while away from your desk.
@@ -88,13 +103,18 @@ Before starting, it helps to understand the two lightweight pieces and how data 
 
 ## Get Started in 3 Steps
 
-> **⚡ Zero-Config 1-Command Install via DSH Market / `dsh plugin` (Instant Same-Wi-Fi Control)**:
-> If you already use **DeepSeek Harness (DSH >= 0.2.0)**, install directly from **DSH Market (`dsh-plugin-market`)** or run one command in your terminal:
+> **⚡ 5-Second Local Tryout via `npx` (Works with Claude Code, Codex, Antigravity IDE, DSH &amp; WorkBuddy — Zero Config)**:
+> ```bash
+> npx deepseekharness-remotecontrol
+> ```
+> Starts a local Control Hub + session watcher in 3 seconds and prints a **scannable QR code right in your terminal** (same Wi-Fi, 1-tap passwordless phone login — no `git clone`, no Railway, no config files).
+>
+> **🔌 Using DeepSeek Harness (DSH &gt;= 0.2.0)?** Install directly from **DSH Market** or run:
 > ```bash
 > dsh plugin --profile desktop add github:oscarka/deepseekharness-remotecontrol
 > # Or use --profile web if you run `dsh web`
 > ```
-> No configuration files needed! Right after enabling, the plugin automatically starts an embedded Local Control Hub on your computer (default `http://localhost:8788`, saving your local admin token to `~/.dsh/local-hub.token` and writing a 1-tap phone pairing URL to `~/.dsh/local-hub-info.json` and the startup log). Connect your phone to the same Wi-Fi to control everything immediately — or follow the 3 steps below anytime to upgrade to 24/7 cellular 4G/5G multi-computer control.
+> Ready for **24/7 cellular (4G/5G) access across multiple computers**? Follow the 3 steps below:
 
 ### Step 1: Start Your Control Hub (Pick 1 of 4 Ways)
 
@@ -203,8 +223,9 @@ The background daemon automatically discovers local sessions across all 6 suppor
 > 💡 Grouped **one drawer per day** with every exact version tag preserved inside; see [`CHANGELOG.md`](CHANGELOG.md) for granular per-release notes.
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.9–v0.8.17</code> — Native Multi-Harness Pin Sync, Zero-Lag Conclusion Sync, Interruption Notices, User Image Thumbnails &amp; Card Overhaul</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.9–v0.8.18</code> — 1-Command <code>npx</code> Terminal QR, Zero-Backend <code>?demo=1</code> Sandbox, Native Multi-Harness Pin Sync &amp; Zero-Lag Sync</strong></summary>
 
+- **1-Command `npx` Terminal QR &amp; Zero-Backend Interactive Demo (`v0.8.18`)**: Added executable `npx deepseekharness-remotecontrol` (`dsh-remote`) CLI that boots an embedded local Hub + local session watcher and prints a scannable ISO/IEC 18004 Unicode QR code right in the terminal; shipped a completely isolated, zero-backend `?demo=1` interactive sandbox (2 hosts, 5 AI engines, Swipe Triage, HTML live preview) and repositioned README &amp; visuals for Claude Code, Codex, Antigravity IDE &amp; DSH.
 - **Explicit Interruption Notices &amp; Latest-Turn Previews (`v0.8.16–v0.8.17`)**: Reset `lastOutput` on each new `USER_INPUT` and aligned list previews strictly to the newest transcript message so stalled turns never leak older replies; collapsed repeated Antigravity `ERROR_MESSAGE` stream drops (`⚠️ Interrupted (×N)`) into standalone notices with `⚠️ Interrupted` status and added an inline resume banner when a turn pauses after tool steps.
 - **Zero-Lag Conclusion State Sync (`v0.8.15`)**: Removed CDN-buffered `gzip` encoding on `/api/events` SSE (`80ms` default / `30ms` urgent conclusion flush), wired Service Worker `PUSH_RECEIVED` + `NOTIFICATION_CLICK` + `1.2s` foreground resume to force immediate `/api/state` refresh, pruned `inflightCommands` immediately on conclusion, and cut Antigravity `RUNNING` RPC cache TTL from `2.5s` to `350ms`.
 - **Bidirectional Multi-Harness Session Pinning &amp; Zero-Flake CI (`v0.8.13–v0.8.14`)**: Added Hub-persisted `sessionPinState` (`POST /api/sessions/pin` + SSE), mobile **`📌 Pinned Conversations`** section headers, and 2-way native sync across **Antigravity IDE** (`annotations/<convId>.pbtxt` + Connect-RPC `UpdateConversationAnnotations` + FSEvents watch), **DSH Desktop** (`workspace.json`), **Codex Desktop** (`.codex-global-state.json` incl. Electron atom state), **WorkBuddy** (`workbuddy.db` + `pinned-sessions.json`), and **Doubao** (LevelDB `pinned`); enforced `sqlite3` `.timeout 5000` + WAL and `--test-concurrency=4` to eliminate CI `SQLITE_BUSY` flakes.

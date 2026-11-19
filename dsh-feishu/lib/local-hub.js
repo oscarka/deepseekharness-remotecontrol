@@ -98,19 +98,43 @@ export async function startEmbeddedLocalHub({
     if (attempt.error?.code === 'EADDRINUSE' && targetPort > 0) {
       const existing = await probeExistingLocalHub(targetPort, token)
       if (existing.ok) {
+        let reusedPairCode = ''
+        try {
+          const pairRes = await fetch(`http://127.0.0.1:${targetPort}/api/pairing/create`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ hostId, ttlMs: 24 * 60 * 60 * 1000 }),
+            signal: AbortSignal.timeout(1500),
+          })
+          if (pairRes.ok) {
+            const pairData = await pairRes.json().catch(() => ({}))
+            if (pairData?.code) reusedPairCode = String(pairData.code)
+          }
+        } catch {
+          // ignore pairing creation errors when reusing an existing hub
+        }
+        const reusedLocalUrl = `http://localhost:${targetPort}`
+        const reusedLan = existing.lanOrigins[0] || reusedLocalUrl
+        const reusedPairUrl = reusedPairCode ? `${reusedLan}/?pair=${reusedPairCode}` : reusedLan
+        const reusedLocalPairUrl = reusedPairCode
+          ? `${reusedLocalUrl}/?pair=${reusedPairCode}`
+          : reusedLocalUrl
         logger?.info?.(
-          `dsh-remotecontrol: 复用本机已启动的本地总控台 http://localhost:${targetPort}`,
+          `dsh-remotecontrol: 复用本机已启动的本地总控台 ${reusedLocalUrl}`,
         )
         return {
           reused: true,
           hubUrl: `http://127.0.0.1:${targetPort}`,
           hubToken: token,
           port: targetPort,
-          localUrl: `http://localhost:${targetPort}`,
+          localUrl: reusedLocalUrl,
           lanOrigins: existing.lanOrigins,
-          pairCode: '',
-          pairUrl: `http://localhost:${targetPort}`,
-          localPairUrl: `http://localhost:${targetPort}`,
+          pairCode: reusedPairCode,
+          pairUrl: reusedPairUrl,
+          localPairUrl: reusedLocalPairUrl,
           tokenFile,
           stateFile,
           close: async () => {},

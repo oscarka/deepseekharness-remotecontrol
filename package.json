@@ -1,12 +1,16 @@
 {
   "name": "deepseekharness-remotecontrol",
-  "version": "0.8.17",
+  "version": "0.8.18",
   "type": "module",
   "license": "MIT",
-  "description": "Mobile Web & Feishu Remote Control Hub for DeepSeek Harness (DSH), Antigravity, Codex, Claude Code, WorkBuddy, and Doubao.",
+  "description": "Self-hosted mobile remote control for Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness (DSH) & WorkBuddy — swipe approvals, voice input, multi-host hub & terminal QR.",
   "author": "oscarka",
   "icon": "./icon.svg",
   "main": "./index.js",
+  "bin": {
+    "deepseekharness-remotecontrol": "./scripts/cli.mjs",
+    "dsh-remote": "./scripts/cli.mjs"
+  },
   "exports": {
     ".": "./index.js",
     "./package.json": "./package.json",
