@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   loadAntigravityIdeSessions,
+  parseAntigravityTranscript,
   setAntigravityConversationPinned,
 } from '../lib/antigravity-ide.js'
 import { CodexAdapter } from '../lib/harnesses/codex-adapter.js'
@@ -533,4 +534,52 @@ test('Zero-lag conclusion state: inflightCommands clear immediately on conclusio
     await new Promise(resolve => server.close(resolve))
     await rm(tmpRoot, { recursive: true, force: true })
   }
+})
+
+test('parseAntigravityTranscript clears stale lastOutput on new USER_INPUT so stalled tool turns never leak prior-turn replies into list preview', () => {
+  const t0 = Date.parse('2026-11-19T04:00:00Z')
+  const jsonl = [
+    JSON.stringify({
+      step_index: 0,
+      type: 'USER_INPUT',
+      status: 'DONE',
+      created_at: new Date(t0).toISOString(),
+      content: '<USER_REQUEST>\n试玩阶段怎么渲染？\n</USER_REQUEST>',
+    }),
+    JSON.stringify({
+      step_index: 1,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: new Date(t0 + 2000).toISOString(),
+      content: '你的理解完全正确！试玩阶段就是电脑渲染投屏到手机。',
+    }),
+    JSON.stringify({
+      step_index: 2,
+      type: 'USER_INPUT',
+      status: 'DONE',
+      created_at: new Date(t0 + 60_000).toISOString(),
+      content: '<USER_REQUEST>\n卡住了吗？\n</USER_REQUEST>',
+    }),
+    JSON.stringify({
+      step_index: 3,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: new Date(t0 + 65_000).toISOString(),
+      content: '',
+      tool_calls: [
+        { name: 'write_file', args: { Path: '/Users/dev/blender/SanctuaryDailyGameDirector.gd', Content: 'extends Node' } },
+      ],
+    }),
+  ].join('\n')
+
+  const parsed = parseAntigravityTranscript(jsonl, {
+    conversationId: '37981981-d249-4b76-832e-f711bdbf7c7c',
+    mtimeMs: t0 + 65_000,
+    now: t0 + 600_000,
+  })
+  assert.ok(parsed)
+  assert.equal(parsed.isMidTurn, true)
+  assert.equal(parsed.lastConclusionAt, 0)
+  assert.doesNotMatch(parsed.lastOutput, /你的理解完全正确/)
+  assert.match(parsed.lastOutput, /SanctuaryDailyGameDirector\.gd/)
 })

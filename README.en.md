@@ -201,7 +201,9 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.15</code> — Zero-Lag Conclusion Sync, Native Multi-Harness Pin Sync &amp; Deterministic CI</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.16</code> — Accurate Latest-Turn Previews, Zero-Lag Conclusion Sync &amp; Multi-Harness Pin Sync</strong></summary>
+
+- **Accurate Latest-Turn Session Previews (`v0.8.16`)**: Fixed stale `lastOutput` leaking a reply from an earlier turn into the session list preview when a newer turn paused mid-execution on tool calls (`antigravity-ide.js` now resets `lastOutput` on each new `USER_INPUT`, and `controller.js` renders the exact latest transcript message with a clear `🔧 Paused at:` indicator when stopped mid-turn instead of showing an older reply).
 
 - **Zero-Lag Conclusion State Sync (`v0.8.15`)**: Eliminated the multi-second gap where Web Push arrived before the mobile session list flipped from `Running` to `Concluded` — removed CDN-buffered `gzip` encoding on `/api/events` SSE (`80ms` default / `30ms` urgent conclusion flush), wired Service Worker `PUSH_RECEIVED` + `NOTIFICATION_CLICK` + `1.2s` foreground resume to force immediate `/api/state` refresh, pruned `inflightCommands` the instant a turn concludes, and lowered Antigravity `RUNNING` RPC cache TTL from `2.5s` to `350ms`.
 - **Bidirectional Session Pinning Across Phone, Web &amp; Native Desktop Harnesses (`v0.8.13–v0.8.15`)**: Replaced isolated browser-only `localStorage` pins with Hub-persisted `sessionPinState` (`POST /api/sessions/pin` + instant SSE delta broadcast), dedicated **`📌 Pinned Conversations`** section headers on mobile, and 2-way native desktop harness sync — including **Antigravity IDE** (`annotations/<convId>.pbtxt` + live Connect-RPC `UpdateConversationAnnotations` + FSEvents instant watch), **DSH Desktop** (`workspace.json` `global.pinnedSessionIds`), **OpenAI Codex Desktop** (`.codex-global-state.json` `pinned-thread-ids` + Electron atom state), **WorkBuddy** (`workbuddy.db` + `pinned-sessions.json`), and **Doubao Desktop** LevelDB `pinned`.

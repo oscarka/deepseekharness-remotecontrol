@@ -595,6 +595,7 @@ export function parseAntigravityTranscript(jsonlText, {
       pendingBackgroundTaskIds.clear()
       lastConclusionAt = 0
       lastConclusionText = ''
+      lastOutput = ''
       lastUserInputAt = stepTime || lastActivity
       runningSummary = '💭 正在思考与分析...'
       transcript.push({
@@ -689,7 +690,7 @@ export function parseAntigravityTranscript(jsonlText, {
       const thinkingText = cleanForChat(redactText(rawThinking), 8000)
       if (asstText) {
         lastOutput = asstText.slice(0, 600)
-      } else if (tools.length > 0 && !lastOutput) {
+      } else if (tools.length > 0) {
         lastOutput = tools.map(t => t.summary || t.name).join(' · ').slice(0, 400)
       }
 
@@ -1177,7 +1178,7 @@ export function parseAntigravityTranscript(jsonlText, {
     updatedAt: lastActivity,
     lastConclusionAt,
     lastInterruptedAt: isErrorStep ? lastActivity : 0,
-    lastOutput: lastConclusionText || lastOutput,
+    lastOutput: lastConclusionText || lastOutput || String(slicedTranscript.at(-1)?.text || '').slice(0, 400),
     runningSummary: runningSummary || lastOutput,
     queuedSteers: [],
     changedFiles,

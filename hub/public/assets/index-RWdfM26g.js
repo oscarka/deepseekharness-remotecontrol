@@ -3407,6 +3407,7 @@ var EXACT_ZH_TO_EN = {
 	"全部对话": "Conversations",
 	"📌 置顶": "📌 Pinned",
 	"已置顶": "Pinned",
+	"🔧 停在步骤: ": "🔧 Paused at: ",
 	"项目文件": "Files",
 	"设备与设置": "Settings",
 	"‹ 返回": "‹ Back",
@@ -7897,11 +7898,13 @@ function initHubController() {
 				const rawIdStr = String(t.id || "");
 				const harness = t.harness || (rawIdStr.startsWith("agy-ide:") ? "antigravity-ide" : rawIdStr.startsWith("codex:") ? "codex" : rawIdStr.startsWith("workbuddy:") ? "workbuddy" : rawIdStr.startsWith("doubao:") ? "doubao" : rawIdStr.startsWith("claude:") ? "claude" : "dsh");
 				const harnessLabel = t.harnessLabel || (harness === "antigravity-ide" ? "Antigravity IDE" : harness === "codex" ? "Codex" : harness === "workbuddy" ? "WorkBuddy" : harness === "doubao" ? "豆包电脑版" : harness === "claude" ? "Claude Code" : "DeepSeek Harness");
+				const isStalledMidTurn = Boolean(status === "idle" && (t.isMidTurn || lastMsg?.isToolStepOnly));
 				let lastConclusionAt = Number(t.lastConclusionAt) || 0;
-				if (!lastConclusionAt && status === "idle" && lastMsg?.role === "assistant" && Boolean(lastMsg?.text)) lastConclusionAt = ts;
+				if (!lastConclusionAt && status === "idle" && !isStalledMidTurn && lastMsg?.role === "assistant" && Boolean(lastMsg?.text)) lastConclusionAt = ts;
 				const lastInterruptedAt = Number(t.lastInterruptedAt) || 0;
 				const turnState = status === "approval" ? "approval" : status === "running" ? "running" : t.turnState === "interrupted" ? "interrupted" : t.turnState === "conclusion" || lastConclusionAt > 0 ? "conclusion" : "idle";
-				const rawPreview = status === "running" ? t.runningSummary || t.lastOutput || lastMsg?.text || "正在思考与执行任务..." : status === "approval" ? pendingApp?.promptTitle || pendingApp?.reason || t.lastOutput || "等待你批准工具执行" : t.lastOutput || lastMsg?.text || t.cwd || "点击查看对话详情";
+				const latestMsgText = String(lastMsg?.text || "").trim();
+				const rawPreview = status === "running" ? t.runningSummary || latestMsgText || t.lastOutput || "正在思考与执行任务..." : status === "approval" ? pendingApp?.promptTitle || pendingApp?.reason || latestMsgText || t.lastOutput || "等待你批准工具执行" : latestMsgText || t.lastOutput || t.cwd || "点击查看对话详情";
 				const changedFiles = Array.isArray(t.changedFiles) ? t.changedFiles : Array.isArray(pendingApp?.changedFiles) ? pendingApp.changedFiles : [];
 				const artifacts = Array.isArray(t.artifacts) ? t.artifacts : Array.isArray(pendingApp?.artifacts) ? pendingApp.artifacts : [];
 				const totalTranscriptCount = Math.max(Number(t.totalTranscriptCount) || 0, Number(t.messageCount) || 0, transcript.length);
@@ -7943,6 +7946,8 @@ function initHubController() {
 					isUnreadInterrupted: false,
 					isRecentActive: false,
 					lastRole: lastMsg?.role || "assistant",
+					lastIsToolStepOnly: Boolean(lastMsg?.isToolStepOnly),
+					isStalledMidTurn,
 					lastPreview: cleanPrev,
 					rawLastPreview: rawPreview,
 					transcript,
@@ -8229,7 +8234,7 @@ function initHubController() {
 		const showStep6Banner = (hubState.hosts || []).length > 0 && !step6Dismissed;
 		const bannerKey = pendingAppInfo ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.kind || ""}:${pendingAppInfo.app.promptTitle || ""}:${pendingAppInfo.app.settling ? 1 : 0}:${pendingAppInfo.app.lastError || ""}` : "";
 		const hostsSig = (hubState.hosts || []).map((h) => `${h.hostId}:${h.hostName || ""}`).join(",");
-		const rowsSig = filtered.map((s) => `${s.id}:${s.harness}:${s.status}:${s.approvalObj?.kind || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`).join("|");
+		const rowsSig = filtered.map((s) => `${s.id}:${s.harness}:${s.status}:${s.approvalObj?.kind || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.isStalledMidTurn ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`).join("|");
 		const isInitialSyncPending = Boolean(getToken()) && !authLockConfirmed && !hasLoadedInitialState && (hubState.hosts || []).length === 0;
 		const enrollSig = `${hubState.enrollment?.code || ""}:${hubState.enrollment?.joinedCount || 0}:${isInitialSyncPending ? "sync" : "ready"}`;
 		const listKey = `${todayKey}:${hostsSig}:${allSessions.length}:${currentProject}:${q}:${showHostTag ? 1 : 0}:${showStep6Banner ? 1 : 0}:${enrollSig}:${bannerKey}#${rowsSig}`;
@@ -8304,7 +8309,7 @@ function initHubController() {
 			const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag" title="${esc$1(s.hostName)}">${esc$1(shortHostLabel)}</span>` : "";
 			const harnessBadgeHtml = renderHarnessBadgeHtml(s.harness, "row", s.harnessLabel);
 			const compactProject = formatCompactProjectLabel(s.project, nowDate);
-			const rolePrefix = s.status === "running" ? "" : s.lastRole === "user" ? "🧑 我: " : "🤖 ";
+			const rolePrefix = s.status === "running" ? "" : s.isStalledMidTurn ? "🔧 停在步骤: " : s.lastIsToolStepOnly ? "🔧 " : s.lastRole === "user" ? "🧑 我: " : "🤖 ";
 			const displayTitle = stripRedundantProjectPrefix(s.title, s.project);
 			return `${groupHeaderHtml}
           <div class="session-row ${rowStateClass} ${s.pinned ? "pinned-row" : ""} ${s.id === activeSessionId ? "selected-desktop" : ""}" onclick="openChat('${esc$1(s.id)}')">

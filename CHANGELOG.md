@@ -2,6 +2,14 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.16] - 2026-11-19
+
+### Fixed
+
+- **修复会话列表预览错显示「上上轮旧回复」导致点开后看不到该回复的假象（`dsh-feishu/lib/antigravity-ide.js` / `hub/web/src/controller.js`）**：
+  - 修复 `parseAntigravityTranscript` 在新 `USER_INPUT` 到来时未重置 `lastOutput`，导致后续轮次若停留在纯工具调用步骤（`isMidTurn: true`、未产出最终总结文本）时，列表预览仍沿用多轮前的历史回复文案；
+  - 手机与网页端 `controller.js` 列表预览改为严格以当前会话最新一条消息（`lastMsg.text`）为准，彻底保证列表预览与点开后的底部消息 100% 一致（即使远程旧版本宿主机暂未更新也能立即生效）；且当会话在工具步骤中途停住（`isMidTurn` / `isToolStepOnly`）时不再误判为已出结论，而是明确标注 `🔧 停在步骤:`。
+
 ## [0.8.15] - 2026-11-19
 
 ### Fixed
@@ -10,6 +18,15 @@
   - **移除 `/api/events` SSE 流的 `gzip` 压缩缓冲并提速推送阈值**：CDN 与移动端 HTTP/2 代理会对开启 `content-encoding: gzip` 的微小 `state_delta` 帧产生数秒缓冲（导致直连 APNs 的系统推送先到、页面 SSE 状态却滞后数秒）；现改为无缓冲原始流（`no-store, no-transform`），默认节流从 `450ms` 降至 `80ms`，且任务出结论/待审批事件走 `<=30ms` 极速通道；
   - **Service Worker 收到系统推送即刻唤醒前台页面拉新（`PUSH_RECEIVED` + `NOTIFICATION_CLICK`）**：`sw.js` 在收到 `push` 的瞬间向所有已打开页面广播 `PUSH_RECEIVED`，点击通知或切回前台（`idleMs > 1.2s`）均无条件立即触发 `fetchState({ forceFresh: true })`（修复此前切后台不足 15 秒切回或点击已有会话通知时不拉取最新状态的盲区）；
   - **修复 `inflightCommands` / 乐观消息在任务已出结论后仍强行覆盖 `运行中` 的问题**：当服务端会话已进入 `idle` 结论态（`lastConclusionAt > cmd.createdAt` 或消息数已跨过完整一轮问答，含纯图片消息）时立即清理在途标记，并将 Antigravity `RUNNING` RPC 缓存周期从 `2.5s` 缩短至 `350ms`，同时兼容 Codex Electron `electron-persisted-atom-state` 置顶字段。
+
+## [0.8.14] - 2026-11-19
+
+### Added & Fixed
+
+- **打通 Antigravity IDE 原生 `Pinned Conversations` 双向实时同步与手机端「📌 置顶对话」独立分区展示（`dsh-feishu/lib/antigravity-ide.js` / `dsh-turbo/index.js` / `hub/web/src/controller.js`）**：
+  - 实时解析 `~/.gemini/antigravity/annotations/<convId>.pbtxt`（`pinned:true`）与 LanguageServer `GetAllCascadeTrajectories`（`annotations.pinned`），并在 `TurboController` 增加 `annotations/` 目录 FSEvents 监听（`<150ms` 唤醒同步），电脑端在 Antigravity IDE 侧栏置顶/取消置顶后手机端立即联动；
+  - 手机端置顶或取消置顶 Antigravity IDE 会话时，直接通过 Connect-RPC `UpdateConversationAnnotations`（`mergeAnnotations: true`，离线时自动原子回写 `.pbtxt`）实时刷新 Antigravity IDE 侧栏；
+  - 手机与网页端会话列表新增与 Antigravity IDE 一致的 **「📌 置顶对话」/「全部对话」** 分组栏及醒目 `📌 置顶` 胶囊角标，即使会话处于绿色运行中或蓝色新结论状态也一目了然。
 
 ## [0.8.14] - 2026-11-19
 

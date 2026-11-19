@@ -32,6 +32,7 @@ const EXACT_ZH_TO_EN = {
   '全部对话': 'Conversations',
   '📌 置顶': '📌 Pinned',
   '已置顶': 'Pinned',
+  '🔧 停在步骤: ': '🔧 Paused at: ',
   '项目文件': 'Files',
   '设备与设置': 'Settings',
   '‹ 返回': '‹ Back',
