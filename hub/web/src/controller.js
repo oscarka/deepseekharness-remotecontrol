@@ -1636,6 +1636,8 @@ export function initHubController() {
       chatEl.classList.add('open');
     }
     document.body.classList.add('mobile-chat-open');
+    artifactsExpandedSessionIds.delete(found.session.id);
+    filesExpandedSessionIds.delete(found.session.id);
     lastRenderedChatKey = ''; // 切换会话时强制渲染
     renderActiveChatStage(found);
     scheduleChatPaintAndScrollSync(found.session.id);
@@ -1659,6 +1661,8 @@ export function initHubController() {
   function rawCloseChat() {
     stopVoiceInput();
     stopAssistantSpeech();
+    artifactsExpandedSessionIds.clear();
+    filesExpandedSessionIds.clear();
     document.getElementById('chatFullscreen').classList.remove('open');
     document.body.classList.remove('mobile-chat-open');
     setScrollBottomVisible(false);
@@ -2311,10 +2315,9 @@ export function initHubController() {
       .join('|');
     const fcMeta = computeChangedFilesMeta(s.changedFiles);
     const fcReviewed = Boolean(fcMeta.sig && filesCardReviewedSigBySession.get(s.id) === fcMeta.sig);
-    const fcCollapsed = filesCardCollapsedBySession.has(s.id)
-      ? Boolean(filesCardCollapsedBySession.get(s.id))
-      : fcReviewed;
-    const chatKey = `${s.id}:${s.status}:${s.sessionRev || ''}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${(s.changedFiles || []).length}:${fcMeta.sig}:${fcCollapsed ? 1 : 0}:${fcReviewed ? 1 : 0}:${(s.artifacts || []).length}`;
+    const fcCollapsed = !filesExpandedSessionIds.has(s.id);
+    const artCollapsed = !artifactsExpandedSessionIds.has(s.id);
+    const chatKey = `${s.id}:${s.status}:${s.sessionRev || ''}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${(s.changedFiles || []).length}:${fcMeta.sig}:${fcCollapsed ? 1 : 0}:${fcReviewed ? 1 : 0}:${artCollapsed ? 1 : 0}:${(s.artifacts || []).length}`;
     if (chatKey === lastRenderedChatKey) return;
     const box = document.getElementById('chatMessages');
     if (
@@ -2527,12 +2530,13 @@ export function initHubController() {
 
     const sessionArtifacts = Array.isArray(s.artifacts) ? s.artifacts.filter(a => a && a.path) : [];
     const sessionArtifactsHtml = sessionArtifacts.length > 0 ? `
-        <div class="agy-files-changed-card agy-session-artifacts-card">
-          <div class="agy-session-artifacts-header">
-            <span>📋 AI 交付文档 / Walkthrough (${sessionArtifacts.length})</span>
-            <span class="agy-session-artifacts-hint">点击直接预览全文与配图</span>
-          </div>
-          ${sessionArtifacts.map(art => {
+        <div class="agy-files-changed-card agy-session-artifacts-card${artCollapsed ? ' is-collapsed' : ''}" data-artifacts-session="${esc(s.id)}">
+          <button type="button" class="agy-session-artifacts-header" aria-expanded="${!artCollapsed}" onclick="toggleSessionArtifactsCard('${esc(s.id)}')">
+            <span class="agy-session-artifacts-title">📋 AI 交付文档 / Walkthrough (${sessionArtifacts.length})</span>
+            <span class="agy-artifacts-toggle-pill">${artCollapsed ? '展开 ⌄' : '收起 ⌃'}</span>
+          </button>
+          <div class="agy-artifact-rows">
+            ${sessionArtifacts.map(art => {
       const encArtPath = encodeURIComponent(art.path || '').replace(/'/g, '%27');
       const isHtmlArt = isHtmlFileName(art.name || art.path || '');
       const badgeIcon = art.kind === 'walkthrough' ? '📋' : art.kind === 'plan' ? '🗺️' : art.kind === 'task' ? '☑️' : isHtmlArt ? '🌐' : '📄';
@@ -2553,6 +2557,7 @@ export function initHubController() {
             </div>
           `;
     }).join('')}
+          </div>
         </div>
       ` : '';
 
@@ -2578,7 +2583,7 @@ export function initHubController() {
             </button>
             <div class="agy-files-footer-btns">
               <button type="button" class="agy-files-reject" onclick="openChangedFilesDrawer('${esc(s.id)}')">查看改动</button>
-              <button type="button" class="agy-files-accept${fcReviewed ? ' is-reviewed' : ''}" onclick="reviewFilesChangedCard('${esc(s.id)}', '${esc(fcMeta.sig)}')">${fcReviewed ? '✓ 已确认' : '确认已阅'}</button>
+              ${fcReviewed ? '' : `<button type="button" class="agy-files-accept" onclick="reviewFilesChangedCard('${esc(s.id)}', '${esc(fcMeta.sig)}')">确认已阅</button>`}
             </div>
           </div>
         </div>
@@ -3944,23 +3949,17 @@ export function initHubController() {
 
   // ==================== 7. 聊天内「📂 文件速览浮层抽屉」 ====================
   const FILES_CARD_STATE_KEY = 'dsh_files_card_state_v1';
-  const filesCardCollapsedBySession = new Map();
+  const artifactsExpandedSessionIds = new Set();
+  const filesExpandedSessionIds = new Set();
   const filesCardReviewedSigBySession = new Map();
   let drawerChangedFilesSessionId = null;
 
   (function restoreFilesCardState() {
     try {
       const raw = JSON.parse(localStorage.getItem(FILES_CARD_STATE_KEY) || '{}');
-      if (raw && typeof raw === 'object') {
-        if (raw.collapsed && typeof raw.collapsed === 'object') {
-          for (const [k, v] of Object.entries(raw.collapsed)) {
-            filesCardCollapsedBySession.set(k, Boolean(v));
-          }
-        }
-        if (raw.reviewed && typeof raw.reviewed === 'object') {
-          for (const [k, v] of Object.entries(raw.reviewed)) {
-            if (typeof v === 'string' && v) filesCardReviewedSigBySession.set(k, v);
-          }
+      if (raw && typeof raw === 'object' && raw.reviewed && typeof raw.reviewed === 'object') {
+        for (const [k, v] of Object.entries(raw.reviewed)) {
+          if (typeof v === 'string' && v) filesCardReviewedSigBySession.set(k, v);
         }
       }
     } catch { }
@@ -3968,11 +3967,9 @@ export function initHubController() {
 
   function persistFilesCardState() {
     try {
-      const collapsed = {};
       const reviewed = {};
-      Array.from(filesCardCollapsedBySession.entries()).slice(-60).forEach(([k, v]) => { collapsed[k] = Boolean(v); });
       Array.from(filesCardReviewedSigBySession.entries()).slice(-60).forEach(([k, v]) => { reviewed[k] = v; });
-      localStorage.setItem(FILES_CARD_STATE_KEY, JSON.stringify({ collapsed, reviewed }));
+      localStorage.setItem(FILES_CARD_STATE_KEY, JSON.stringify({ reviewed }));
     } catch { }
   }
 
@@ -3995,17 +3992,26 @@ export function initHubController() {
     };
   }
 
+  function toggleSessionArtifactsCard(sessionId) {
+    const sid = String(sessionId || activeSessionId || '');
+    if (!sid) return;
+    if (artifactsExpandedSessionIds.has(sid)) {
+      artifactsExpandedSessionIds.delete(sid);
+    } else {
+      artifactsExpandedSessionIds.add(sid);
+    }
+    lastRenderedChatKey = '';
+    renderActiveChatStage();
+  }
+
   function toggleFilesChangedCard(sessionId) {
     const sid = String(sessionId || activeSessionId || '');
     if (!sid) return;
-    const found = findSessionGlobal(sid);
-    const meta = computeChangedFilesMeta(found?.session?.changedFiles);
-    const reviewed = Boolean(meta.sig && filesCardReviewedSigBySession.get(sid) === meta.sig);
-    const curCollapsed = filesCardCollapsedBySession.has(sid)
-      ? Boolean(filesCardCollapsedBySession.get(sid))
-      : reviewed;
-    filesCardCollapsedBySession.set(sid, !curCollapsed);
-    persistFilesCardState();
+    if (filesExpandedSessionIds.has(sid)) {
+      filesExpandedSessionIds.delete(sid);
+    } else {
+      filesExpandedSessionIds.add(sid);
+    }
     lastRenderedChatKey = '';
     renderActiveChatStage();
   }
@@ -4017,23 +4023,12 @@ export function initHubController() {
     const files = Array.isArray(found?.session?.changedFiles) ? found.session.changedFiles : [];
     const effectiveSig = String(sig || computeChangedFilesMeta(files).sig || '');
     if (!effectiveSig) return;
-    const alreadyReviewed = filesCardReviewedSigBySession.get(sid) === effectiveSig;
-    if (!alreadyReviewed) {
-      filesCardReviewedSigBySession.set(sid, effectiveSig);
-      filesCardCollapsedBySession.set(sid, true);
-      persistFilesCardState();
-      lastRenderedChatKey = '';
-      renderActiveChatStage();
-      showToast(`✅ 已确认 ${files.length} 个文件改动并收起`);
-    } else {
-      const curCollapsed = filesCardCollapsedBySession.has(sid)
-        ? Boolean(filesCardCollapsedBySession.get(sid))
-        : true;
-      filesCardCollapsedBySession.set(sid, !curCollapsed);
-      persistFilesCardState();
-      lastRenderedChatKey = '';
-      renderActiveChatStage();
-    }
+    filesCardReviewedSigBySession.set(sid, effectiveSig);
+    filesExpandedSessionIds.delete(sid);
+    persistFilesCardState();
+    lastRenderedChatKey = '';
+    renderActiveChatStage();
+    showToast(`✅ 已确认 ${files.length} 个文件改动`);
   }
 
   function openChangedFilesDrawer(sessionId) {
@@ -9467,6 +9462,7 @@ export function initHubController() {
     sendApprovalDecision,
     openInChatFileDrawer,
     openChangedFilesDrawer,
+    toggleSessionArtifactsCard,
     toggleFilesChangedCard,
     reviewFilesChangedCard,
     previewKind,

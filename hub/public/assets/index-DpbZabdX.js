@@ -3775,6 +3775,8 @@ var EXACT_ZH_TO_EN = {
 	"收起高度": "Collapse drawer",
 	"确认已阅": "Mark Reviewed",
 	"✓ 已确认": "✓ Reviewed",
+	"展开 ⌄": "Expand ⌄",
+	"收起 ⌃": "Collapse ⌃",
 	"📂 浏览全部目录": "📂 Browse All Files",
 	"暂无文件改动记录": "No changed files recorded",
 	"📲 已缓存 · 再点存入相册/文件": "📲 Ready · Tap to Save",
@@ -8364,6 +8366,8 @@ function initHubController() {
 			chatEl.classList.add("open");
 		}
 		document.body.classList.add("mobile-chat-open");
+		artifactsExpandedSessionIds.delete(found.session.id);
+		filesExpandedSessionIds.delete(found.session.id);
 		lastRenderedChatKey = "";
 		renderActiveChatStage(found);
 		scheduleChatPaintAndScrollSync(found.session.id);
@@ -8381,6 +8385,8 @@ function initHubController() {
 	function rawCloseChat() {
 		stopVoiceInput();
 		stopAssistantSpeech();
+		artifactsExpandedSessionIds.clear();
+		filesExpandedSessionIds.clear();
 		document.getElementById("chatFullscreen").classList.remove("open");
 		document.body.classList.remove("mobile-chat-open");
 		setScrollBottomVisible(false);
@@ -8898,8 +8904,9 @@ function initHubController() {
 		const trSig = s.transcript.slice(-6).map((m) => `${m.role}:${m.queuedCmdId || ""}:${m.expiredCmdId || ""}:${(m.text || "").length}:${(m.text || "").slice(-32)}:${(m.thinking || "").length}:${(m.tools || []).length}:${(m.artifacts || []).length}:${m.waitingForInput ? 1 : 0}`).join("|");
 		const fcMeta = computeChangedFilesMeta(s.changedFiles);
 		const fcReviewed = Boolean(fcMeta.sig && filesCardReviewedSigBySession.get(s.id) === fcMeta.sig);
-		const fcCollapsed = filesCardCollapsedBySession.has(s.id) ? Boolean(filesCardCollapsedBySession.get(s.id)) : fcReviewed;
-		const chatKey = `${s.id}:${s.status}:${s.sessionRev || ""}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${(s.changedFiles || []).length}:${fcMeta.sig}:${fcCollapsed ? 1 : 0}:${fcReviewed ? 1 : 0}:${(s.artifacts || []).length}`;
+		const fcCollapsed = !filesExpandedSessionIds.has(s.id);
+		const artCollapsed = !artifactsExpandedSessionIds.has(s.id);
+		const chatKey = `${s.id}:${s.status}:${s.sessionRev || ""}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${(s.changedFiles || []).length}:${fcMeta.sig}:${fcCollapsed ? 1 : 0}:${fcReviewed ? 1 : 0}:${artCollapsed ? 1 : 0}:${(s.artifacts || []).length}`;
 		if (chatKey === lastRenderedChatKey) return;
 		const box = document.getElementById("chatMessages");
 		if (lastRenderedChatKey && box && box.dataset.dshSession === String(activeSessionId) && chatTouchDownAt > 0 && Date.now() - chatTouchDownAt < 3500) {
@@ -9037,12 +9044,13 @@ function initHubController() {
 		}).join("");
 		const sessionArtifacts = Array.isArray(s.artifacts) ? s.artifacts.filter((a) => a && a.path) : [];
 		const sessionArtifactsHtml = sessionArtifacts.length > 0 ? `
-        <div class="agy-files-changed-card agy-session-artifacts-card">
-          <div class="agy-session-artifacts-header">
-            <span>📋 AI 交付文档 / Walkthrough (${sessionArtifacts.length})</span>
-            <span class="agy-session-artifacts-hint">点击直接预览全文与配图</span>
-          </div>
-          ${sessionArtifacts.map((art) => {
+        <div class="agy-files-changed-card agy-session-artifacts-card${artCollapsed ? " is-collapsed" : ""}" data-artifacts-session="${esc$1(s.id)}">
+          <button type="button" class="agy-session-artifacts-header" aria-expanded="${!artCollapsed}" onclick="toggleSessionArtifactsCard('${esc$1(s.id)}')">
+            <span class="agy-session-artifacts-title">📋 AI 交付文档 / Walkthrough (${sessionArtifacts.length})</span>
+            <span class="agy-artifacts-toggle-pill">${artCollapsed ? "展开 ⌄" : "收起 ⌃"}</span>
+          </button>
+          <div class="agy-artifact-rows">
+            ${sessionArtifacts.map((art) => {
 			const encArtPath = encodeURIComponent(art.path || "").replace(/'/g, "%27");
 			const isHtmlArt = isHtmlFileName(art.name || art.path || "");
 			const badgeIcon = art.kind === "walkthrough" ? "📋" : art.kind === "plan" ? "🗺️" : art.kind === "task" ? "☑️" : isHtmlArt ? "🌐" : "📄";
@@ -9061,6 +9069,7 @@ function initHubController() {
             </div>
           `;
 		}).join("")}
+          </div>
         </div>
       ` : "";
 		const filesChangedHtml = (s.harness === "antigravity-ide" || s.harness === "codex") && Array.isArray(s.changedFiles) && s.changedFiles.length > 0 ? `
@@ -9084,7 +9093,7 @@ function initHubController() {
             </button>
             <div class="agy-files-footer-btns">
               <button type="button" class="agy-files-reject" onclick="openChangedFilesDrawer('${esc$1(s.id)}')">查看改动</button>
-              <button type="button" class="agy-files-accept${fcReviewed ? " is-reviewed" : ""}" onclick="reviewFilesChangedCard('${esc$1(s.id)}', '${esc$1(fcMeta.sig)}')">${fcReviewed ? "✓ 已确认" : "确认已阅"}</button>
+              ${fcReviewed ? "" : `<button type="button" class="agy-files-accept" onclick="reviewFilesChangedCard('${esc$1(s.id)}', '${esc$1(fcMeta.sig)}')">确认已阅</button>`}
             </div>
           </div>
         </div>
@@ -10171,34 +10180,25 @@ function initHubController() {
 		scheduleFallbackStateSync();
 	}
 	const FILES_CARD_STATE_KEY = "dsh_files_card_state_v1";
-	const filesCardCollapsedBySession = /* @__PURE__ */ new Map();
+	const artifactsExpandedSessionIds = /* @__PURE__ */ new Set();
+	const filesExpandedSessionIds = /* @__PURE__ */ new Set();
 	const filesCardReviewedSigBySession = /* @__PURE__ */ new Map();
 	let drawerChangedFilesSessionId = null;
 	(function restoreFilesCardState() {
 		try {
 			const raw = JSON.parse(localStorage.getItem(FILES_CARD_STATE_KEY) || "{}");
-			if (raw && typeof raw === "object") {
-				if (raw.collapsed && typeof raw.collapsed === "object") for (const [k, v] of Object.entries(raw.collapsed)) filesCardCollapsedBySession.set(k, Boolean(v));
-				if (raw.reviewed && typeof raw.reviewed === "object") {
-					for (const [k, v] of Object.entries(raw.reviewed)) if (typeof v === "string" && v) filesCardReviewedSigBySession.set(k, v);
-				}
+			if (raw && typeof raw === "object" && raw.reviewed && typeof raw.reviewed === "object") {
+				for (const [k, v] of Object.entries(raw.reviewed)) if (typeof v === "string" && v) filesCardReviewedSigBySession.set(k, v);
 			}
 		} catch {}
 	})();
 	function persistFilesCardState() {
 		try {
-			const collapsed = {};
 			const reviewed = {};
-			Array.from(filesCardCollapsedBySession.entries()).slice(-60).forEach(([k, v]) => {
-				collapsed[k] = Boolean(v);
-			});
 			Array.from(filesCardReviewedSigBySession.entries()).slice(-60).forEach(([k, v]) => {
 				reviewed[k] = v;
 			});
-			localStorage.setItem(FILES_CARD_STATE_KEY, JSON.stringify({
-				collapsed,
-				reviewed
-			}));
+			localStorage.setItem(FILES_CARD_STATE_KEY, JSON.stringify({ reviewed }));
 		} catch {}
 	}
 	function computeChangedFilesMeta(changedFiles) {
@@ -10221,14 +10221,19 @@ function initHubController() {
 			sig: `${changedFiles.length}:${totalAdd}:${totalDel}:${names.slice(-3).join(",")}`
 		};
 	}
+	function toggleSessionArtifactsCard(sessionId) {
+		const sid = String(sessionId || activeSessionId || "");
+		if (!sid) return;
+		if (artifactsExpandedSessionIds.has(sid)) artifactsExpandedSessionIds.delete(sid);
+		else artifactsExpandedSessionIds.add(sid);
+		lastRenderedChatKey = "";
+		renderActiveChatStage();
+	}
 	function toggleFilesChangedCard(sessionId) {
 		const sid = String(sessionId || activeSessionId || "");
 		if (!sid) return;
-		const meta = computeChangedFilesMeta(findSessionGlobal(sid)?.session?.changedFiles);
-		const reviewed = Boolean(meta.sig && filesCardReviewedSigBySession.get(sid) === meta.sig);
-		const curCollapsed = filesCardCollapsedBySession.has(sid) ? Boolean(filesCardCollapsedBySession.get(sid)) : reviewed;
-		filesCardCollapsedBySession.set(sid, !curCollapsed);
-		persistFilesCardState();
+		if (filesExpandedSessionIds.has(sid)) filesExpandedSessionIds.delete(sid);
+		else filesExpandedSessionIds.add(sid);
 		lastRenderedChatKey = "";
 		renderActiveChatStage();
 	}
@@ -10239,20 +10244,12 @@ function initHubController() {
 		const files = Array.isArray(found?.session?.changedFiles) ? found.session.changedFiles : [];
 		const effectiveSig = String(sig || computeChangedFilesMeta(files).sig || "");
 		if (!effectiveSig) return;
-		if (!(filesCardReviewedSigBySession.get(sid) === effectiveSig)) {
-			filesCardReviewedSigBySession.set(sid, effectiveSig);
-			filesCardCollapsedBySession.set(sid, true);
-			persistFilesCardState();
-			lastRenderedChatKey = "";
-			renderActiveChatStage();
-			showToast(`✅ 已确认 ${files.length} 个文件改动并收起`);
-		} else {
-			const curCollapsed = filesCardCollapsedBySession.has(sid) ? Boolean(filesCardCollapsedBySession.get(sid)) : true;
-			filesCardCollapsedBySession.set(sid, !curCollapsed);
-			persistFilesCardState();
-			lastRenderedChatKey = "";
-			renderActiveChatStage();
-		}
+		filesCardReviewedSigBySession.set(sid, effectiveSig);
+		filesExpandedSessionIds.delete(sid);
+		persistFilesCardState();
+		lastRenderedChatKey = "";
+		renderActiveChatStage();
+		showToast(`✅ 已确认 ${files.length} 个文件改动`);
 	}
 	function openChangedFilesDrawer(sessionId) {
 		const found = findSessionGlobal(String(sessionId || activeSessionId || ""));
@@ -14911,6 +14908,7 @@ function initHubController() {
 		sendApprovalDecision,
 		openInChatFileDrawer,
 		openChangedFilesDrawer,
+		toggleSessionArtifactsCard,
 		toggleFilesChangedCard,
 		reviewFilesChangedCard,
 		previewKind,

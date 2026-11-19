@@ -201,6 +201,13 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-19 · v0.8.11</code> — Default-Collapsed Artifact &amp; Diff Cards, Artifact Expand Toggle &amp; Auto-Hiding Confirm Button</strong></summary>
+
+- **Default-Collapsed Cards &amp; Clean Dismiss (`v0.8.11`)**: Both `AI Artifacts / Walkthrough (N)` and `N Files With Changes` now default to compact single-line summary bars when opening any session so large artifact lists never hijack the chat viewport; added a dedicated `Expand ⌄` / `Collapse ⌃` toggle button to the Artifacts card header, and made **Mark Reviewed** (`确认已阅`) cleanly disappear once clicked instead of lingering as a green status button (`controller.js` / `app.css`).
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-19 · v0.8.10</code> — Interactive Changed-Files Card Collapse, Mark-Reviewed State &amp; Dedicated Diff Drawer</strong></summary>
 
 - **Interactive Changed-Files Card Controls (`v0.8.10`)**: Turned the dead `N Files With Changes ⌃` label into a persistent collapse/expand toggle (`⌃` ↔ `⌄`), replaced the placeholder `Accept all` stub with a stateful **Mark Reviewed** (`✓ Reviewed`) button that acknowledges & collapses the current edit batch until new changes arrive, upgraded **View Diff** to open a dedicated session changed-files drawer immediately, and cleared stale drawer previews when opening the project file browser (`controller.js` / `app.css`).

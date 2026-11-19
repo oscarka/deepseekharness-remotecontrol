@@ -201,6 +201,13 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-19 · v0.8.11</code> — 交付文档与改动文件默认收起不占屏 &amp; 补齐交付文档折叠按钮 &amp; 确认后按钮消失</strong></summary>
+
+- **双卡片默认缩略收起与确认按钮清理（`v0.8.11`）**：点进任意会话时，「📋 AI 交付文档 / Walkthrough (N)」与「📄 N Files With Changes」默认均以单行缩略栏呈现（不再把 10+ 份文档直接撑满屏幕）；为「AI 交付文档」新增 `展开 ⌄` / `收起 ⌃` 缩略切换按钮，并使「确认已阅」在点击确认后直接消失不再常驻占屏（仅在后续产生新文件改动时重新出现）（[`controller.js`](hub/web/src/controller.js) / [`app.css`](hub/web/src/styles/app.css)）。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-19 · v0.8.10</code> — 修复改动文件卡片折叠/确认按钮与「查看改动」专页</strong></summary>
 
 - **改动文件卡片底栏交互闭环修复（`v0.8.10`）**：将此前无点击事件的 `📄 N Files With Changes ⌃` 升级为可持久记忆的折叠/展开开关（`⌃` ↔ `⌄`）；将原与目录浏览重复的占位 `Accept all` 按钮替换为真实的**「确认已阅」**（`✓ 已确认`）交互并自动收起卡片（有新改动时自动恢复待确认态）；「查看改动」升级为在抽屉内秒开本会话改动文件专页，并修复再次点开目录抽屉时残留上次文件预览的问题（[`controller.js`](hub/web/src/controller.js) / [`app.css`](hub/web/src/styles/app.css)）。

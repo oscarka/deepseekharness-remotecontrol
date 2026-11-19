@@ -449,6 +449,8 @@ const EXACT_ZH_TO_EN = {
   '收起高度': 'Collapse drawer',
   '确认已阅': 'Mark Reviewed',
   '✓ 已确认': '✓ Reviewed',
+  '展开 ⌄': 'Expand ⌄',
+  '收起 ⌃': 'Collapse ⌃',
   '📂 浏览全部目录': '📂 Browse All Files',
   '暂无文件改动记录': 'No changed files recorded',
   '📲 已缓存 · 再点存入相册/文件': '📲 Ready · Tap to Save',

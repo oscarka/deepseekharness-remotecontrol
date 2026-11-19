@@ -3592,6 +3592,12 @@
       color: #93c5fd;
     }
 
+    :root[data-theme="dark"] .agy-artifacts-toggle-pill {
+      background: rgba(15, 23, 42, 0.65);
+      border-color: rgba(59, 130, 246, 0.35);
+      color: #93c5fd;
+    }
+
     :root[data-theme="dark"] .agy-artifact-kind-badge {
       background: rgba(59, 130, 246, 0.22);
       border-color: rgba(59, 130, 246, 0.35);
@@ -3751,6 +3757,12 @@
       :root:not([data-theme="light"]) .agy-session-artifacts-header {
         background: rgba(59, 130, 246, 0.14);
         border-bottom-color: rgba(148, 163, 184, 0.18);
+        color: #93c5fd;
+      }
+
+      :root:not([data-theme="light"]) .agy-artifacts-toggle-pill {
+        background: rgba(15, 23, 42, 0.65);
+        border-color: rgba(59, 130, 246, 0.35);
         color: #93c5fd;
       }
 
@@ -4047,7 +4059,17 @@
       border-color: rgba(37, 99, 235, 0.24);
     }
 
+    .agy-session-artifacts-card.is-collapsed .agy-artifact-rows {
+      display: none;
+    }
+
+    .agy-session-artifacts-card.is-collapsed .agy-session-artifacts-header {
+      border-bottom: none;
+    }
+
     .agy-session-artifacts-header {
+      width: 100%;
+      border: none;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -4055,15 +4077,37 @@
       padding: 8px 12px;
       background: var(--primary-soft);
       border-bottom: 1px solid rgba(37, 99, 235, 0.14);
+      font-family: inherit;
       font-size: 12px;
       font-weight: 700;
       color: var(--primary);
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.14s ease;
     }
 
-    .agy-session-artifacts-hint {
+    .agy-session-artifacts-header:active {
+      opacity: 0.86;
+    }
+
+    .agy-session-artifacts-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .agy-artifacts-toggle-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--surface);
+      border: 1px solid rgba(37, 99, 235, 0.22);
+      color: var(--primary);
       font-size: 11px;
-      font-weight: 500;
-      color: var(--muted);
+      font-weight: 600;
       flex-shrink: 0;
     }
 

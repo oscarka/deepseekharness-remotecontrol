@@ -2,6 +2,15 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.11] - 2026-11-19
+
+### Changed & Fixed
+
+- **「AI 交付文档」与「Files With Changes」默认收起不展开 + 交付文档补齐折叠按钮 + 确认已阅按钮点击后消失（`hub/web/src/controller.js` / `hub/web/src/styles/app.css`）**：
+  - 进入任意会话时，底部的「📋 AI 交付文档 / Walkthrough (N)」与「📄 N Files With Changes」均默认收起为单行紧凑摘要栏，彻底解决多产物（如 15 份报告）铺满整屏的问题；
+  - 为「AI 交付文档」标题栏新增一键展开/收起按钮（`展开 ⌄` ↔ `收起 ⌃`），支持点击整条标题栏或右侧胶囊随时展开查看全部交付文档；
+  - 修复点击「确认已阅」后按钮仅变成绿色 `✓ 已确认` 仍占位置的问题——点击确认后该按钮立即彻底消失（仅在后续 AI 产生新文件改动时重新出现）。
+
 ## [0.8.10] - 2026-11-19
 
 ### Fixed
