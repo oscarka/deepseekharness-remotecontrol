@@ -583,3 +583,53 @@ test('parseAntigravityTranscript clears stale lastOutput on new USER_INPUT so st
   assert.doesNotMatch(parsed.lastOutput, /你的理解完全正确/)
   assert.match(parsed.lastOutput, /SanctuaryDailyGameDirector\.gd/)
 })
+
+test('parseAntigravityTranscript surfaces repeated ERROR_MESSAGE stream interruptions even when followed by empty PLANNER_RESPONSE', () => {
+  const t0 = Date.parse('2026-11-19T04:50:00Z')
+  const steps = [
+    {
+      step_index: 8909,
+      type: 'USER_INPUT',
+      status: 'DONE',
+      created_at: new Date(t0).toISOString(),
+      content: '<USER_REQUEST>\n卡住了吗？\n</USER_REQUEST>',
+    },
+    {
+      step_index: 8910,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: new Date(t0 + 2000).toISOString(),
+      content: '',
+      tool_calls: [{ name: 'write_file', args: { Path: '/Users/dev/blender/SanctuaryDailyGameDirector.gd', Content: 'extends Node' } }],
+    },
+  ]
+  for (let i = 0; i < 6; i += 1) {
+    steps.push({
+      step_index: 8911 + i * 2,
+      type: 'ERROR_MESSAGE',
+      status: 'DONE',
+      created_at: new Date(t0 + 10_000 + i * 60_000).toISOString(),
+      content: 'Error: The stream was interrupted. Please continue the task you were working on.',
+    })
+    steps.push({
+      step_index: 8912 + i * 2,
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: new Date(t0 + 20_000 + i * 60_000).toISOString(),
+      content: '',
+      tool_calls: [],
+    })
+  }
+  const parsed = parseAntigravityTranscript(steps.map(s => JSON.stringify(s)).join('\n'), {
+    conversationId: '37981981-d249-4b76-832e-f711bdbf7c7c',
+    mtimeMs: t0 + 400_000,
+    now: t0 + 900_000,
+  })
+  assert.ok(parsed)
+  assert.equal(parsed.turnState, 'interrupted')
+  assert.equal(parsed.statusLabel, '⚠️ 中断待继续')
+  const lastBubble = parsed.transcript.at(-1)
+  assert.equal(lastBubble.isErrorNotice, true)
+  assert.match(lastBubble.text, /执行中断（连续发生 6 次）.*The stream was interrupted/)
+  assert.match(parsed.lastOutput, /执行中断（连续发生 6 次）/)
+})

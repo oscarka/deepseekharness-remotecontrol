@@ -500,6 +500,7 @@ export function parseAntigravityTranscript(jsonlText, {
   let lastUserInputAt = 0
   let lastConclusionAt = 0
   let pendingApproval = null
+  let trailingError = null
   const pendingBackgroundTaskIds = new Set()
   const unassignedSubagentTools = []
   const subagentToolByConvId = new Map()
@@ -596,6 +597,7 @@ export function parseAntigravityTranscript(jsonlText, {
       lastConclusionAt = 0
       lastConclusionText = ''
       lastOutput = ''
+      trailingError = null
       lastUserInputAt = stepTime || lastActivity
       runningSummary = '💭 正在思考与分析...'
       transcript.push({
@@ -690,8 +692,10 @@ export function parseAntigravityTranscript(jsonlText, {
       const thinkingText = cleanForChat(redactText(rawThinking), 8000)
       if (asstText) {
         lastOutput = asstText.slice(0, 600)
+        trailingError = null
       } else if (tools.length > 0) {
         lastOutput = tools.map(t => t.summary || t.name).join(' · ').slice(0, 400)
+        trailingError = null
       }
 
       if (tools.length > 0) {
@@ -870,7 +874,41 @@ export function parseAntigravityTranscript(jsonlText, {
           }
         }
       }
+    } else if (stepType === 'ERROR_MESSAGE' || step.status === 'ERROR') {
+      pendingApproval = null
+      lastConclusionAt = 0
+      const rawErr = cleanForChat(redactText(String(step.content || '').trim()), 400)
+      const errText = rawErr || '执行流异常中断'
+      if (trailingError && trailingError.text === errText) {
+        trailingError.count += 1
+        trailingError.time = stepTime || lastActivity
+      } else {
+        trailingError = {
+          text: errText,
+          count: 1,
+          time: stepTime || lastActivity,
+        }
+      }
     }
+  }
+
+  if (trailingError) {
+    const errBubbleText = trailingError.count > 1
+      ? `⚠️ 执行中断（连续发生 ${trailingError.count} 次）：${trailingError.text}`
+      : `⚠️ 执行中断：${trailingError.text}`
+    transcript.push({
+      index: transcript.length,
+      role: 'assistant',
+      text: errBubbleText,
+      isErrorNotice: true,
+      isToolStepOnly: false,
+      waitingForInput: false,
+      thinking: '',
+      tools: [],
+      toolCalls: [],
+      time: trailingError.time || lastActivity,
+    })
+    lastOutput = errBubbleText.slice(0, 400)
   }
 
   // Fallback: if LanguageServer live summary explicitly reports a waiting step (`CORTEX_STEP_STATUS_WAITING`)
@@ -998,6 +1036,8 @@ export function parseAntigravityTranscript(jsonlText, {
       && item.role === 'assistant'
       && !prev.waitingForInput
       && !item.waitingForInput
+      && !prev.isErrorNotice
+      && !item.isErrorNotice
     ) {
       if (!prev._thoughtList) {
         prev._thoughtList = prev.thinking ? [String(prev.thinking).trim()] : []
@@ -1092,7 +1132,7 @@ export function parseAntigravityTranscript(jsonlText, {
     && lastStep.status !== 'RUNNING'
     && lastStepTools.length === 0
     && Boolean(String(lastStep.content || '').trim())
-  const isErrorStep = lastStepType === 'ERROR_MESSAGE' || lastStep.status === 'ERROR'
+  const isErrorStep = lastStepType === 'ERROR_MESSAGE' || lastStep.status === 'ERROR' || Boolean(trailingError)
   const isMidTurn = hasActiveBackgroundTask || isLsRunning || (!isConcludedStep && !isErrorStep)
 
   const isRecentlyActive = isLsRunning

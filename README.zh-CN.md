@@ -201,9 +201,9 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.16</code> — 列表预览与最新一轮消息严格对齐、零延迟结论同步 &amp; 全平台原生置顶互通</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.17</code> — 显式展示断流中断提示、列表预览严格对齐 &amp; 全平台原生置顶互通</strong></summary>
 
-- **修复会话列表错显示多轮前旧回复的假象（`v0.8.16`）**：修复新提问到来时未重置 `lastOutput` 导致中途停留在工具步骤的会话仍在列表显示旧回复的问题；前端改为严格对齐最新一条对话消息，中途停在工具步骤时清晰展示 `🔧 停在步骤:` 而不再误导为已出新结论。
+- **显式展示断流中断提示与准确列表预览（`v0.8.16–v0.8.17`）**：修复新提问到来时未重置 `lastOutput` 导致旧回复串入列表预览的问题，同时自动提取并折叠展示 `ERROR_MESSAGE` 断流报错（`⚠️ 执行中断` + `⚠️ 中断待继续` 状态），并在聊天页停在工具步骤无最终总结时给出清晰提示条与续跑引导。
 
 - **消除「收到推送后列表仍显示运行中」的多重延迟瓶颈（`v0.8.15`）**：移除 `/api/events` SSE 流的 `gzip` 压缩（彻底消除 Cloudflare / 移动代理对微小增量帧的数秒缓冲，紧急结论事件 `<=30ms` 直推），打通 Service Worker `PUSH_RECEIVED` / `NOTIFICATION_CLICK` 与 `1.2s` 切回前台即刻强刷状态，并在任务落盘出结论瞬间立即清理 `inflightCommands`，同时将 Antigravity `RUNNING` RPC 缓存从 `2.5s` 压缩至 `350ms`。
 - **多端与各 Harness 会话置顶（Pin）双向实时互通 + 独立「📌 置顶对话」分组（`v0.8.13–v0.8.15`）**：升级为云端 Hub 持久化的 `sessionPinState`（`POST /api/sessions/pin` + SSE 增量广播），手机列表新增与桌面端一致的 **「📌 置顶对话」** 独立分组栏与 `📌 置顶` 胶囊角标，并全量打通电脑端原生置顶存储——涵盖 **Antigravity IDE**（`annotations/<convId>.pbtxt` + Connect-RPC `UpdateConversationAnnotations` 实时双向联动 + FSEvents 秒级监听）、**DSH 桌面版**（`workspace.json` `global.pinnedSessionIds`）、**Codex 桌面版**（`.codex-global-state.json` `pinned-thread-ids` 及 Electron Atom 状态）、**WorkBuddy**（`workbuddy.db` + `pinned-sessions.json`）与 **豆包电脑版**（LevelDB `pinned`）。

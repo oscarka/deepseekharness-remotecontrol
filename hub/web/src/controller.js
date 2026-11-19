@@ -2478,7 +2478,7 @@ export function initHubController() {
     const fcReviewed = Boolean(fcMeta.sig && filesCardReviewedSigBySession.get(s.id) === fcMeta.sig);
     const fcCollapsed = !filesExpandedSessionIds.has(s.id);
     const artCollapsed = !artifactsExpandedSessionIds.has(s.id);
-    const chatKey = `${s.id}:${s.status}:${s.sessionRev || ''}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${(s.changedFiles || []).length}:${fcMeta.sig}:${fcCollapsed ? 1 : 0}:${fcReviewed ? 1 : 0}:${artCollapsed ? 1 : 0}:${(s.artifacts || []).length}`;
+    const chatKey = `${s.id}:${s.status}:${s.isStalledMidTurn ? 1 : 0}:${s.sessionRev || ''}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${(s.changedFiles || []).length}:${fcMeta.sig}:${fcCollapsed ? 1 : 0}:${fcReviewed ? 1 : 0}:${artCollapsed ? 1 : 0}:${(s.artifacts || []).length}`;
     if (chatKey === lastRenderedChatKey) return;
     const box = document.getElementById('chatMessages');
     if (
@@ -2521,7 +2521,9 @@ export function initHubController() {
         prev &&
         prev.role === 'assistant' &&
         !prev.waitingForInput &&
-        !item.waitingForInput
+        !item.waitingForInput &&
+        !prev.isErrorNotice &&
+        !item.isErrorNotice
       ) {
         if (!prev._thoughtList) {
           prev._thoughtList = prev.thinking ? [String(prev.thinking).trim()] : [];
@@ -2934,7 +2936,10 @@ export function initHubController() {
     const nextFirstMsgSig = firstMsg ? `${firstMsg.role}:${String(firstMsg.text || '').slice(0, 36)}` : '';
     const prevFirstMsgSig = lastFirstMsgSigBySession.get(s.id) || '';
     lastFirstMsgSigBySession.set(s.id, nextFirstMsgSig);
-    box.innerHTML = loadEarlierHtml + bubblesHtml + sessionArtifactsHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
+    const stalledNoticeHtml = s.isStalledMidTurn && !s.approvalObj
+      ? `<div class="chat-stalled-notice">⚠️ 本轮执行停在工具步骤后未输出最终回复（可能是电脑端网络断流或任务中断）。可点击下方「▶ 继续执行下一步」让 AI 接着完成。</div>`
+      : '';
+    box.innerHTML = loadEarlierHtml + bubblesHtml + stalledNoticeHtml + sessionArtifactsHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
     void hydrateInlineChatImages(s, box);
     if (sessionSwitched || chatPinnedToBottom) {
       pinChatToBottomImmediate(box);

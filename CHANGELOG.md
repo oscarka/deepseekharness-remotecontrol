@@ -2,6 +2,14 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.17] - 2026-11-19
+
+### Fixed
+
+- **显式展示 Antigravity 流中断 / `ERROR_MESSAGE` 异常提示，彻底消除“停在工具步骤后面一片空白”的困惑（`dsh-feishu/lib/antigravity-ide.js` / `hub/web/src/controller.js` / `hub/web/src/styles/app.css`）**：
+  - `parseAntigravityTranscript` 新增对连续 `ERROR_MESSAGE`（如网络断流 `Error: The stream was interrupted...` 且尾部跟着空内容 `PLANNER_RESPONSE`）的折叠提取与展示：自动渲染独立 `⚠️ 执行中断（连续发生 N 次）` 气泡并将状态标为 `⚠️ 中断待继续`；
+  - 手机聊天页在遇到旧版远端宿主机停在工具步骤（`isStalledMidTurn`）时，直接在底部工具步骤下方展示醒目琥珀色提示条，明确告知本轮在工具步骤后中断未生成最终回复，可一键点下方「▶ 继续执行下一步」续跑。
+
 ## [0.8.16] - 2026-11-19
 
 ### Fixed

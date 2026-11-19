@@ -3408,6 +3408,7 @@ var EXACT_ZH_TO_EN = {
 	"📌 置顶": "📌 Pinned",
 	"已置顶": "Pinned",
 	"🔧 停在步骤: ": "🔧 Paused at: ",
+	"⚠️ 本轮执行停在工具步骤后未输出最终回复（可能是电脑端网络断流或任务中断）。可点击下方「▶ 继续执行下一步」让 AI 接着完成。": "⚠️ This turn paused after tool steps without a final reply (possibly due to a network interruption). Tap \"▶ Continue Next Step\" below to resume.",
 	"项目文件": "Files",
 	"设备与设置": "Settings",
 	"‹ 返回": "‹ Back",
@@ -9038,7 +9039,7 @@ function initHubController() {
 		const fcReviewed = Boolean(fcMeta.sig && filesCardReviewedSigBySession.get(s.id) === fcMeta.sig);
 		const fcCollapsed = !filesExpandedSessionIds.has(s.id);
 		const artCollapsed = !artifactsExpandedSessionIds.has(s.id);
-		const chatKey = `${s.id}:${s.status}:${s.sessionRev || ""}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${(s.changedFiles || []).length}:${fcMeta.sig}:${fcCollapsed ? 1 : 0}:${fcReviewed ? 1 : 0}:${artCollapsed ? 1 : 0}:${(s.artifacts || []).length}`;
+		const chatKey = `${s.id}:${s.status}:${s.isStalledMidTurn ? 1 : 0}:${s.sessionRev || ""}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${(s.changedFiles || []).length}:${fcMeta.sig}:${fcCollapsed ? 1 : 0}:${fcReviewed ? 1 : 0}:${artCollapsed ? 1 : 0}:${(s.artifacts || []).length}`;
 		if (chatKey === lastRenderedChatKey) return;
 		const box = document.getElementById("chatMessages");
 		if (lastRenderedChatKey && box && box.dataset.dshSession === String(activeSessionId) && chatTouchDownAt > 0 && Date.now() - chatTouchDownAt < 3500) {
@@ -9062,7 +9063,7 @@ function initHubController() {
 		for (const item of rawMsgs) {
 			if (!item) continue;
 			const prev = msgs[msgs.length - 1];
-			if (item.role === "assistant" && prev && prev.role === "assistant" && !prev.waitingForInput && !item.waitingForInput) {
+			if (item.role === "assistant" && prev && prev.role === "assistant" && !prev.waitingForInput && !item.waitingForInput && !prev.isErrorNotice && !item.isErrorNotice) {
 				if (!prev._thoughtList) {
 					prev._thoughtList = prev.thinking ? [String(prev.thinking).trim()] : [];
 					prev._textList = prev.text && !prev.isToolStepOnly ? [String(prev.text).trim()] : [];
@@ -9403,7 +9404,8 @@ function initHubController() {
 		const nextFirstMsgSig = firstMsg ? `${firstMsg.role}:${String(firstMsg.text || "").slice(0, 36)}` : "";
 		const prevFirstMsgSig = lastFirstMsgSigBySession.get(s.id) || "";
 		lastFirstMsgSigBySession.set(s.id, nextFirstMsgSig);
-		box.innerHTML = loadEarlierHtml + bubblesHtml + sessionArtifactsHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
+		const stalledNoticeHtml = s.isStalledMidTurn && !s.approvalObj ? `<div class="chat-stalled-notice">⚠️ 本轮执行停在工具步骤后未输出最终回复（可能是电脑端网络断流或任务中断）。可点击下方「▶ 继续执行下一步」让 AI 接着完成。</div>` : "";
+		box.innerHTML = loadEarlierHtml + bubblesHtml + stalledNoticeHtml + sessionArtifactsHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
 		hydrateInlineChatImages(s, box);
 		if (sessionSwitched || chatPinnedToBottom) pinChatToBottomImmediate(box);
 		else {

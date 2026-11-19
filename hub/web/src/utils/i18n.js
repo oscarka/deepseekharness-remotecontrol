@@ -33,6 +33,8 @@ const EXACT_ZH_TO_EN = {
   '📌 置顶': '📌 Pinned',
   '已置顶': 'Pinned',
   '🔧 停在步骤: ': '🔧 Paused at: ',
+  '⚠️ 本轮执行停在工具步骤后未输出最终回复（可能是电脑端网络断流或任务中断）。可点击下方「▶ 继续执行下一步」让 AI 接着完成。':
+    '⚠️ This turn paused after tool steps without a final reply (possibly due to a network interruption). Tap "▶ Continue Next Step" below to resume.',
   '项目文件': 'Files',
   '设备与设置': 'Settings',
   '‹ 返回': '‹ Back',
