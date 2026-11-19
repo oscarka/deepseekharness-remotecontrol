@@ -2684,97 +2684,74 @@ export async function executeAntigravityIdeAction(action, {
                   || liveQuestionReq?.questions
                   || []
                 const ansMap = action?.answers && typeof action.answers === 'object' ? action.answers : {}
-                const formattedReply = formatAntigravityQuestionReplyText(qList, ansMap)
+                const rawReply = formatAntigravityQuestionReplyText(qList, ansMap)
+                const formattedReply = rawReply
+                  ? `已确认你的问题选项，请按以下选择直接继续执行：\n${rawReply}`
+                  : ''
                 const rpcHeaders = {
                   'Content-Type': 'application/json',
                   'x-codeium-csrf-token': hub.csrfToken,
                 }
 
-                // 1) Try structured HandleCascadeUserInteraction if LanguageServer exposed a question interaction field
-                if (reqInt && !permReq && !runCmdReq && !filePermReq) {
-                  const qCaseKey =
-                    liveQuestionReq?.rawCase
-                    || Object.keys(reqInt).find(k => /question|choice/i.test(k))
-                    || 'askQuestion'
-                  const structuredAnswers = qList.map((q, idx) => {
-                    const qId = String(q?.id || `q_${idx + 1}`)
-                    const rawVal = ansMap[qId]
-                    const selectedOptions = Array.isArray(rawVal)
-                      ? rawVal.map(String).filter(Boolean)
-                      : rawVal
-                        ? [String(rawVal)]
-                        : []
-                    return {
-                      question: String(q?.question || ''),
-                      selectedOptions,
-                      answer: selectedOptions.join(', '),
-                    }
-                  })
-                  const qInteraction = {
-                    trajectoryId: trajectoryId || targetConvId,
-                    stepIndex,
-                    [qCaseKey]: allow
-                      ? { answers: structuredAnswers }
-                      : { cancelled: true, skipped: true },
-                  }
-                  const qRpcResp = await fetchImpl(
-                    `http://${hub.address}/exa.language_server_pb.LanguageServerService/HandleCascadeUserInteraction`,
-                    {
-                      method: 'POST',
-                      headers: rpcHeaders,
-                      body: JSON.stringify({
-                        cascadeId: targetConvId,
-                        interaction: qInteraction,
-                      }),
-                    },
-                  ).catch(() => null)
-                  if (qRpcResp?.ok) {
-                    cachedLiveSummariesAt = 0
-                    return {
-                      ok: true,
-                      engine: 'connect-rpc-question',
-                      message: allow
-                        ? '✅ [Antigravity RPC] 已提交你的选择'
-                        : 'ℹ️ [Antigravity RPC] 已跳过该问题弹窗',
-                    }
+                // 1) Cleanly cancel the waiting `ask_question` step via CancelCascadeInvocation instead of sending
+                // an undocumented HandleCascadeUserInteraction proto payload (which protobuf JSON silently drops
+                // as an empty/skipped popup, triggering a wasted "you skipped the popup" idle reply).
+                await fetchImpl(
+                  `http://${hub.address}/exa.language_server_pb.LanguageServerService/CancelCascadeInvocation`,
+                  {
+                    method: 'POST',
+                    headers: rpcHeaders,
+                    body: JSON.stringify({ cascadeId: targetConvId }),
+                  },
+                ).catch(() => null)
+
+                if (!allow) {
+                  cachedLiveSummariesAt = 0
+                  return {
+                    ok: true,
+                    engine: 'connect-rpc-question-skip',
+                    message: 'ℹ️ 已跳过问题确认弹窗',
                   }
                 }
 
-                // 2) Reliable fallback: deliver the user's exact selected options as a user message via SendUserCascadeMessage
-                if (allow && formattedReply) {
+                // 2) Immediately deliver the user's exact selected options as a live user turn via SendUserCascadeMessage
+                // so Antigravity transitions directly into RUNNING with the chosen options (with brief settle retries).
+                if (formattedReply) {
                   const { cascadeConfig, customAgentSpec } = await resolveCascadeConfigForHub(
                     hub,
                     targetConvId,
                     fetchImpl,
                     Object.keys(summaries),
                   )
-                  const msgResp = await fetchImpl(
-                    `http://${hub.address}/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage`,
-                    {
-                      method: 'POST',
-                      headers: rpcHeaders,
-                      body: JSON.stringify({
-                        cascadeId: targetConvId,
-                        items: [{ text: formattedReply }],
-                        cascadeConfig,
-                        customAgentSpec,
-                      }),
-                    },
-                  ).catch(() => null)
-                  if (msgResp?.ok) {
-                    cachedLiveSummariesAt = 0
-                    return {
-                      ok: true,
-                      engine: 'connect-rpc-question-message',
-                      message: '✅ 已将你的选择发送回 Antigravity 对话继续执行',
+                  const settleDelays = fetchImpl === globalThis.fetch ? [280, 450, 700] : [0, 0]
+                  for (let attempt = 0; attempt < settleDelays.length; attempt += 1) {
+                    if (settleDelays[attempt] > 0) {
+                      await new Promise(r => setTimeout(r, settleDelays[attempt]))
                     }
-                  }
-                }
-                if (!allow) {
-                  return {
-                    ok: true,
-                    engine: 'connect-rpc-question-skip',
-                    message: 'ℹ️ 已跳过问题确认',
+                    const msgResp = await fetchImpl(
+                      `http://${hub.address}/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage`,
+                      {
+                        method: 'POST',
+                        headers: rpcHeaders,
+                        body: JSON.stringify({
+                          cascadeId: targetConvId,
+                          items: [{ text: formattedReply }],
+                          cascadeConfig,
+                          customAgentSpec,
+                        }),
+                      },
+                    ).catch(() => null)
+                    if (msgResp?.ok) {
+                      const data = await msgResp.json().catch(() => ({}))
+                      if (!data?.error && !data?.code) {
+                        cachedLiveSummariesAt = 0
+                        return {
+                          ok: true,
+                          engine: 'connect-rpc-question-message',
+                          message: '✅ 已提交你的选项，Antigravity 正在按所选方案继续执行',
+                        }
+                      }
+                    }
                   }
                 }
                 return {

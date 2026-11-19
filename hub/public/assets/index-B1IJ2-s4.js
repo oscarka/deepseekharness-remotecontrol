@@ -11270,7 +11270,8 @@ function initHubController() {
 				agentId: targetSessionId || void 0,
 				allow: true,
 				optionIndex: 1,
-				answers
+				answers,
+				questions
 			});
 			if (!res || res.ok === false) {
 				if (code && window.__dshSettlingApprovals) delete window.__dshSettlingApprovals[code];
@@ -16273,7 +16274,8 @@ function initHubController() {
 		sendApprovalDecision: (hostId, code, allow, optionIndex, sessionId) => sendApprovalDecision(hostId, code, allow, optionIndex, sessionId),
 		submitQuestionDecision: async (session, code, partialAnswers = {}) => {
 			const finalAnswers = { ...partialAnswers };
-			(Array.isArray(session?.approvalObj?.questions) ? session.approvalObj.questions : []).forEach((q, idx) => {
+			const qList = Array.isArray(session?.approvalObj?.questions) ? session.approvalObj.questions : [];
+			qList.forEach((q, idx) => {
 				const qId = String(q.id || `q_${idx + 1}`);
 				if (finalAnswers[qId] === void 0) {
 					const firstLbl = Array.isArray(q.options) && q.options[0]?.label ? String(q.options[0].label) : "";
@@ -16295,7 +16297,8 @@ function initHubController() {
 					agentId: session.id,
 					allow: true,
 					optionIndex: 1,
-					answers: finalAnswers
+					answers: finalAnswers,
+					questions: qList
 				});
 				if (!res || res.ok === false) {
 					if (code && window.__dshSettlingApprovals) delete window.__dshSettlingApprovals[code];

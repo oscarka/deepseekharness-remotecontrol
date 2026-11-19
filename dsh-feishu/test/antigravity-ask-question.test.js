@@ -130,7 +130,7 @@ describe('Antigravity ask_question multiple-choice parsing & mobile answer submi
     assert.equal(out[0].options[1].label, 'GCE VM')
   })
 
-  it('submits structured ask_question answers via HandleCascadeUserInteraction or falls back to SendUserCascadeMessage (never permission)', async () => {
+  it('cancels waiting ask_question via CancelCascadeInvocation and delivers chosen options via SendUserCascadeMessage (never empty HandleCascadeUserInteraction)', async () => {
     const calls = []
     const mockExec = async () => ({
       stdout: '12345 /Applications/Antigravity.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm --csrf_token tok-q --extension_server_port 55111\n',
@@ -177,9 +177,8 @@ describe('Antigravity ask_question multiple-choice parsing & mobile answer submi
           }),
         }
       }
-      if (String(url).endsWith('/HandleCascadeUserInteraction')) {
-        // Simulate RPC rejecting custom askQuestion proto shape -> must fall back to SendUserCascadeMessage!
-        return { ok: false, status: 400, json: async () => ({ error: 'invalid field' }) }
+      if (String(url).endsWith('/CancelCascadeInvocation')) {
+        return { ok: true, json: async () => ({}) }
       }
       if (String(url).endsWith('/GetCascadeTrajectorySteps')) {
         return { ok: true, json: async () => ({ steps: [] }) }
@@ -208,11 +207,12 @@ describe('Antigravity ask_question multiple-choice parsing & mobile answer submi
 
     assert.equal(res.ok, true)
     assert.equal(res.engine, 'connect-rpc-question-message')
-    const msgCall = calls.find(c => c.url.endsWith('/SendUserCascadeMessage'))
-    assert.ok(msgCall, 'expected SendUserCascadeMessage fallback call')
-    assert.match(msgCall.body.items[0].text, /香港 asia-east2/)
-    // Verify we NEVER sent a bogus permission interaction
-    const permCalls = calls.filter(c => c.url.endsWith('/HandleCascadeUserInteraction') && c.body?.interaction?.permission)
-    assert.equal(permCalls.length, 0)
+    const cancelIdx = calls.findIndex(c => c.url.endsWith('/CancelCascadeInvocation'))
+    const msgIdx = calls.findIndex(c => c.url.endsWith('/SendUserCascadeMessage'))
+    assert.ok(cancelIdx >= 0, 'expected CancelCascadeInvocation to dismiss waiting popup cleanly')
+    assert.ok(msgIdx > cancelIdx, 'expected SendUserCascadeMessage right after cancel')
+    assert.match(calls[msgIdx].body.items[0].text, /香港 asia-east2/)
+    // Verify we NEVER call HandleCascadeUserInteraction with a guessed question proto field
+    assert.equal(calls.some(c => c.url.endsWith('/HandleCascadeUserInteraction')), false)
   })
 })

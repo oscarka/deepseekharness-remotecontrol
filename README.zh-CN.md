@@ -223,9 +223,9 @@ HUB_TOKEN="自定义一个安全密码" \
 > 💡 按**自然日**折叠汇总，每条内保留完整子版本号；逐版本详细变更请见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.9–v0.8.20</code> — Antigravity 多选题修复、Claude Code 原生手机审批、<code>npx</code> 终端出码 &amp; <code>?demo=1</code> 沙盒</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.9–v0.8.21</code> — Antigravity 多选题修复、Claude Code 原生手机审批、<code>npx</code> 终端出码 &amp; <code>?demo=1</code> 沙盒</strong></summary>
 
-- **修复 Antigravity `ask_question` 多选题在手机端误显示为「Yes, allow this time」的问题（`v0.8.20`）**：完整解析 `ask_question` 的单选/多选题目并支持从 `transcript_full.jsonl` 回补被截断的 `tool_calls`，将 `kind: 'question'` 与完整选项数组透传至手机审批卡与滑卡批阅，并把用户的勾选答案通过结构化 RPC / 格式化回复安全回传至 Antigravity IDE。
+- **修复 Antigravity `ask_question` 多选题渲染与提交续跑（`v0.8.20–v0.8.21`）**：完整解析 `ask_question` 的单选/多选题目并支持从 `transcript_full.jsonl` 回补被截断的 `tool_calls`，将 `kind: 'question'` 与完整选项数组透传至手机审批卡与滑卡批阅；提交时先通过 `CancelCascadeInvocation` 解除等待态，再通过 `SendUserCascadeMessage` 直接发送勾选结果，根治此前提交被误判为「跳过弹窗」并停跑的问题。
 - **Claude Code 原生手机审批与滑卡批阅全面打通（`v0.8.19`）**：新增官方 `PermissionRequest` Hook 桥接脚本（`claude-permission-hook.js` + `--install-claude-hook` / `npx` 启动自动装配）与 `<120ms` FSEvents 瞬时监听，支持手机端一键放行、`本对话始终允许`（`updatedPermissions`）、拒绝与 `AskUserQuestion` 多选题回传，自此五大主力引擎（Claude Code、Codex、Antigravity IDE、DSH、WorkBuddy）全部满血支持手机审批。
 - **一行 `npx` 终端出码 &amp; 零后端交互体验沙盒 `?demo=1`（`v0.8.18`）**：新增 `npx deepseekharness-remotecontrol`（`dsh-remote`）零配置命令行入口，3 秒拉起本地总控台 + 自动发现多引擎会话并在终端打印 ISO/IEC 18004 高对比度手机扫码二维码；上线纯浏览器内存隔离、零 API 请求零隐私泄露的 `?demo=1` 在线交互体验沙盒（双机 5 引擎、滑卡批阅、HTML 实时预览、自由发消息），全面焕新中英首屏定位与实机高清截图。
 - **断流显式提示与列表预览严格对齐（`v0.8.16–v0.8.17`）**：修复新提问到来时未重置 `lastOutput` 导致旧回复串入列表预览的问题，改为严格对齐最新一条消息；自动提取并折叠展示 Antigravity `ERROR_MESSAGE` 连续断流报错（`⚠️ 执行中断` + `⚠️ 中断待继续`），并在聊天页停在工具步骤无最终总结时直接显示琥珀色续跑提示条。

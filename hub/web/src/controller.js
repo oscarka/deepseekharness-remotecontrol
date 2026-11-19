@@ -4228,6 +4228,7 @@ export function initHubController() {
         allow: true,
         optionIndex: 1,
         answers,
+        questions,
       });
       if (!res || res.ok === false) {
         if (code && window.__dshSettlingApprovals) {
@@ -10048,6 +10049,7 @@ export function initHubController() {
           allow: true,
           optionIndex: 1,
           answers: finalAnswers,
+          questions: qList,
         });
         if (!res || res.ok === false) {
           if (code && window.__dshSettlingApprovals) delete window.__dshSettlingApprovals[code];

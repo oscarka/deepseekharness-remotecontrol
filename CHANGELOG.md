@@ -2,6 +2,14 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.21] - 2026-11-19
+
+### Fixed
+
+- **修复 Antigravity `ask_question` 手机提交选择后被误判为「跳过弹窗」并停止运行的问题（`dsh-feishu/lib/antigravity-ide.js` / `hub/web/src/controller.js`）**：
+  - 移除会因 Protobuf JSON 静默丢弃未知字段而被 Antigravity 当成“用户跳过弹窗”的 `HandleCascadeUserInteraction` 猜测提交；
+  - 改为先通过 `CancelCascadeInvocation` 无痛解除等待态（不再产生“看到您刚才跳过了弹窗”废话回复），随即通过 `SendUserCascadeMessage`（含短退避重试）将手机勾选的完整选项直接发送回原对话，确保 Antigravity 立即切入 `RUNNING` 继续干活；前端 `submitDshQuestionAnswers` 同步透传 `questions` 题干。
+
 ## [0.8.20] - 2026-11-19
 
 ### Fixed
