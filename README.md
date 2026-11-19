@@ -200,216 +200,81 @@ The background daemon automatically discovers local sessions across all 6 suppor
 <a id="whats-new"></a>
 ## 📅 What's New (Recent Releases)
 
+> 💡 Grouped **one drawer per day** with every exact version tag preserved inside; see [`CHANGELOG.md`](CHANGELOG.md) for granular per-release notes.
+
 <details>
-<summary><strong><code>2026-11-19 · v0.8.17</code> — Explicit Stream-Interruption Notices, Accurate Previews &amp; Multi-Harness Pin Sync</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.9–v0.8.17</code> — Native Multi-Harness Pin Sync, Zero-Lag Conclusion Sync, Interruption Notices, User Image Thumbnails &amp; Card Overhaul</strong></summary>
 
-- **Explicit Interruption &amp; Stalled-Turn Notices (`v0.8.16–v0.8.17`)**: Fixed stale `lastOutput` leaking replies from earlier turns into list previews, surfaced collapsed `ERROR_MESSAGE` stream interruptions (`⚠️ Interrupted (×N)`) as standalone chat notices with `⚠️ Interrupted` status, and rendered a clear inline banner when a turn pauses after tool steps without a final reply.
-
-- **Zero-Lag Conclusion State Sync (`v0.8.15`)**: Eliminated the multi-second gap where Web Push arrived before the mobile session list flipped from `Running` to `Concluded` — removed CDN-buffered `gzip` encoding on `/api/events` SSE (`80ms` default / `30ms` urgent conclusion flush), wired Service Worker `PUSH_RECEIVED` + `NOTIFICATION_CLICK` + `1.2s` foreground resume to force immediate `/api/state` refresh, pruned `inflightCommands` the instant a turn concludes, and lowered Antigravity `RUNNING` RPC cache TTL from `2.5s` to `350ms`.
-- **Bidirectional Session Pinning Across Phone, Web &amp; Native Desktop Harnesses (`v0.8.13–v0.8.15`)**: Replaced isolated browser-only `localStorage` pins with Hub-persisted `sessionPinState` (`POST /api/sessions/pin` + instant SSE delta broadcast), dedicated **`📌 Pinned Conversations`** section headers on mobile, and 2-way native desktop harness sync — including **Antigravity IDE** (`annotations/<convId>.pbtxt` + live Connect-RPC `UpdateConversationAnnotations` + FSEvents instant watch), **DSH Desktop** (`workspace.json` `global.pinnedSessionIds`), **OpenAI Codex Desktop** (`.codex-global-state.json` `pinned-thread-ids` + Electron atom state), **WorkBuddy** (`workbuddy.db` + `pinned-sessions.json`), and **Doubao Desktop** LevelDB `pinned`.
-- **Deterministic Zero-Flake GitHub Actions CI (`v0.8.13`)**: Fixed intermittent `SQLITE_BUSY (5)` (`database is locked`) races on 2-vCPU Ubuntu runners by enforcing `-cmd ".timeout 5000"` + WAL mode across all `sqlite3` invocations, capping runner test concurrency (`--test-concurrency=4`), opting into Node 24 Actions runtime, and adding a permanent workspace CI gate rule (`.agent/rules/ci-zero-failure-gate.md`).
+- **Explicit Interruption Notices &amp; Latest-Turn Previews (`v0.8.16–v0.8.17`)**: Reset `lastOutput` on each new `USER_INPUT` and aligned list previews strictly to the newest transcript message so stalled turns never leak older replies; collapsed repeated Antigravity `ERROR_MESSAGE` stream drops (`⚠️ Interrupted (×N)`) into standalone notices with `⚠️ Interrupted` status and added an inline resume banner when a turn pauses after tool steps.
+- **Zero-Lag Conclusion State Sync (`v0.8.15`)**: Removed CDN-buffered `gzip` encoding on `/api/events` SSE (`80ms` default / `30ms` urgent conclusion flush), wired Service Worker `PUSH_RECEIVED` + `NOTIFICATION_CLICK` + `1.2s` foreground resume to force immediate `/api/state` refresh, pruned `inflightCommands` immediately on conclusion, and cut Antigravity `RUNNING` RPC cache TTL from `2.5s` to `350ms`.
+- **Bidirectional Multi-Harness Session Pinning &amp; Zero-Flake CI (`v0.8.13–v0.8.14`)**: Added Hub-persisted `sessionPinState` (`POST /api/sessions/pin` + SSE), mobile **`📌 Pinned Conversations`** section headers, and 2-way native sync across **Antigravity IDE** (`annotations/<convId>.pbtxt` + Connect-RPC `UpdateConversationAnnotations` + FSEvents watch), **DSH Desktop** (`workspace.json`), **Codex Desktop** (`.codex-global-state.json` incl. Electron atom state), **WorkBuddy** (`workbuddy.db` + `pinned-sessions.json`), and **Doubao** (LevelDB `pinned`); enforced `sqlite3` `.timeout 5000` + WAL and `--test-concurrency=4` to eliminate CI `SQLITE_BUSY` flakes.
+- **Clickable User-Bubble Image Thumbnails &amp; Sticky-Bottom Scroll Lock (`v0.8.12`)**: Replaced raw upload path text inside user bubbles with clickable fixed-aspect image thumbnails (`.dsh-uploads` / `.user_uploaded` fallback, zoom &amp; save); upgraded chat scrolling to a gesture-driven `chatPinnedToBottom` state machine + capture-phase `<img>` `load` &amp; `ResizeObserver` anchoring to prevent sudden upward jumps.
+- **Theme-Aware Artifact/Diff Cards &amp; Drag-Up Expandable Preview Drawer (`v0.8.9–v0.8.11`)**: Replaced hardcoded dark monospace cards with adaptive light/dark default-collapsed single-line bars, added Artifact `Expand ⌄ / Collapse ⌃`, Files-Changed collapse/View-Diff drawer &amp; auto-hiding **Mark Reviewed**, and upgraded `#inChatFileSheet` with native two-detent drag-up expansion (`80dvh` ↔ `97dvh`).
 
 </details>
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.12</code> — Clickable User-Bubble Image Thumbnails &amp; Zero-Jump Sticky-Bottom Scroll Lock</strong></summary>
+<summary><strong><code>2026-11-18 · v0.7.8–v0.8.8</code> — Swipe Triage Deck, HLS + WebRTC P2P Video, PWA Gestures / Outbox WAL &amp; Instant Launch</strong></summary>
 
-- **Inline User-Bubble Image Thumbnails &amp; Fullscreen Tap Preview (`v0.8.12`)**: Replaced raw `[手机端上传图片附件...]` file-path boilerplate inside user chat bubbles with fixed-aspect clickable image thumbnails (for both instant optimistic sends and historical `.dsh-uploads` / `.user_uploaded` dual-fallback paths) that open directly in the zoomable/saveable preview drawer (`controller.js` / `app.css` / `workspace-ops.js`).
-- **Sticky-Bottom Scroll Lock Against Async Image/Transcript Jumps (`v0.8.12`)**: Eliminated sudden upward scroll jumps into old messages by replacing static `scrollHeight - scrollTop` heuristics with a gesture-driven `chatPinnedToBottom` state machine plus capture-phase `<img>` `load` and `ResizeObserver` bottom anchoring (`controller.js`).
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-19 · v0.8.11</code> — Default-Collapsed Artifact &amp; Diff Cards, Artifact Expand Toggle &amp; Auto-Hiding Confirm Button</strong></summary>
-
-- **Default-Collapsed Cards &amp; Clean Dismiss (`v0.8.11`)**: Both `AI Artifacts / Walkthrough (N)` and `N Files With Changes` now default to compact single-line summary bars when opening any session so large artifact lists never hijack the chat viewport; added a dedicated `Expand ⌄` / `Collapse ⌃` toggle button to the Artifacts card header, and made **Mark Reviewed** (`确认已阅`) cleanly disappear once clicked instead of lingering as a green status button (`controller.js` / `app.css`).
+- **Zero-Loss Outbox WAL, Zero-Jump Session Open &amp; PWA Gestures (`v0.8.4–v0.8.8`)**: Added `dsh_inflight_outbox_v1` write-ahead outbox with `45s` upload timeout and strict anti-mid-upload reload guards; upgraded `lite=1` bootstrap to silent full 48k-char background hydration + `flex-shrink: 0` uncrushed cards; shipped full-width bidirectional iOS PWA swipe-back (touch-safe during SSE streams) and heavy-damped 2-stage pull-to-refresh (`32px` deadzone, `155px` sync, `285px` cache-clearing reload).
+- **Standard HLS Streaming, Zero-Dep WebRTC P2P &amp; Cloud Run Small-Chunk Pipeline (`v0.7.8`, `v0.8.2–v0.8.3`)**: Upgraded video playback to RFC 8216 HLS (`index.m3u8` + `4s .ts` / `30fps` + lazy `hls.js` + automatic `~/.dsh/cache/hls` GC), paired with pure-Node.js WebRTC `RTCDataChannel` P2P direct streaming, `1 MiB / 2 MiB` `720p` fast-preview slices, and `fs_abort` cancellation; added remote `📂 Browse Folder` &amp; `＋ New Workspace` creation plus SW dynamic build rollover.
+- **Swipe Triage Deck, `<100ms` Post-Upgrade Launch &amp; Native iOS PNG Icons (`v0.8.0–v0.8.1`)**: Added gesture-driven card-stack triage for approvals, questions &amp; unread conclusions (full zh/en); introduced SW Stale-While-Revalidate App-Shell cache, parallel `<head>` `?lite=1` preload (~75% smaller), in-memory Brotli/Gzip, CDN edge self-warming, zero-white-screen deferred upgrades, and full-bleed raster PNG Home Screen icons.
+- **Uninterrupted Code-Reply Voice Playback (`v0.7.9`)**: Added anti-GC utterance pinning, CommonMark §4.5 code-fence parsing, and `WakeLock` with **`📖 Full`** default mode for uninterrupted long-reply listening.
 
 </details>
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.10</code> — Interactive Changed-Files Card Collapse, Mark-Reviewed State &amp; Dedicated Diff Drawer</strong></summary>
+<summary><strong><code>2026-11-17 · v0.7.5–v0.7.7</code> — Voice Accuracy Overhaul, High-Signal Push De-Noising, Long-Press Image Save &amp; Draft Isolation</strong></summary>
 
-- **Interactive Changed-Files Card Controls (`v0.8.10`)**: Turned the dead `N Files With Changes ⌃` label into a persistent collapse/expand toggle (`⌃` ↔ `⌄`), replaced the placeholder `Accept all` stub with a stateful **Mark Reviewed** (`✓ Reviewed`) button that acknowledges & collapses the current edit batch until new changes arrive, upgraded **View Diff** to open a dedicated session changed-files drawer immediately, and cleared stale drawer previews when opening the project file browser (`controller.js` / `app.css`).
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-19 · v0.8.9</code> — Theme-Aware Artifact/Diff Cards &amp; Drag-Up Expandable File Preview Drawer</strong></summary>
-
-- **Theme-Aware Artifact &amp; Changed-Files Cards (`v0.8.9`)**: Replaced hardcoded dark `#18181b` card backgrounds and full-row monospace styling in `.agy-session-artifacts-card` and `.agy-files-changed-card` (`app.css` / `controller.js`) with adaptive light/dark theme variables and native sans-serif typography (reserving tabular monospace strictly for `+add -del` diff counts), while fixing flex ellipsis so long filenames never clip the right-aligned `Live Preview ›` / `Open ›` tags.
-- **Drag-Up Expandable File Preview Drawer (`v0.8.9`)**: Upgraded `#inChatFileSheet` (`Sheets.tsx` / `controller.js` / `app.css`) with native iOS-style two-detent dragging (`80dvh` ↔ `97dvh - safe-top`): drag the top handle/header **up** (or tap the handle / `⤢` button) to expand nearly full-screen with taller image, video, HTML, and code viewports, and drag down moderately to collapse or pull further to dismiss.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-18 · v0.8.8</code> — Zero-Loss Image/Prompt Outbox WAL &amp; Anti-Mid-Upload Reload Guard</strong></summary>
-
-- **Zero-Loss Outbox WAL &amp; Anti-Interruption Reload Guard (`v0.8.8`)**: Removed unconditional `client.navigate()` from `/sw.js` (`hub/server.js`) and hardened `hasActiveUserInputInProgress` (`controller.js`) so background bundle updates never reload an open chat session, active iOS Photo Picker, attached screenshots, or in-flight upload; added a write-ahead outbox (`dsh_inflight_outbox_v1`), raised multi-image upload timeout from `15s` to `45s`, and automatically restores both text and screenshots if a page reload or crash interrupts an upload before server acknowledgment.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-18 · v0.8.7</code> — Zero-Jump Session Open (Instant Full Reply &amp; Uncrushed Artifact/Diff Cards)</strong></summary>
-
-- **Zero-Jump Session Open &amp; Flexbox Card Fix (`v0.8.7`)**: Eliminated the 1-second 280-char stub -> full-reply jump when opening sessions (`controller.js` / `hub-core.js`) by silently upgrading from initial `lite=1` list bootstrap to full 48,000-char hot-session state + non-lite SSE deltas right after first paint, keeping 14-message hot sessions `wireTruncated: false`, and caching full recent replies in `localStorage`; added `.chat-messages > * { flex-shrink: 0 }` in `app.css` so long replies never squash bottom `.agy-session-artifacts-card` and `.agy-files-changed-card` blocks into flat 0px lines.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-18 · v0.8.6</code> — Heavy-Damped Pull-to-Refresh Thresholds &amp; Anti-Misfire Deadzone</strong></summary>
-
-- **Heavy-Damped Pull-to-Refresh &amp; Deep-Pull Progress Meter (`v0.8.6`)**: Added a `32px` initial deadzone and raised pull thresholds by >2.2× (`STAGE1_DY = 155px` for silent state sync without flashing reconnect banners; `STAGE2_DY = 285px` with live `1%–99%` pull progress for full cache-clearing app reload) in `controller.js`, eliminating accidental refreshes during casual scrolling at the top of the session list.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-18 · v0.8.5</code> — Full-Screen Bidirectional Swipe-Back &amp; Touch-Safe Live Stream Guard for iOS Home Screen PWAs</strong></summary>
-
-- **Full-Width Bidirectional Chat Swipe-Back (`v0.8.5`)**: Overhauled `setupChatSwipeBack` (`controller.js` / `app.css`) for iOS Home Screen standalone PWAs where Safari's native edge-back is disabled — removed X-zone dead strips so **both left-swipes (`dx < 0`) and right-swipes (`dx > 0`)** follow the finger smoothly from anywhere in the session view, added `overflow-x: hidden` on `.chat-messages` so wide transcripts never false-positive as horizontal scrollers, added natural thumb-arc tolerance + 400ms long-press text-selection protection, and deferred `#chatMessages` DOM swaps while a touch is active so live SSE deltas never detach `event.target` mid-gesture.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-18 · v0.8.4</code> — Two-Stage Pull-to-Refresh &amp; Deep-Pull Force App Update for Home Screen PWAs</strong></summary>
-
-- **Two-Stage Elastic Pull-to-Refresh &amp; Force-Update Gesture (`v0.8.4`)**: Added native-feel 2-stage pull-down physics to `#mainViewport` (`App.tsx` / `app.css` / `controller.js`) tailored for iOS Home Screen standalone PWAs that lack a browser URL bar: **light pull (`>= 58px`)** syncs live sessions &amp; SSE state, while **deep pull (`>= 128px`)** triggers haptic feedback, purges local `CacheStorage` (preserving Web Push subscriptions), updates the Service Worker, and reloads the latest frontend bundle immediately; also added a 1-tap `🔄 Force Update App` button in Settings and `WindowClient.navigate` auto-rescue in `/sw.js` (`server.js`).
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-18 · v0.8.3</code> — SW Auto-Upgrade Fix, 4s/30fps Cross-Ocean HLS, Remote Folder Browser &amp; New Workspace Creator, Bilingual Triage Deck &amp; iOS Chat Paint/Swipe Fixes</strong></summary>
-
-- **Service Worker Instant Rollover &amp; Cross-Ocean 4s/30fps HLS Tuning (`v0.8.3`)**: Embedded dynamic `dsh-app-shell-v1-<uiBuild>` versioning in `/sw.js` (`hub/server.js`) and fixed `initialUiBuild` DOM bundle hash detection (`controller.js`) so mobile Safari / Home Screen PWAs never remain pinned on stale pre-upgrade bundles; tuned `hls-streamer.js` to `4s` segments with `-fpsmax 30` (`~400 KB` per 4s segment, 3× cross-ocean playback buffer headroom on 60fps high-bitrate renders).
-- **Remote Directory Browser, New Workspace Creator, Full English Triage Deck &amp; iOS Chat Polish (`v0.8.3`)**: Added `📂 Browse Folder` and `＋ New Workspace` tabs to the New Task modal (`Sheets.tsx` / `controller.js` / `hub-agent.js` with `~` expansion and automatic `mkdir -p`), shipped full English localization across the Swipe Triage Deck (`triage-deck.js`), restored reliable in-session back-swipe gestures across both left/center rightward drag and right-edge inward swipe, and eliminated iOS WebKit offscreen blank-scroll-tile rendering on session open (`app.css` / `controller.js`).
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-18 · v0.8.2</code> — Industry-Standard HLS Segmented Video Streaming (<code>m3u8</code> + <code>2s .ts</code> + Cross-Platform <code>hls.js</code> &amp; Auto Cache GC)</strong></summary>
-
-- **Standard HLS Video Streaming Engine &amp; Automatic Cache Garbage Collection (`v0.8.2`)**: Replaced single-file whole-MP4 preview re-encoding with an industry-standard **RFC 8216 HLS (`index.m3u8` + atomic `2s .ts` segments)** pipeline (`dsh-feishu/lib/hls-streamer.js` / `hub/server.js` / `hub/web/src/utils/hlsPlayer.js`): parses exact ISO BMFF `mvhd` duration in `< 1ms` to serve a complete `#EXT-X-ENDLIST` VOD timeline upfront, streams `-c:v copy` losslessly on lightweight compatible H.264 files or progressive `720p` segments (`~300 KB` per 2s, first segment ready in `< 300ms` with on-demand `-ss` seek-anywhere restarting and `25s` idle encoder auto-stop) on multi-hundred-MB high-bitrate renders; plays natively in iOS/macOS Safari with lazy on-demand `hls.js` MSE support for Windows/Linux/Android/Chrome/Feishu WebViews and automatic `/fs/stream` fallback for older hosts; adds `X-Accel-Buffering: no` across Host SSE &amp; media routes plus automatic `~/.dsh/cache/hls` cleanup (`2h` idle TTL, `512 MiB` / `24`-folder cap, and `10m` background sweeps).
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-18 · v0.8.1</code> — Zero-Wait Post-Upgrade Cold/Warm Open (Service Worker App-Shell, Parallel HTTP/2 State Preload &amp; Edge Self-Warm)</strong></summary>
-
-- **Zero-Wait Post-Upgrade Launch (`v0.8.1`)**: Eliminated the 3-stage trans-ocean waterfall (`GET /` → cold `cf-cache: MISS` bundle → sequential `GET /api/state?lite=1`) that slowed down the first open after every upgrade (`server.js` / `hub-core.js` / `index.html` / `controller.js`): upgraded `/sw.js` with an atomic **Stale-While-Revalidate App-Shell Cache (`dsh-app-shell-v1`)** registered automatically after boot so repeat opens render in `< 100ms` from local device storage while pre-caching new hashed bundles silently in the background; added inline `<head>` HTTP/2 parallel `/api/state?lite=1` preloading (`window.__dshPreloadState`) concurrently with JS/CSS download; trimmed `/api/state?lite=1` wire weight by another ~65% (omitting unused file-preview/listing blobs and verbose idle metadata); and added in-memory Brotli-6/Gzip-9 static pre-compression plus automatic `PUBLIC_URL` CDN edge self-warming `800ms` after server startup.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-18 · v0.8.0</code> — Swipe-Review Triage Deck, Mobile Lite-State Instant Load, Anti-White-Screen Guard &amp; Native iOS Home Screen Icons</strong></summary>
-
-- **Swipe-Review Triage Deck (`滑卡批阅模式`, `v0.8.0`)**: Added a gesture-driven card stack (`TriageDeck.tsx` / `triage-deck.js` / `triage-deck.css`) launched from the 4-dot grid button in the filter strip to rapidly review pending approvals, interactive multiple-choice questions, unread conclusions, and interrupted tasks — swipe right to approve/mark read, swipe left to skip, tap `↩ Undo` to revert, or inspect full context in-place.
-- **Mobile Lite-State Wire Protocol (`?lite=1`), Fast Auth Verification &amp; SSE Delta Alignment (`v0.8.0`)**: Cut initial mobile `/api/state?lite=1` and `/api/events?lite=1` payloads by ~75% (`hub-core.js` / `server.js` / `controller.js`) while hydrating full cold and active session transcripts seamlessly on demand; added lightweight `POST /api/auth/verify` + token-generation race guards to eliminate slow-network false "wrong password" alerts and pre-login `401` polling storms; aligned `stateSeq` across `lite=1` SSE streams to prevent reconnect/re-fetch loops; capped local snapshot cache staleness (`1h`) and added instant iOS foreground wake-up (`visibilitychange` / `pageshow`) re-sync.
-- **Zero-White-Screen Hot-Deploy Resilience &amp; Native iOS Home Screen PNG Icons (`v0.8.0`)**: Replaced abrupt mid-session `window.location.reload()` on `uiBuild` rollover with deferred background-only upgrades (`controller.js`), added zero-downtime stale `/assets/index-*.js|.css` `no-store` fallback + `HEAD` method support (`server.js`), added `vite:preloadError` / asset-failure self-healing and initial sync skeleton states (`index.html`), and shipped full-bleed raster PNG icons (`180×180` `/apple-touch-icon.png`, `192×192`, `512×512`, `favicon.ico`) fixing the iOS Safari Home Screen gray `"D"` monogram fallback.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-18 · v0.7.9</code> — Uninterrupted Speech Playback on Code Replies (<code>🔊 Listen</code> Anti-GC &amp; CommonMark Fence Fix)</strong></summary>
-
-- **Uninterrupted End-to-End Voice Playback on Code-Heavy Replies (`v0.7.9`)**: Eliminated 4 root causes where `🔊 Listen` stopped mid-reply on AI coding explanations (`speech.js` / `controller.js`): pinned active `SpeechSynthesisUtterance` instances in `window.__dshPinnedUtterances` with sequential 1-by-1 sentence chaining, a `900ms` wedged-pause/dropped-`onend` watchdog, and mid-chunk error skip recovery so JS garbage collection and iOS `AVSpeechSynthesizer` bilingual switches never cut playback off mid-sentence; upgraded Markdown code-fence parsing to CommonMark §4.5 (`fenceLen` + info-string backtick check) so nested ```` ```` ```` blocks, template literals, and inline ```` ```html``` ```` spans never swallow trailing prose (summarizing multi-line blocks cleanly with line count &amp; language); stripped raw `<tag>` / `{}` / `|` SSML-breaking brackets and fixed `obj.prop` (`video.src`) file misclassification while capping Chromium chunks at `<= 11s` to avoid the 15s neural TTS cutoff; switched default mode to **`📖 Full`** (`dsh_tts_mode_v2`) and held `navigator.wakeLock` while speaking.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-18 · v0.7.8</code> — Zero-Dependency WebRTC P2P Video Acceleration &amp; Small-Chunk Cloud Run Pipeline</strong></summary>
-
-- **Zero-Dependency WebRTC `RTCDataChannel` P2P Media Acceleration (`v0.7.8`)**: Added a pure-Node.js WebRTC `RTCDataChannel` engine (`dsh-feishu/lib/webrtc-p2p.js`: ICE LAN/Tailscale + STUN `srflx` UDP hole-punching, DTLS 1.2 `ECDHE-ECDSA-AES128-GCM-SHA256` with RFC 7627 `extended_master_secret`, and SCTP CRC-32c + sliding-window `SACK` retransmission — zero npm dependencies) paired with a browser `RTCPeerConnection` pool (`webrtcMedia.js`) signaled over `POST /api/hosts/:hostId/fs/rtc-offer`. Mobile `<video>` previews (`⚡ P2P Direct · Zero-Buffer`) and lossless **`⬇️ Save / Share Video`** downloads bypass cross-ocean Cloud Run relays whenever direct LAN/Tailscale/NAT UDP connectivity succeeds, falling back automatically within `1.5s` when UDP is blocked.
-- **Small-Chunk `HTTP 206` Pipeline, 720p Fast-Preview &amp; `fs_abort` Zombie Cleanup (`v0.7.8`)**: Eliminated Cloud Run `60s -> HTTP 504` gateway timeouts caused by GFE HTTP/1.1 request-body buffering on `16 MiB` `/api/fs-tunnel` slices (`workspace-ops.js` / `hub-core.js` / `hub-agent.js` / `controller.js`): capped video Range slices to **`1 MiB` initial (`start === 0`)** + **`2 MiB` subsequent**, defaulted `> 4 MiB` mobile video playback to a **`720p` hardware-accelerated fast-preview stream (`?preview=1`)** with a 1-tap **`🎞️ Try Raw Stream`** toggle while keeping **`⬇️ Save / Share Video`** 100% lossless (`2 MiB × 3` concurrent Range workers + 3 retries + `navigator.wakeLock`), propagated client disconnects via `event: fs_abort` to abort dead Mac uploads immediately, stopped misdiagnosing `504` timeouts as codec errors, and unlocked read-only `/tmp` media previews.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-17 · v0.7.7</code> — Eliminate Ghost Sent Drafts in Mobile Input Box</strong></summary>
-
-- **Self-Healing Sent Draft Reconciliation & iOS IME / 5G Drop Protection (`v0.7.7`)**: Fixed already-sent messages occasionally reappearing in `#globalPromptInput` when reopening a conversation (`controller.js` / `ChatStage.tsx`): added mobile touch `blur()` + `onMouseDown` focus guard + `lastSentComposerGuard` to block delayed iOS keyboard dictation / Pinyin IME ghost `input` commits after tapping **Send**; verified server delivery (`hasCommandOrPromptDelivered`) before restoring text on mobile 5G / lock-screen `Load failed` socket drops; and added wire-baseline `reconcileDeliveredComposerDraft` so both newly delivered prompts and legacy pre-`v0.7.7` stale `localStorage` drafts are purged automatically while preserving genuine repeat unsent drafts.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-17 · v0.7.6</code> — Clean Artifact Chips, Mobile Image Long-Press Save &amp; Per-Session Image Drafts</strong></summary>
-
-- **Clean Artifact Chips & Legacy Duplicate Block Stripping (`v0.7.6`)**: Fixed custom `.md` deliverable rendering in Antigravity IDE transcripts (`dsh-feishu/lib/antigravity-ide.js` / `hub/web/src/utils/markdown.ts` / `app.css`) so custom report filenames no longer duplicate as `stem: stem.md` or inject orphan `📋` + duplicate blockquote summaries mid-turn before the assistant's own `[report.md](file://...)` link; added automatic frontend cleanup (`stripRedundantInjectedArtifactBlocks`) for payloads from older remote host daemons and fixed `.md-file-chip` CSS flex truncation so long filenames render clean `…` ellipses instead of clipping mid-character.
-- **Mobile Image Long-Press Save & Non-Selectable Sheet Toolbars (`v0.7.6`)**: Fixed long-press saving on preview and inline chat images (`controller.js` / `app.css`): excluded `img` and `.file-preview-body` from bottom-sheet swipe-dismiss with a `14px` drag deadzone so natural thumb jitter never cancels long-press; added `450ms` touch-hold pre-fetch + `touchend` native `navigator.share({ files })` Share/Save Sheet support for iOS Home Screen Standalone PWAs alongside a 1-tap **`⬇️ Save Image`** pill button; and applied `user-select: none` across `.breadcrumbs-bar` and `.icon-pill-btn` so holding an image never highlights **`📎 Quote`** by mistake.
-- **Per-Session Unsent Image Attachment Isolation (`v0.7.6`)**: Scoped unsent chat image attachments per session (`chatAttachmentsBySession` + `sessionStorage` draft persistence in `controller.js`), matching per-session text drafts so uploading an image in Session A never leaks into Session B and stays intact alongside the unsent text draft when switching back to Session A.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-17 · v0.7.5</code> — Native Voice Recognition Accuracy Overhaul &amp; High-Signal Push De-Noising (iPhone &amp; Feishu)</strong></summary>
-
-- **Native Mobile Speech Recognition Accuracy & Finalization Overhaul (`v0.7.5`)**: Eliminated 4 accuracy bottlenecks in mobile `SpeechRecognition` / `webkitSpeechRecognition` (`useVoiceInput.ts` / `controller.js`) with zero external API keys and zero model downloads: removed the premature `380ms` post-release `abort()` cutoff so iOS Safari / Android Chrome can complete full-sentence neural LM homophone rescoring (`isFinal: true`, settling immediately via a `60ms` post-`isFinal` timer or `onend` with a `1200ms` hang guard); added LCS/substring alignment in `mergeSpeechResults` + `maxAlternatives = 3` confidence selection so retroactive prefix homophone corrections replace prior drafts without duplicating clauses; shortened mid-speech breathing-pause auto-restart from `150–180ms` to `25ms` to prevent clipped leading syllables; and added `flushVoiceInputBeforeSend` + back-to-back hold protection so tapping **Send** during active dictation flushes tail audio and final punctuation cleanly.
-- **High-Signal Push Notification De-Noising Across iPhone Web Push & Feishu Cards (`v0.7.5`)**: Added a shared zero-LLM algorithmic push formatter (`hub/push-formatter.js`, integrated into `hub-core.js` and `dsh-feishu/lib/bridge.js`) that omits redundant machine names on single-host setups (using compact disambiguated labels like `办公·MBP · ` on multi-host setups), strips Markdown syntax, fenced code blocks, `file://` absolute URLs, env-var prefixes, internal tool names (`run_command (BypassSandbox)`), and polite opening filler while preserving trailing follow-up questions; suppresses background subagent completions and `1.5s` transient `jsonl-tail` auto-approved flashes; groups notifications per session (`session-<id>`) while fixing `running → approval → idle` completion push transitions; and surfaces a visible 3-line core conclusion right above collapsible `> 450`-char full replies on Feishu cards.
+- **Self-Healing Sent Draft Cleanup (`v0.7.7`)**: Added `lastSentComposerGuard` and `reconcileDeliveredComposerDraft` to prevent iOS IME ghost commits and 5G `Load failed` drops from restoring already-sent text into the input box.
+- **Clean Artifact Chips, Long-Press Image Save &amp; Per-Session Image Drafts (`v0.7.6`)**: Deduplicated custom Antigravity `.md` deliverable blocks and fixed flex ellipsis; enabled `450ms` long-press native Save/Share in iOS Standalone PWAs without highlighting `📎 Quote`; scoped unsent image attachments strictly per `sessionId`.
+- **Native Voice Accuracy &amp; iPhone / Feishu Push De-Noising (`v0.7.5`)**: Waited for neural `isFinal` homophone rescoring instead of cutting off at `380ms`, added LCS de-duplication &amp; `25ms` pause restart; introduced shared zero-LLM `push-formatter.js` stripping Markdown/paths/filler, suppressing subagents, and debouncing `1.5s` transient approvals.
 
 </details>
 
 <details>
 <summary><strong><code>2026-11-16 · v0.7.4</code> — 1-Tap Reply Voice Playback (<code>🔊 Listen</code>), Cloud Run Stream Hardening &amp; Multi-Hub Sync</strong></summary>
 
-- **Zero-Config Algorithmic Reply Voice Playback (`v0.7.4`)**: Added a 1-tap **`🔊 Listen`** pill right beside **`📋 Copy Reply`** on every assistant message. Powered by a `< 5ms` zero-LLM, zero-dictionary pure-algorithmic Markdown-to-speech pipeline (`speech.js`) that strips code blocks, tables, file paths, commit hashes, and env vars while normalizing metrics, rates, and versions; includes **`⚡ Summary`** (TextRank extractive briefing) vs **`📖 Full`** denoised toggle, continuous single-voice bilingual reading, automatic mic-conflict stop when tapping `🎤`, and **in-place mid-sentence `1x / 1.25x / 1.5x` speed switching** (`onboundary` cursor + elapsed-time fallback, never restarting from word zero).
-- **Cloud Run Tunnel Abort Resilience, Multi-LanguageServer Arbitration & Lazy Video Preload (`v0.7.4`)**: Propagated client-disconnect `AbortController` signals across `/fs/list|read|stream` and `/api/fs-tunnel` so aborted mobile requests immediately release tunnel slots; added deterministic `lastModifiedTime` trajectory ranking across multiple concurrent Antigravity `language_server` / `agy --hub` instances; switched inline chat `<video>` cards to `preload="none"` to prevent multi-video bandwidth contention; and tuned `deploy-cloudrun.sh` (`--memory 1Gi --concurrency 200 --cpu-boost`).
-- **Collapsible Release History & CI Publish Serialization (`v0.7.4`)**: Converted README release history into compact 1-line `<details>` drawers and added GitHub Actions `concurrency` + npm registry conflict guards across `publish-npm.yml` and `docker-publish.yml`.
+- **Zero-Config Algorithmic Reply Voice Playback (`v0.7.4`)**: Added **`🔊 Listen`** beside **`📋 Copy Reply`** with `< 5ms` Markdown-to-speech cleaning, **`⚡ Summary`** / **`📖 Full`** toggle, in-place `1x / 1.25x / 1.5x` speed switching, and auto-mute on mic tap.
+- **Cloud Run Tunnel Abort Resilience &amp; Multi-LanguageServer Arbitration (`v0.7.4`)**: Propagated `AbortController` disconnects across `/api/fs-tunnel`, ranked concurrent Antigravity hubs deterministically by `lastModifiedTime`, and serialized CI release workflows.
 
 </details>
 
 <details>
 <summary><strong><code>2026-11-15 · v0.7.3</code> — Official Marketplace Listing &amp; OIDC Provenance Publishing</strong></summary>
 
-- **Official `awesome-dsh-plugin` Listing & OIDC Trusted Publishing (`v0.7.3`)**: Listed in the official `awesome-dsh-plugin` catalog with `screenshots.json` manifest; switched npm releases to tokenless GitHub Actions OIDC Trusted Publishing (`npm publish --provenance`) with Sigstore SLSA v1 provenance attestation and serialized CI/release concurrency guards.
+- **Official `awesome-dsh-plugin` Listing &amp; OIDC Trusted Publishing (`v0.7.3`)**: Listed in the official marketplace catalog with `screenshots.json` and switched npm publishing to tokenless GitHub Actions OIDC (`npm publish --provenance` + SLSA v1 attestation).
 
 </details>
 
 <details>
 <summary><strong><code>2026-11-14 · v0.7.2</code> — Full-Featured OpenAI Codex Remote Engine (<code>app-server</code> + <code>codex exec</code>)</strong></summary>
 
-- **Reliable Multi-Turn Codex Messaging & Writer-Lock Auto-Recovery (`v0.7.2`)**: Fixed 8 messaging reliability bottlenecks across `codex app-server` and `codex exec resume`: automatic `thread/unsubscribe` after `turn/completed` to release `~/.codex/thread-writer-locks/<id>.lock`, stale writer-lock recovery (`-32600: already has an active writer`), lossless multi-turn disk + live streaming transcript merge (`mergeCodexTranscripts`), placeholder model filtering (`codex`/`default`/`auto`), correct `codex exec --skip-git-repo-check --sandbox workspace-write --json ... resume --all` flag ordering, and `250ms` reactive state-change push.
-- **Reasoning Effort, Live Plan Checklist, File Diff Card & MCP Approvals (`v0.7.2`)**: Added reasoning effort selection (`gpt-5.4::high`, `gpt-5.4::xhigh`, `gpt-5.3-codex::high`), live execution plan checklists (`turn/plan/updated`), mobile `Files With Changes` diff cards (`+added / -removed` lines from `apply_patch` & `turn/diff/updated`), live terminal `outputDelta` / `webSearch` / `collabToolCall` telemetry, and mobile MCP tool call approvals (`item/mcpToolCall/requestApproval`).
+- **Reliable Multi-Turn Codex Messaging, Reasoning Effort &amp; MCP Approvals (`v0.7.2`)**: Added automatic `thread/unsubscribe` + stale writer-lock recovery, lossless `mergeCodexTranscripts`, reasoning-effort switching (`High` / `xHigh`), live `📋 Plan` checklists, `Files With Changes` diff cards, and mobile MCP tool approvals.
 
 </details>
 
 <details>
 <summary><strong><code>2026-11-13 · v0.7.1</code> — Subagent Lifecycle Folding &amp; ChatGPT-Style Unboxed Chat Flow</strong></summary>
 
-- **Automatic Subagent Folding & Orphan Subagent Filtering (`v0.7.1`)**: Recognizes subagent tasks across Antigravity IDE (`invoke_subagent` / `parentConversationId`), DSH (`origin: 'subagent'`), and Claude Code (`subagents/agent-*.jsonl`). Subagent runs fold directly into the parent conversation's collapsible tool steps (`🟢 Subagent Running: <Role>` → `🤖 Subagent Completed: <Role> ✅`) with full role, prompt, and reported findings inline, while standalone subagent chats are automatically filtered out across Host, Cloud Hub, and Mobile Web (also fixing protobuf `0x24` length-prefix collisions that previously surfaced raw 36-char UUIDs as session titles).
-- **ChatGPT-Style Unboxed Document Flow for AI Replies (`v0.7.1`)**: Removed the outer card border and background box around assistant messages so Markdown headings, tables, code blocks, thinking panels, and tool chips flow directly across the full mobile viewport width (`~15%` wider reading area), keeping only user prompts inside right-aligned pill bubbles.
+- **Subagent Folding &amp; Unboxed Document Flow (`v0.7.1`)**: Folded Antigravity / DSH / Claude Code subagents inline into parent conversations while filtering orphan subagent chats; removed outer assistant bubble borders for `~15%` wider mobile reading width.
 
 </details>
 
 <details>
-<summary><strong><code>2026-11-12 · v0.7.0</code> — DSH Market Bundle, Embedded Local Hub &amp; Adaptive Video Engine</strong></summary>
+<summary><strong><code>2026-11-12 · v0.6.8–v0.7.0</code> — DSH Market Bundle, Adaptive Video Engine, Mobile HTML Live Preview &amp; Doubao Adapter</strong></summary>
 
-- **1-Click DSH Market Install & Zero-Config Local Hub (`v0.7.0`)**: Full root-level DSH `>= 0.2.0` plugin bundle manifest (`dsh.bundle.patch`, `engines.dsh`, `icon.svg`, `locale/{en,zh,zh-CN}.json`, `cordis.patch.yml`). Installing from DSH Market or via `dsh plugin --profile desktop add github:oscarka/deepseekharness-remotecontrol` works out of the box with zero config — automatically starting an embedded Local Control Hub on port `8788` (`~/.dsh/local-hub.token` + 24h Wi-Fi pairing link) and seamlessly switching to remote Cloud Hub mode whenever `FEISHU_HUB_URL` is configured.
-- **3-Tier Adaptive Video Compatibility Engine & True Zero-Buffering Stream Tunnel (`v0.6.9`)**: Zero-dependency `< 2ms` ISO BMFF (`mp4`/`mov`) codec & `moov` parser automatically routes **L1 Direct Original**, **L2 Lossless `faststart` Remux**, and **L3 Hardware-First H.264 Transcoding** (`h264_videotoolbox` → `libx264` → macOS `/usr/bin/avconvert`), fixing `yuv444p`, `.mov`, `.webm`, and `.mkv` playback on iOS Safari; upgraded `/api/fs-tunnel` to zero-buffering stream piping (`TTFB < 100ms`) with multi-Range lossless downloads for `> 16 MiB` videos and stateless deterministic `mediaTicket` signing.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-12 · v0.6.8</code> — Mobile HTML Live Preview, iOS Video Save &amp; Doubao Adapter</strong></summary>
-
-- **Mobile Interactive HTML Live Preview & Fullscreen Experience (`v0.6.8`)**: Open and interact with AI-generated `.html` pages right inside mobile DSH—from fenced ```` ```html ```` code blocks (`🌐 Live Preview`), `.html` file chips / artifact cards (`🌐 Live Preview ›`), or the project file browser. Runs inside an isolated `null`-origin `<iframe sandbox="allow-scripts allow-forms allow-modals allow-popups" srcdoc="...">` (never exposing `HUB_TOKEN` or `localStorage`), auto-injects mobile `<meta name="viewport">`, rewrites relative CSS/JS/images via read-only `mediaTicket` URLs, and includes a fullscreen overlay with a safe-area **`‹ Back to Chat`** bar and **`</> Source` / `🌐 Preview`** toggle.
-- **iOS Home Screen PWA In-Place Video Save/Share & Doubao Desktop Adapter (`v0.6.8`)**: Replaced raw `<a download>` navigation links (which trapped iOS standalone web apps on a system screen with no Back button) with in-place streaming `fetch` + native iOS/Android Share Sheet (`Save Video` to Photos / `Save to Files` / AirDrop); added observe-only session & coding board discovery for **Doubao Desktop (`豆包电脑版`)** with incremental LevelDB caching and `10m` stale-running cleanup.
-- **WeChat-Style Hold-to-Talk Voice, Smart Punctuation, Redesigned New Task Sheet & Pinned-First Sorting (`v0.6.3–v0.6.7`)**: Toggle between **`🎙️ Hold to Talk`** (release to send, slide left to cancel, slide right to edit, with `650ms` live pause commas & automatic Chinese sentence punctuation) and **`⌨️ Type`**; compact New Task sheet with single-row project pills + searchable folder drawer; pinned (`📌`) & unread completed (`🔵`) sessions sort above background running jobs; plus `state_delta` incremental SSE (`98%+` lower bandwidth, `v0.6.0–v0.6.1`).
+- **1-Click DSH Market Install &amp; Embedded Local Hub (`v0.7.0`)**: Full DSH `>= 0.2.0` bundle manifest that auto-starts an embedded local Control Hub on port `8788` with Wi-Fi QR pairing when no cloud Hub is configured.
+- **3-Tier Adaptive Video Engine &amp; Zero-Buffering Tunnel (`v0.6.9`)**: `< 2ms` MP4/MOV parser routing direct play, lossless `faststart` remux, and hardware H.264 transcode over a `TTFB < 100ms` streaming tunnel with multi-Range lossless download.
+- **Mobile Interactive HTML Preview, In-Place iOS Video Save &amp; Doubao Adapter (`v0.6.3–v0.6.8`)**: Isolated `null`-origin sandbox preview for HTML code blocks/files, in-place Share-Sheet video save, Doubao Desktop observe-only adapter, WeChat-style hold-to-talk voice, and `state_delta` incremental SSE (`98%+` bandwidth savings).
 
 </details>
 
 <details>
-<summary><strong><code>2026-11-11 · v0.5.8</code> — Tencent WorkBuddy Auto-Recovery &amp; Mobile Speech Recognition</strong></summary>
+<summary><strong><code>2026-11-11 · v0.5.6–v0.5.8</code> — Streaming File Tunnel, <code>206 Range</code> Video Player, WorkBuddy Auto-Recovery &amp; Mobile Speech</strong></summary>
 
-- **WorkBuddy v5.9.3 Production Loop & Auto-Recovery**: Isolated `workbuddy-cli` OAuth credentials via `ACC_PRODUCT_CONFIG_PATH` (never logging out WorkBuddy Desktop, with standalone `node dsh-feishu/daemon.mjs --workbuddy-login` pre-auth), per-`cwd` `codebuddy --serve` ACP process pool with automatic dead-server eviction/respawn across new sessions, follow-up prompts, and live `steer()`, automatic `~/WorkBuddy/<timestamp>` Playground folder routing for mobile new tasks, and bidirectional `workbuddy.db` + `.jsonl` sync.
-- **Direct Mobile Native Speech Recognition (`v0.6.2`)**: Tapping `🎤` directly invokes the phone's built-in speech recognition without popping up the soft keyboard, with clear `audio-capture` conflict feedback and automatic fallback when restricted in iOS Home Screen containers.
-- **Sub-Second Desktop-to-Mobile Approval Dismissal & Zero-Keystroke Idempotency (`v0.5.7`)**: Shortened live trajectory summary cache TTL to `350ms` while approvals are pending and hardened `executeAntigravityIdeAction` so late mobile taps on desktop-settled approvals immediately return `connect-rpc-noop` (`alreadySettled: true`) instead of matching historical `requestedInteraction` fields or injecting fallback keystrokes.
-
-</details>
-
-<details>
-<summary><strong><code>2026-11-11 · v0.5.6</code> — Streaming File Tunnel, <code>206 Range</code> Video Player &amp; SSE Resilience</strong></summary>
-
-- **Reverse HTTP Streaming File Tunnel & Mobile Video Player**: Added a dedicated `/fs/list|read|stream` + `/api/fs-tunnel` binary channel with `0ms` Host SSE wakeup (`event: fs_req`), eliminating `/api/state` polling storms. Supports `HTTP 206 Partial Content` video scrubbing (`<video playsinline>`), 1-tap H.264 compatibility transcoding (`ffmpeg` / macOS `avconvert`), smart `sips` thumbnails that preserve tall-screenshot text sharpness with a 1-tap lossless toggle, `walkthrough.md` hot-cache pre-warming, and short-lived read-only HMAC `mediaTicket` URLs.
-- **Zero-Flicker Mobile Message Delivery & Cloud Run HTTP/2 Resilience**: Fixed optimistic chat bubble lifecycle and added Hub `inflightCommands` tracking so prompts sent over mobile/Cloud Run never vanish and reappear; added 240s graceful SSE rotation (`event: rotate`, avoiding Cloud Run's 300s hard connection reset) plus idempotent client command IDs with automatic silent retry on iOS `Load failed` blips.
-- **Deep Codex (`app-server`) & Tencent WorkBuddy (`ACP`) Integration**: Full managed JSON-RPC / ACP streaming, mid-run steering, mobile command approvals, interactive question popups, and dynamic model discovery, plus 99.9% lower steady-state traffic via lite heartbeats & Gzip (`v0.5.3–v0.5.4`).
+- **WorkBuddy Auto-Recovery, Mobile Speech &amp; Zero-Keystroke Approval Idempotency (`v0.5.7–v0.5.8`, `v0.6.2`)**: Isolated `workbuddy-cli` OAuth credentials, added per-`cwd` ACP process pool auto-recovery + bidirectional `workbuddy.db` sync, direct mobile speech recognition, and idempotent `alreadySettled` approval protection.
+- **Reverse Streaming File Tunnel, `206 Range` Video &amp; Deep Codex/WorkBuddy Streaming (`v0.5.3–v0.5.6`)**: Added `/fs/list|read|stream` + `/api/fs-tunnel`, 240s graceful SSE rotation for Cloud Run, `inflightCommands` zero-flicker sends, and Codex `app-server` / WorkBuddy `ACP` live streaming.
 
 </details>
 

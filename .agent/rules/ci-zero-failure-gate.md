@@ -9,3 +9,5 @@ To prevent `CI & Multi-Arch Docker Publish` workflow failures and GitHub failure
    - When creating SQLite test databases, enable `PRAGMA journal_mode=WAL;`.
 3. **Post-Push Verification**:
    - After pushing to `origin/main`, always check `gh run list -L 2` (or `gh run watch`) to verify `CI & Multi-Arch Docker Publish` completes green on the first attempt.
+4. **README Release Notes Daily Rollup**:
+   - Keep `CHANGELOG.md` granular (one heading per `vX.Y.Z` release), while keeping `README.md`, `README.en.md`, and `README.zh-CN.md` concise with **at most one `<details>` block per calendar day** (`YYYY-MM-DD · vX.Y.A–vX.Y.B`). When shipping multiple releases on the same day, fold the new release into that day's `<details>` block and retain every individual `vX.Y.Z` tag in the bullets.
