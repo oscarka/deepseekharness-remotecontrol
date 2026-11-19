@@ -201,6 +201,13 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-19 · v0.8.10</code> — 修复改动文件卡片折叠/确认按钮与「查看改动」专页</strong></summary>
+
+- **改动文件卡片底栏交互闭环修复（`v0.8.10`）**：将此前无点击事件的 `📄 N Files With Changes ⌃` 升级为可持久记忆的折叠/展开开关（`⌃` ↔ `⌄`）；将原与目录浏览重复的占位 `Accept all` 按钮替换为真实的**「确认已阅」**（`✓ 已确认`）交互并自动收起卡片（有新改动时自动恢复待确认态）；「查看改动」升级为在抽屉内秒开本会话改动文件专页，并修复再次点开目录抽屉时残留上次文件预览的问题（[`controller.js`](hub/web/src/controller.js) / [`app.css`](hub/web/src/styles/app.css)）。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-19 · v0.8.9</code> — 交付文档/改动文件卡片主题配色与排版重构 &amp; 文件预览抽屉手动上拉展开近全屏</strong></summary>
 
 - **交付文档与改动文件卡片浅/深色自适应重构（`v0.8.9`）**：移除 `.agy-session-artifacts-card` 与 `.agy-files-changed-card` 硬编码的纯黑 `#18181b` 底色与整行等宽字体（[`app.css`](hub/web/src/styles/app.css) / [`controller.js`](hub/web/src/controller.js)），改用自适应浅/深色语义变量与系统原生无衬线字体（仅 `+302 -165` 改动数保留等宽对齐），并修复长文件名重复显示及挤掉右侧 `体验网页 ›` / `打开 ›` 标签的裁切 Bug。

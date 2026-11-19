@@ -447,6 +447,10 @@ const EXACT_ZH_TO_EN = {
   '上拉或点击展开更多': 'Drag up or tap to expand',
   '展开显示更多': 'Expand drawer',
   '收起高度': 'Collapse drawer',
+  '确认已阅': 'Mark Reviewed',
+  '✓ 已确认': '✓ Reviewed',
+  '📂 浏览全部目录': '📂 Browse All Files',
+  '暂无文件改动记录': 'No changed files recorded',
   '📲 已缓存 · 再点存入相册/文件': '📲 Ready · Tap to Save',
   '⏳ 准备中…': '⏳ Preparing…',
   '✨ 切回智能兼容秒播': '✨ Back to Smart Stream',
@@ -717,6 +721,8 @@ export function translateZhStringToEn(raw) {
     ['📋 一行接入命令已复制！到电脑终端粘贴回车即可', '📋 1-line command copied! Paste and run in your terminal'],
     ['📋 本地仓库接入命令已复制', '📋 Local repo command copied'],
     ['AI 交付文档 / Walkthrough', 'AI Artifacts / Walkthrough'],
+    ['📝 本会话改动文件', '📝 Changed Files'],
+    ['· 改动文件', '· Changed Files'],
   ];
   for (const [zhSub, enSub] of compoundPairs) {
     if (out.includes(zhSub)) {

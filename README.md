@@ -201,6 +201,13 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-19 · v0.8.10</code> — Interactive Changed-Files Card Collapse, Mark-Reviewed State &amp; Dedicated Diff Drawer</strong></summary>
+
+- **Interactive Changed-Files Card Controls (`v0.8.10`)**: Turned the dead `N Files With Changes ⌃` label into a persistent collapse/expand toggle (`⌃` ↔ `⌄`), replaced the placeholder `Accept all` stub with a stateful **Mark Reviewed** (`✓ Reviewed`) button that acknowledges & collapses the current edit batch until new changes arrive, upgraded **View Diff** to open a dedicated session changed-files drawer immediately, and cleared stale drawer previews when opening the project file browser (`controller.js` / `app.css`).
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-19 · v0.8.9</code> — Theme-Aware Artifact/Diff Cards &amp; Drag-Up Expandable File Preview Drawer</strong></summary>
 
 - **Theme-Aware Artifact &amp; Changed-Files Cards (`v0.8.9`)**: Replaced hardcoded dark `#18181b` card backgrounds and full-row monospace styling in `.agy-session-artifacts-card` and `.agy-files-changed-card` (`app.css` / `controller.js`) with adaptive light/dark theme variables and native sans-serif typography (reserving tabular monospace strictly for `+add -del` diff counts), while fixing flex ellipsis so long filenames never clip the right-aligned `Live Preview ›` / `Open ›` tags.

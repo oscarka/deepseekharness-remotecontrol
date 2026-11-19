@@ -2,6 +2,15 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.10] - 2026-11-19
+
+### Fixed
+
+- **彻底修复「Files With Changes」卡片底栏按钮无效/错位问题（`hub/web/src/controller.js` / `hub/web/src/styles/app.css`）**：
+  - 将此前无点击事件的 `📄 N Files With Changes ⌃` 升级为可折叠/展开交互按钮，点击即可收起或展开文件明细（`⌃` ↔ `⌄`）并持久化保存状态；
+  - 将此前与「查看改动」重复绑定到目录浏览的占位 `Accept all` 按钮改为真实的**「确认已阅」**（`✓ 已确认`）状态按钮：一键确认当前批次改动并自动收起卡片，若后续 AI 继续修改文件会自动重新点亮；
+  - 「查看改动」升级为在文件抽屉内秒开**本会话改动文件专页**（支持点击任意文件直达预览或切回全目录浏览），同时修复 `openInChatFileDrawer()` 打开目录时未清理上次残留文件预览导致画面卡在旧预览的 Bug。
+
 ## [0.8.9] - 2026-11-19
 
 ### Changed & Fixed

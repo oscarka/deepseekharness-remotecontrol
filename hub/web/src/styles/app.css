@@ -1657,6 +1657,14 @@
       text-overflow: ellipsis;
     }
 
+    .agy-files-changed-card.is-collapsed .agy-files-rows {
+      display: none;
+    }
+
+    .agy-files-changed-card.is-collapsed .agy-files-footer {
+      border-top: none;
+    }
+
     .agy-files-footer {
       display: flex;
       align-items: center;
@@ -1668,6 +1676,43 @@
       font-size: 12px;
       font-weight: 500;
       color: var(--text-secondary);
+    }
+
+    .agy-files-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 3px 6px;
+      margin: -3px 0 -3px -6px;
+      border: none;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-secondary);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: background 0.12s ease;
+    }
+
+    .agy-files-toggle:active {
+      background: var(--subtle);
+    }
+
+    .agy-files-chevron {
+      font-size: 13px;
+      color: var(--muted);
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    .agy-files-summary-diff {
+      min-width: auto;
+      font-size: 11px;
     }
 
     .agy-files-footer-btns {
@@ -1695,16 +1740,28 @@
     .agy-files-accept {
       background: var(--primary);
       color: #fff;
-      border: none;
+      border: 1px solid transparent;
       border-radius: 7px;
       padding: 4px 11px;
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
+      transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
     }
 
     .agy-files-accept:active {
       background: var(--primary-hover);
+    }
+
+    .agy-files-accept.is-reviewed {
+      background: var(--green-soft);
+      color: #15803d;
+      border-color: rgba(16, 185, 129, 0.32);
+    }
+
+    .agy-files-accept.is-reviewed:active {
+      background: var(--green-soft);
+      opacity: 0.85;
     }
 
     .agy-approval-card {
@@ -3545,6 +3602,11 @@
       color: #60a5fa;
     }
 
+    :root[data-theme="dark"] .agy-files-accept.is-reviewed {
+      color: #6ee7b7;
+      border-color: rgba(16, 185, 129, 0.42);
+    }
+
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) .host-visual-card.active-feishu {
         border-color: #3b82f6;
@@ -3700,6 +3762,11 @@
 
       :root:not([data-theme="light"]) .agy-artifact-open-tag {
         color: #60a5fa;
+      }
+
+      :root:not([data-theme="light"]) .agy-files-accept.is-reviewed {
+        color: #6ee7b7;
+        border-color: rgba(16, 185, 129, 0.42);
       }
     }
 

@@ -3773,6 +3773,10 @@ var EXACT_ZH_TO_EN = {
 	"上拉或点击展开更多": "Drag up or tap to expand",
 	"展开显示更多": "Expand drawer",
 	"收起高度": "Collapse drawer",
+	"确认已阅": "Mark Reviewed",
+	"✓ 已确认": "✓ Reviewed",
+	"📂 浏览全部目录": "📂 Browse All Files",
+	"暂无文件改动记录": "No changed files recorded",
 	"📲 已缓存 · 再点存入相册/文件": "📲 Ready · Tap to Save",
 	"⏳ 准备中…": "⏳ Preparing…",
 	"✨ 切回智能兼容秒播": "✨ Back to Smart Stream",
@@ -4020,7 +4024,9 @@ function translateZhStringToEn(raw) {
 		["📋 手机免密登录链接已复制", "📋 Direct phone login link copied"],
 		["📋 一行接入命令已复制！到电脑终端粘贴回车即可", "📋 1-line command copied! Paste and run in your terminal"],
 		["📋 本地仓库接入命令已复制", "📋 Local repo command copied"],
-		["AI 交付文档 / Walkthrough", "AI Artifacts / Walkthrough"]
+		["AI 交付文档 / Walkthrough", "AI Artifacts / Walkthrough"],
+		["📝 本会话改动文件", "📝 Changed Files"],
+		["· 改动文件", "· Changed Files"]
 	]) if (out.includes(zhSub)) out = out.split(zhSub).join(enSub);
 	return out;
 }
@@ -8890,7 +8896,10 @@ function initHubController() {
 			syncWechatHoldBtnState();
 		}
 		const trSig = s.transcript.slice(-6).map((m) => `${m.role}:${m.queuedCmdId || ""}:${m.expiredCmdId || ""}:${(m.text || "").length}:${(m.text || "").slice(-32)}:${(m.thinking || "").length}:${(m.tools || []).length}:${(m.artifacts || []).length}:${m.waitingForInput ? 1 : 0}`).join("|");
-		const chatKey = `${s.id}:${s.status}:${s.sessionRev || ""}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${(s.changedFiles || []).length}:${(s.artifacts || []).length}`;
+		const fcMeta = computeChangedFilesMeta(s.changedFiles);
+		const fcReviewed = Boolean(fcMeta.sig && filesCardReviewedSigBySession.get(s.id) === fcMeta.sig);
+		const fcCollapsed = filesCardCollapsedBySession.has(s.id) ? Boolean(filesCardCollapsedBySession.get(s.id)) : fcReviewed;
+		const chatKey = `${s.id}:${s.status}:${s.sessionRev || ""}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ""}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ""}:${(s.changedFiles || []).length}:${fcMeta.sig}:${fcCollapsed ? 1 : 0}:${fcReviewed ? 1 : 0}:${(s.artifacts || []).length}`;
 		if (chatKey === lastRenderedChatKey) return;
 		const box = document.getElementById("chatMessages");
 		if (lastRenderedChatKey && box && box.dataset.dshSession === String(activeSessionId) && chatTouchDownAt > 0 && Date.now() - chatTouchDownAt < 3500) {
@@ -9055,8 +9064,9 @@ function initHubController() {
         </div>
       ` : "";
 		const filesChangedHtml = (s.harness === "antigravity-ide" || s.harness === "codex") && Array.isArray(s.changedFiles) && s.changedFiles.length > 0 ? `
-        <div class="agy-files-changed-card">
-          ${s.changedFiles.slice(-8).map((fc) => {
+        <div class="agy-files-changed-card${fcCollapsed ? " is-collapsed" : ""}" data-files-session="${esc$1(s.id)}">
+          <div class="agy-files-rows">
+            ${s.changedFiles.slice(-8).map((fc) => {
 			return `
             <div class="agy-file-row" style="cursor:pointer;" onclick="openChatFileLink('${encodeURIComponent(fc.path || fc.name || "").replace(/'/g, "%27")}')">
               <span class="agy-file-dot">◉</span>
@@ -9066,11 +9076,15 @@ function initHubController() {
             </div>
           `;
 		}).join("")}
+          </div>
           <div class="agy-files-footer">
-            <span>📄 ${s.changedFiles.length} Files With Changes ⌃</span>
+            <button type="button" class="agy-files-toggle" aria-expanded="${!fcCollapsed}" onclick="toggleFilesChangedCard('${esc$1(s.id)}')">
+              <span>📄 ${s.changedFiles.length} Files With Changes</span>
+              <span class="agy-files-chevron">${fcCollapsed ? "⌄" : "⌃"}</span>
+            </button>
             <div class="agy-files-footer-btns">
-              <button class="agy-files-reject" onclick="openInChatFileDrawer()">查看改动</button>
-              <button class="agy-files-accept" onclick="openInChatFileDrawer()">Accept all</button>
+              <button type="button" class="agy-files-reject" onclick="openChangedFilesDrawer('${esc$1(s.id)}')">查看改动</button>
+              <button type="button" class="agy-files-accept${fcReviewed ? " is-reviewed" : ""}" onclick="reviewFilesChangedCard('${esc$1(s.id)}', '${esc$1(fcMeta.sig)}')">${fcReviewed ? "✓ 已确认" : "确认已阅"}</button>
             </div>
           </div>
         </div>
@@ -10156,9 +10170,115 @@ function initHubController() {
 		}
 		scheduleFallbackStateSync();
 	}
+	const FILES_CARD_STATE_KEY = "dsh_files_card_state_v1";
+	const filesCardCollapsedBySession = /* @__PURE__ */ new Map();
+	const filesCardReviewedSigBySession = /* @__PURE__ */ new Map();
+	let drawerChangedFilesSessionId = null;
+	(function restoreFilesCardState() {
+		try {
+			const raw = JSON.parse(localStorage.getItem(FILES_CARD_STATE_KEY) || "{}");
+			if (raw && typeof raw === "object") {
+				if (raw.collapsed && typeof raw.collapsed === "object") for (const [k, v] of Object.entries(raw.collapsed)) filesCardCollapsedBySession.set(k, Boolean(v));
+				if (raw.reviewed && typeof raw.reviewed === "object") {
+					for (const [k, v] of Object.entries(raw.reviewed)) if (typeof v === "string" && v) filesCardReviewedSigBySession.set(k, v);
+				}
+			}
+		} catch {}
+	})();
+	function persistFilesCardState() {
+		try {
+			const collapsed = {};
+			const reviewed = {};
+			Array.from(filesCardCollapsedBySession.entries()).slice(-60).forEach(([k, v]) => {
+				collapsed[k] = Boolean(v);
+			});
+			Array.from(filesCardReviewedSigBySession.entries()).slice(-60).forEach(([k, v]) => {
+				reviewed[k] = v;
+			});
+			localStorage.setItem(FILES_CARD_STATE_KEY, JSON.stringify({
+				collapsed,
+				reviewed
+			}));
+		} catch {}
+	}
+	function computeChangedFilesMeta(changedFiles) {
+		if (!Array.isArray(changedFiles) || changedFiles.length === 0) return {
+			totalAdd: 0,
+			totalDel: 0,
+			sig: ""
+		};
+		let totalAdd = 0;
+		let totalDel = 0;
+		const names = [];
+		for (const fc of changedFiles) {
+			totalAdd += Number(fc?.added || 0);
+			totalDel += Number(fc?.removed || 0);
+			if (fc?.name) names.push(fc.name);
+		}
+		return {
+			totalAdd,
+			totalDel,
+			sig: `${changedFiles.length}:${totalAdd}:${totalDel}:${names.slice(-3).join(",")}`
+		};
+	}
+	function toggleFilesChangedCard(sessionId) {
+		const sid = String(sessionId || activeSessionId || "");
+		if (!sid) return;
+		const meta = computeChangedFilesMeta(findSessionGlobal(sid)?.session?.changedFiles);
+		const reviewed = Boolean(meta.sig && filesCardReviewedSigBySession.get(sid) === meta.sig);
+		const curCollapsed = filesCardCollapsedBySession.has(sid) ? Boolean(filesCardCollapsedBySession.get(sid)) : reviewed;
+		filesCardCollapsedBySession.set(sid, !curCollapsed);
+		persistFilesCardState();
+		lastRenderedChatKey = "";
+		renderActiveChatStage();
+	}
+	function reviewFilesChangedCard(sessionId, sig) {
+		const sid = String(sessionId || activeSessionId || "");
+		if (!sid) return;
+		const found = findSessionGlobal(sid);
+		const files = Array.isArray(found?.session?.changedFiles) ? found.session.changedFiles : [];
+		const effectiveSig = String(sig || computeChangedFilesMeta(files).sig || "");
+		if (!effectiveSig) return;
+		if (!(filesCardReviewedSigBySession.get(sid) === effectiveSig)) {
+			filesCardReviewedSigBySession.set(sid, effectiveSig);
+			filesCardCollapsedBySession.set(sid, true);
+			persistFilesCardState();
+			lastRenderedChatKey = "";
+			renderActiveChatStage();
+			showToast(`✅ 已确认 ${files.length} 个文件改动并收起`);
+		} else {
+			const curCollapsed = filesCardCollapsedBySession.has(sid) ? Boolean(filesCardCollapsedBySession.get(sid)) : true;
+			filesCardCollapsedBySession.set(sid, !curCollapsed);
+			persistFilesCardState();
+			lastRenderedChatKey = "";
+			renderActiveChatStage();
+		}
+	}
+	function openChangedFilesDrawer(sessionId) {
+		const found = findSessionGlobal(String(sessionId || activeSessionId || ""));
+		if (!found) return;
+		if (found.host) {
+			delete pinnedDrawerPreviewByHost[found.host.hostId];
+			if (found.host.lastFilePreview) found.host.lastFilePreview._showInDrawer = false;
+		}
+		filePreviewLoading = null;
+		fileProjectCwd = found.session.cwd || "";
+		drawerChangedFilesSessionId = found.session.id;
+		openSheet("inChatFileSheet");
+		document.body.classList.add("mobile-file-open");
+		const titleEl = document.getElementById("inChatFileTitle");
+		if (titleEl) titleEl.textContent = `📝 ${found.session.project} · 改动文件 (${(found.session.changedFiles || []).length})`;
+		renderInChatFileDrawerBody();
+	}
 	async function openInChatFileDrawer() {
 		const found = findSessionGlobal(activeSessionId);
 		if (!found) return;
+		drawerChangedFilesSessionId = null;
+		if (found.host) {
+			delete pinnedDrawerPreviewByHost[found.host.hostId];
+			if (found.host.lastFilePreview) found.host.lastFilePreview._showInDrawer = false;
+		}
+		filePreviewLoading = null;
 		fileProjectCwd = found.session.cwd || "";
 		openSheet("inChatFileSheet");
 		document.body.classList.add("mobile-file-open");
@@ -10403,6 +10523,37 @@ function initHubController() {
 			return;
 		}
 		body.dataset.dshPreviewKey = "";
+		if (drawerChangedFilesSessionId && drawerChangedFilesSessionId === found.session.id) {
+			const files = Array.isArray(found.session.changedFiles) ? found.session.changedFiles : [];
+			const changedKey = `changed:${found.session.id}:${files.length}:${computeChangedFilesMeta(files).sig}`;
+			if (body.dataset.dshDrawerListKey === changedKey && body.querySelector(".breadcrumbs-bar")) return;
+			body.dataset.dshDrawerListKey = changedKey;
+			const meta = computeChangedFilesMeta(files);
+			body.innerHTML = `
+        <div class="breadcrumbs-bar" style="justify-content:space-between;gap:8px;">
+          <span style="font-weight:700;color:var(--text);">📝 本会话改动文件 (${files.length}) <span class="agy-file-diff" style="margin-left:6px;"><span class="add">+${meta.totalAdd}</span><span class="del">-${meta.totalDel}</span></span></span>
+          <button type="button" class="icon-pill-btn" onclick="openInChatFileDrawer()">📂 浏览全部目录</button>
+        </div>
+        <div>
+          ${files.map((fc) => {
+				return `
+              <div class="file-row" onclick="openChatFileLink('${encodeURIComponent(fc.path || fc.name || "").replace(/'/g, "%27")}')">
+                <div class="file-row-left" style="min-width:0;flex:1;">
+                  <span class="agy-file-diff" style="min-width:56px;"><span class="add">+${Number(fc.added || 0)}</span><span class="del">-${Number(fc.removed || 0)}</span></span>
+                  <div style="min-width:0;overflow:hidden;">
+                    <div style="font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc$1(fc.name || "")}</div>
+                    <div style="font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc$1(fc.displayPath || fc.path || "")}</div>
+                  </div>
+                </div>
+                <span style="font-size:12px;color:var(--primary);font-weight:600;flex-shrink:0;">打开 ›</span>
+              </div>
+            `;
+			}).join("") || `<div style="padding:36px;text-align:center;color:var(--muted);">暂无文件改动记录</div>`}
+        </div>
+      `;
+			applyLangToDom(body, langPref);
+			return;
+		}
 		const entries = listing?.entries || [];
 		const loadingDir = fileLoading && fileLoading.hostId === host.hostId && fileLoading.drawer;
 		const rootCwd = listing?.rootCwd || fileProjectCwd;
@@ -13253,7 +13404,8 @@ function initHubController() {
 		const btn = document.getElementById("inChatFileExpandBtn");
 		if (btn) {
 			btn.textContent = isExp ? "⤡" : "⤢";
-			const label = tr(isExp ? "收起高度" : "展开显示更多");
+			const rawLabel = isExp ? "收起高度" : "展开显示更多";
+			const label = langPref === "en" ? translateZhStringToEn(rawLabel) : rawLabel;
 			btn.title = label;
 			btn.setAttribute("aria-label", label);
 		}
@@ -13269,6 +13421,7 @@ function initHubController() {
 		document.getElementById(id)?.classList.remove("open");
 		if (id === "inChatFileSheet") {
 			document.body.classList.remove("mobile-file-open");
+			drawerChangedFilesSessionId = null;
 			setFileSheetExpanded(false);
 		}
 	}
@@ -14757,6 +14910,9 @@ function initHubController() {
 		stopActiveSession,
 		sendApprovalDecision,
 		openInChatFileDrawer,
+		openChangedFilesDrawer,
+		toggleFilesChangedCard,
+		reviewFilesChangedCard,
 		previewKind,
 		imagePreviewSrc,
 		buildBreadcrumbSegments,
