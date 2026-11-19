@@ -2648,9 +2648,12 @@ export class CodexAdapter {
         return this._pinnedStateCache.set
       }
       const parsed = JSON.parse(readFileSync(statePath, 'utf8'))
+      const atoms = parsed?.['electron-persisted-atom-state']
       const ids = [
         ...(Array.isArray(parsed?.['pinned-thread-ids']) ? parsed['pinned-thread-ids'] : []),
         ...(Array.isArray(parsed?.pinnedThreadIds) ? parsed.pinnedThreadIds : []),
+        ...(Array.isArray(atoms?.['pinned-thread-ids']) ? atoms['pinned-thread-ids'] : []),
+        ...(Array.isArray(atoms?.['electron:pinned-thread-ids']) ? atoms['electron:pinned-thread-ids'] : []),
       ]
         .map(x => String(x || '').trim())
         .filter(Boolean)
@@ -2688,6 +2691,14 @@ export class CodexAdapter {
       parsed['pinned-thread-ids'] = nextList
       if (Array.isArray(parsed.pinnedThreadIds)) {
         parsed.pinnedThreadIds = nextList
+      }
+      if (parsed['electron-persisted-atom-state'] && typeof parsed['electron-persisted-atom-state'] === 'object') {
+        if (Array.isArray(parsed['electron-persisted-atom-state']['pinned-thread-ids'])) {
+          parsed['electron-persisted-atom-state']['pinned-thread-ids'] = nextList
+        }
+        if (Array.isArray(parsed['electron-persisted-atom-state']['electron:pinned-thread-ids'])) {
+          parsed['electron-persisted-atom-state']['electron:pinned-thread-ids'] = nextList
+        }
       }
       const tmpPath = `${statePath}.${process.pid}.${Date.now()}.tmp`
       writeFileSync(tmpPath, `${JSON.stringify(parsed)}\n`, { mode: 0o600 })

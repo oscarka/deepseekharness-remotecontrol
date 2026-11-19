@@ -1817,6 +1817,7 @@ async function loadLiveTrajectorySummaries({
     cachedLiveSummaries &&
     [...cachedLiveSummaries.values()].some(
       s =>
+        s?.status === 'CASCADE_RUN_STATUS_RUNNING' ||
         s?.status === 'CASCADE_RUN_STATUS_WAITING_FOR_USER' ||
         (Array.isArray(s?.waitingSteps) && s.waitingSteps.length > 0),
     ),

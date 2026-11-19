@@ -15,6 +15,7 @@ import {
   setSessionPinnedInDshWorkspaceStorage,
 } from '../lib/workspace-ops.js'
 import { HubCore } from '../../hub/hub-core.js'
+import { createHubServer } from '../../hub/server.js'
 
 test('DSH workspace.json global.pinnedSessionIds syncs bidirectionally without losing workspace tables', async () => {
   const dshHome = await mkdtemp(join(tmpdir(), 'dsh-pin-test-'))
@@ -415,5 +416,121 @@ test('Antigravity IDE annotations/<convId>.pbtxt and UpdateConversationAnnotatio
     })
   } finally {
     await rm(agyRoot, { recursive: true, force: true })
+  }
+})
+
+test('Zero-lag conclusion state: inflightCommands clear immediately on conclusion and /api/events avoids proxy gzip buffering', async () => {
+  const tmpRoot = await mkdtemp(join(tmpdir(), 'hub-realtime-lag-'))
+  let clock = 1_795_070_000_000
+  const hub = new HubCore({
+    stateFile: join(tmpRoot, 'hub-state.json'),
+    now: () => clock,
+  })
+  const { server } = createHubServer({
+    hub,
+    token: 'test-realtime-zero-lag-secret-123456',
+    requireToken: true,
+    sseMaxLifetimeMs: 120,
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  try {
+    // 1. Host online with initial 2-message session
+    hub.handleHeartbeat({
+      hostId: 'mac-pro',
+      hostName: 'Mac Pro',
+      bridgeState: {
+        tasks: [
+          {
+            id: 'agy-ide:conv-fast',
+            harness: 'antigravity-ide',
+            title: 'Fast Turn Test',
+            status: 'idle',
+            transcript: [
+              { role: 'user', text: 'first' },
+              { role: 'assistant', text: 'done 1' },
+            ],
+          },
+        ],
+        approvals: [],
+        workspaces: [],
+      },
+    })
+
+    // 2. Mobile queues an image-only prompt (`text: ''`) and host pulls it into `inflightCommands`
+    clock += 500
+    hub.queueCommand('mac-pro', {
+      type: 'prompt',
+      agentId: 'agy-ide:conv-fast',
+      text: '',
+    })
+    clock += 200
+    const hbPull = hub.handleHeartbeat({
+      hostId: 'mac-pro',
+      hostName: 'Mac Pro',
+      bridgeState: {
+        tasks: [
+          {
+            id: 'agy-ide:conv-fast',
+            harness: 'antigravity-ide',
+            title: 'Fast Turn Test',
+            status: 'idle',
+            transcript: [
+              { role: 'user', text: 'first' },
+              { role: 'assistant', text: 'done 1' },
+            ],
+          },
+        ],
+        approvals: [],
+        workspaces: [],
+      },
+    })
+    assert.equal(hbPull.commands.length, 1)
+    assert.equal(hub.getFullState().hosts[0].inflightCommands.length, 1)
+
+    // 3. Task finishes 2s later (`status: 'idle'`, `lastConclusionAt > cmd.createdAt`) -> `inflightCommands` MUST be 0 immediately!
+    clock += 2000
+    hub.handleHeartbeat({
+      hostId: 'mac-pro',
+      hostName: 'Mac Pro',
+      bridgeState: {
+        tasks: [
+          {
+            id: 'agy-ide:conv-fast',
+            harness: 'antigravity-ide',
+            title: 'Fast Turn Test',
+            status: 'idle',
+            isMidTurn: false,
+            turnState: 'conclusion',
+            lastConclusionAt: clock,
+            transcript: [
+              { role: 'user', text: 'first' },
+              { role: 'assistant', text: 'done 1' },
+              { role: 'user', text: '[手机端上传图片附件]' },
+              { role: 'assistant', text: '图片已分析完毕' },
+            ],
+          },
+        ],
+        approvals: [],
+        workspaces: [],
+      },
+    })
+    assert.equal(
+      hub.getFullState().hosts[0].inflightCommands.length,
+      0,
+      'Concluded turn must immediately clear inflightCommands so mobile list never lingers on 运行中',
+    )
+
+    // 4. Verify `/api/events` streams uncompressed identity (no content-encoding: gzip proxy buffering)
+    const { port } = server.address()
+    const sseResp = await fetch(
+      `http://127.0.0.1:${port}/api/events?initial=0&delta=1&token=test-realtime-zero-lag-secret-123456`,
+      { headers: { 'accept-encoding': 'gzip, deflate, br' } },
+    )
+    assert.equal(sseResp.status, 200)
+    assert.equal(sseResp.headers.get('content-encoding'), null)
+    await sseResp.text()
+  } finally {
+    await new Promise(resolve => server.close(resolve))
+    await rm(tmpRoot, { recursive: true, force: true })
   }
 })

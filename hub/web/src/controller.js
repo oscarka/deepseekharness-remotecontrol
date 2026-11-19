@@ -917,6 +917,7 @@ export function initHubController() {
         );
         const optimisticList = optMap[t.id] || [];
         const nowMs = Date.now();
+        const serverConcludedAt = t.status === 'idle' && !t.isMidTurn ? (Number(t.lastConclusionAt) || 0) : 0;
         const remainingOpt = [];
         const renderedOptItems = [];
         for (const opt of optimisticList) {
@@ -924,7 +925,14 @@ export function initHubController() {
             optMapDirty = true;
             continue;
           }
+          const concludedSinceOpt = Boolean(
+            t.status === 'idle' &&
+            !t.isMidTurn &&
+            ((serverConcludedAt > 0 && serverConcludedAt > (opt.time || 0)) ||
+              (typeof opt.baselineTotalCount === 'number' && serverWireTotalCount >= opt.baselineTotalCount + 2))
+          );
           if (
+            concludedSinceOpt ||
             (opt.cmdId && cancelledOrFailedIds.has(opt.cmdId)) ||
             hasOptimisticSyncedToWire(wireTranscript, serverWireTotalCount, opt) ||
             expiredCmds.some(ec => (opt.cmdId && ec.id === opt.cmdId) || matchesOptimisticUserText(ec.text, opt))
@@ -991,7 +999,14 @@ export function initHubController() {
         const transcript = baseTranscript;
         const lastMsg = transcript.length > 0 ? transcript[transcript.length - 1] : null;
         const project = t.project || (t.cwd ? t.cwd.split('/').filter(Boolean).pop() : '默认工作区') || '默认工作区';
-        const hasActiveInflight = isHostOnlineNow && (dispatchingCmds.length > 0 || inflightPromptCmds.length > 0 || renderedOptItems.length > 0);
+        const activeInflightCmds = inflightPromptCmds.filter(ic => {
+          if (t.status === 'idle' && !t.isMidTurn) {
+            if (serverConcludedAt > 0 && serverConcludedAt > (ic.createdAt || 0)) return false;
+            if (typeof ic.baselineTotalCount === 'number' && serverWireTotalCount >= ic.baselineTotalCount + 2) return false;
+          }
+          return true;
+        });
+        const hasActiveInflight = isHostOnlineNow && (dispatchingCmds.length > 0 || activeInflightCmds.length > 0 || renderedOptItems.length > 0);
         const status = pendingApp
           ? 'approval'
           : (t.status === 'running' || hasActiveInflight ? 'running' : (t.status || 'idle'));
@@ -9038,7 +9053,19 @@ export function initHubController() {
           if (!tryOpenDeepLinkTarget({ hostId, agentId })) {
             pendingDeepLinkHostId = String(hostId || '').trim();
             pendingDeepLinkTaskId = String(agentId || '').trim();
-            fetchState();
+          }
+          if (!sseConnected || Date.now() - lastSseEventAt > 4000) {
+            connectSSE();
+          }
+          void fetchState({ silent: true, forceFresh: true });
+        } else if (msg && msg.type === 'PUSH_RECEIVED') {
+          if (!sseConnected || Date.now() - lastSseEventAt > 4000) {
+            connectSSE();
+          }
+          if (!stateFetchInFlight) {
+            void fetchState({ silent: true, forceFresh: true });
+          } else {
+            inFlightNeedsFollowup = true;
           }
         } else if (msg && msg.type === 'DSH_SW_UPDATED') {
           const nextBuild = String(msg.uiBuild || '').trim();
@@ -10112,10 +10139,10 @@ export function initHubController() {
     }
     if (!getToken() || authLockConfirmed) return;
     const idleMs = Date.now() - lastSseEventAt;
-    if (!stateFetchInFlight && (!sseConnected || idleMs > 15000)) {
-      void fetchState({ silent: true });
+    if (!stateFetchInFlight && (!sseConnected || idleMs > 1200)) {
+      void fetchState({ silent: true, forceFresh: true });
     }
-    if (!sseConnected || idleMs > 25000) {
+    if (!sseConnected || idleMs > 6000) {
       connectSSE();
     }
   }

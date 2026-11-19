@@ -452,11 +452,19 @@ export class HubCore {
         }
       }
       const curTotal = Math.max(Number(task?.messageCount) || 0, tr.length)
+      const baseTotal = ic.baselineTotalCount || 0
+      const taskAlreadyConcludedAfterCmd =
+        task?.status === 'idle' &&
+        !task?.isMidTurn &&
+        (Number(task?.lastConclusionAt) > (ic.createdAt || 0) || curTotal >= baseTotal + 2)
+      const imageOnlySynced = !icText && curTotal > baseTotal
       const synced =
-        lastMatchIdx >= 0 &&
-        ((ic.baselineSameCount || 0) === 0 ||
-          sameCount > (ic.baselineSameCount || 0) ||
-          (curTotal > (ic.baselineTotalCount || 0) && lastMatchIdx >= Math.max(0, tr.length - 3)))
+        taskAlreadyConcludedAfterCmd ||
+        imageOnlySynced ||
+        (lastMatchIdx >= 0 &&
+          ((ic.baselineSameCount || 0) === 0 ||
+            sameCount > (ic.baselineSameCount || 0) ||
+            (curTotal > baseTotal && lastMatchIdx >= Math.max(0, tr.length - 3))))
       if (synced) continue
       kept.push(ic)
     }
@@ -1289,7 +1297,8 @@ export class HubCore {
   }
 
   detectAndTriggerWebPush(hostId, hostName, bridgeState) {
-    if (!bridgeState || typeof bridgeState !== 'object') return
+    if (!bridgeState || typeof bridgeState !== 'object') return false
+    let triggeredUrgentEvent = false
     const approvals = Array.isArray(bridgeState.approvals) ? bridgeState.approvals : []
     const tasks = Array.isArray(bridgeState.tasks) ? bridgeState.tasks : []
     const liveApprovalCodeSet = new Set(
@@ -1308,6 +1317,7 @@ export class HubCore {
       if (!app?.code || this.pushedApprovalCodes.has(app.code)) return
       const ledger = this.approvalLedger.get(`${hostId}:${app.code}`)
       if (ledger && (ledger.status === 'settling' || ledger.status === 'settled')) return
+      triggeredUrgentEvent = true
       this.pushedApprovalCodes.add(app.code)
       while (this.pushedApprovalCodes.size > 300) {
         this.pushedApprovalCodes.delete(this.pushedApprovalCodes.values().next().value)
@@ -1401,6 +1411,7 @@ export class HubCore {
             this.pushedCompletionSigs.delete(this.pushedCompletionSigs.keys().next().value)
           }
         }
+        triggeredUrgentEvent = true
         this.sessionReadState.set(task.id, {
           unread: true,
           sig: '',
@@ -1447,8 +1458,10 @@ export class HubCore {
             url: `/?host=${encodeURIComponent(hostId)}&task=${encodeURIComponent(task.id)}`,
           },
         })
+        triggeredUrgentEvent = true
       }
     }
+    return triggeredUrgentEvent
   }
 
   handleHeartbeat(payload = {}) {
@@ -1631,6 +1644,7 @@ export class HubCore {
       }
     }
 
+    let urgentStateTransition = false
     if ((payload.bridgeState || Array.isArray(payload.liveApprovalCodes)) && !isStaleSnapshot) {
       const rawCodes = payload.bridgeState
         ? (Array.isArray(payload.bridgeState.approvals) ? payload.bridgeState.approvals.map(a => a?.code) : [])
@@ -1648,7 +1662,7 @@ export class HubCore {
         }
       }
       if (payload.bridgeState) {
-        this.detectAndTriggerWebPush(hostId, hostName, payload.bridgeState)
+        urgentStateTransition = Boolean(this.detectAndTriggerWebPush(hostId, hostName, payload.bridgeState))
       }
     }
 
@@ -1779,7 +1793,7 @@ export class HubCore {
       record._lastFingerprint = nextFingerprint
       record._lastBroadcastAt = now
       void this.persist()
-      this.emitStateChange('heartbeat')
+      this.emitStateChange(urgentStateTransition ? 'task_concluded' : 'heartbeat')
     }
 
     return {

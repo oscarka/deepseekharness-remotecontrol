@@ -2,6 +2,15 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.15] - 2026-11-19
+
+### Fixed
+
+- **彻底消除「已收到推送通知但会话列表仍卡在『运行中』几秒后才变『已出结论』」的四重延迟瓶颈（`hub/server.js` / `hub/hub-core.js` / `hub/web/src/controller.js` / `dsh-feishu/lib/antigravity-ide.js`）**：
+  - **移除 `/api/events` SSE 流的 `gzip` 压缩缓冲并提速推送阈值**：CDN 与移动端 HTTP/2 代理会对开启 `content-encoding: gzip` 的微小 `state_delta` 帧产生数秒缓冲（导致直连 APNs 的系统推送先到、页面 SSE 状态却滞后数秒）；现改为无缓冲原始流（`no-store, no-transform`），默认节流从 `450ms` 降至 `80ms`，且任务出结论/待审批事件走 `<=30ms` 极速通道；
+  - **Service Worker 收到系统推送即刻唤醒前台页面拉新（`PUSH_RECEIVED` + `NOTIFICATION_CLICK`）**：`sw.js` 在收到 `push` 的瞬间向所有已打开页面广播 `PUSH_RECEIVED`，点击通知或切回前台（`idleMs > 1.2s`）均无条件立即触发 `fetchState({ forceFresh: true })`（修复此前切后台不足 15 秒切回或点击已有会话通知时不拉取最新状态的盲区）；
+  - **修复 `inflightCommands` / 乐观消息在任务已出结论后仍强行覆盖 `运行中` 的问题**：当服务端会话已进入 `idle` 结论态（`lastConclusionAt > cmd.createdAt` 或消息数已跨过完整一轮问答，含纯图片消息）时立即清理在途标记，并将 Antigravity `RUNNING` RPC 缓存周期从 `2.5s` 缩短至 `350ms`，同时兼容 Codex Electron `electron-persisted-atom-state` 置顶字段。
+
 ## [0.8.14] - 2026-11-19
 
 ### Added & Fixed

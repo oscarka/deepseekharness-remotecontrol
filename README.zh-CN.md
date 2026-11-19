@@ -201,9 +201,10 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.14</code> — 手机端与各桌面端 Harness（含 Antigravity IDE 原生置顶）双向互通 &amp; 根治 CI 锁库告警</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.15</code> — 零延迟「已出结论」状态同步、全平台原生置顶互通 &amp; 根治 CI 锁库告警</strong></summary>
 
-- **多端与各 Harness 会话置顶（Pin）双向实时互通 + 独立「📌 置顶对话」分组（`v0.8.13–v0.8.14`）**：升级为云端 Hub 持久化的 `sessionPinState`（`POST /api/sessions/pin` + SSE 增量广播），手机列表新增与桌面端一致的 **「📌 置顶对话」** 独立分组栏与 `📌 置顶` 胶囊角标，并全量打通电脑端原生置顶存储——涵盖 **Antigravity IDE**（`annotations/<convId>.pbtxt` + Connect-RPC `UpdateConversationAnnotations` 实时双向联动 + FSEvents 秒级监听）、**DSH 桌面版**（`workspace.json` `global.pinnedSessionIds`）、**Codex 桌面版**（`.codex-global-state.json` `pinned-thread-ids`）、**WorkBuddy**（`workbuddy.db` + `pinned-sessions.json`）与 **豆包电脑版**（LevelDB `pinned`）。
+- **消除「收到推送后列表仍显示运行中」的多重延迟瓶颈（`v0.8.15`）**：移除 `/api/events` SSE 流的 `gzip` 压缩（彻底消除 Cloudflare / 移动代理对微小增量帧的数秒缓冲，紧急结论事件 `<=30ms` 直推），打通 Service Worker `PUSH_RECEIVED` / `NOTIFICATION_CLICK` 与 `1.2s` 切回前台即刻强刷状态，并在任务落盘出结论瞬间立即清理 `inflightCommands`，同时将 Antigravity `RUNNING` RPC 缓存从 `2.5s` 压缩至 `350ms`。
+- **多端与各 Harness 会话置顶（Pin）双向实时互通 + 独立「📌 置顶对话」分组（`v0.8.13–v0.8.15`）**：升级为云端 Hub 持久化的 `sessionPinState`（`POST /api/sessions/pin` + SSE 增量广播），手机列表新增与桌面端一致的 **「📌 置顶对话」** 独立分组栏与 `📌 置顶` 胶囊角标，并全量打通电脑端原生置顶存储——涵盖 **Antigravity IDE**（`annotations/<convId>.pbtxt` + Connect-RPC `UpdateConversationAnnotations` 实时双向联动 + FSEvents 秒级监听）、**DSH 桌面版**（`workspace.json` `global.pinnedSessionIds`）、**Codex 桌面版**（`.codex-global-state.json` `pinned-thread-ids` 及 Electron Atom 状态）、**WorkBuddy**（`workbuddy.db` + `pinned-sessions.json`）与 **豆包电脑版**（LevelDB `pinned`）。
 - **彻底消除 GitHub Actions CI 偶发 `database is locked` 失败告警邮件（`v0.8.13`）**：为全部 `sqlite3` 调用补齐 `-cmd ".timeout 5000"` 与 WAL 模式、限制 CI 双核并发度（`--test-concurrency=4`），并新增持久工作区门禁规则 [`.agent/rules/ci-zero-failure-gate.md`](.agent/rules/ci-zero-failure-gate.md)，杜绝后续提交再次触发偶发锁库报错邮件。
 
 </details>

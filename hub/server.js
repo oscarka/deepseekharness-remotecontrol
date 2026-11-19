@@ -211,7 +211,7 @@ export function createHubServer({
   sseMaxLifetimeMs = Number(process.env.HUB_SSE_MAX_LIFETIME_MS) || 240_000,
   sseMinIntervalMs = Number.isFinite(Number(process.env.HUB_SSE_MIN_INTERVAL_MS))
     ? Number(process.env.HUB_SSE_MIN_INTERVAL_MS)
-    : 450,
+    : 80,
 } = {}) {
   let expectedToken = String(token ?? '').trim()
   if (requireToken) {
@@ -1412,31 +1412,17 @@ export function createHubServer({
         }
 
         req.socket?.setNoDelay?.(true)
-        const useGzip = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''))
-        let outStream = res
-        if (useGzip) {
-          res.writeHead(200, {
-            'content-type': 'text/event-stream; charset=utf-8',
-            'content-encoding': 'gzip',
-            'cache-control': 'no-cache, no-transform',
-            'x-accel-buffering': 'no',
-            connection: 'keep-alive',
-            'access-control-allow-origin': '*',
-          })
-          res.flushHeaders?.()
-          const gzStream = createGzip({ flush: zlibConstants.Z_SYNC_FLUSH })
-          gzStream.pipe(res)
-          outStream = gzStream
-        } else {
-          res.writeHead(200, {
-            'content-type': 'text/event-stream; charset=utf-8',
-            'cache-control': 'no-cache, no-transform',
-            'x-accel-buffering': 'no',
-            connection: 'keep-alive',
-            'access-control-allow-origin': '*',
-          })
-          res.flushHeaders?.()
-        }
+        // Never apply content-encoding: gzip on text/event-stream: CDN / mobile HTTP/2 proxies buffer
+        // small gzip-compressed SSE frames (~200B state_delta) for several seconds until more bytes arrive!
+        const outStream = res
+        res.writeHead(200, {
+          'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-cache, no-store, no-transform',
+          'x-accel-buffering': 'no',
+          connection: 'keep-alive',
+          'access-control-allow-origin': '*',
+        })
+        res.flushHeaders?.()
         let closed = false
         let lastSsePushAt = 0
         let pendingSseTimer = null
@@ -1496,8 +1482,11 @@ export function createHubServer({
           if (closed || res.writableEnded || res.destroyed) return
           const evtName = typeof evt === 'string' ? evt : String(evt?.type || '')
           const minGap =
-            evtName === 'command_queued' || evtName === 'command_cancelled'
-              ? Math.min(80, sseMinIntervalMs)
+            evtName === 'command_queued' ||
+            evtName === 'command_cancelled' ||
+            evtName === 'task_concluded' ||
+            evtName === 'session_pinned'
+              ? Math.min(30, sseMinIntervalMs)
               : sseMinIntervalMs
           const elapsed = Date.now() - lastSsePushAt
           if (minGap <= 0 || (elapsed >= minGap && !pendingSseTimer)) {
@@ -2023,6 +2012,16 @@ self.addEventListener('push', event => {
   if (self.navigator && typeof self.navigator.setAppBadge === 'function') {
     tasks.push(self.navigator.setAppBadge(Number(payload.badgeCount) || 1).catch(() => {}));
   }
+
+  tasks.push(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+      for (const client of windowClients || []) {
+        try {
+          client.postMessage({ type: 'PUSH_RECEIVED', data: payload.data || {} });
+        } catch {}
+      }
+    }).catch(() => {})
+  );
 
   event.waitUntil(Promise.all(tasks));
 });
