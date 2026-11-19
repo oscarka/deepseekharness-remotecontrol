@@ -2041,6 +2041,13 @@ function shouldSendOnEnter({ shiftKey, isComposing, coarsePointer } = {}) {
 	if (shiftKey) return false;
 	return !coarsePointer;
 }
+function getLeftEdgeSwipeZoneWidth(width = 375) {
+	return Math.min(Math.max(48, Math.round((Number.isFinite(width) && width > 0 ? width : 375) * .14)), 72);
+}
+function isWithinLeftSwipeBackZone(startRelX, width = 375) {
+	if (!Number.isFinite(startRelX)) return false;
+	return startRelX >= -2 && startRelX <= getLeftEdgeSwipeZoneWidth(width);
+}
 function shouldDismissHorizontalSwipe({ dx = 0, dy = 0, width = 375, durationMs = 1, minVelocity = .5 } = {}) {
 	if (!(dx > 0)) return false;
 	if (Math.abs(dy) > dx) return false;
@@ -3871,7 +3878,7 @@ var EXACT_ZH_TO_EN = {
 	"此目录下暂无子文件夹": "No subfolders in this directory",
 	"↓ 下拉刷新状态": "↓ Pull to refresh",
 	"🔄 强制刷新前端版本（清缓存重载）": "🔄 Force Update App (Clear Cache)",
-	"💡 提示：左右滑动即可返回会话列表": "💡 Tip: Swipe left or right to return to sessions",
+	"💡 提示：从屏幕左侧向右滑动即可返回会话列表": "💡 Tip: Swipe right from the left edge to return to sessions",
 	"全文同步中…": "Syncing full reply…"
 };
 var REGEX_ZH_TO_EN = [
@@ -14662,7 +14669,6 @@ function initHubController() {
 		if (!chat) return;
 		let tracking = false;
 		let decided = null;
-		let swipeDir = 0;
 		let startX = 0;
 		let startY = 0;
 		let startRelX = 0;
@@ -14691,13 +14697,12 @@ function initHubController() {
 			return Boolean(target.closest("textarea, input, select, video, audio, #wechatHoldTalkBtn, #wechatHoldBtn, #wechatVoiceOverlay, [data-no-back-swipe]"));
 		};
 		const canScrollHorizontally = (target, dx) => {
-			if (startRelX <= 36 || startRelX >= width - 36) return false;
+			if (startRelX <= 28) return false;
 			let node = target;
 			while (node && node !== chat && node.id !== "chatMessages" && node.nodeType === 1) {
 				const overflowX = window.getComputedStyle(node).overflowX;
 				if (/(auto|scroll)/.test(overflowX) && node.scrollWidth > node.clientWidth + 8) {
 					if (dx > 0 && node.scrollLeft > 2) return true;
-					if (dx < 0 && node.scrollLeft + node.clientWidth < node.scrollWidth - 2) return true;
 				}
 				node = node.parentElement;
 			}
@@ -14740,13 +14745,13 @@ function initHubController() {
 					flushDeferredChatRender();
 					return;
 				}
-				if (Math.abs(dy) >= 12 && Math.abs(dy) > Math.abs(dx) * 1.12) {
+				if (dx <= -8 || Math.abs(dy) >= 12 && Math.abs(dy) > Math.abs(dx) * 1.12) {
 					tracking = false;
 					detachOriginListeners();
 					flushDeferredChatRender();
 					return;
 				}
-				if (Math.abs(dx) >= 10 && Math.abs(dx) >= Math.abs(dy) * 1.05) {
+				if (dx >= 10 && dx >= Math.abs(dy) * 1.1) {
 					if (canScrollHorizontally(originTarget || event.target, dx)) {
 						tracking = false;
 						detachOriginListeners();
@@ -14754,7 +14759,6 @@ function initHubController() {
 						return;
 					}
 					decided = true;
-					swipeDir = dx > 0 ? 1 : -1;
 					chat.style.transition = "none";
 					chat.style.willChange = "transform";
 				} else if (Math.hypot(dx, dy) > 26) {
@@ -14764,27 +14768,27 @@ function initHubController() {
 					return;
 				} else return;
 			}
-			const signedX = swipeDir === 1 ? Math.max(0, Math.min(dx, width)) : Math.max(-width, Math.min(0, dx));
-			if (signedX === 0) return;
+			const clampedX = Math.max(0, Math.min(dx, width));
 			if (event.cancelable) event.preventDefault();
-			chat.style.transform = `translate3d(${signedX}px, 0, 0)`;
-			chat.style.boxShadow = swipeDir === 1 ? "-10px 0 30px rgba(15, 23, 42, 0.16)" : "10px 0 30px rgba(15, 23, 42, 0.16)";
+			chat.style.transform = `translate3d(${clampedX}px, 0, 0)`;
+			chat.style.boxShadow = clampedX > 0 ? "-10px 0 30px rgba(15, 23, 42, 0.16)" : "";
 		};
 		const finishSwipe = (event) => {
-			if (!tracking) return;
 			if (event && event === lastHandledEndEvt) return;
 			lastHandledEndEvt = event || null;
+			if (!tracking) {
+				if (chatTouchDownAt > 0) flushDeferredChatRender();
+				return;
+			}
 			tracking = false;
 			detachOriginListeners();
 			const wasDecided = decided === true;
-			const dir = swipeDir;
 			decided = null;
-			swipeDir = 0;
 			if (!wasDecided) {
 				flushDeferredChatRender();
 				return;
 			}
-			const effDx = Math.max(0, dir === -1 ? startX - lastX : lastX - startX);
+			const effDx = Math.max(0, lastX - startX);
 			const absDy = Math.abs(lastY - startY);
 			const durationMs = Math.max(1, Date.now() - startedAt);
 			const velocity = effDx / durationMs;
@@ -14797,19 +14801,8 @@ function initHubController() {
 			}))) {
 				chatTouchDownAt = 0;
 				pendingChatRenderAfterTouch = false;
-				if (dir === -1) {
-					chat.style.transition = "transform 0.18s cubic-bezier(0.22, 1, 0.36, 1)";
-					chat.style.transform = `translate3d(${-width}px, 0, 0)`;
-					setTimeout(() => {
-						chat.style.transition = "none";
-						closeMobileChat();
-						if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resetChatStyle());
-						else resetChatStyle();
-					}, 185);
-				} else {
-					resetChatStyle();
-					closeMobileChat();
-				}
+				resetChatStyle();
+				closeMobileChat();
 			} else {
 				chat.style.transition = "transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)";
 				chat.style.transform = "translate3d(0px, 0, 0)";
@@ -14824,21 +14817,21 @@ function initHubController() {
 			if (!document.body.classList.contains("mobile-chat-open")) return;
 			if (isDesktopSplitLayout()) return;
 			if (document.querySelector(".sheet-backdrop.open, #triageDeckOverlay.open")) return;
+			startedAt = Date.now();
+			chatTouchDownAt = startedAt;
 			if (isInteractiveSwipeExcluded(event.target)) return;
 			detachOriginListeners();
 			const touch = event.touches[0];
 			const rect = chat.getBoundingClientRect();
 			width = chat.offsetWidth || rect.width || window.innerWidth || 375;
-			startRelX = touch.clientX;
+			startRelX = touch.clientX - rect.left;
+			if (!isWithinLeftSwipeBackZone(startRelX, width)) return;
 			tracking = true;
 			decided = null;
-			swipeDir = 0;
 			startX = touch.clientX;
 			startY = touch.clientY;
 			lastX = startX;
 			lastY = startY;
-			startedAt = Date.now();
-			chatTouchDownAt = startedAt;
 			originTarget = event.target;
 			if (originTarget && originTarget !== window && originTarget !== chat && typeof originTarget.addEventListener === "function") try {
 				originTarget.addEventListener("touchmove", onMove, { passive: false });
@@ -15148,7 +15141,7 @@ function initHubController() {
 		} catch {
 			return;
 		}
-		setTimeout(() => showToast("💡 提示：左右滑动即可返回会话列表"), 600);
+		setTimeout(() => showToast("💡 提示：从屏幕左侧向右滑动即可返回会话列表"), 600);
 	}
 	async function forceHardUpgradeReload() {
 		showToast(langPref === "en" ? "🚀 Clearing cache & loading latest version…" : "🚀 正在清理旧缓存并拉取最新版本…");
@@ -16224,6 +16217,8 @@ function initHubController() {
 		onSmartVideoLoadedMeta,
 		onSmartVideoError,
 		dismissOverlay,
+		getLeftEdgeSwipeZoneWidth,
+		isWithinLeftSwipeBackZone,
 		shouldDismissHorizontalSwipe,
 		shouldDismissVerticalSwipe,
 		setupChatSwipeBack,

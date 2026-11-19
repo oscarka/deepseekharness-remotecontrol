@@ -21,6 +21,17 @@ export function shouldSendOnEnter({
   return !coarsePointer;
 }
 
+// 聊天详情页返回列表的左侧边缘手势触发区宽度（仅限页面左侧带，避开正文区与右侧区）
+export function getLeftEdgeSwipeZoneWidth(width = 375): number {
+  const safeWidth = Number.isFinite(width) && width > 0 ? width : 375;
+  return Math.min(Math.max(48, Math.round(safeWidth * 0.14)), 72);
+}
+
+export function isWithinLeftSwipeBackZone(startRelX: number, width = 375): boolean {
+  if (!Number.isFinite(startRelX)) return false;
+  return startRelX >= -2 && startRelX <= getLeftEdgeSwipeZoneWidth(width);
+}
+
 // 纯函数，便于单测：横向滑动是否足以触发返回
 export function shouldDismissHorizontalSwipe({
   dx = 0,

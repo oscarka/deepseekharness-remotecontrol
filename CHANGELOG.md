@@ -10,6 +10,11 @@
   - GitHub 仓库原地更名为 `oscarka/pocketagent`（自动保留 `oscarka/deepseekharness-remotecontrol` 永久 301 重定向，老外链与 DSH 插件市场零断链）；
   - `package.json`、CLI 入口（`npx pocketagent`，同时保留 `dsh-remote` 别名）、Demo 沙盒、Docker 镜像（`ghcr.io/oscarka/pocketagent:latest`）、中英 Hero Banner 与双语 README 全面升级为 **PocketAgent**。
 
+### Fixed
+
+- **收紧手机端对话详情页滑动返回手势至仅限页面左侧边缘（`hub/web/src/controller.js` / `hub/web/src/utils/gestures.ts`）**：
+  - 移除全屏任意区域及右侧向左滑触发返回列表的逻辑，改为仅当手指起手落点位于屏幕左侧边缘带（约屏幕宽度 14%、48–72px）且向右拖动时触发返回会话列表，正文中间与最右侧区域滑动不再误触后退。
+
 ## [0.8.21] - 2026-11-19
 
 ### Fixed
