@@ -1663,12 +1663,17 @@ test('P1 & P2 Onboarding Loop: multi-use enrollment code, per-host independent t
     assert.equal(DEFAULT_HARNESS_CAPABILITIES.workbuddy.canApprove, true)
     assert.equal(DEFAULT_HARNESS_CAPABILITIES.workbuddy.canSteer, true)
     assert.equal(DEFAULT_HARNESS_CAPABILITIES.workbuddy.approvalStatus, 'supported')
-    assert.equal(DEFAULT_HARNESS_CAPABILITIES.claude.canApprove, false)
+    assert.equal(DEFAULT_HARNESS_CAPABILITIES.claude.canApprove, true)
+    assert.equal(DEFAULT_HARNESS_CAPABILITIES.claude.approvalStatus, 'supported')
     assert.equal(DEFAULT_HARNESS_CAPABILITIES.claude.canSteer, false)
 
     const claudeOnly = summarizeInstalledHarnesses({ hasClaude: true })
-    assert.equal(claudeOnly.mode, 'observe')
-    assert.match(claudeOnly.summary, /当前为观察模式，审批功能需要 DSH/)
+    assert.equal(claudeOnly.mode, 'full')
+    assert.match(claudeOnly.summary, /完整远控模式/)
+
+    const doubaoOnly = summarizeInstalledHarnesses({ hasDoubao: true })
+    assert.equal(doubaoOnly.mode, 'observe')
+    assert.match(doubaoOnly.summary, /仅观测模式/)
 
     const fullCodexAndWb = summarizeInstalledHarnesses({ hasCodex: true, hasWorkBuddy: true })
     assert.equal(fullCodexAndWb.mode, 'full')

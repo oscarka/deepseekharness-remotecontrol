@@ -1,6 +1,6 @@
 {
   "name": "deepseekharness-remotecontrol",
-  "version": "0.8.18",
+  "version": "0.8.19",
   "type": "module",
   "license": "MIT",
   "description": "Self-hosted mobile remote control for Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness (DSH) & WorkBuddy — swipe approvals, voice input, multi-host hub & terminal QR.",

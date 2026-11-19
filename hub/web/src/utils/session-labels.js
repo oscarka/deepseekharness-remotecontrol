@@ -217,7 +217,7 @@ export const HARNESS_CAPABILITY_MATRIX = [
     canView: true,
     canPrompt: true,
     canStop: true,
-    approveState: 'planned',
+    approveState: 'supported',
     canSteer: false,
   },
   {

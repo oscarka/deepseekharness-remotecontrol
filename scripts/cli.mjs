@@ -17,7 +17,8 @@ for (const k of [
   delete process.env[k]
 }
 
-import { readFileSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveConfig } from '../dsh-feishu/lib/config.js'
@@ -25,6 +26,11 @@ import { FeishuBridge } from '../dsh-feishu/lib/bridge.js'
 import { HubAgent } from '../dsh-feishu/lib/hub-agent.js'
 import { startEmbeddedLocalHub } from '../dsh-feishu/lib/local-hub.js'
 import { renderTerminalQr } from '../dsh-feishu/lib/terminal-qr.js'
+import {
+  installClaudePermissionHook,
+  isClaudePermissionHookInstalled,
+  uninstallClaudePermissionHook,
+} from '../dsh-feishu/lib/claude-permission-hook.js'
 import { listWorkspaceFiles, readWorkspaceFile } from '../dsh-feishu/lib/workspace-ops.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -43,6 +49,9 @@ export function parseCliArgs(argv = []) {
     token: '',
     hubOnly: false,
     noQr: false,
+    noClaudeHook: false,
+    installClaudeHook: false,
+    uninstallClaudeHook: false,
     once: false,
     help: false,
     version: false,
@@ -57,6 +66,12 @@ export function parseCliArgs(argv = []) {
       opts.hubOnly = true
     } else if (arg === '--no-qr') {
       opts.noQr = true
+    } else if (arg === '--no-claude-hook') {
+      opts.noClaudeHook = true
+    } else if (arg === '--install-claude-hook') {
+      opts.installClaudeHook = true
+    } else if (arg === '--uninstall-claude-hook') {
+      opts.uninstallClaudeHook = true
     } else if (arg === '--once') {
       opts.once = true
     } else if (arg === '-p' || arg === '--port') {
@@ -99,13 +114,16 @@ Usage:
   dsh-remote [options]
 
 Options:
-  -p, --port <number>   Preferred Hub port (default: 8788, auto-fallback if busy)
-      --host <addr>     Bind host (default: 0.0.0.0)
-      --token <secret>  Custom HUB_TOKEN (default: saved in ~/.dsh/local-hub.token)
-      --hub-only        Start only the web Control Hub without local session watcher
-      --no-qr           Skip printing the terminal QR code
-  -v, --version         Print version
-  -h, --help            Show this help
+  -p, --port <number>         Preferred Hub port (default: 8788, auto-fallback if busy)
+      --host <addr>           Bind host (default: 0.0.0.0)
+      --token <secret>        Custom HUB_TOKEN (default: saved in ~/.dsh/local-hub.token)
+      --hub-only              Start only the web Control Hub without local session watcher
+      --no-qr                 Skip printing the terminal QR code
+      --install-claude-hook   Install Claude Code PermissionRequest hook into ~/.claude/settings.json
+      --uninstall-claude-hook Remove Claude Code PermissionRequest hook from ~/.claude/settings.json
+      --no-claude-hook        Skip auto-installing the Claude Code approval hook on startup
+  -v, --version               Print version
+  -h, --help                  Show this help
 
 Examples:
   npx deepseekharness-remotecontrol              # Start local Hub + auto-watch local AI sessions + print QR
@@ -152,6 +170,45 @@ export async function runCli(argv = process.argv.slice(2)) {
   }
 
   const baseConfig = resolveConfig()
+  const claudeHome = baseConfig.claudeHome || process.env.CLAUDE_HOME || join(homedir(), '.claude')
+
+  if (opts.installClaudeHook) {
+    const res = installClaudePermissionHook({ claudeHome })
+    if (!res.ok) {
+      console.error(`❌ Failed to install Claude Code hook: ${res.error}`)
+      return 1
+    }
+    console.log(`✅ Claude Code mobile approval hook installed in ${res.settingsPath}`)
+    console.log('   Any Claude Code tool approval (Bash, Edit, Write, MCP, AskUserQuestion) will now appear on your phone.')
+    return 0
+  }
+
+  if (opts.uninstallClaudeHook) {
+    const res = uninstallClaudePermissionHook({ claudeHome })
+    if (!res.ok) {
+      console.error(`❌ Failed to uninstall Claude Code hook: ${res.error}`)
+      return 1
+    }
+    console.log(
+      res.removed
+        ? `✅ Removed Claude Code mobile approval hook from ${res.settingsPath}`
+        : `ℹ️ Claude Code mobile approval hook was not installed in ${res.settingsPath}`,
+    )
+    return 0
+  }
+
+  let claudeHookStatusNote = ''
+  if (!opts.hubOnly && !opts.noClaudeHook && existsSync(claudeHome)) {
+    if (!isClaudePermissionHookInstalled({ claudeHome })) {
+      const hookRes = installClaudePermissionHook({ claudeHome })
+      if (hookRes.ok) {
+        claudeHookStatusNote = `✅ Auto-enabled Claude Code mobile approvals (${hookRes.settingsPath})`
+      }
+    } else {
+      claudeHookStatusNote = '✅ Claude Code mobile approvals active (~/.claude/settings.json)'
+    }
+  }
+
   const silentLogger = {
     info: () => {},
     warn: msg => console.warn(msg),
@@ -233,6 +290,9 @@ export async function runCli(argv = process.argv.slice(2)) {
   console.log(`   💻 Host: ${baseConfig.hostName} (${baseConfig.hostId})`)
   if (!opts.hubOnly) {
     console.log(`   🔌 Synced: ${summarizeDiscoveredSessions(hubAgent)}`)
+  }
+  if (claudeHookStatusNote) {
+    console.log(`   ${claudeHookStatusNote}`)
   }
   console.log('')
 

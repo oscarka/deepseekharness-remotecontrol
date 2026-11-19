@@ -259,6 +259,7 @@ export class HubAgent {
       hostId: this.config.hostId,
       brainDirs: this.config.antigravityBrainDirs || getDefaultAntigravityBrainDirs(),
       dshHome: this.config.dshHome,
+      claudeHome: this.config.claudeHome || join(homedir(), '.claude'),
       hubUrl: this.config.hubUrl,
       hubToken: this.config.hubToken,
       fetchImpl: this.fetch,
@@ -1661,7 +1662,9 @@ export class HubAgent {
               ? 'codex'
               : code.startsWith('WB-') || code.startsWith('WBQ-')
                 ? 'workbuddy'
-                : '')
+                : code.startsWith('CLD-')
+                  ? 'claude'
+                  : '')
           const extAdapter = this.harnessRouter?.getAdapter(extTargetId)
           if (extAdapter && typeof extAdapter.resolveApproval === 'function') {
             if (rememberedExt?.session && rememberedExt.session.pendingApproval?.code?.toUpperCase() === code) {

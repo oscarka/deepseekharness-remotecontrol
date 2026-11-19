@@ -43,8 +43,8 @@ export const DEFAULT_HARNESS_CAPABILITIES = {
     canPrompt: true,
     canSteer: false,
     canStop: true,
-    canApprove: false,
-    approvalStatus: 'planned',
+    canApprove: true,
+    approvalStatus: 'supported',
   },
   doubao: {
     canView: true,
@@ -76,21 +76,13 @@ export function summarizeInstalledHarnesses({
   if (hasClaude) detected.push('claude')
   if (hasDoubao) detected.push('doubao')
 
-  const hasApprovalBackend = Boolean(hasDsh || hasAntigravity || hasCodex || hasWorkBuddy)
+  const hasApprovalBackend = Boolean(hasDsh || hasAntigravity || hasCodex || hasWorkBuddy || hasClaude)
   if (hasApprovalBackend) {
     return {
       mode: 'full',
       detected,
       enabledHarnesses: detected.join(',') || 'dsh,antigravity-ide,codex,workbuddy,claude',
-      summary: `已检测到 ${detected.join(', ')}：已启用完整远控模式（看会话、发指令、停止、手机审批、实时插话）。`,
-    }
-  }
-  if (hasClaude) {
-    return {
-      mode: 'observe',
-      detected,
-      enabledHarnesses: detected.join(','),
-      summary: `已检测到 ${detected.join(', ')}（未装 DSH）：当前为观察模式，审批功能需要 DSH（目前支持看会话、发指令、停止）。`,
+      summary: `已检测到 ${detected.join(', ')}：已启用完整远控模式（看会话、发指令、停止、手机审批）。`,
     }
   }
   if (hasDoubao) {

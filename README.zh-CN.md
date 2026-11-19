@@ -212,7 +212,7 @@ HUB_TOKEN="自定义一个安全密码" \
 | **Antigravity IDE** | ✅ | ✅ | ✅ | ✅ *(Connect-RPC + 原生按键注入)* | ✅ |
 | **OpenAI Codex** | ✅ | ✅ *(`codex app-server` + `codex exec` 兜底)* | ✅ | ✅ *(通过 `app-server` JSON-RPC 支持命令审批与提问卡)* | ✅ |
 | **Tencent WorkBuddy** | ✅ | ✅ *(ACP HTTP+SSE)* | ✅ | ✅ *(支持 ACP 权限确认弹窗)* | ✅ |
-| **Claude Code** | ✅ | ✅ *(通过 `claude --resume`)* | ✅ | ⏳ *计划中* | — |
+| **Claude Code** | ✅ | ✅ *(通过 `claude --resume`)* | ✅ | ✅ *(官方 `PermissionRequest` Hook：支持 Bash、Edit、Write、MCP 与 `AskUserQuestion`)* | — |
 | **豆包电脑版 (`Doubao Desktop`)** | ✅ *(只读观测)* | — | — | — | — |
 
 ---
@@ -223,8 +223,9 @@ HUB_TOKEN="自定义一个安全密码" \
 > 💡 按**自然日**折叠汇总，每条内保留完整子版本号；逐版本详细变更请见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.9–v0.8.18</code> — 一行 <code>npx</code> 终端出码、零后端 <code>?demo=1</code> 交互沙盒、全平台原生置顶互通 &amp; 零延迟同步</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.9–v0.8.19</code> — Claude Code 原生手机审批、一行 <code>npx</code> 终端出码、零后端 <code>?demo=1</code> 交互沙盒 &amp; 全平台置顶互通</strong></summary>
 
+- **Claude Code 原生手机审批与滑卡批阅全面打通（`v0.8.19`）**：新增官方 `PermissionRequest` Hook 桥接脚本（`claude-permission-hook.js` + `--install-claude-hook` / `npx` 启动自动装配）与 `<120ms` FSEvents 瞬时监听，支持手机端一键放行、`本对话始终允许`（`updatedPermissions`）、拒绝与 `AskUserQuestion` 多选题回传，自此五大主力引擎（Claude Code、Codex、Antigravity IDE、DSH、WorkBuddy）全部满血支持手机审批。
 - **一行 `npx` 终端出码 &amp; 零后端交互体验沙盒 `?demo=1`（`v0.8.18`）**：新增 `npx deepseekharness-remotecontrol`（`dsh-remote`）零配置命令行入口，3 秒拉起本地总控台 + 自动发现多引擎会话并在终端打印 ISO/IEC 18004 高对比度手机扫码二维码；上线纯浏览器内存隔离、零 API 请求零隐私泄露的 `?demo=1` 在线交互体验沙盒（双机 5 引擎、滑卡批阅、HTML 实时预览、自由发消息），全面焕新中英首屏定位与实机高清截图。
 - **断流显式提示与列表预览严格对齐（`v0.8.16–v0.8.17`）**：修复新提问到来时未重置 `lastOutput` 导致旧回复串入列表预览的问题，改为严格对齐最新一条消息；自动提取并折叠展示 Antigravity `ERROR_MESSAGE` 连续断流报错（`⚠️ 执行中断` + `⚠️ 中断待继续`），并在聊天页停在工具步骤无最终总结时直接显示琥珀色续跑提示条。
 - **零延迟结论同步（`v0.8.15`）**：移除 `/api/events` SSE 流的 `gzip` 压缩缓冲（消除 Cloudflare / 移动代理对微小增量帧的数秒缓冲，结论与审批事件 `<=30ms` 直推），打通 Service Worker `PUSH_RECEIVED` / `NOTIFICATION_CLICK` 与 `1.2s` 切回前台即刻强刷，任务出结论瞬间自动清理 `inflightCommands`，并将 Antigravity `RUNNING` RPC 缓存从 `2.5s` 压至 `350ms`。

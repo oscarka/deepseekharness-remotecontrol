@@ -134,6 +134,7 @@ export class TurboController {
     hostId = '',
     brainDirs = [],
     dshHome = '',
+    claudeHome = '',
     hubUrl = '',
     hubToken = '',
     onTriggerSync = () => {},
@@ -146,6 +147,7 @@ export class TurboController {
     this.hostId = hostId
     this.brainDirs = brainDirs
     this.dshHome = dshHome
+    this.claudeHome = claudeHome
     this.hubUrl = String(hubUrl || '').replace(/\/+$/, '')
     this.hubToken = hubToken
     this.onTriggerSync = onTriggerSync
@@ -263,6 +265,9 @@ export class TurboController {
     if (this.dshHome) {
       this.watchDirOnce(join(resolve(this.dshHome), 'sessions'), 'dsh-sessions')
       this.watchDirOnce(join(resolve(this.dshHome), 'storages'), 'dsh-storages')
+    }
+    if (this.claudeHome) {
+      this.watchDirOnce(join(resolve(this.claudeHome), '.dsh-remote-approvals'), 'claude-approvals')
     }
     for (const brainDir of this.brainDirs || []) {
       if (!brainDir) continue

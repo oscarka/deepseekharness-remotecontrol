@@ -1,10 +1,34 @@
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
+import {
+  getClaudeApprovalDir,
+  isClaudePermissionHookInstalled,
+} from '../claude-permission-hook.js'
 
 const execFileAsync = promisify(execFile)
+
+function isPidAlive(pid) {
+  const n = Number(pid)
+  if (!Number.isInteger(n) || n <= 1) return true
+  try {
+    process.kill(n, 0)
+    return true
+  } catch (err) {
+    return err?.code === 'EPERM'
+  }
+}
 
 export const CLAUDE_SESSION_PREFIX = 'claude:'
 
@@ -191,12 +215,14 @@ export class ClaudeAdapter {
 
   getCapabilities() {
     const hasBin = Boolean(this.binaryPath && existsSync(this.binaryPath))
+    const hookInstalled = isClaudePermissionHookInstalled({ claudeHome: this.claudeHome })
     return {
       canCreateSession: hasBin,
       canPrompt: hasBin,
       canSteer: false,
       canStop: true,
-      canApprove: false,
+      canApprove: hasBin || hookInstalled,
+      claudeHookInstalled: hookInstalled,
     }
   }
 
@@ -204,11 +230,83 @@ export class ClaudeAdapter {
     const projectsDir = join(this.claudeHome, 'projects')
     const hasDir = existsSync(projectsDir)
     const hasBin = Boolean(this.binaryPath && existsSync(this.binaryPath))
+    const hookInstalled = isClaudePermissionHookInstalled({ claudeHome: this.claudeHome })
     return {
       installed: hasBin || hasDir,
       hasBinary: hasBin,
       binaryPath: this.binaryPath,
       projectsDir: hasDir ? projectsDir : '',
+      claudeHookInstalled: hookInstalled,
+    }
+  }
+
+  listPendingApprovals({ now = Date.now(), maxAgeMs = 10 * 60_000 } = {}) {
+    const dir = getClaudeApprovalDir(this.claudeHome)
+    if (!existsSync(dir)) return []
+    const out = []
+    let entries = []
+    try {
+      entries = readdirSync(dir)
+    } catch {
+      return []
+    }
+    for (const name of entries) {
+      if (!name.startsWith('req-') || !name.endsWith('.json')) continue
+      const fullPath = join(dir, name)
+      try {
+        const raw = JSON.parse(readFileSync(fullPath, 'utf8'))
+        const createdAt = Number(raw?.createdAt || 0)
+        const ageMs = createdAt > 0 ? now - createdAt : 0
+        if (ageMs > maxAgeMs || (raw?.pid && !isPidAlive(raw.pid))) {
+          try {
+            unlinkSync(fullPath)
+          } catch {}
+          continue
+        }
+        if (raw?.code) {
+          out.push(raw)
+        }
+      } catch {
+        // skip half-written or corrupted files
+      }
+    }
+    return out.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+  }
+
+  async resolveApproval({ sessionId = '', code = '', allow = true, optionIndex = 1, answers = undefined, message = '' } = {}) {
+    const dir = getClaudeApprovalDir(this.claudeHome)
+    mkdirSync(dir, { recursive: true, mode: 0o700 })
+    const cleanCode = String(code || '').trim().toUpperCase()
+    const cleanSid = String(sessionId || '').trim()
+    const pending = this.listPendingApprovals()
+    const matched =
+      (cleanCode && pending.find(p => String(p.code || '').toUpperCase() === cleanCode)) ||
+      (cleanSid && pending.find(p => p.agentId === cleanSid || p.rawSessionId === toRawClaudeId(cleanSid))) ||
+      null
+
+    const targetCode = matched?.code || cleanCode
+    if (!targetCode) {
+      return { ok: false, error: '未找到对应的 Claude Code 待审批请求（可能已在电脑端处理）' }
+    }
+
+    const resPath = join(dir, `res-${targetCode}.json`)
+    const tmpPath = `${resPath}.tmp-${process.pid}-${Date.now()}`
+    const payload = {
+      code: targetCode,
+      allow: allow !== false,
+      optionIndex: Number(optionIndex) || 1,
+      ...(answers !== undefined ? { answers } : {}),
+      ...(message ? { message: String(message) } : {}),
+      decidedAt: Date.now(),
+    }
+    writeFileSync(tmpPath, JSON.stringify(payload, null, 2), { mode: 0o600 })
+    renameSync(tmpPath, resPath)
+
+    return {
+      ok: true,
+      code: targetCode,
+      decision: payload.allow ? (payload.optionIndex === 2 ? 'allowed-session' : 'allowed-once') : 'rejected',
+      message: payload.allow ? '已批准 Claude Code 工具调用' : '已拒绝 Claude Code 工具调用',
     }
   }
 
@@ -224,18 +322,28 @@ export class ClaudeAdapter {
   }
 
   async listSessions({ now = Date.now() } = {}) {
-    const projectsDir = join(this.claudeHome, 'projects')
-    if (!existsSync(projectsDir)) return []
-    const files = walkClaudeProjectFiles(projectsDir, 3)
-      .sort((a, b) => b.mtimeMs - a.mtimeMs)
-      .slice(0, Math.max(this.maxSessions * 3, 25))
+    const pendingApprovals = this.listPendingApprovals({ now })
+    const pendingBySession = new Map()
+    for (const app of pendingApprovals) {
+      if (app?.agentId && !pendingBySession.has(app.agentId)) {
+        pendingBySession.set(app.agentId, app)
+      }
+    }
 
-    if (files.length === 0) return []
+    const projectsDir = join(this.claudeHome, 'projects')
+    const files = existsSync(projectsDir)
+      ? walkClaudeProjectFiles(projectsDir, 3)
+          .sort((a, b) => b.mtimeMs - a.mtimeMs)
+          .slice(0, Math.max(this.maxSessions * 3, 25))
+      : []
+
+    if (files.length === 0 && pendingApprovals.length === 0) return []
     const hasBin = Boolean(this.binaryPath && existsSync(this.binaryPath))
     const anyRecentFile = files.some(f => now - f.mtimeMs < 45_000)
     const externalRunning = anyRecentFile ? await this.hasExternalClaudeProcess() : false
 
     const results = []
+    const seenSessionIds = new Set()
     for (const file of files) {
       if (results.length >= this.maxSessions) break
       let parsed = this.fileCache.get(file.path)
@@ -256,9 +364,10 @@ export class ClaudeAdapter {
       }
 
       const { sessionId, cwd, model, lastRole, lastStepIndex, transcript } = parsed.data
-      const hasAssistantReply = transcript.some(m => m.role === 'assistant')
-      if (!sessionId || this.deletedIds.has(sessionId) || transcript.length === 0 || !hasAssistantReply) continue
       const fullId = `${CLAUDE_SESSION_PREFIX}${sessionId}`
+      const livePendingApp = pendingBySession.get(fullId) || null
+      const hasAssistantReply = transcript.some(m => m.role === 'assistant')
+      if (!sessionId || this.deletedIds.has(sessionId) || (!livePendingApp && (transcript.length === 0 || !hasAssistantReply))) continue
       const isManagedRunning = this.activeRuns.has(sessionId)
       const isExternallyActive =
         !isManagedRunning && lastRole === 'user' && now - file.mtimeMs < 45_000 && externalRunning
@@ -269,7 +378,13 @@ export class ClaudeAdapter {
       let confidence = 'high'
       let source = 'jsonl-tail'
 
-      if (isManagedRunning) {
+      if (livePendingApp) {
+        status = 'approval'
+        statusLabel = livePendingApp.kind === 'question' ? '⏳ 待你选择' : '⏳ 待你授权'
+        controlMode = 'managed'
+        source = 'permission-hook'
+        confidence = 'high'
+      } else if (isManagedRunning) {
         status = 'running'
         statusLabel = '🟢 运行中'
         controlMode = 'managed'
@@ -287,11 +402,14 @@ export class ClaudeAdapter {
       const lastAssistant = [...transcript].reverse().find(m => m.role === 'assistant')
       const title =
         extractCleanPromptTitle(firstUser?.text)
+        || livePendingApp?.title
         || `Claude (${sessionId.slice(0, 8)})`
 
-      const hasConcluded = status !== 'running' && lastRole === 'assistant' && Boolean(lastAssistant?.text)
+      const hasConcluded = status !== 'running' && status !== 'approval' && lastRole === 'assistant' && Boolean(lastAssistant?.text)
       const lastConclusionAt = hasConcluded ? Math.round(file.mtimeMs) : 0
+      const updatedAt = Math.max(Math.round(file.mtimeMs), Number(livePendingApp?.createdAt || 0))
 
+      seenSessionIds.add(fullId)
       results.push({
         id: fullId,
         rawId: sessionId,
@@ -300,23 +418,57 @@ export class ClaudeAdapter {
         title,
         status,
         statusLabel,
-        turnState: status === 'running' ? 'running' : hasConcluded ? 'conclusion' : 'idle',
+        turnState: status === 'approval' ? 'approval' : status === 'running' ? 'running' : hasConcluded ? 'conclusion' : 'idle',
         lastConclusionAt,
         controlMode,
-        cwd: cwd || '',
+        cwd: cwd || livePendingApp?.cwd || '',
         model: model || 'claude',
-        lastActivity: Math.round(file.mtimeMs),
-        updatedAt: Math.round(file.mtimeMs),
+        lastActivity: updatedAt,
+        updatedAt,
         lastStepIndex,
-        preview: String(lastAssistant?.text || firstUser?.text || '').slice(0, 160),
+        preview: String(livePendingApp?.reason || lastAssistant?.text || firstUser?.text || '').slice(0, 160),
         transcript,
+        ...(livePendingApp ? { pendingApproval: livePendingApp } : {}),
         stateMeta: {
           source,
-          observedAt: Math.round(file.mtimeMs),
+          observedAt: updatedAt,
           confidence,
         },
       })
     }
+
+    // Surface first-turn Claude sessions awaiting tool permission even before .jsonl flushes an assistant entry
+    for (const app of pendingApprovals) {
+      if (!app?.agentId || seenSessionIds.has(app.agentId)) continue
+      seenSessionIds.add(app.agentId)
+      const ts = Number(app.createdAt || now)
+      results.unshift({
+        id: app.agentId,
+        rawId: app.rawSessionId || toRawClaudeId(app.agentId),
+        harness: 'claude',
+        harnessLabel: 'Claude Code',
+        title: app.title || `Claude (${app.project || 'session'})`,
+        status: 'approval',
+        statusLabel: app.kind === 'question' ? '⏳ 待你选择' : '⏳ 待你授权',
+        turnState: 'approval',
+        lastConclusionAt: 0,
+        controlMode: 'managed',
+        cwd: app.cwd || '',
+        model: 'claude',
+        lastActivity: ts,
+        updatedAt: ts,
+        lastStepIndex: 0,
+        preview: String(app.reason || app.commandLine || '').slice(0, 160),
+        transcript: [],
+        pendingApproval: app,
+        stateMeta: {
+          source: 'permission-hook',
+          observedAt: ts,
+          confidence: 'high',
+        },
+      })
+    }
+
     return results
   }
 

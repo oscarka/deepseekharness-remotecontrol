@@ -2,6 +2,15 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.19] - 2026-11-19
+
+### Added
+
+- **Claude Code 原生手机审批与滑卡批阅（`dsh-feishu/lib/claude-permission-hook.js` / `dsh-feishu/lib/harnesses/claude-adapter.js` / `dsh-turbo/index.js` / `scripts/cli.mjs`）**：
+  - 接入 Claude Code 官方 `PermissionRequest` Hook：支持 Bash、Edit、Write、MCP 工具审批与 `AskUserQuestion` 结构化多选题，通过 `~/.claude/.dsh-remote-approvals/` 原子文件通道与 `<120ms` FSEvents 监听实时同步到手机端与滑卡批阅（Swipe Triage）；
+  - 手机点选「本次允许」「本对话内始终允许（输出官方 `updatedPermissions`）」「拒绝」或提交多选答案（`updatedInput.answers`）后 `<50ms` 回写并自动唤醒 Claude Code 继续执行；若用户在电脑端直接处理或进程退出则自动按 PID 活性清理过期卡片，绝不阻塞终端；
+  - `scripts/cli.mjs` 新增 `--install-claude-hook`、`--uninstall-claude-hook`、`--no-claude-hook`，检测到 `~/.claude` 时幂等无损合入 `settings.json` 并完整保留用户已有全部 Hook。
+
 ## [0.8.18] - 2026-11-19
 
 ### Added

@@ -212,7 +212,7 @@ The background daemon automatically discovers local sessions across all 6 suppor
 | **Antigravity IDE** | ✅ | ✅ | ✅ | ✅ *(Connect-RPC + native keystroke injection)* | ✅ |
 | **OpenAI Codex** | ✅ | ✅ *(`codex app-server` + `codex exec` fallback)* | ✅ | ✅ *(JSON-RPC approvals & question cards via `app-server`)* | ✅ |
 | **Tencent WorkBuddy** | ✅ | ✅ *(ACP HTTP+SSE)* | ✅ | ✅ *(ACP permission popups)* | ✅ |
-| **Claude Code** | ✅ | ✅ *(via `claude --resume`)* | ✅ | ⏳ *Planned* | — |
+| **Claude Code** | ✅ | ✅ *(via `claude --resume`)* | ✅ | ✅ *(Native `PermissionRequest` Hook: Bash, Edit, Write, MCP &amp; `AskUserQuestion`)* | — |
 | **Doubao Desktop (`豆包电脑版`)** | ✅ *(Observe-only)* | — | — | — | — |
 
 ---
@@ -223,8 +223,9 @@ The background daemon automatically discovers local sessions across all 6 suppor
 > 💡 Grouped **one drawer per day** with every exact version tag preserved inside; see [`CHANGELOG.md`](CHANGELOG.md) for granular per-release notes.
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.9–v0.8.18</code> — 1-Command <code>npx</code> Terminal QR, Zero-Backend <code>?demo=1</code> Sandbox, Native Multi-Harness Pin Sync &amp; Zero-Lag Sync</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.9–v0.8.19</code> — Claude Code Native Mobile Approvals, 1-Command <code>npx</code> Terminal QR, Zero-Backend <code>?demo=1</code> Sandbox &amp; Pin Sync</strong></summary>
 
+- **Native Claude Code Mobile Approvals (`v0.8.19`)**: Added official Claude Code `PermissionRequest` Hook bridge (`claude-permission-hook.js` + `--install-claude-hook` / auto-install in `npx`), real-time `<120ms` FSEvents approval watcher, 1-tap `Allow` / `Always allow in this chat` (`updatedPermissions`) / `Deny` and `AskUserQuestion` structured answers — bringing full mobile &amp; Swipe Triage approvals to all 5 coding harnesses (Claude Code, Codex, Antigravity IDE, DSH &amp; WorkBuddy).
 - **1-Command `npx` Terminal QR &amp; Zero-Backend Interactive Demo (`v0.8.18`)**: Added executable `npx deepseekharness-remotecontrol` (`dsh-remote`) CLI that boots an embedded local Hub + local session watcher and prints a scannable ISO/IEC 18004 Unicode QR code right in the terminal; shipped a completely isolated, zero-backend `?demo=1` interactive sandbox (2 hosts, 5 AI engines, Swipe Triage, HTML live preview) and repositioned README &amp; visuals for Claude Code, Codex, Antigravity IDE &amp; DSH.
 - **Explicit Interruption Notices &amp; Latest-Turn Previews (`v0.8.16–v0.8.17`)**: Reset `lastOutput` on each new `USER_INPUT` and aligned list previews strictly to the newest transcript message so stalled turns never leak older replies; collapsed repeated Antigravity `ERROR_MESSAGE` stream drops (`⚠️ Interrupted (×N)`) into standalone notices with `⚠️ Interrupted` status and added an inline resume banner when a turn pauses after tool steps.
 - **Zero-Lag Conclusion State Sync (`v0.8.15`)**: Removed CDN-buffered `gzip` encoding on `/api/events` SSE (`80ms` default / `30ms` urgent conclusion flush), wired Service Worker `PUSH_RECEIVED` + `NOTIFICATION_CLICK` + `1.2s` foreground resume to force immediate `/api/state` refresh, pruned `inflightCommands` immediately on conclusion, and cut Antigravity `RUNNING` RPC cache TTL from `2.5s` to `350ms`.
