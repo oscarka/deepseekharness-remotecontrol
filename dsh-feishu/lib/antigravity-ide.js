@@ -207,6 +207,80 @@ export function buildArtifactDescriptor(filePath, rawMeta = null) {
   }
 }
 
+export function normalizeAntigravityQuestions(rawQuestions) {
+  let list = rawQuestions
+  if (typeof list === 'string') {
+    const trimmed = list.trim()
+    if (trimmed.startsWith('[')) {
+      try {
+        list = JSON.parse(trimmed)
+      } catch {
+        list = []
+      }
+    } else {
+      list = []
+    }
+  }
+  if (!Array.isArray(list)) return []
+  const normalized = []
+  for (let i = 0; i < list.length; i += 1) {
+    const q = list[i]
+    if (!q || typeof q !== 'object') continue
+    const rawOpts = Array.isArray(q.options) ? q.options : Array.isArray(q.choices) ? q.choices : []
+    const options = rawOpts
+      .map((opt, oIdx) => {
+        if (typeof opt === 'string') {
+          const clean = opt.trim()
+          return clean ? { label: clean, description: '' } : null
+        }
+        if (opt && typeof opt === 'object') {
+          const label = String(opt.label || opt.text || opt.title || opt.value || `选项 ${oIdx + 1}`).trim()
+          const description = String(opt.description || opt.subtitle || opt.detail || '').trim()
+          return label ? { label, description } : null
+        }
+        return null
+      })
+      .filter(Boolean)
+    const questionText = String(q.question || q.prompt || q.title || q.text || '').trim()
+    if (!questionText && options.length === 0) continue
+    normalized.push({
+      id: String(q.id || `q_${i + 1}`),
+      header: String(q.header || (list.length > 1 ? `问题 ${i + 1}` : '')).trim(),
+      question: questionText || `请选择一项 (${i + 1})`,
+      multiSelect: Boolean(q.is_multi_select ?? q.isMultiSelect ?? q.multiSelect ?? q.multi_select),
+      options,
+    })
+  }
+  return normalized
+}
+
+export function extractLiveWaitingQuestionSpec(waitingStep = null) {
+  const step = waitingStep?.step || waitingStep
+  if (!step || typeof step !== 'object') return null
+  const reqInt = step.requestedInteraction || null
+  const candidates = [
+    reqInt?.askQuestion,
+    reqInt?.askUserQuestion,
+    reqInt?.userQuestion,
+    reqInt?.question,
+    reqInt?.multipleChoice,
+    reqInt?.interaction?.value,
+    step.askQuestion,
+    step.userQuestion,
+  ].filter(v => v && typeof v === 'object')
+  for (const cand of candidates) {
+    const qs = normalizeAntigravityQuestions(cand.questions || cand.items || (cand.question ? [cand] : null))
+    if (qs.length > 0) {
+      return {
+        questions: qs,
+        promptTitle: String(cand.title || cand.promptTitle || (qs.length === 1 ? qs[0].question : `请确认以下 ${qs.length} 个选项`)).trim(),
+        rawCase: reqInt?.interaction?.case || Object.keys(reqInt || {}).find(k => /question|choice/i.test(k)) || 'askQuestion',
+      }
+    }
+  }
+  return null
+}
+
 /**
  * Parse tool_calls array from an Antigravity PLANNER_RESPONSE step.
  */
@@ -343,14 +417,27 @@ export function parseAntigravityToolCalls(rawToolCalls) {
         ],
         reason: `${toolSummary ? `${toolSummary}: ` : ''}${cmdLine || '请求宿主机终端执行权限'}`.slice(0, 2000),
       }
-    } else if (name === 'ask_question') {
+    } else if (name === 'ask_question' || name === 'ask_user_question') {
+      const parsedQuestions = normalizeAntigravityQuestions(
+        args.questions ?? args.Questions ?? (args.question ? [args] : []),
+      )
+      const qCount = parsedQuestions.length
+      const firstQ = parsedQuestions[0]?.question || ''
       approvalRequest = {
-        toolName: 'ask_question',
-        promptTitle: 'Allow agent question?',
+        kind: 'question',
+        toolName: name,
+        promptTitle:
+          qCount > 1
+            ? `请确认以下 ${qCount} 个选项`
+            : firstQ || '请做出选择以继续',
         subtitle: 'Waiting for user input.',
         commandLine: '',
+        ...(qCount > 0 ? { questions: parsedQuestions } : {}),
         options: [],
-        reason: '等待你在对话框中确认选项或回答澄清问题',
+        reason:
+          qCount > 0
+            ? parsedQuestions.map((q, idx) => (qCount > 1 ? `${idx + 1}. ${q.question}` : q.question)).join(' · ').slice(0, 600)
+            : '等待你在对话框中确认选项或回答澄清问题',
       }
     }
   }
@@ -388,8 +475,13 @@ async function loadTruncatedStepContents(compactPath, rawCompactText) {
       if (!line || !line.includes('"PLANNER_RESPONSE"')) continue
       try {
         const obj = JSON.parse(line)
-        if (obj && obj.type === 'PLANNER_RESPONSE' && typeof obj.step_index === 'number' && typeof obj.content === 'string' && obj.content) {
-          map.set(obj.step_index, obj.content)
+        if (obj && obj.type === 'PLANNER_RESPONSE' && typeof obj.step_index === 'number') {
+          const entry = {}
+          if (typeof obj.content === 'string' && obj.content) entry.content = obj.content
+          if (Array.isArray(obj.tool_calls) && obj.tool_calls.length > 0) entry.tool_calls = obj.tool_calls
+          if (entry.content || entry.tool_calls) {
+            map.set(obj.step_index, entry)
+          }
         }
       } catch {
         // ignore partial/invalid line
@@ -614,14 +706,28 @@ export function parseAntigravityTranscript(jsonlText, {
 
     if (stepType === 'PLANNER_RESPONSE') {
       let fullStepContent = String(step.content ?? '')
+      let fullStepToolCalls = step.tool_calls
       if (
         fullContentByStepIndex instanceof Map
         && typeof step.step_index === 'number'
         && fullContentByStepIndex.has(step.step_index)
       ) {
-        const candidate = String(fullContentByStepIndex.get(step.step_index) || '')
-        if (candidate.length > fullStepContent.length) {
-          fullStepContent = candidate
+        const hydrated = fullContentByStepIndex.get(step.step_index)
+        const candidateContent = typeof hydrated === 'string'
+          ? hydrated
+          : String(hydrated?.content || '')
+        if (candidateContent.length > fullStepContent.length) {
+          fullStepContent = candidateContent
+        }
+        if (
+          hydrated && typeof hydrated === 'object' && Array.isArray(hydrated.tool_calls) && hydrated.tool_calls.length > 0
+          && (
+            (Array.isArray(step.truncated_fields) && step.truncated_fields.includes('tool_calls'))
+            || !Array.isArray(fullStepToolCalls)
+            || fullStepToolCalls.length === 0
+          )
+        ) {
+          fullStepToolCalls = hydrated.tool_calls
         }
       }
       if (Array.isArray(step.media) && step.media.length > 0) {
@@ -638,7 +744,7 @@ export function parseAntigravityTranscript(jsonlText, {
       }
       const rawContent = fullStepContent.trim()
       const rawThinking = String(step.thinking ?? '').trim()
-      const { tools, inferredWs, approvalRequest, fileChanges, artifacts } = parseAntigravityToolCalls(step.tool_calls)
+      const { tools, inferredWs, approvalRequest, fileChanges, artifacts } = parseAntigravityToolCalls(fullStepToolCalls)
       for (const t of tools) {
         if (t && t.name === 'invoke_subagent') {
           unassignedSubagentTools.push(t)
@@ -721,27 +827,55 @@ export function parseAntigravityTranscript(jsonlText, {
         || (activeLiveWaiting?.step?.requestedInteraction?.interaction?.case === 'permission'
           ? activeLiveWaiting.step.requestedInteraction.interaction.value
           : null)
+      const liveQuestionSpec = extractLiveWaitingQuestionSpec(activeLiveWaiting)
 
       let effectiveApprovalRequest = approvalRequest
-      if (!effectiveApprovalRequest && activeLiveWaiting && i === lines.length - 1) {
-        const targetCmd = String(livePermSpec?.resource?.target || tools[0]?.commandLine || '').trim()
-        const actDesc = String(livePermSpec?.actionDescription || tools[0]?.summary || 'command execution').trim()
-        const lowerAct = actDesc ? actDesc.charAt(0).toLowerCase() + actDesc.slice(1) : 'command execution'
-        const firstSub = (targetCmd.split(/\s*(?:&&|\|\||;|\n)\s*/)[0] || targetCmd).trim()
-        const persistLabel = String(livePermSpec?.suggestedPersistPattern || firstSub || targetCmd).trim()
+      if (
+        effectiveApprovalRequest
+        && (effectiveApprovalRequest.kind === 'question' || effectiveApprovalRequest.toolName === 'ask_question')
+        && (!Array.isArray(effectiveApprovalRequest.questions) || effectiveApprovalRequest.questions.length === 0)
+        && liveQuestionSpec?.questions?.length > 0
+      ) {
         effectiveApprovalRequest = {
-          toolName: livePermSpec?.resource?.action ? `permission (${livePermSpec.resource.action})` : 'run_command (BypassSandbox)',
-          promptTitle: `Allow ${lowerAct}?`,
-          subtitle: String(livePermSpec?.reason || 'the auto-run safety check did not reach a decision'),
-          commandLine: targetCmd || '请求宿主机终端执行权限',
-          firstSubcommand: firstSub,
-          options: [
-            { index: 1, label: 'Yes, allow this time' },
-            { index: 2, label: persistLabel ? `Yes, and always allow '${persistLabel}' in this conversation` : 'Yes, and always allow in this conversation' },
-            { index: 3, label: persistLabel ? `Yes, and always allow '${persistLabel}'` : 'Yes, and always allow' },
-            { index: 4, label: 'No (tell the agent what to do instead)' },
-          ],
-          reason: `${actDesc ? `${actDesc}: ` : ''}${targetCmd || '请求宿主机终端执行权限'}`.slice(0, 2000),
+          ...effectiveApprovalRequest,
+          kind: 'question',
+          promptTitle: liveQuestionSpec.promptTitle || effectiveApprovalRequest.promptTitle,
+          questions: liveQuestionSpec.questions,
+          reason: liveQuestionSpec.questions.map((q, idx) => (liveQuestionSpec.questions.length > 1 ? `${idx + 1}. ${q.question}` : q.question)).join(' · ').slice(0, 600),
+        }
+      }
+      if (!effectiveApprovalRequest && activeLiveWaiting && i === lines.length - 1) {
+        if (liveQuestionSpec?.questions?.length > 0) {
+          effectiveApprovalRequest = {
+            kind: 'question',
+            toolName: 'ask_question',
+            promptTitle: liveQuestionSpec.promptTitle || '请做出选择以继续',
+            subtitle: 'Waiting for user input.',
+            commandLine: '',
+            questions: liveQuestionSpec.questions,
+            options: [],
+            reason: liveQuestionSpec.questions.map((q, idx) => (liveQuestionSpec.questions.length > 1 ? `${idx + 1}. ${q.question}` : q.question)).join(' · ').slice(0, 600),
+          }
+        } else {
+          const targetCmd = String(livePermSpec?.resource?.target || tools[0]?.commandLine || '').trim()
+          const actDesc = String(livePermSpec?.actionDescription || tools[0]?.summary || 'command execution').trim()
+          const lowerAct = actDesc ? actDesc.charAt(0).toLowerCase() + actDesc.slice(1) : 'command execution'
+          const firstSub = (targetCmd.split(/\s*(?:&&|\|\||;|\n)\s*/)[0] || targetCmd).trim()
+          const persistLabel = String(livePermSpec?.suggestedPersistPattern || firstSub || targetCmd).trim()
+          effectiveApprovalRequest = {
+            toolName: livePermSpec?.resource?.action ? `permission (${livePermSpec.resource.action})` : 'run_command (BypassSandbox)',
+            promptTitle: `Allow ${lowerAct}?`,
+            subtitle: String(livePermSpec?.reason || 'the auto-run safety check did not reach a decision'),
+            commandLine: targetCmd || '请求宿主机终端执行权限',
+            firstSubcommand: firstSub,
+            options: [
+              { index: 1, label: 'Yes, allow this time' },
+              { index: 2, label: persistLabel ? `Yes, and always allow '${persistLabel}' in this conversation` : 'Yes, and always allow in this conversation' },
+              { index: 3, label: persistLabel ? `Yes, and always allow '${persistLabel}'` : 'Yes, and always allow' },
+              { index: 4, label: 'No (tell the agent what to do instead)' },
+            ],
+            reason: `${actDesc ? `${actDesc}: ` : ''}${targetCmd || '请求宿主机终端执行权限'}`.slice(0, 2000),
+          }
         }
       }
 
@@ -795,6 +929,10 @@ export function parseAntigravityTranscript(jsonlText, {
             suggestedPersistPattern: livePermSpec?.suggestedPersistPattern || '',
             persistSuggestionType: livePermSpec?.persistSuggestionType || '',
             harness: 'antigravity-ide',
+            ...(effectiveApprovalRequest.kind ? { kind: effectiveApprovalRequest.kind } : {}),
+            ...(Array.isArray(effectiveApprovalRequest.questions) && effectiveApprovalRequest.questions.length > 0
+              ? { questions: effectiveApprovalRequest.questions }
+              : {}),
             toolName: effectiveApprovalRequest.toolName,
             promptTitle: effectiveApprovalRequest.promptTitle || '',
             subtitle: effectiveApprovalRequest.subtitle || '',
@@ -919,6 +1057,7 @@ export function parseAntigravityTranscript(jsonlText, {
       || (activeLiveWaiting?.step?.requestedInteraction?.interaction?.case === 'permission'
         ? activeLiveWaiting.step.requestedInteraction.interaction.value
         : null)
+    const liveQuestionSpec = extractLiveWaitingQuestionSpec(activeLiveWaiting)
     const waitingStepIndex = activeLiveWaiting?.step?.metadata?.sourceTrajectoryStepInfo?.stepIndex
       ?? activeLiveWaiting?.stepIndex
       ?? lines.length
@@ -926,35 +1065,58 @@ export function parseAntigravityTranscript(jsonlText, {
       || conversationId
     const code = `AGY-${String(conversationId).slice(0, 6).toUpperCase()}-${waitingStepIndex}`
     if (!settledApprovals.has(code)) {
-      const targetCmd = String(livePermSpec?.resource?.target || '').trim()
-      const actDesc = String(livePermSpec?.actionDescription || 'command execution').trim()
-      const lowerAct = actDesc ? actDesc.charAt(0).toLowerCase() + actDesc.slice(1) : 'command execution'
-      const firstSub = (targetCmd.split(/\s*(?:&&|\|\||;|\n)\s*/)[0] || targetCmd).trim()
-      const persistLabel = String(livePermSpec?.suggestedPersistPattern || firstSub || targetCmd).trim()
-      pendingApproval = {
-        code,
-        stepIndex: waitingStepIndex,
-        waitingStepIndex,
-        trajectoryId: waitingTrajectoryId,
-        permissionAction: livePermSpec?.resource?.action || 'unsandboxed',
-        permissionTarget: targetCmd,
-        suggestedPersistPattern: livePermSpec?.suggestedPersistPattern || '',
-        persistSuggestionType: livePermSpec?.persistSuggestionType || '',
-        harness: 'antigravity-ide',
-        toolName: livePermSpec?.resource?.action ? `permission (${livePermSpec.resource.action})` : 'run_command (BypassSandbox)',
-        promptTitle: `Allow ${lowerAct}?`,
-        subtitle: String(livePermSpec?.reason || 'the auto-run safety check did not reach a decision'),
-        commandLine: targetCmd || '请求宿主机终端执行权限',
-        firstSubcommand: firstSub,
-        options: [
-          { index: 1, label: 'Yes, allow this time' },
-          { index: 2, label: persistLabel ? `Yes, and always allow '${persistLabel}' in this conversation` : 'Yes, and always allow in this conversation' },
-          { index: 3, label: persistLabel ? `Yes, and always allow '${persistLabel}'` : 'Yes, and always allow' },
-          { index: 4, label: 'No (tell the agent what to do instead)' },
-        ],
-        reason: `${actDesc ? `${actDesc}: ` : ''}${targetCmd || '请求宿主机终端执行权限'}`.slice(0, 2000),
-        createdAt: lastActivity || now,
-        expiresAt: (lastActivity || now) + 10 * 60 * 1000,
+      if (liveQuestionSpec?.questions?.length > 0) {
+        pendingApproval = {
+          code,
+          stepIndex: waitingStepIndex,
+          waitingStepIndex,
+          trajectoryId: waitingTrajectoryId,
+          harness: 'antigravity-ide',
+          kind: 'question',
+          toolName: 'ask_question',
+          promptTitle: liveQuestionSpec.promptTitle || '请做出选择以继续',
+          subtitle: 'Waiting for user input.',
+          commandLine: '',
+          questions: liveQuestionSpec.questions,
+          options: [],
+          reason: liveQuestionSpec.questions
+            .map((q, idx) => (liveQuestionSpec.questions.length > 1 ? `${idx + 1}. ${q.question}` : q.question))
+            .join(' · ')
+            .slice(0, 600),
+          createdAt: lastActivity || now,
+          expiresAt: (lastActivity || now) + 10 * 60 * 1000,
+        }
+      } else {
+        const targetCmd = String(livePermSpec?.resource?.target || '').trim()
+        const actDesc = String(livePermSpec?.actionDescription || 'command execution').trim()
+        const lowerAct = actDesc ? actDesc.charAt(0).toLowerCase() + actDesc.slice(1) : 'command execution'
+        const firstSub = (targetCmd.split(/\s*(?:&&|\|\||;|\n)\s*/)[0] || targetCmd).trim()
+        const persistLabel = String(livePermSpec?.suggestedPersistPattern || firstSub || targetCmd).trim()
+        pendingApproval = {
+          code,
+          stepIndex: waitingStepIndex,
+          waitingStepIndex,
+          trajectoryId: waitingTrajectoryId,
+          permissionAction: livePermSpec?.resource?.action || 'unsandboxed',
+          permissionTarget: targetCmd,
+          suggestedPersistPattern: livePermSpec?.suggestedPersistPattern || '',
+          persistSuggestionType: livePermSpec?.persistSuggestionType || '',
+          harness: 'antigravity-ide',
+          toolName: livePermSpec?.resource?.action ? `permission (${livePermSpec.resource.action})` : 'run_command (BypassSandbox)',
+          promptTitle: `Allow ${lowerAct}?`,
+          subtitle: String(livePermSpec?.reason || 'the auto-run safety check did not reach a decision'),
+          commandLine: targetCmd || '请求宿主机终端执行权限',
+          firstSubcommand: firstSub,
+          options: [
+            { index: 1, label: 'Yes, allow this time' },
+            { index: 2, label: persistLabel ? `Yes, and always allow '${persistLabel}' in this conversation` : 'Yes, and always allow in this conversation' },
+            { index: 3, label: persistLabel ? `Yes, and always allow '${persistLabel}'` : 'Yes, and always allow' },
+            { index: 4, label: 'No (tell the agent what to do instead)' },
+          ],
+          reason: `${actDesc ? `${actDesc}: ` : ''}${targetCmd || '请求宿主机终端执行权限'}`.slice(0, 2000),
+          createdAt: lastActivity || now,
+          expiresAt: (lastActivity || now) + 10 * 60 * 1000,
+        }
       }
     }
   }
@@ -2353,6 +2515,29 @@ async function probeHubsForTrajectory(hubs, rawConvId, fetchImpl) {
  * - `prompt` / `steer`: Send message via Connect-RPC `SendUserCascadeMessage` or official `agentapi send-message <id> <text>` with discovered LS port + CSRF token, falling back to UI focus
  * - `new_session`: Create a new Antigravity IDE conversation via `agentapi new-conversation` or `Cmd + Shift + L`
  */
+function formatAntigravityQuestionReplyText(questions = [], answers = {}) {
+  const qList = Array.isArray(questions) ? questions : []
+  const ansObj = answers && typeof answers === 'object' ? answers : {}
+  const lines = []
+  if (qList.length > 0) {
+    qList.forEach((q, idx) => {
+      const qId = String(q?.id || `q_${idx + 1}`)
+      const raw = ansObj[qId]
+      const val = Array.isArray(raw) ? raw.filter(Boolean).join('、') : String(raw || '').trim()
+      if (!val) return
+      const label = String(q?.question || q?.header || `问题 ${idx + 1}`).trim()
+      lines.push(qList.length > 1 ? `${idx + 1}. ${label}：${val}` : `${label}：${val}`)
+    })
+  }
+  if (lines.length === 0) {
+    Object.entries(ansObj).forEach(([k, v], idx) => {
+      const val = Array.isArray(v) ? v.filter(Boolean).join('、') : String(v || '').trim()
+      if (val) lines.push(`${idx + 1}. ${val}`)
+    })
+  }
+  return lines.join('\n').trim()
+}
+
 export async function executeAntigravityIdeAction(action, {
   home = homedir(),
   execImpl = execFileAsync,
@@ -2481,6 +2666,122 @@ export async function executeAntigravityIdeAction(action, {
                 || (reqInt?.interaction?.case === 'runCommand' ? reqInt.interaction.value : null)
               const filePermReq = reqInt?.filePermission
                 || (reqInt?.interaction?.case === 'filePermission' ? reqInt.interaction.value : null)
+              const liveQuestionReq = extractLiveWaitingQuestionSpec(waitingEntry)
+              const isQuestionAction = Boolean(
+                liveQuestionReq
+                || action?.pendingApproval?.kind === 'question'
+                || action?.pendingApproval?.toolName === 'ask_question'
+                || action?.pendingApproval?.toolName === 'ask_user_question'
+                || (action?.answers && typeof action.answers === 'object' && Object.keys(action.answers).length > 0),
+              )
+
+              if (isQuestionAction) {
+                const qList =
+                  (Array.isArray(action?.questions) && action.questions.length > 0 ? action.questions : null)
+                  || (Array.isArray(action?.pendingApproval?.questions) && action.pendingApproval.questions.length > 0
+                    ? action.pendingApproval.questions
+                    : null)
+                  || liveQuestionReq?.questions
+                  || []
+                const ansMap = action?.answers && typeof action.answers === 'object' ? action.answers : {}
+                const formattedReply = formatAntigravityQuestionReplyText(qList, ansMap)
+                const rpcHeaders = {
+                  'Content-Type': 'application/json',
+                  'x-codeium-csrf-token': hub.csrfToken,
+                }
+
+                // 1) Try structured HandleCascadeUserInteraction if LanguageServer exposed a question interaction field
+                if (reqInt && !permReq && !runCmdReq && !filePermReq) {
+                  const qCaseKey =
+                    liveQuestionReq?.rawCase
+                    || Object.keys(reqInt).find(k => /question|choice/i.test(k))
+                    || 'askQuestion'
+                  const structuredAnswers = qList.map((q, idx) => {
+                    const qId = String(q?.id || `q_${idx + 1}`)
+                    const rawVal = ansMap[qId]
+                    const selectedOptions = Array.isArray(rawVal)
+                      ? rawVal.map(String).filter(Boolean)
+                      : rawVal
+                        ? [String(rawVal)]
+                        : []
+                    return {
+                      question: String(q?.question || ''),
+                      selectedOptions,
+                      answer: selectedOptions.join(', '),
+                    }
+                  })
+                  const qInteraction = {
+                    trajectoryId: trajectoryId || targetConvId,
+                    stepIndex,
+                    [qCaseKey]: allow
+                      ? { answers: structuredAnswers }
+                      : { cancelled: true, skipped: true },
+                  }
+                  const qRpcResp = await fetchImpl(
+                    `http://${hub.address}/exa.language_server_pb.LanguageServerService/HandleCascadeUserInteraction`,
+                    {
+                      method: 'POST',
+                      headers: rpcHeaders,
+                      body: JSON.stringify({
+                        cascadeId: targetConvId,
+                        interaction: qInteraction,
+                      }),
+                    },
+                  ).catch(() => null)
+                  if (qRpcResp?.ok) {
+                    cachedLiveSummariesAt = 0
+                    return {
+                      ok: true,
+                      engine: 'connect-rpc-question',
+                      message: allow
+                        ? '✅ [Antigravity RPC] 已提交你的选择'
+                        : 'ℹ️ [Antigravity RPC] 已跳过该问题弹窗',
+                    }
+                  }
+                }
+
+                // 2) Reliable fallback: deliver the user's exact selected options as a user message via SendUserCascadeMessage
+                if (allow && formattedReply) {
+                  const { cascadeConfig, customAgentSpec } = await resolveCascadeConfigForHub(
+                    hub,
+                    targetConvId,
+                    fetchImpl,
+                    Object.keys(summaries),
+                  )
+                  const msgResp = await fetchImpl(
+                    `http://${hub.address}/exa.language_server_pb.LanguageServerService/SendUserCascadeMessage`,
+                    {
+                      method: 'POST',
+                      headers: rpcHeaders,
+                      body: JSON.stringify({
+                        cascadeId: targetConvId,
+                        items: [{ text: formattedReply }],
+                        cascadeConfig,
+                        customAgentSpec,
+                      }),
+                    },
+                  ).catch(() => null)
+                  if (msgResp?.ok) {
+                    cachedLiveSummariesAt = 0
+                    return {
+                      ok: true,
+                      engine: 'connect-rpc-question-message',
+                      message: '✅ 已将你的选择发送回 Antigravity 对话继续执行',
+                    }
+                  }
+                }
+                if (!allow) {
+                  return {
+                    ok: true,
+                    engine: 'connect-rpc-question-skip',
+                    message: 'ℹ️ 已跳过问题确认',
+                  }
+                }
+                return {
+                  ok: false,
+                  error: '暂无法提交多选答案到 Antigravity，请重试或直接发消息回复选项',
+                }
+              }
 
               const interaction = {
                 trajectoryId: trajectoryId || targetConvId,

@@ -2,6 +2,14 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.20] - 2026-11-19
+
+### Fixed
+
+- **修复 Antigravity IDE `ask_question` 多选题在手机端误显示为「Allow agent question? / Yes, allow this time」且丢弃真实选项的问题（`dsh-feishu/lib/antigravity-ide.js` / `dsh-feishu/lib/hub-agent.js`）**：
+  - `parseAntigravityToolCalls` 与 `loadTruncatedStepContents` 完整解析并回补被截断的 `ask_question` 工具参数 `questions`（含单选/多选与 `(Recommended)` 选项），同时补齐 `liveWaitingSteps` 兜底提取，将 `kind: 'question'` 与完整 `questions` 数组透传至 `pendingApproval`，手机对话页与滑卡批阅均直接渲染可点选的交互多选卡；
+  - `hub-agent.js` 向 `executeAntigravityIdeAction` 透传用户的 `answers` 与 `questions`，提交时优先尝试结构化 `HandleCascadeUserInteraction`、不兼容时自动整理所选选项通过 `SendUserCascadeMessage` 精准回复回原对话，绝不再误发 `permission` 授权或盲敲按键。
+
 ## [0.8.19] - 2026-11-19
 
 ### Added

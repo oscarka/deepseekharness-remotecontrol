@@ -1635,6 +1635,8 @@ export class HubAgent {
                 type: effectiveType,
                 code,
                 optionIndex: cmd.optionIndex,
+                answers: cmd.answers,
+                questions: cmd.questions,
                 agentId: matchedSession?.id || matchedApproval?.agentId || cmd.agentId,
                 cwd: matchedSession?.cwd || cmd.cwd,
                 pendingApproval: matchedApproval,
