@@ -52,10 +52,14 @@ import {
   persistCommandAttachments,
   prepareWorkspaceFileStream,
   prepareWorkspaceHlsRequest,
+  readDshWorkspaceStorage,
+  readHostPinnedSessionsMap,
   readPendingDshInteractions,
   readWorkspaceFileFastMeta,
   removePendingDshInteraction,
   renameDiskSession,
+  setHostPinnedSession,
+  setSessionPinnedInDshWorkspaceStorage,
   stopAllHlsEncoders,
   writePendingDshInteractionResponse,
 } from './workspace-ops.js'
@@ -835,7 +839,7 @@ export class HubAgent {
         .map(t => {
           const tr = Array.isArray(t.transcript) ? t.transcript : []
           const last = tr.at(-1)
-          return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${(t.lastOutput || '').slice(0, 120)}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}:${(t.artifacts || []).length}:${t.model || ''}:${t.pendingApproval?.code || ''}`
+          return `${t.id}:${t.title || ''}:${t.pinned ? 1 : 0}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${(t.lastOutput || '').slice(0, 120)}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}:${(t.artifacts || []).length}:${t.model || ''}:${t.pendingApproval?.code || ''}`
         })
         .join('|')
       : ''
@@ -873,6 +877,17 @@ export class HubAgent {
       const bridgeState = this.bridge.getSnapshotState()
       for (const t of bridgeState.tasks || []) {
         decorateTaskMetadata(t, { isLiveDsh: true, now: capturedAt })
+      }
+      const dshPinnedSet = this.config?.dshHome
+        ? (await readDshWorkspaceStorage(this.config.dshHome)).pinnedSet
+        : new Set()
+      const hostPinnedMap = this.config?.dshHome
+        ? await readHostPinnedSessionsMap(this.config.dshHome)
+        : {}
+      for (const t of bridgeState.tasks || []) {
+        if (t && t.id) {
+          t.pinned = dshPinnedSet.has(t.id)
+        }
       }
       const existingIds = new Set((bridgeState.tasks || []).map(t => t.id))
       const wsSet = new Set(Array.isArray(bridgeState.workspaces) ? bridgeState.workspaces : [])
@@ -966,6 +981,11 @@ export class HubAgent {
         const existingCodes = new Set(bridgeState.approvals.map(a => a.code))
         for (const agySess of this.cachedAgySessions) {
           decorateTaskMetadata(agySess, { isLiveDsh: false, now: capturedAt })
+          if (Object.prototype.hasOwnProperty.call(hostPinnedMap, agySess.id)) {
+            agySess.pinned = Boolean(hostPinnedMap[agySess.id])
+          } else if (typeof agySess.pinned !== 'boolean') {
+            agySess.pinned = false
+          }
           if (!existingIds.has(agySess.id)) {
             bridgeState.tasks.push(agySess)
             existingIds.add(agySess.id)
@@ -996,6 +1016,12 @@ export class HubAgent {
         const existingExtCodes = new Set(bridgeState.approvals.map(a => String(a?.code || '').toUpperCase()))
         for (const extSess of this.cachedExternalSessions) {
           decorateTaskMetadata(extSess, { isLiveDsh: false, now: capturedAt })
+          const extAdapter = this.harnessRouter?.getAdapter(extSess.id)
+          if (!extAdapter?.pinSession && Object.prototype.hasOwnProperty.call(hostPinnedMap, extSess.id)) {
+            extSess.pinned = Boolean(hostPinnedMap[extSess.id])
+          } else if (typeof extSess.pinned !== 'boolean') {
+            extSess.pinned = Boolean(hostPinnedMap[extSess.id])
+          }
           if (!existingIds.has(extSess.id)) {
             bridgeState.tasks.push(extSess)
             existingIds.add(extSess.id)
@@ -1456,6 +1482,44 @@ export class HubAgent {
             || (this.cachedExternalSessions || []).find(s => s.id === targetId)
           if (!agent) return { ok: false, error: '找不到该任务会话' }
           return await this.createEncryptedShare(agent)
+        }
+        case 'pin_session': {
+          const targetId = String(cmd.agentId ?? '').trim()
+          if (!targetId) return { ok: false, error: '会话 ID 不能为空' }
+          const wantPin = Boolean(cmd.pinned)
+
+          const extAdapter = this.harnessRouter?.getAdapter(targetId)
+          if (extAdapter && typeof extAdapter.pinSession === 'function') {
+            const extPinned = await extAdapter.pinSession({ sessionId: targetId, pinned: wantPin })
+            const extSess = (this.cachedExternalSessions || []).find(s => s.id === targetId)
+            if (extSess) extSess.pinned = wantPin
+            return {
+              ok: extPinned?.ok !== false,
+              agentId: targetId,
+              pinned: wantPin,
+              message: wantPin ? '📌 已同步置顶至电脑端对应工具' : '已同步取消电脑端置顶',
+            }
+          }
+
+          if (!isAntigravityIdeSessionId(targetId) && !extAdapter) {
+            await setSessionPinnedInDshWorkspaceStorage(this.config.dshHome, targetId, wantPin)
+            invalidateDshSessionParseCache()
+          } else {
+            await setHostPinnedSession(this.config.dshHome, targetId, wantPin)
+          }
+          const matchedCached =
+            (this.cachedDiskSessions || []).find(s => s.id === targetId) ||
+            (this.cachedAgySessions || []).find(s => s.id === targetId) ||
+            (this.cachedExternalSessions || []).find(s => s.id === targetId)
+          if (matchedCached) matchedCached.pinned = wantPin
+          const liveAgent = this.bridge?.agents?.get?.(targetId)
+          if (liveAgent) liveAgent.pinned = wantPin
+          return {
+            ok: true,
+            agentId: targetId,
+            pinned: wantPin,
+            message: wantPin ? '📌 已同步置顶状态' : '已取消置顶',
+          }
         }
         case 'rename_session': {
           const targetId = String(cmd.agentId ?? '')

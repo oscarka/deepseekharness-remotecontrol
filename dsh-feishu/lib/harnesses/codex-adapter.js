@@ -1,6 +1,6 @@
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -2100,6 +2100,7 @@ export class CodexAdapter {
         harness: 'codex',
         harnessLabel: 'Codex',
         title,
+        pinned: this.readPinnedThreadSet().has(sessionId),
         status,
         statusLabel,
         turnState: effectiveTurnState,
@@ -2141,6 +2142,7 @@ export class CodexAdapter {
           harness: 'codex',
           harnessLabel: 'Codex',
           title: liveThread.title || cleanTitle(firstUser?.text) || `Codex (${threadId.slice(0, 8)})`,
+          pinned: this.readPinnedThreadSet().has(threadId),
           status,
           statusLabel:
             status === 'approval'
@@ -2635,6 +2637,66 @@ export class CodexAdapter {
       this.appServer.request('thread/name/set', { threadId: rawId, name: clean }).catch(() => { })
     }
     return { ok: true, title: clean }
+  }
+
+  readPinnedThreadSet() {
+    const statePath = join(this.codexHome, '.codex-global-state.json')
+    try {
+      if (!existsSync(statePath)) return new Set()
+      const st = statSync(statePath)
+      if (this._pinnedStateCache && this._pinnedStateCache.mtimeMs === st.mtimeMs) {
+        return this._pinnedStateCache.set
+      }
+      const parsed = JSON.parse(readFileSync(statePath, 'utf8'))
+      const ids = [
+        ...(Array.isArray(parsed?.['pinned-thread-ids']) ? parsed['pinned-thread-ids'] : []),
+        ...(Array.isArray(parsed?.pinnedThreadIds) ? parsed.pinnedThreadIds : []),
+      ]
+        .map(x => String(x || '').trim())
+        .filter(Boolean)
+      const set = new Set(ids)
+      this._pinnedStateCache = { mtimeMs: st.mtimeMs, set }
+      return set
+    } catch {
+      return new Set()
+    }
+  }
+
+  async pinSession({ sessionId, pinned = true } = {}) {
+    const rawId = toRawCodexId(sessionId)
+    if (!rawId) return { ok: false, error: '会话 ID 不能为空' }
+    const wantPin = Boolean(pinned)
+    const statePath = join(this.codexHome, '.codex-global-state.json')
+    try {
+      mkdirSync(this.codexHome, { recursive: true })
+      let parsed = {}
+      if (existsSync(statePath)) {
+        try {
+          parsed = JSON.parse(readFileSync(statePath, 'utf8')) || {}
+        } catch {
+          parsed = {}
+        }
+      }
+      const curList = Array.isArray(parsed['pinned-thread-ids'])
+        ? parsed['pinned-thread-ids'].map(x => String(x || '').trim()).filter(Boolean)
+        : Array.isArray(parsed.pinnedThreadIds)
+          ? parsed.pinnedThreadIds.map(x => String(x || '').trim()).filter(Boolean)
+          : []
+      const nextList = wantPin
+        ? [rawId, ...curList.filter(id => id !== rawId)]
+        : curList.filter(id => id !== rawId)
+      parsed['pinned-thread-ids'] = nextList
+      if (Array.isArray(parsed.pinnedThreadIds)) {
+        parsed.pinnedThreadIds = nextList
+      }
+      const tmpPath = `${statePath}.${process.pid}.${Date.now()}.tmp`
+      writeFileSync(tmpPath, `${JSON.stringify(parsed)}\n`, { mode: 0o600 })
+      renameSync(tmpPath, statePath)
+      this._pinnedStateCache = null
+      return { ok: true, id: `${CODEX_SESSION_PREFIX}${rawId}`, pinned: wantPin }
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) }
+    }
   }
 
   async deleteSession({ sessionId } = {}) {

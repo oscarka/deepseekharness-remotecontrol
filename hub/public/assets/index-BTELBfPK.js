@@ -7608,6 +7608,45 @@ function initHubController() {
 			})
 		}).catch(() => {});
 	}
+	let legacyPinsMigratedThisSession = false;
+	function syncSessionPinToServer(sessionId, hostId, pinned) {
+		if (!sessionId) return;
+		const isPinned = Boolean(pinned);
+		const now = Date.now();
+		hubState.sessionPinState = hubState.sessionPinState || {};
+		hubState.sessionPinState[sessionId] = {
+			pinned: isPinned,
+			at: now,
+			source: "client"
+		};
+		pinnedMap[sessionId] = isPinned;
+		try {
+			localStorage.setItem("dsh_pinned_v4", JSON.stringify(pinnedMap));
+		} catch {}
+		apiFetch("/api/sessions/pin", {
+			method: "POST",
+			body: JSON.stringify({
+				sessionId,
+				hostId: String(hostId || ""),
+				pinned: isPinned,
+				at: now
+			})
+		}).catch(() => {});
+	}
+	function maybeMigrateLegacyLocalPinsToServer() {
+		if (legacyPinsMigratedThisSession) return;
+		if (!hubState || !Array.isArray(hubState.hosts) || hubState.hosts.length === 0) return;
+		legacyPinsMigratedThisSession = true;
+		try {
+			if (localStorage.getItem("dsh_pinned_migrated_v1") === "1") return;
+			const srvPins = hubState.sessionPinState || {};
+			for (const [sid, val] of Object.entries(pinnedMap || {})) {
+				if (!val || Object.prototype.hasOwnProperty.call(srvPins, sid)) continue;
+				syncSessionPinToServer(sid, (hubState.hosts || []).find((h) => Array.isArray(h?.bridgeState?.tasks) && h.bridgeState.tasks.some((t) => t && t.id === sid))?.hostId || "", true);
+			}
+			localStorage.setItem("dsh_pinned_migrated_v1", "1");
+		} catch {}
+	}
 	function dismissLiveBanner() {
 		renderSessionList();
 	}
@@ -7886,7 +7925,7 @@ function initHubController() {
 					hasMoreTranscript: Boolean(omittedTranscriptCount > 0 || t.hasMoreTranscript && !expandedEntry),
 					updatedAt: ts,
 					timeLabel: formatTime(ts),
-					pinned: Boolean(pinnedMap[t.id]),
+					pinned: hubState.sessionPinState && Object.prototype.hasOwnProperty.call(hubState.sessionPinState, t.id) ? Boolean(hubState.sessionPinState[t.id]?.pinned) : typeof t.pinned === "boolean" ? t.pinned : Boolean(pinnedMap[t.id]),
 					unread: false,
 					hasUnreadConclusion: false,
 					isUnreadInterrupted: false,
@@ -7902,6 +7941,7 @@ function initHubController() {
 			}
 		}
 		if (optMapDirty) persistOptimisticMsgsMap();
+		maybeMigrateLegacyLocalPinsToServer();
 		const sortedByTime = [...list].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 		let seenDirty = false;
 		const serverReadMap = hubState.sessionReadState || {};
@@ -12243,12 +12283,11 @@ function initHubController() {
 	function togglePinTargetSession() {
 		if (!actionTargetSession) return;
 		const id = actionTargetSession.id;
-		pinnedMap[id] = !pinnedMap[id];
-		try {
-			localStorage.setItem("dsh_pinned_v4", JSON.stringify(pinnedMap));
-		} catch {}
+		const nextPinned = !Boolean(actionTargetSession.pinned);
+		actionTargetSession.pinned = nextPinned;
+		syncSessionPinToServer(id, actionTargetHostId || actionTargetSession.hostId || "", nextPinned);
 		closeSheet("taskActionSheet");
-		showToast(pinnedMap[id] ? "📌 已置顶该对话" : "已取消置顶");
+		showToast(nextPinned ? "📌 已置顶并同步至多端与电脑工具" : "已取消置顶并同步");
 		renderAll();
 	}
 	async function saveInlineRename() {

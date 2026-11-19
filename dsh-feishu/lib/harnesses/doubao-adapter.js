@@ -741,6 +741,7 @@ export class DoubaoAdapter {
         harnessLabel: '豆包电脑版',
         project: projectLabel,
         title,
+        pinned: Boolean(idbMeta?.pinned),
         status,
         statusLabel,
         turnState: status === 'running' ? 'running' : hasConcluded ? 'conclusion' : 'idle',

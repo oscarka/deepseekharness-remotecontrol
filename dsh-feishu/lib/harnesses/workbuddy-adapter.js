@@ -1710,8 +1710,8 @@ export class WorkBuddyAdapter {
       new Promise(resolve => {
         execFile(
           'sqlite3',
-          ['-cmd', '.timeout 2000', ...(json ? ['-json'] : []), dbPath, sql],
-          { timeout: 2000 },
+          ['-cmd', '.timeout 5000', ...(json ? ['-json'] : []), dbPath, sql],
+          { timeout: 6000 },
           (err, stdout) => {
             if (err) {
               resolve({ ok: false, error: err.message, stdout: '' })
@@ -1832,12 +1832,12 @@ export class WorkBuddyAdapter {
             'sqlite3',
             [
               '-cmd',
-              '.timeout 2000',
+              '.timeout 5000',
               '-json',
               dbPath,
               'SELECT * FROM sessions ORDER BY updated_at DESC LIMIT 50;',
             ],
-            { timeout: 1500 },
+            { timeout: 6000 },
             (err, stdout) => {
               if (err || !stdout) {
                 resolve([])
@@ -2040,6 +2040,7 @@ export class WorkBuddyAdapter {
       rawId: entry.rawId,
       rawSessionId: entry.rawId,
       title: entry.title || `WorkBuddy (${String(entry.rawId).slice(0, 8)})`,
+      pinned: Boolean(entry.pinned),
       status: effectiveStatus,
       statusLabel,
       turnState: entry.turnState || (isApproval ? 'approval' : isRunning ? 'thinking' : 'idle'),
@@ -2093,6 +2094,7 @@ export class WorkBuddyAdapter {
       // ignore
     }
 
+    const pinnedFallbackMap = this._readPinnedMap()
     const dbRows = await this._readDbSessions()
     for (const row of dbRows) {
       const rawId = String(row.id || '').trim()
@@ -2111,6 +2113,17 @@ export class WorkBuddyAdapter {
         createdAt,
         updatedAt,
       })
+      const rowHasPinCol =
+        row.pinned !== undefined || row.is_pinned !== undefined || row.pinned_at !== undefined
+      if (rowHasPinCol) {
+        entry.pinned = Boolean(
+          Number(row.pinned) > 0 || row.pinned === true ||
+          Number(row.is_pinned) > 0 || row.is_pinned === true ||
+          Number(row.pinned_at) > 0
+        )
+      } else if (Object.prototype.hasOwnProperty.call(pinnedFallbackMap, rawId)) {
+        entry.pinned = Boolean(pinnedFallbackMap[rawId])
+      }
 
       const needsReplayRefresh =
         entry.transcript.length === 0 ||
@@ -2750,11 +2763,11 @@ export class WorkBuddyAdapter {
             'sqlite3',
             [
               '-cmd',
-              '.timeout 2000',
+              '.timeout 5000',
               dbPath,
               `UPDATE sessions SET custom_title = ${sqlStr(cleanTitle)}, title = ${sqlStr(cleanTitle)}, updated_at = ${entry.updatedAt} WHERE id = ${sqlStr(rawId)};`,
             ],
-            { timeout: 2000 },
+            { timeout: 6000 },
             () => resolve(),
           )
         })
@@ -2766,6 +2779,51 @@ export class WorkBuddyAdapter {
       sessionId: entry.id,
       title: cleanTitle,
     }
+  }
+
+  _readPinnedMap() {
+    try {
+      const p = path.join(this.workbuddyHome, 'pinned-sessions.json')
+      if (!fs.existsSync(p)) return {}
+      const parsed = safeJsonParse(fs.readFileSync(p, 'utf8'))
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+
+  async pinSession({ sessionId = '', pinned = true } = {}) {
+    const rawId = toRawWorkBuddyId(sessionId)
+    if (!rawId) return { ok: false, error: 'sessionId is required.' }
+    const wantPin = Boolean(pinned)
+    const entry = this._ensureRuntimeEntry(rawId)
+    entry.pinned = wantPin
+    try {
+      fs.mkdirSync(this.workbuddyHome, { recursive: true })
+      const p = path.join(this.workbuddyHome, 'pinned-sessions.json')
+      const map = this._readPinnedMap()
+      map[rawId] = wantPin
+      fs.writeFileSync(p, `${JSON.stringify(map, null, 2)}\n`, { mode: 0o600 })
+    } catch {
+      // ignore fallback write error
+    }
+    if (typeof this.queryDbImpl !== 'function') {
+      const dbPath = this._findWorkBuddyDbPath()
+      if (dbPath) {
+        const sqlStr = val => `'${String(val ?? '').replace(/'/g, "''")}'`
+        const nowMs = Date.now()
+        for (const colSql of [
+          `UPDATE sessions SET pinned = ${wantPin ? 1 : 0} WHERE id = ${sqlStr(rawId)};`,
+          `UPDATE sessions SET is_pinned = ${wantPin ? 1 : 0} WHERE id = ${sqlStr(rawId)};`,
+          `UPDATE sessions SET pinned_at = ${wantPin ? nowMs : 'NULL'} WHERE id = ${sqlStr(rawId)};`,
+        ]) {
+          await new Promise(resolve => {
+            execFile('sqlite3', ['-cmd', '.timeout 5000', dbPath, colSql], { timeout: 4000 }, () => resolve())
+          })
+        }
+      }
+    }
+    return { ok: true, agentId: entry.id, sessionId: entry.id, pinned: wantPin }
   }
 
   async deleteSession({ sessionId = '' } = {}) {
@@ -2783,11 +2841,11 @@ export class WorkBuddyAdapter {
             'sqlite3',
             [
               '-cmd',
-              '.timeout 2000',
+              '.timeout 5000',
               dbPath,
               `UPDATE sessions SET deleted_at = ${nowMs}, updated_at = ${nowMs} WHERE id = ${sqlStr(rawId)};`,
             ],
-            { timeout: 2000 },
+            { timeout: 6000 },
             () => resolve(),
           )
         })

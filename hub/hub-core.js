@@ -52,6 +52,8 @@ export class HubCore {
     this.pendingApprovalPushTimers = new Map()
     this.pushedCompletionSigs = new Map()
     this.sessionReadState = new Map()
+    this.sessionPinState = new Map()
+    this.lastObservedHarnessPin = new Map()
     this.hostTaskStates = new Map()
     this.pushHistory = []
     this.sseListeners = new Set()
@@ -233,6 +235,17 @@ export class HubCore {
               unread: Boolean(v.unread),
               sig: String(v.sig || ''),
               at: Number(v.at) || 0,
+            })
+          }
+        }
+      }
+      if (data.sessionPinState && typeof data.sessionPinState === 'object') {
+        for (const [k, v] of Object.entries(data.sessionPinState)) {
+          if (k && v && typeof v === 'object') {
+            this.sessionPinState.set(String(k), {
+              pinned: Boolean(v.pinned),
+              at: Number(v.at) || 0,
+              source: String(v.source || 'client'),
             })
           }
         }
@@ -503,6 +516,7 @@ export class HubCore {
             shares: [...this.shares.values()],
             approvalLedger: [...this.approvalLedger.entries()],
             sessionReadState: Object.fromEntries(this.sessionReadState),
+            sessionPinState: Object.fromEntries(this.sessionPinState),
             enrollment: this.enrollment,
           }
           await writeFile(this.stateFile, JSON.stringify(payload), 'utf8')
@@ -633,64 +647,64 @@ export class HubCore {
 
     const rawTasks = Array.isArray(bridgeState.tasks)
       ? bridgeState.tasks.filter(t => {
-          if (t?.isSubagent || t?.origin === 'subagent' || t?.parentConversationId) {
-            return false
-          }
-          if (
-            (String(t?.harness || '') === 'antigravity-ide' ||
-              String(t?.harnessId || '') === 'antigravity' ||
-              String(t?.id || '').startsWith('antigravity:')) &&
-            Array.isArray(t?.transcript) &&
-            t.transcript.length > 0 &&
-            !t.transcript.some(m => m?.role === 'user')
-          ) {
-            return false
-          }
-          if (
-            /^workbuddy:\d+$/.test(String(t?.id || '').trim()) &&
-            (!Array.isArray(t?.transcript) || t.transcript.length === 0) &&
-            !(Number(t?.messageCount) > 0) &&
-            t?.status !== 'running' &&
-            t?.status !== 'approval' &&
-            !t?.pendingApproval
-          ) {
-            return false
-          }
-          return true
-        })
+        if (t?.isSubagent || t?.origin === 'subagent' || t?.parentConversationId) {
+          return false
+        }
+        if (
+          (String(t?.harness || '') === 'antigravity-ide' ||
+            String(t?.harnessId || '') === 'antigravity' ||
+            String(t?.id || '').startsWith('antigravity:')) &&
+          Array.isArray(t?.transcript) &&
+          t.transcript.length > 0 &&
+          !t.transcript.some(m => m?.role === 'user')
+        ) {
+          return false
+        }
+        if (
+          /^workbuddy:\d+$/.test(String(t?.id || '').trim()) &&
+          (!Array.isArray(t?.transcript) || t.transcript.length === 0) &&
+          !(Number(t?.messageCount) > 0) &&
+          t?.status !== 'running' &&
+          t?.status !== 'approval' &&
+          !t?.pendingApproval
+        ) {
+          return false
+        }
+        return true
+      })
       : []
 
     const tasks = rawTasks.map((t, taskIdx) => {
-          let nextTask = t
-          const isDshTask =
-            nextTask?.harness === 'dsh' ||
-            (!nextTask?.harness && String(nextTask?.id || '').startsWith('session-'))
-          if (isDshTask && nextTask?.controlMode === 'observe-only') {
-            nextTask = {
-              ...nextTask,
-              controlMode: 'idle-resumable',
-              capabilities: {
-                ...(nextTask.capabilities || {}),
-                canCreateSession: true,
-                canPrompt: true,
-              },
-            }
+      let nextTask = t
+      const isDshTask =
+        nextTask?.harness === 'dsh' ||
+        (!nextTask?.harness && String(nextTask?.id || '').startsWith('session-'))
+      if (isDshTask && nextTask?.controlMode === 'observe-only') {
+        nextTask = {
+          ...nextTask,
+          controlMode: 'idle-resumable',
+          capabilities: {
+            ...(nextTask.capabilities || {}),
+            canCreateSession: true,
+            canPrompt: true,
+          },
+        }
+      }
+      if (nextTask?.pendingApproval?.code) {
+        const decorated = decorateApproval(nextTask.pendingApproval)
+        if (!decorated) {
+          nextTask = {
+            ...nextTask,
+            pendingApproval: null,
+            status: nextTask.status === 'approval' ? 'running' : nextTask.status,
+            turnState: nextTask.turnState === 'approval' ? 'running' : nextTask.turnState,
           }
-          if (nextTask?.pendingApproval?.code) {
-            const decorated = decorateApproval(nextTask.pendingApproval)
-            if (!decorated) {
-              nextTask = {
-                ...nextTask,
-                pendingApproval: null,
-                status: nextTask.status === 'approval' ? 'running' : nextTask.status,
-                turnState: nextTask.turnState === 'approval' ? 'running' : nextTask.turnState,
-              }
-            } else if (decorated !== nextTask.pendingApproval) {
-              nextTask = { ...nextTask, pendingApproval: decorated }
-            }
-          }
-          return nextTask
-        })
+        } else if (decorated !== nextTask.pendingApproval) {
+          nextTask = { ...nextTask, pendingApproval: decorated }
+        }
+      }
+      return nextTask
+    })
 
     return {
       ...bridgeState,
@@ -707,183 +721,183 @@ export class HubCore {
     const recentActiveCutoffMs = now - 60 * 60 * 1000
     const tasks = Array.isArray(bridgeState.tasks)
       ? bridgeState.tasks.map((nextTask, taskIdx) => {
-          // Server-side transcript & preview budget guard:
-          // Hot sessions (top 6 per host, running/approval, or active/concluded within 60 min) keep 14 messages
-          // and full 48,000-char recent reply budgets so mobile conclusions are NEVER truncated.
-          // Cold historical idle sessions (>60 min old & index >= 6) keep 3 short preview messages
-          // and set `wireTruncated: true` for automatic on-demand full transcript hydration.
-          // In `lite` mode (initial mobile /api/state?lite=1 load), idle sessions ship minimal
-          // 2-message previews and hydrate full transcripts automatically on tap.
-          const isRunningOrApproval =
-            nextTask?.status === 'running' || nextTask?.status === 'approval'
-          const taskRecentTs = Math.max(
-            Number(nextTask?.lastConclusionAt) || 0,
-            Number(nextTask?.updatedAt) || 0,
-            Number(nextTask?.lastActivity) || 0,
-          )
-          const isHotSession =
-            isRunningOrApproval ||
-            (!lite && (taskIdx < 6 || taskRecentTs >= recentActiveCutoffMs))
-          const maxMsgs = lite ? (isRunningOrApproval ? 6 : 2) : isHotSession ? 14 : 3
-          const rawTr = Array.isArray(nextTask?.transcript) ? nextTask.transcript : []
-          const totalTranscriptCount = Math.max(Number(nextTask?.messageCount) || 0, rawTr.length)
-          let slicedTr = rawTr.length > maxMsgs ? rawTr.slice(-maxMsgs) : rawTr
-          // Keep at least one user-role message when present so client list filters never drop the session
-          if (slicedTr.length > 0 && rawTr.some(m => m?.role === 'user') && !slicedTr.some(m => m?.role === 'user')) {
-            const lastUserMsg = [...rawTr].reverse().find(m => m?.role === 'user')
-            if (lastUserMsg) {
-              slicedTr = [
-                {
-                  role: 'user',
-                  text: typeof lastUserMsg.text === 'string' ? lastUserMsg.text.slice(0, 600) : '',
-                  ...(lastUserMsg.time ? { time: lastUserMsg.time } : {}),
-                },
-                ...slicedTr.slice(-Math.max(1, maxMsgs - 1)),
-              ]
-            }
+        // Server-side transcript & preview budget guard:
+        // Hot sessions (top 6 per host, running/approval, or active/concluded within 60 min) keep 14 messages
+        // and full 48,000-char recent reply budgets so mobile conclusions are NEVER truncated.
+        // Cold historical idle sessions (>60 min old & index >= 6) keep 3 short preview messages
+        // and set `wireTruncated: true` for automatic on-demand full transcript hydration.
+        // In `lite` mode (initial mobile /api/state?lite=1 load), idle sessions ship minimal
+        // 2-message previews and hydrate full transcripts automatically on tap.
+        const isRunningOrApproval =
+          nextTask?.status === 'running' || nextTask?.status === 'approval'
+        const taskRecentTs = Math.max(
+          Number(nextTask?.lastConclusionAt) || 0,
+          Number(nextTask?.updatedAt) || 0,
+          Number(nextTask?.lastActivity) || 0,
+        )
+        const isHotSession =
+          isRunningOrApproval ||
+          (!lite && (taskIdx < 6 || taskRecentTs >= recentActiveCutoffMs))
+        const maxMsgs = lite ? (isRunningOrApproval ? 6 : 2) : isHotSession ? 14 : 3
+        const rawTr = Array.isArray(nextTask?.transcript) ? nextTask.transcript : []
+        const totalTranscriptCount = Math.max(Number(nextTask?.messageCount) || 0, rawTr.length)
+        let slicedTr = rawTr.length > maxMsgs ? rawTr.slice(-maxMsgs) : rawTr
+        // Keep at least one user-role message when present so client list filters never drop the session
+        if (slicedTr.length > 0 && rawTr.some(m => m?.role === 'user') && !slicedTr.some(m => m?.role === 'user')) {
+          const lastUserMsg = [...rawTr].reverse().find(m => m?.role === 'user')
+          if (lastUserMsg) {
+            slicedTr = [
+              {
+                role: 'user',
+                text: typeof lastUserMsg.text === 'string' ? lastUserMsg.text.slice(0, 600) : '',
+                ...(lastUserMsg.time ? { time: lastUserMsg.time } : {}),
+              },
+              ...slicedTr.slice(-Math.max(1, maxMsgs - 1)),
+            ]
           }
-          const omittedTranscriptCount = Math.max(0, totalTranscriptCount - slicedTr.length)
-          const recentCutoff = Math.max(0, slicedTr.length - 4)
-          let lastAssistantIdx = -1
-          for (let i = slicedTr.length - 1; i >= 0; i -= 1) {
-            if (slicedTr[i]?.role === 'assistant') {
-              lastAssistantIdx = i
-              break
-            }
+        }
+        const omittedTranscriptCount = Math.max(0, totalTranscriptCount - slicedTr.length)
+        const recentCutoff = Math.max(0, slicedTr.length - 4)
+        let lastAssistantIdx = -1
+        for (let i = slicedTr.length - 1; i >= 0; i -= 1) {
+          if (slicedTr[i]?.role === 'assistant') {
+            lastAssistantIdx = i
+            break
           }
-          let wireTruncated = Boolean((lite || !isHotSession) && slicedTr.length < rawTr.length)
-          const compactedTr = slicedTr.map((m, mIdx) => {
-            if (!m || typeof m !== 'object') return m
-            const { toolCalls: _omitTc, ...mRest } = m
-            if (m.role !== 'assistant') {
-              const maxUserText = lite ? (isRunningOrApproval ? 4000 : 280) : !isHotSession ? 2400 : Infinity
-              if (typeof m.text === 'string' && m.text.length > maxUserText) {
-                wireTruncated = true
-                return { ...mRest, text: m.text.slice(0, maxUserText) }
-              }
-              return mRest
-            }
-            const isHotRecent = isHotSession && (mIdx >= recentCutoff || mIdx === lastAssistantIdx)
-            const maxText = lite
-              ? (isRunningOrApproval ? (mIdx === lastAssistantIdx ? 12000 : 2400) : 280)
-              : isHotRecent ? 48000 : isHotSession ? 16000 : 2400
-            const maxThink = lite
-              ? (isRunningOrApproval ? 600 : 0)
-              : isHotRecent ? 6000 : isHotSession ? 600 : 240
-            const maxTools = lite
-              ? (isRunningOrApproval ? 6 : 0)
-              : isHotRecent ? 20 : isHotSession ? 6 : 4
-            const maxCmd = lite ? 140 : isHotRecent ? 800 : isHotSession ? 200 : 140
-            const rawTools = Array.isArray(m.tools) ? m.tools : Array.isArray(m.toolCalls) ? m.toolCalls : []
-            const textTrunc = typeof m.text === 'string' && m.text.length > maxText
-            const thinkTrunc = typeof m.thinking === 'string' && m.thinking.length > maxThink
-            const toolsTrunc = rawTools.length > maxTools
-            if (textTrunc || thinkTrunc || toolsTrunc) {
+        }
+        let wireTruncated = Boolean((lite || !isHotSession) && slicedTr.length < rawTr.length)
+        const compactedTr = slicedTr.map((m, mIdx) => {
+          if (!m || typeof m !== 'object') return m
+          const { toolCalls: _omitTc, ...mRest } = m
+          if (m.role !== 'assistant') {
+            const maxUserText = lite ? (isRunningOrApproval ? 4000 : 280) : !isHotSession ? 2400 : Infinity
+            if (typeof m.text === 'string' && m.text.length > maxUserText) {
               wireTruncated = true
+              return { ...mRest, text: m.text.slice(0, maxUserText) }
             }
-            if (lite && !isRunningOrApproval && Array.isArray(mRest.artifacts) && mRest.artifacts.length > 0) {
-              wireTruncated = true
-            }
-            return {
-              ...mRest,
-              ...(lite && !isRunningOrApproval && Array.isArray(mRest.artifacts)
-                ? {
-                    artifacts: mRest.artifacts.slice(0, 3).map(a => ({
-                      name: a?.name,
-                      path: a?.path,
-                      kind: a?.kind,
-                      title: a?.title,
-                    })),
-                  }
-                : {}),
-              text: textTrunc ? m.text.slice(0, maxText) : m.text,
-              thinking: maxThink === 0
-                ? undefined
-                : thinkTrunc
-                  ? `${m.thinking.slice(0, maxThink)}\n...(历史思考已折叠)...`
-                  : m.thinking,
-              tools: rawTools.slice(0, maxTools).map(tl =>
-                typeof tl === 'string'
-                  ? { name: tl, id: '', summary: '', commandLine: '执行完毕' }
-                  : {
-                      name: tl?.name || 'tool',
-                      id: tl?.id || '',
-                      summary: tl?.summary ? String(tl.summary).slice(0, 160) : '',
-                      commandLine: tl?.commandLine ? String(tl.commandLine).slice(0, maxCmd) : '执行完毕',
-                    },
-              ),
-            }
-          })
-          const walkthroughArt = Array.isArray(nextTask?.artifacts)
-            ? nextTask.artifacts.find(a => a?.kind === 'walkthrough')
-            : null
-          if (walkthroughArt && compactedTr.length > 0) {
-            const alreadyInCompacted = compactedTr.some(
-              m =>
-                (Array.isArray(m?.artifacts) && m.artifacts.some(a => a?.path === walkthroughArt.path))
-                || String(m?.text || '').includes(walkthroughArt.path),
-            )
-            if (!alreadyInCompacted) {
-              for (let idx = compactedTr.length - 1; idx >= 0; idx -= 1) {
-                const msg = compactedTr[idx]
-                if (msg && msg.role === 'assistant' && !msg.waitingForInput) {
-                  msg.artifacts = [...(Array.isArray(msg.artifacts) ? msg.artifacts : []), walkthroughArt]
-                  break
-                }
-              }
-            }
+            return mRest
           }
-          const maxLastOutput = lite && !isRunningOrApproval ? 220 : 600
-          const rawChangedFiles = Array.isArray(nextTask?.changedFiles) ? nextTask.changedFiles : undefined
-          const rawTaskArtifacts = Array.isArray(nextTask?.artifacts) ? nextTask.artifacts : undefined
-          if (lite && !isRunningOrApproval) {
-            if ((rawChangedFiles && rawChangedFiles.length > 5) || (rawTaskArtifacts && rawTaskArtifacts.length > 4)) {
-              wireTruncated = true
-            }
+          const isHotRecent = isHotSession && (mIdx >= recentCutoff || mIdx === lastAssistantIdx)
+          const maxText = lite
+            ? (isRunningOrApproval ? (mIdx === lastAssistantIdx ? 12000 : 2400) : 280)
+            : isHotRecent ? 48000 : isHotSession ? 16000 : 2400
+          const maxThink = lite
+            ? (isRunningOrApproval ? 600 : 0)
+            : isHotRecent ? 6000 : isHotSession ? 600 : 240
+          const maxTools = lite
+            ? (isRunningOrApproval ? 6 : 0)
+            : isHotRecent ? 20 : isHotSession ? 6 : 4
+          const maxCmd = lite ? 140 : isHotRecent ? 800 : isHotSession ? 200 : 140
+          const rawTools = Array.isArray(m.tools) ? m.tools : Array.isArray(m.toolCalls) ? m.toolCalls : []
+          const textTrunc = typeof m.text === 'string' && m.text.length > maxText
+          const thinkTrunc = typeof m.thinking === 'string' && m.thinking.length > maxThink
+          const toolsTrunc = rawTools.length > maxTools
+          if (textTrunc || thinkTrunc || toolsTrunc) {
+            wireTruncated = true
+          }
+          if (lite && !isRunningOrApproval && Array.isArray(mRest.artifacts) && mRest.artifacts.length > 0) {
+            wireTruncated = true
           }
           return {
-            ...nextTask,
-            ...(lite && !isRunningOrApproval ? { recentActivity: undefined } : {}),
-            ...(lite && !isRunningOrApproval && rawChangedFiles
+            ...mRest,
+            ...(lite && !isRunningOrApproval && Array.isArray(mRest.artifacts)
               ? {
-                  changedFiles: rawChangedFiles.slice(-8).map(cf =>
-                    typeof cf === 'string'
-                      ? cf
-                      : {
-                          name: cf?.name,
-                          path: cf?.path,
-                          displayPath: cf?.displayPath,
-                          status: cf?.status,
-                          added: cf?.added,
-                          removed: cf?.removed,
-                          additions: cf?.additions,
-                          deletions: cf?.deletions,
-                        },
-                  ),
-                }
+                artifacts: mRest.artifacts.slice(0, 3).map(a => ({
+                  name: a?.name,
+                  path: a?.path,
+                  kind: a?.kind,
+                  title: a?.title,
+                })),
+              }
               : {}),
-            ...(lite && !isRunningOrApproval && rawTaskArtifacts
-              ? {
-                  artifacts: rawTaskArtifacts.slice(0, 4).map(a => ({
-                    name: a?.name,
-                    path: a?.path,
-                    kind: a?.kind,
-                    title: a?.title,
-                    ...(taskIdx < 6 && a?.summary ? { summary: String(a.summary).slice(0, 120) } : {}),
-                  })),
-                }
-              : {}),
-            lastOutput:
-              typeof nextTask?.lastOutput === 'string' && nextTask.lastOutput.length > maxLastOutput
-                ? nextTask.lastOutput.slice(0, maxLastOutput)
-                : nextTask?.lastOutput,
-            totalTranscriptCount,
-            omittedTranscriptCount,
-            hasMoreTranscript: omittedTranscriptCount > 0,
-            wireTruncated,
-            transcript: compactedTr,
+            text: textTrunc ? m.text.slice(0, maxText) : m.text,
+            thinking: maxThink === 0
+              ? undefined
+              : thinkTrunc
+                ? `${m.thinking.slice(0, maxThink)}\n...(历史思考已折叠)...`
+                : m.thinking,
+            tools: rawTools.slice(0, maxTools).map(tl =>
+              typeof tl === 'string'
+                ? { name: tl, id: '', summary: '', commandLine: '执行完毕' }
+                : {
+                  name: tl?.name || 'tool',
+                  id: tl?.id || '',
+                  summary: tl?.summary ? String(tl.summary).slice(0, 160) : '',
+                  commandLine: tl?.commandLine ? String(tl.commandLine).slice(0, maxCmd) : '执行完毕',
+                },
+            ),
           }
         })
+        const walkthroughArt = Array.isArray(nextTask?.artifacts)
+          ? nextTask.artifacts.find(a => a?.kind === 'walkthrough')
+          : null
+        if (walkthroughArt && compactedTr.length > 0) {
+          const alreadyInCompacted = compactedTr.some(
+            m =>
+              (Array.isArray(m?.artifacts) && m.artifacts.some(a => a?.path === walkthroughArt.path))
+              || String(m?.text || '').includes(walkthroughArt.path),
+          )
+          if (!alreadyInCompacted) {
+            for (let idx = compactedTr.length - 1; idx >= 0; idx -= 1) {
+              const msg = compactedTr[idx]
+              if (msg && msg.role === 'assistant' && !msg.waitingForInput) {
+                msg.artifacts = [...(Array.isArray(msg.artifacts) ? msg.artifacts : []), walkthroughArt]
+                break
+              }
+            }
+          }
+        }
+        const maxLastOutput = lite && !isRunningOrApproval ? 220 : 600
+        const rawChangedFiles = Array.isArray(nextTask?.changedFiles) ? nextTask.changedFiles : undefined
+        const rawTaskArtifacts = Array.isArray(nextTask?.artifacts) ? nextTask.artifacts : undefined
+        if (lite && !isRunningOrApproval) {
+          if ((rawChangedFiles && rawChangedFiles.length > 5) || (rawTaskArtifacts && rawTaskArtifacts.length > 4)) {
+            wireTruncated = true
+          }
+        }
+        return {
+          ...nextTask,
+          ...(lite && !isRunningOrApproval ? { recentActivity: undefined } : {}),
+          ...(lite && !isRunningOrApproval && rawChangedFiles
+            ? {
+              changedFiles: rawChangedFiles.slice(-8).map(cf =>
+                typeof cf === 'string'
+                  ? cf
+                  : {
+                    name: cf?.name,
+                    path: cf?.path,
+                    displayPath: cf?.displayPath,
+                    status: cf?.status,
+                    added: cf?.added,
+                    removed: cf?.removed,
+                    additions: cf?.additions,
+                    deletions: cf?.deletions,
+                  },
+              ),
+            }
+            : {}),
+          ...(lite && !isRunningOrApproval && rawTaskArtifacts
+            ? {
+              artifacts: rawTaskArtifacts.slice(0, 4).map(a => ({
+                name: a?.name,
+                path: a?.path,
+                kind: a?.kind,
+                title: a?.title,
+                ...(taskIdx < 6 && a?.summary ? { summary: String(a.summary).slice(0, 120) } : {}),
+              })),
+            }
+            : {}),
+          lastOutput:
+            typeof nextTask?.lastOutput === 'string' && nextTask.lastOutput.length > maxLastOutput
+              ? nextTask.lastOutput.slice(0, maxLastOutput)
+              : nextTask?.lastOutput,
+          totalTranscriptCount,
+          omittedTranscriptCount,
+          hasMoreTranscript: omittedTranscriptCount > 0,
+          wireTruncated,
+          transcript: compactedTr,
+        }
+      })
       : []
 
     return {
@@ -927,11 +941,11 @@ export class HubCore {
           const lastCached = cached.transcript.at(-1)
           const lastCachedMatchInLive = lastCached
             ? liveTr.findIndex(
-                m =>
-                  m &&
-                  m.role === lastCached.role &&
-                  String(m.text || '').slice(0, 80) === String(lastCached.text || '').slice(0, 80),
-              )
+              m =>
+                m &&
+                m.role === lastCached.role &&
+                String(m.text || '').slice(0, 80) === String(lastCached.text || '').slice(0, 80),
+            )
             : -1
           if (lastCachedMatchInLive >= 0 && lastCachedMatchInLive < liveTr.length - 1) {
             bestTr = [...cached.transcript, ...liveTr.slice(lastCachedMatchInLive + 1)]
@@ -1075,6 +1089,7 @@ export class HubCore {
       stats: this.getUsageStats(),
       enrollment: this.getOrCreateEnrollmentCode(),
       sessionReadState: Object.fromEntries(this.sessionReadState),
+      sessionPinState: Object.fromEntries(this.sessionPinState),
       hosts,
       snapshots,
       migrations,
@@ -1096,6 +1111,51 @@ export class HubCore {
     }
     void this.persist()
     return { ok: true, sessionId: cleanId, readState: { unread: false, sig: nextSig, at: nextAt } }
+  }
+
+  setSessionPinned({
+    sessionId = '',
+    hostId = '',
+    pinned = true,
+    at = 0,
+    source = 'client',
+    dispatchToHost = true,
+  } = {}) {
+    const cleanId = String(sessionId ?? '').trim()
+    if (!cleanId) return { ok: false, error: 'sessionId is required' }
+    const now = this.now()
+    const isPinned = Boolean(pinned)
+    const nextAt = Math.max(Number(at) || 0, now)
+    const pinEntry = { pinned: isPinned, at: nextAt, source: String(source || 'client') }
+    this.sessionPinState.set(cleanId, pinEntry)
+    while (this.sessionPinState.size > 600) {
+      const oldestKey = this.sessionPinState.keys().next().value
+      this.sessionPinState.delete(oldestKey)
+    }
+
+    let resolvedHostId = String(hostId ?? '').trim()
+    for (const [hid, record] of this.hosts.entries()) {
+      const tasks = record?.bridgeState?.tasks
+      if (Array.isArray(tasks)) {
+        const matched = tasks.find(t => t && t.id === cleanId)
+        if (matched) {
+          matched.pinned = isPinned
+          if (!resolvedHostId) resolvedHostId = hid
+        }
+      }
+    }
+
+    if (dispatchToHost && resolvedHostId && this.hosts.has(resolvedHostId)) {
+      this.queueCommand(resolvedHostId, {
+        type: 'pin_session',
+        agentId: cleanId,
+        pinned: isPinned,
+      })
+    } else {
+      void this.persist()
+      this.emitStateChange('session_pinned')
+    }
+    return { ok: true, sessionId: cleanId, hostId: resolvedHostId, pinState: pinEntry }
   }
 
   getVapidPublicKey() {
@@ -1439,11 +1499,11 @@ export class HubCore {
     if (!record) {
       const trust = incomingIdentity?.publicKey
         ? {
-            status: 'pinned',
-            pinnedPublicKey: incomingIdentity.publicKey,
-            pinnedFingerprint: incomingIdentity.fingerprint || '',
-            pinnedAt: now,
-          }
+          status: 'pinned',
+          pinnedPublicKey: incomingIdentity.publicKey,
+          pinnedFingerprint: incomingIdentity.fingerprint || '',
+          pinnedAt: now,
+        }
         : { status: 'unpinned', pinnedPublicKey: '', pinnedFingerprint: '' }
       record = {
         hostId,
@@ -1453,20 +1513,20 @@ export class HubCore {
         identity: incomingIdentity,
         syncMeta: incomingSync
           ? {
-              bootId: String(incomingSync.bootId || ''),
-              bootEpochMs: Number(incomingSync.bootEpochMs) || now,
-              seq: Number(incomingSync.seq) || 0,
-              capturedAt: Number(incomingSync.capturedAt) || now,
-            }
+            bootId: String(incomingSync.bootId || ''),
+            bootEpochMs: Number(incomingSync.bootEpochMs) || now,
+            seq: Number(incomingSync.seq) || 0,
+            capturedAt: Number(incomingSync.capturedAt) || now,
+          }
           : null,
         trust,
         lastSeen: now,
         ...(payload.presentedHostToken && /^hst_[0-9a-f]{48}$/.test(payload.presentedHostToken)
           ? {
-              hostToken: payload.presentedHostToken,
-              hostTokenCreatedAt: now,
-              hostTokenPreview: `${payload.presentedHostToken.slice(0, 8)}...${payload.presentedHostToken.slice(-4)}`,
-            }
+            hostToken: payload.presentedHostToken,
+            hostTokenCreatedAt: now,
+            hostTokenPreview: `${payload.presentedHostToken.slice(0, 8)}...${payload.presentedHostToken.slice(-4)}`,
+          }
           : {}),
         dshStats: payload.dshStats ?? {},
         bridgeState: payload.bridgeState ?? { tasks: [], approvals: [], workspaces: [] },
@@ -1659,8 +1719,62 @@ export class HubCore {
         }
       }
     }
+    let pinStateChangedByHarness = false
+    if (Array.isArray(record.bridgeState?.tasks)) {
+      for (const t of record.bridgeState.tasks) {
+        if (!t || !t.id || typeof t.pinned !== 'boolean') continue
+        const obsKey = `${hostId}:${t.id}`
+        const prevObs = this.lastObservedHarnessPin.get(obsKey)
+        const curPin = this.sessionPinState.get(t.id)
+        const dispatchedNow = commands.some(c => c?.type === 'pin_session' && c?.agentId === t.id)
+        const stillQueued = Array.isArray(record.commands) && record.commands.some(c => c?.type === 'pin_session' && c?.agentId === t.id)
+        if (dispatchedNow && curPin) {
+          curPin.dispatchedAt = now
+          curPin.converged = false
+        }
+        if (curPin && curPin.source === 'client' && !dispatchedNow && !stillQueued && t.pinned === Boolean(curPin.pinned)) {
+          curPin.converged = true
+        }
+        const lastClientAnchor = curPin ? Math.max(Number(curPin.at) || 0, Number(curPin.dispatchedAt) || 0) : 0
+        const awaitingHostPinSync =
+          curPin &&
+          curPin.source === 'client' &&
+          !curPin.converged &&
+          (dispatchedNow || stillQueued || now - lastClientAnchor < 8_000)
+        if (awaitingHostPinSync) {
+          t.pinned = Boolean(curPin.pinned)
+          continue
+        }
+        this.lastObservedHarnessPin.set(obsKey, t.pinned)
+        if ((prevObs !== undefined && prevObs !== t.pinned) || (!curPin && t.pinned === true) || (curPin && curPin.pinned !== t.pinned && curPin.source === 'harness')) {
+          this.sessionPinState.set(t.id, {
+            pinned: t.pinned,
+            at: now,
+            source: 'harness',
+          })
+          pinStateChangedByHarness = true
+        } else if (curPin && prevObs === undefined && curPin.pinned !== t.pinned) {
+          // On initial host boot, if Hub already holds an explicit user pin decision that hasn't reached the host yet,
+          // preserve it and queue a background sync to the host!
+          t.pinned = Boolean(curPin.pinned)
+          record.commands = record.commands ?? []
+          if (!record.commands.some(c => c?.type === 'pin_session' && c?.agentId === t.id)) {
+            record.commands.push({
+              id: `cmd-pinsync-${randomBytes(3).toString('hex')}`,
+              type: 'pin_session',
+              agentId: t.id,
+              pinned: Boolean(curPin.pinned),
+              createdAt: now,
+            })
+          }
+        }
+      }
+      while (this.lastObservedHarnessPin.size > 1200) {
+        this.lastObservedHarnessPin.delete(this.lastObservedHarnessPin.keys().next().value)
+      }
+    }
     const nextFingerprint = this.computeHostFingerprint(record)
-    const stateChanged = hasCommandActivity || nextFingerprint !== record._lastFingerprint
+    const stateChanged = hasCommandActivity || pinStateChangedByHarness || nextFingerprint !== record._lastFingerprint
     if (stateChanged || now - (record._lastBroadcastAt || 0) >= 60_000) {
       record._lastFingerprint = nextFingerprint
       record._lastBroadcastAt = now
@@ -1687,12 +1801,12 @@ export class HubCore {
     const b = this.reconcileBridgeStateApprovals(record?.hostId || '', record?.bridgeState ?? {})
     const tasksSig = Array.isArray(b.tasks)
       ? b.tasks
-          .map(t => {
-            const tr = Array.isArray(t.transcript) ? t.transcript : []
-            const last = tr.at(-1)
-            return `${t.id}:${t.title || ''}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${(t.lastOutput || '').slice(0, 120)}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}:${(t.artifacts || []).length}`
-          })
-          .join('|')
+        .map(t => {
+          const tr = Array.isArray(t.transcript) ? t.transcript : []
+          const last = tr.at(-1)
+          return `${t.id}:${t.title || ''}:${t.pinned ? 1 : 0}:${t.status || ''}:${t.turnState || ''}:${t.sessionRev || ''}:${(t.lastOutput || '').slice(0, 120)}:${t.runningSummary || ''}:${tr.length}:${last?.role || ''}:${(last?.text || '').length}:${(last?.text || '').slice(-40)}:${(last?.thinking || '').length}:${(last?.tools || []).length}:${(t.changedFiles || []).length}:${(t.artifacts || []).length}`
+        })
+        .join('|')
       : ''
     const appSig = Array.isArray(b.approvals)
       ? b.approvals.map(a => `${a.code}:${a.promptTitle || ''}:${Boolean(a.settling)}:${a.lastError || ''}`).join('|')
@@ -2784,7 +2898,7 @@ export class HubCore {
         if (signal && onAbort) {
           try {
             signal.removeEventListener('abort', onAbort)
-          } catch {}
+          } catch { }
         }
         const hadPending = this.pendingFsRequests.delete(reqId)
         if (notifyHostAbort && hadPending) {
@@ -2846,7 +2960,7 @@ export class HubCore {
     if (hasStream) {
       // Guard against unhandled 'error' events on raw HTTP streams before/after pipeline attaches
       if (typeof stream.on === 'function') {
-        stream.on('error', () => {})
+        stream.on('error', () => { })
       }
       streamDone = new Promise(resolveDone => {
         let settled = false

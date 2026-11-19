@@ -201,6 +201,14 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
+<summary><strong><code>2026-11-19 · v0.8.13</code> — Bidirectional Multi-Harness Session Pin Sync &amp; Deterministic Zero-Flake CI</strong></summary>
+
+- **Bidirectional Session Pinning Across Phone, Web &amp; Desktop Harnesses (`v0.8.13`)**: Replaced isolated browser-only `localStorage` pins with Hub-persisted `sessionPinState` (`POST /api/sessions/pin` + instant SSE delta broadcast) and 2-way native desktop harness sync — including DSH Desktop (`workspace.json` `global.pinnedSessionIds`), OpenAI Codex Desktop (`.codex-global-state.json` `pinned-thread-ids`), WorkBuddy (`workbuddy.db` + `pinned-sessions.json`), Doubao Desktop LevelDB `pinned`, and host-persisted pins for Antigravity IDE / Claude Code.
+- **Deterministic Zero-Flake GitHub Actions CI (`v0.8.13`)**: Fixed intermittent `SQLITE_BUSY (5)` (`database is locked`) races on 2-vCPU Ubuntu runners by enforcing `-cmd ".timeout 5000"` + WAL mode across all `sqlite3` invocations, capping runner test concurrency (`--test-concurrency=4`), opting into Node 24 Actions runtime, and adding a permanent workspace CI gate rule (`.agent/rules/ci-zero-failure-gate.md`).
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-19 · v0.8.12</code> — Clickable User-Bubble Image Thumbnails &amp; Zero-Jump Sticky-Bottom Scroll Lock</strong></summary>
 
 - **Inline User-Bubble Image Thumbnails &amp; Fullscreen Tap Preview (`v0.8.12`)**: Replaced raw `[手机端上传图片附件...]` file-path boilerplate inside user chat bubbles with fixed-aspect clickable image thumbnails (for both instant optimistic sends and historical `.dsh-uploads` / `.user_uploaded` dual-fallback paths) that open directly in the zoomable/saveable preview drawer (`controller.js` / `app.css` / `workspace-ops.js`).

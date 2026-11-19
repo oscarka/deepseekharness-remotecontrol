@@ -639,6 +639,82 @@ export async function removeSessionFromDshWorkspaceStorage(dshHome, sessionId) {
 }
 
 /**
+ * Toggle or set a session ID inside `<dshHome>/storages/workspace.json` (`global.pinnedSessionIds`)
+ * so DSH Desktop and Mobile Web / Hub share the exact same pinned state bidirectionally.
+ */
+export async function setSessionPinnedInDshWorkspaceStorage(dshHome, sessionId, pinned = true) {
+  const sid = String(sessionId || '').trim()
+  if (!dshHome || !sid) return { ok: false, error: 'dshHome and sessionId are required' }
+  const storagePath = join(resolve(dshHome), 'storages', 'workspace.json')
+  let raw = null
+  try {
+    raw = JSON.parse(await readFile(storagePath, 'utf8'))
+  } catch {
+    raw = null
+  }
+  if (!raw || typeof raw !== 'object') {
+    raw = {
+      unit: { version: 2 },
+      global: { initialized: true, workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] },
+      tables: { workspaces: {} },
+    }
+  }
+  if (!raw.global || typeof raw.global !== 'object') {
+    raw.global = { workspaceIds: [], archivedSessionIds: [], pinnedSessionIds: [] }
+  }
+  const curList = Array.isArray(raw.global.pinnedSessionIds)
+    ? raw.global.pinnedSessionIds.map(id => String(id || '').trim()).filter(Boolean)
+    : []
+  const wantPin = Boolean(pinned)
+  let nextList
+  if (wantPin) {
+    nextList = [sid, ...curList.filter(id => id !== sid)]
+  } else {
+    nextList = curList.filter(id => id !== sid)
+  }
+  raw.global.pinnedSessionIds = nextList
+  try {
+    await mkdir(dirname(storagePath), { recursive: true })
+    const tmpPath = `${storagePath}.${randomBytes(3).toString('hex')}.tmp`
+    await writeFile(tmpPath, `${JSON.stringify(raw, null, 2)}\n`, { mode: 0o600 })
+    await rename(tmpPath, storagePath)
+    return { ok: true, id: sid, pinned: wantPin }
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) }
+  }
+}
+
+export async function readHostPinnedSessionsMap(dshHome) {
+  if (!dshHome) return {}
+  try {
+    const p = join(resolve(dshHome), 'pinned-sessions.json')
+    const parsed = JSON.parse(await readFile(p, 'utf8'))
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+export async function setHostPinnedSession(dshHome, sessionId, pinned = true) {
+  const sid = String(sessionId || '').trim()
+  if (!dshHome || !sid) return { ok: false }
+  const p = join(resolve(dshHome), 'pinned-sessions.json')
+  const map = await readHostPinnedSessionsMap(dshHome)
+  if (pinned) {
+    map[sid] = true
+  } else {
+    map[sid] = false
+  }
+  try {
+    await mkdir(dirname(p), { recursive: true })
+    await writeFile(p, `${JSON.stringify(map, null, 2)}\n`, { mode: 0o600 })
+    return { ok: true, id: sid, pinned: Boolean(pinned) }
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) }
+  }
+}
+
+/**
  * Read real historical DSH v4 sessions (`session.v4.jsonl.zstd`) directly from `~/.dsh/sessions`
  * so the Web UI displays all of the user's real projects & conversations even when DSH Desktop
  * hasn't hydrated them into memory yet.
@@ -1129,6 +1205,7 @@ export async function loadDiskSessionsFromDshHome(
         results.push({
           ...cachedEntry.session,
           ...(customOverride ? { title: customOverride } : {}),
+          pinned: wsStorage.pinnedSet.has(cachedEntry.session.id),
           status: pendingApprovalNow ? 'approval' : isActivelyRunningNow ? 'running' : 'idle',
           isMidTurn: Boolean(pendingApprovalNow) || !cachedEntry.hasConcluded,
           turnState: pendingApprovalNow
@@ -1360,6 +1437,7 @@ export async function loadDiskSessionsFromDshHome(
           harnessLabel: 'DeepSeek Harness',
           ...(sessionModel ? { model: sessionModel } : {}),
           title: effTitle,
+          pinned: wsStorage.pinnedSet.has(id),
           status: pendingApproval ? 'approval' : isActivelyRunning ? 'running' : 'idle',
           isMidTurn: Boolean(pendingApproval) || !hasConcluded,
           turnState: pendingApproval

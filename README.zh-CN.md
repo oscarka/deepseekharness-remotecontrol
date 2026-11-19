@@ -201,6 +201,14 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
+<summary><strong><code>2026-11-19 · v0.8.13</code> — 手机端与各桌面端 Harness 会话置顶（Pin）双向互通 &amp; 根治 CI 偶发锁库告警</strong></summary>
+
+- **多端与各 Harness 会话置顶（Pin）双向实时互通（`v0.8.13`）**：升级为云端 Hub 持久化的 `sessionPinState`（`POST /api/sessions/pin` + SSE 增量广播），并双向打通电脑端各工具原生置顶存储——涵盖 **DSH 桌面版**（`workspace.json` `global.pinnedSessionIds`）、**Codex 桌面版**（`.codex-global-state.json` `pinned-thread-ids`）、**WorkBuddy**（`workbuddy.db` + `pinned-sessions.json`）、**豆包电脑版**（LevelDB `pinned`）及 **Antigravity IDE / Claude Code** 主机级置顶持久化，在电脑或任意手机上置顶/取消置顶均实时同步。
+- **彻底消除 GitHub Actions CI 偶发 `database is locked` 失败告警邮件（`v0.8.13`）**：为全部 `sqlite3` 调用补齐 `-cmd ".timeout 5000"` 与 WAL 模式、限制 CI 双核并发度（`--test-concurrency=4`），并新增持久工作区门禁规则 [`.agent/rules/ci-zero-failure-gate.md`](.agent/rules/ci-zero-failure-gate.md)，杜绝后续提交再次触发偶发锁库报错邮件。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-19 · v0.8.12</code> — 用户已发截图气泡缩略图与点击大图预览 &amp; 根治消息流突变跳回旧对话顽疾</strong></summary>
 
 - **用户气泡内已发图片直接展示缩略图并支持点开大图（`v0.8.12`）**：移除蓝色用户消息气泡中裸露的 `[手机端上传图片附件...]` 本地路径长文本，自动解析并渲染为固定比例缩略图卡片（同时兼容刚发送时的本地即时预览与历史会话落盘读取，支持 `.dsh-uploads` 与 `.user_uploaded` 主备路径自动回退），点击即可在抽屉中打开高清大图、缩放或长按保存（[`controller.js`](hub/web/src/controller.js) / [`app.css`](hub/web/src/styles/app.css) / [`workspace-ops.js`](dsh-feishu/lib/workspace-ops.js)）。

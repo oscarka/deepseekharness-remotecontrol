@@ -28,8 +28,8 @@ async function readStaticTextPrecompressed(filePath) {
   const brBuf =
     rawBuf.length > 512
       ? brotliCompressSync(rawBuf, {
-          params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 6 },
-        })
+        params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 6 },
+      })
       : null
   const entry = { mtimeMs: st.mtimeMs, rawBuf, gzBuf, brBuf, text }
   if (staticAssetMemCache.size > 32) {
@@ -757,6 +757,11 @@ export function createHubServer({
 
       if (method === 'POST' && pathname === '/api/sessions/read') {
         const outcome = hub.markSessionRead(body || {})
+        return { status: outcome.ok ? 200 : 400, json: outcome }
+      }
+
+      if (method === 'POST' && pathname === '/api/sessions/pin') {
+        const outcome = hub.setSessionPinned(body || {})
         return { status: outcome.ok ? 200 : 400, json: outcome }
       }
 
@@ -2400,33 +2405,33 @@ if (isMain) {
         stateFile,
       }),
     )
-    // Pre-compress static HTML/JS/CSS into RAM immediately, then self-warm CDN edge (if PUBLIC_URL is HTTPS)
-    // so the very first user open right after any upgrade/restart is already a 0ms RAM + CDN Edge HIT.
-    ;(async () => {
-      try {
-        const htmlEntry = await readStaticTextPrecompressed(INDEX_HTML_PATH)
-        const assetPaths = []
-        const re = /\/(assets\/index-[A-Za-z0-9_-]+\.(?:js|css))/g
-        let m
-        while ((m = re.exec(htmlEntry.text)) !== null) {
-          const rel = m[1]
-          assetPaths.push(`/${rel}`)
-          await readStaticTextPrecompressed(join(__dirname, 'public', rel)).catch(() => {})
-        }
-        const rawPub = String(process.env.PUBLIC_URL || '').trim().replace(/\/+$/, '')
-        if (rawPub.startsWith('https://')) {
-          const warmTimer = setTimeout(async () => {
-            for (const p of ['/', ...assetPaths, '/icon-192.png?v=0.8.0', '/apple-touch-icon.png?v=0.8.0']) {
-              try {
-                await fetch(`${rawPub}${p}`, {
-                  headers: { 'accept-encoding': 'br, gzip', 'user-agent': 'dsh-edge-prewarm/1.0' },
-                })
-              } catch {}
-            }
-          }, 800)
-          warmTimer.unref?.()
-        }
-      } catch {}
-    })()
+      // Pre-compress static HTML/JS/CSS into RAM immediately, then self-warm CDN edge (if PUBLIC_URL is HTTPS)
+      // so the very first user open right after any upgrade/restart is already a 0ms RAM + CDN Edge HIT.
+      ; (async () => {
+        try {
+          const htmlEntry = await readStaticTextPrecompressed(INDEX_HTML_PATH)
+          const assetPaths = []
+          const re = /\/(assets\/index-[A-Za-z0-9_-]+\.(?:js|css))/g
+          let m
+          while ((m = re.exec(htmlEntry.text)) !== null) {
+            const rel = m[1]
+            assetPaths.push(`/${rel}`)
+            await readStaticTextPrecompressed(join(__dirname, 'public', rel)).catch(() => { })
+          }
+          const rawPub = String(process.env.PUBLIC_URL || '').trim().replace(/\/+$/, '')
+          if (rawPub.startsWith('https://')) {
+            const warmTimer = setTimeout(async () => {
+              for (const p of ['/', ...assetPaths, '/icon-192.png?v=0.8.0', '/apple-touch-icon.png?v=0.8.0']) {
+                try {
+                  await fetch(`${rawPub}${p}`, {
+                    headers: { 'accept-encoding': 'br, gzip', 'user-agent': 'dsh-edge-prewarm/1.0' },
+                  })
+                } catch { }
+              }
+            }, 800)
+            warmTimer.unref?.()
+          }
+        } catch { }
+      })()
   })
 }

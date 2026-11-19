@@ -2,6 +2,17 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.8.13] - 2026-11-19
+
+### Added & Fixed
+
+- **打通多设备总控台与电脑端各 Harness 会话置顶（Pin）双向实时互通（`hub/hub-core.js` / `hub/server.js` / `dsh-feishu/lib/hub-agent.js` / `workspace-ops.js` / `codex-adapter.js` / `workbuddy-adapter.js` / `doubao-adapter.js` / `controller.js`）**：
+  - 彻底改变此前手机端仅存单机 `localStorage` 且忽略电脑端 `pinned` 字段的割裂状态：Hub 新增跨设备持久化 `sessionPinState` 与 `POST /api/sessions/pin`（含旧本地置顶无损自动上云迁移），通过增量 SSE 秒级同步到所有手机、PWA 与桌面网页；
+  - 双向打通各桌面端工具原生置顶存储：**DSH 桌面版**（`~/.dsh/storages/workspace.json` `global.pinnedSessionIds` 双向读写）、**Codex 桌面版**（`~/.codex/.codex-global-state.json` `pinned-thread-ids` 双向读写）、**WorkBuddy**（`workbuddy.db` + `pinned-sessions.json` 双向读写）、**豆包电脑版**（LevelDB `pinned` 同步展示），以及 **Antigravity IDE / Claude Code** 主机级 `pinned-sessions.json` 跨设备持久同步。
+- **彻底消除 GitHub Actions `CI & Multi-Arch Docker Publish` 偶发 `SQLITE_BUSY` 报错邮件并固化防复发规则（`dsh-feishu/test/hub-and-migration.test.js` / `.github/workflows/*.yml` / `.agent/rules/ci-zero-failure-gate.md`）**：
+  - 修复测试轮询与 WorkBuddy 后台异步落库并发访问 `workbuddy.db` 时 `sqlite3` CLI 默认 `busy_timeout = 0ms` 触发 `database is locked (5)` 的偶发竞态：全量补齐 `['-cmd', '.timeout 5000']` 与 `PRAGMA journal_mode=WAL;`，并在 CI 工作流启用 `--test-concurrency=4` 与 `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`；
+  - 在仓库内落地持久工作区规则 `.agent/rules/ci-zero-failure-gate.md`，强制后续所有开发会话遵守推送前全量单测门禁、SQLite 锁超时规范与推送后 CI 一次绿灯验收。
+
 ## [0.8.12] - 2026-11-19
 
 ### Fixed

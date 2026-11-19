@@ -22,6 +22,9 @@ concurrency:
   group: ci-docker-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   test:
     name: Unit & Integration Tests
@@ -37,7 +40,7 @@ jobs:
           npm --prefix dsh-feishu install
       - name: Run test suite & frontend build
         run: |
-          npm test
+          node --test --test-concurrency=4 dsh-feishu/test/*.test.js
           npm run build
 
   docker:

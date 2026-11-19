@@ -3930,8 +3930,11 @@ test('WorkBuddy real local SQLite + Unix sidecar socket + HTTP/SSE stream + HubA
     const dbPath = join(wbHome, 'workbuddy.db')
     const t0 = Date.now() - 20_000
     execFileSync('sqlite3', [
+      '-cmd',
+      '.timeout 5000',
       dbPath,
       `
+      PRAGMA journal_mode=WAL;
       CREATE TABLE sessions (
         id TEXT PRIMARY KEY,
         cwd TEXT,
@@ -4140,6 +4143,8 @@ test('WorkBuddy real local SQLite + Unix sidecar socket + HTTP/SSE stream + HubA
       update: { sessionUpdate: 'agent_message', content: '第二轮：桌面端新增了退款接口实现。' },
     })
     execFileSync('sqlite3', [
+      '-cmd',
+      '.timeout 5000',
       dbPath,
       `UPDATE sessions SET updated_at = ${t1} WHERE id = 'wb-sqlite-01';`,
     ])
@@ -4817,8 +4822,11 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
 
     // 1. Seed real SQLite workbuddy.db matching WorkBuddy v5.9.3 schema
     execFileSync('sqlite3', [
+      '-cmd',
+      '.timeout 5000',
       dbPath,
       `
+      PRAGMA journal_mode=WAL;
       CREATE TABLE workspaces (
         path TEXT PRIMARY KEY,
         last_opened_at INTEGER NOT NULL
@@ -4952,12 +4960,15 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
     assert.equal(spawnedCalls[1].cwd, existingCwd)
 
     // Wait for async prompt completion & SQLite sync
+    const queryDbJson = sql =>
+      JSON.parse(
+        execFileSync('sqlite3', ['-cmd', '.timeout 5000', '-json', dbPath, sql], { encoding: 'utf8' }) || '[]',
+      )
+
     let dbExistingRows = []
     for (let i = 0; i < 150; i++) {
       const s = await wb.getSession(`workbuddy:${existingId}`)
-      dbExistingRows = JSON.parse(
-        execFileSync('sqlite3', ['-json', dbPath, `SELECT * FROM sessions WHERE id = '${existingId}';`], { encoding: 'utf8' }) || '[]',
-      )
+      dbExistingRows = queryDbJson(`SELECT * FROM sessions WHERE id = '${existingId}';`)
       if (s?.status === 'idle' && s.transcript.length === 4 && dbExistingRows[0]?.status === 'completed') break
       await new Promise(r => setTimeout(r, 20))
     }
@@ -4992,9 +5003,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
     let dbNewRows = []
     for (let i = 0; i < 80; i++) {
       const s = await wb.getSession('workbuddy:wb-phone-new-99')
-      dbNewRows = JSON.parse(
-        execFileSync('sqlite3', ['-json', dbPath, "SELECT * FROM sessions WHERE id = 'wb-phone-new-99';"], { encoding: 'utf8' }) || '[]',
-      )
+      dbNewRows = queryDbJson("SELECT * FROM sessions WHERE id = 'wb-phone-new-99';")
       if (s?.status === 'idle' && dbNewRows[0]?.status === 'completed') break
       await new Promise(r => setTimeout(r, 20))
     }
@@ -5006,9 +5015,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
     assert.equal(dbNewRows[0].is_playground, 1)
     assert.equal(dbNewRows[0].status, 'completed')
 
-    const dbWorkspaces = JSON.parse(
-      execFileSync('sqlite3', ['-json', dbPath, `SELECT * FROM workspaces WHERE path = '${newCwd}';`], { encoding: 'utf8' }),
-    )
+    const dbWorkspaces = queryDbJson(`SELECT * FROM workspaces WHERE path = '${newCwd}';`)
     assert.equal(dbWorkspaces.length, 1)
 
     // 5. Simulate spawned server #2 dying -> next sendPrompt transparently evicts dead endpoint & respawns server #4 in existingCwd
@@ -5023,9 +5030,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
 
     for (let i = 0; i < 80; i++) {
       const s = await wb.getSession(`workbuddy:${existingId}`)
-      const rows = JSON.parse(
-        execFileSync('sqlite3', ['-json', dbPath, `SELECT status FROM sessions WHERE id = '${existingId}';`], { encoding: 'utf8' }) || '[]',
-      )
+      const rows = queryDbJson(`SELECT status FROM sessions WHERE id = '${existingId}';`)
       if (s?.status === 'idle' && s.transcript.length === 6 && rows[0]?.status === 'completed') break
       await new Promise(r => setTimeout(r, 20))
     }
@@ -5047,9 +5052,7 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
 
     for (let i = 0; i < 80; i++) {
       const s = await wb.getSession(`workbuddy:${existingId}`)
-      const rows = JSON.parse(
-        execFileSync('sqlite3', ['-json', dbPath, `SELECT status FROM sessions WHERE id = '${existingId}';`], { encoding: 'utf8' }) || '[]',
-      )
+      const rows = queryDbJson(`SELECT status FROM sessions WHERE id = '${existingId}';`)
       if (s?.status === 'idle' && s.transcript.length === 8 && rows[0]?.status === 'completed') break
       await new Promise(r => setTimeout(r, 20))
     }
@@ -5060,15 +5063,11 @@ test('WorkBuddy per-cwd ACP server pool & bidirectional workbuddy.db SQLite sync
 
     // 6. Verify renameSession & deleteSession also sync to workbuddy.db
     await wb.renameSession({ sessionId: 'workbuddy:wb-phone-new-99', title: 'A股收盘总结' })
-    const renamedRows = JSON.parse(
-      execFileSync('sqlite3', ['-json', dbPath, "SELECT title, custom_title FROM sessions WHERE id = 'wb-phone-new-99';"], { encoding: 'utf8' }),
-    )
+    const renamedRows = queryDbJson("SELECT title, custom_title FROM sessions WHERE id = 'wb-phone-new-99';")
     assert.equal(renamedRows[0].custom_title, 'A股收盘总结')
 
     await wb.deleteSession({ sessionId: 'workbuddy:wb-phone-new-99' })
-    const deletedRows = JSON.parse(
-      execFileSync('sqlite3', ['-json', dbPath, "SELECT deleted_at FROM sessions WHERE id = 'wb-phone-new-99';"], { encoding: 'utf8' }),
-    )
+    const deletedRows = queryDbJson("SELECT deleted_at FROM sessions WHERE id = 'wb-phone-new-99';")
     assert.ok(deletedRows[0].deleted_at > 0)
 
     wb.shutdown()
@@ -5582,8 +5581,11 @@ test('WorkBuddy skips sessions/<pid>.json live process heartbeat lockfiles and H
     // 1. Real SQLite DB row from 3 hours ago
     const dbPath = join(wbHome, 'workbuddy.db')
     execFileSync('sqlite3', [
+      '-cmd',
+      '.timeout 5000',
       dbPath,
       `
+      PRAGMA journal_mode=WAL;
       CREATE TABLE sessions (
         id TEXT PRIMARY KEY,
         cwd TEXT,
