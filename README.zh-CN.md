@@ -1,8 +1,8 @@
 <div align="center">
-  <img src="docs/assets/hero-banner-zh.svg" alt="AI 编程手机总控台 — 手机遥控 Claude Code、OpenAI Codex、Antigravity IDE 与 DeepSeek Harness" width="100%" />
+  <img src="docs/assets/hero-banner-zh.svg" alt="PocketAgent — 手机遥控 Claude Code、OpenAI Codex、Antigravity IDE 与 DeepSeek Harness" width="100%" />
 
   <p align="center">
-    <strong>把电脑上正在跑的 <a href="#支持的-ai-编程工具">Claude Code、OpenAI Codex、Antigravity IDE、DeepSeek Harness (DSH) 与 WorkBuddy</a> 装进手机口袋 —— 100% 开源自托管、零第三方中继。<br/>手机滑卡批阅、一键放行命令与多选弹窗、微信式按住说话插话、或点 <code>🔊 播报</code> 直接听结论。</strong>
+    <strong>PocketAgent</strong> —— <strong>把电脑上正在跑的 <a href="#支持的-ai-编程工具">Claude Code、OpenAI Codex、Antigravity IDE、DeepSeek Harness (DSH) 与 WorkBuddy</a> 装进手机口袋 —— 100% 开源自托管、零第三方中继。<br/>手机滑卡批阅、一键放行命令与多选弹窗、微信式按住说话插话、或点 <code>🔊 播报</code> 直接听结论。</strong>
   </p>
 
   <p align="center">
@@ -16,7 +16,7 @@
   </p>
 
 ```bash
-npx deepseekharness-remotecontrol
+npx pocketagent
 ```
 
   <p align="center">
@@ -25,7 +25,7 @@ npx deepseekharness-remotecontrol
 
   <p align="center">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" />
-    <img src="https://img.shields.io/badge/npm-deepseekharness--remotecontrol-cb3837?logo=npm&logoColor=white" alt="npm package" />
+    <img src="https://img.shields.io/badge/npm-pocketagent-cb3837?logo=npm&logoColor=white" alt="npm package" />
     <img src="https://img.shields.io/badge/%E6%94%AF%E6%8C%81%E7%94%B5%E8%84%91-macOS%20%7C%20Linux%20%7C%20NAS%20%7C%20%E6%A0%91%E8%8E%93%E6%B4%BE-0f766e" alt="支持平台" />
     <img src="https://img.shields.io/badge/node-%3E%3D20-43853d?logo=node.js&logoColor=white" alt="Node >= 20" />
     <img src="https://img.shields.io/badge/%E6%8E%A7%E5%88%B6%E5%8F%B0%E7%95%8C%E9%9D%A2-%E4%B8%AD%E8%8B%B1%E5%8F%8C%E8%AF%AD%E8%87%AA%E5%8A%A8%E8%AF%86%E5%88%AB-2563eb" alt="中英双语控制台" />
@@ -103,15 +103,15 @@ npx deepseekharness-remotecontrol
 
 ## 三步快速上手
 
-> **⚡ 5 秒本机体验（一行 `npx` 终端出码 · 支持 Claude Code / Codex / Antigravity / DSH / WorkBuddy · 零配置）**：
+> **⚡ 5 秒本机体验（一行 `npx pocketagent` 终端出码 · 支持 Claude Code / Codex / Antigravity / DSH / WorkBuddy · 零配置）**：
 > ```bash
-> npx deepseekharness-remotecontrol
+> npx pocketagent
 > ```
-> 无需 `git clone`、无需云服务器、无需写配置：3 秒内自动启动本地总控台 + 扫描本机 AI 编程会话，并**直接在终端里打印手机可扫二维码**，手机连同一 Wi-Fi 扫一扫即刻免密遥控！
+> 无需 `git clone`、无需云服务器、无需写配置：3 秒内自动启动本地总控台 + 扫描本机 AI 编程会话（自动装配 Claude Code 手机审批 Hook），并**直接在终端里打印手机可扫二维码**，手机连同一 Wi-Fi 扫一扫即刻免密遥控！
 >
 > **🔌 如果你在使用 DeepSeek Harness (DSH &gt;= 0.2.0)**，也可以直接在 **DSH 插件市场** 搜索安装，或运行：
 > ```bash
-> dsh plugin --profile desktop add github:oscarka/deepseekharness-remotecontrol
+> dsh plugin --profile desktop add github:oscarka/pocketagent
 > # 若使用 dsh web，可将 desktop 换成 web
 > ```
 > 想出门在外用 **4G/5G 跨网 24 小时随时遥控多台电脑**？按下面 3 步部署你自己的云端总控台：
@@ -129,8 +129,8 @@ npx deepseekharness-remotecontrol
 不需要云服务器，也不需要装 Docker。只要电脑有 Node.js（>= 20），克隆仓库加密码参数直接启动：
 
 ```bash
-git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
-cd deepseekharness-remotecontrol
+git clone https://github.com/oscarka/pocketagent.git
+cd pocketagent
 
 # 把「自定义一个密码」换成你自己的密码
 HUB_TOKEN="自定义一个密码" PORT=8080 npm start
@@ -141,20 +141,20 @@ HUB_TOKEN="自定义一个密码" PORT=8080 npm start
 如果你有自己的轻量云服务器 / VPS（推荐搭配 Nginx + Cloudflare 边缘 CDN 开启 HTTP/2 &amp; HTTP/3 加速）、群晖 NAS 或软路由，可以直接用一行 Docker 命令启动（或者本机 `npm start` 搭配 `cloudflared` / `cpolar` / `Tailscale`）：
 
 ```bash
-docker run -d --name dsh-hub \
+docker run -d --name pocketagent-hub \
   --restart unless-stopped \
   -p 8080:8080 \
   -v dsh-hub-data:/data \
   -e HUB_TOKEN="自定义一个密码" \
-  ghcr.io/oscarka/deepseekharness-remotecontrol:latest
+  ghcr.io/oscarka/pocketagent:latest
 ```
 
 #### ☁️ 方式 D：Google Cloud Run 云端脚本部署
 如果你习惯使用 GCP `gcloud` 命令行部署，可直接运行项目自带的一键脚本（提示：由于接入的电脑守护进程会 24 小时保持 SSE 与心跳长连接，电脑在线期间 Cloud Run 实例会保持常驻计费而不会缩容到 0；多机长期在线更推荐上面的 Railway 或轻量 VPS 方案）：
 
 ```bash
-git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
-cd deepseekharness-remotecontrol
+git clone https://github.com/oscarka/pocketagent.git
+cd pocketagent
 
 # 把 your-gcp-project-id 换成你的 Google Cloud 项目 ID，密码换成你自己的密码
 GCP_PROJECT_ID="your-gcp-project-id" \
@@ -223,7 +223,9 @@ HUB_TOKEN="自定义一个安全密码" \
 > 💡 按**自然日**折叠汇总，每条内保留完整子版本号；逐版本详细变更请见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.9–v0.8.21</code> — Antigravity 多选题修复、Claude Code 原生手机审批、<code>npx</code> 终端出码 &amp; <code>?demo=1</code> 沙盒</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.9–v0.9.0</code> — 正式更名 PocketAgent（<code>npx pocketagent</code>）、Claude Code 审批、Antigravity 多选题 &amp; <code>?demo=1</code> 沙盒</strong></summary>
+
+- **品牌升级为 PocketAgent（`v0.9.0`）**：GitHub 仓库原地更名为 `oscarka/pocketagent`（原 `deepseekharness-remotecontrol` 链接永久 301 自动跳转兼容 DSH 插件市场），主命令与容器镜像全面切换为 `npx pocketagent` 与 `ghcr.io/oscarka/pocketagent:latest`。
 
 - **修复 Antigravity `ask_question` 多选题渲染与提交续跑（`v0.8.20–v0.8.21`）**：完整解析 `ask_question` 的单选/多选题目并支持从 `transcript_full.jsonl` 回补被截断的 `tool_calls`，将 `kind: 'question'` 与完整选项数组透传至手机审批卡与滑卡批阅；提交时先通过 `CancelCascadeInvocation` 解除等待态，再通过 `SendUserCascadeMessage` 直接发送勾选结果，根治此前提交被误判为「跳过弹窗」并停跑的问题。
 - **Claude Code 原生手机审批与滑卡批阅全面打通（`v0.8.19`）**：新增官方 `PermissionRequest` Hook 桥接脚本（`claude-permission-hook.js` + `--install-claude-hook` / `npx` 启动自动装配）与 `<120ms` FSEvents 瞬时监听，支持手机端一键放行、`本对话始终允许`（`updatedPermissions`）、拒绝与 `AskUserQuestion` 多选题回传，自此五大主力引擎（Claude Code、Codex、Antigravity IDE、DSH、WorkBuddy）全部满血支持手机审批。

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// One-command zero-config mobile console for Claude Code, OpenAI Codex, Antigravity IDE, DSH & WorkBuddy.
-// Usage: npx deepseekharness-remotecontrol [--port 8788] [--hub-only] [--no-qr]
+// PocketAgent — One-command zero-config mobile console for Claude Code, OpenAI Codex, Antigravity IDE, DSH & WorkBuddy.
+// Usage: npx pocketagent [--port 8788] [--hub-only] [--no-qr]
 
 for (const k of [
   'HTTP_PROXY',
@@ -106,12 +106,12 @@ export function parseCliArgs(argv = []) {
 
 function printHelp() {
   console.log(`
-DSH Remote Control v${PKG_VERSION}
+PocketAgent v${PKG_VERSION}
 Control Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness & WorkBuddy from your phone.
 
 Usage:
-  npx deepseekharness-remotecontrol [options]
-  dsh-remote [options]
+  npx pocketagent [options]
+  pocketagent [options]
 
 Options:
   -p, --port <number>         Preferred Hub port (default: 8788, auto-fallback if busy)
@@ -126,12 +126,12 @@ Options:
   -h, --help                  Show this help
 
 Examples:
-  npx deepseekharness-remotecontrol              # Start local Hub + auto-watch local AI sessions + print QR
-  npx deepseekharness-remotecontrol --port 9000  # Use a custom port
-  npx deepseekharness-remotecontrol --hub-only   # Run Hub only (for VPS / server)
+  npx pocketagent              # Start local Hub + auto-watch local AI sessions + print QR
+  npx pocketagent --port 9000  # Use a custom port
+  npx pocketagent --hub-only   # Run Hub only (for VPS / server)
 
 Want 24/7 cellular (4G/5G) access away from home Wi-Fi?
-  Deploy on Railway (1-click) or Docker: https://github.com/oscarka/deepseekharness-remotecontrol
+  Deploy on Railway (1-click) or Docker: https://github.com/oscarka/pocketagent
 `.trim())
 }
 
@@ -286,7 +286,7 @@ export async function runCli(argv = process.argv.slice(2)) {
   const qrBlock = opts.noQr ? '' : renderTerminalQr(qrTargetUrl, { margin: 2, indent: '  ', useAnsi })
 
   console.log('')
-  console.log(`🚀 DSH Remote Control v${PKG_VERSION} — Ready on port ${localHub.port}`)
+  console.log(`🚀 PocketAgent v${PKG_VERSION} — Ready on port ${localHub.port}`)
   console.log(`   💻 Host: ${baseConfig.hostName} (${baseConfig.hostId})`)
   if (!opts.hubOnly) {
     console.log(`   🔌 Synced: ${summarizeDiscoveredSessions(hubAgent)}`)
@@ -314,7 +314,7 @@ export async function runCli(argv = process.argv.slice(2)) {
   console.log('')
   console.log('  💡 Need 24/7 cellular (4G/5G) access away from Wi-Fi?')
   console.log('     Deploy your own Hub in 1 click on Railway or Docker:')
-  console.log('     https://github.com/oscarka/deepseekharness-remotecontrol')
+  console.log('     https://github.com/oscarka/pocketagent')
   console.log('')
 
   if (opts.once) {
@@ -334,7 +334,7 @@ export async function runCli(argv = process.argv.slice(2)) {
     const shutdown = async () => {
       if (shuttingDown) return
       shuttingDown = true
-      console.log('\n🛑 Stopping DSH Remote Control...')
+      console.log('\n🛑 Stopping PocketAgent...')
       try {
         hubAgent?.stop?.()
       } catch {}
@@ -365,7 +365,7 @@ if (isInvokedAsCli()) {
       process.exit(code)
     })
     .catch(err => {
-      console.error(`❌ Failed to start DSH Remote Control: ${err?.message || err}`)
+      console.error(`❌ Failed to start PocketAgent: ${err?.message || err}`)
       process.exit(1)
     })
 }

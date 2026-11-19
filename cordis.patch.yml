@@ -1,6 +1,6 @@
 - insert:
     - id: dsh-remotecontrol
-      name: 'deepseekharness-remotecontrol'
+      name: 'pocketagent'
       config:
         enabled: true
         autoLocalHub: true

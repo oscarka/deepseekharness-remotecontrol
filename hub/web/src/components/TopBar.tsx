@@ -56,7 +56,7 @@ export function TopBar() {
             type="button"
             class="demo-pill-btn demo-pill-primary"
             onClick={() => (window as any).demoCopyNpx?.()}
-            title="Copy npx deepseekharness-remotecontrol"
+            title="Copy npx pocketagent"
           >
             📋 npx
           </button>
@@ -70,7 +70,7 @@ export function TopBar() {
           </button>
           <a
             class="demo-pill-btn"
-            href="https://github.com/oscarka/deepseekharness-remotecontrol"
+            href="https://github.com/oscarka/pocketagent"
             target="_blank"
             rel="noopener noreferrer"
           >

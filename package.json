@@ -1,14 +1,14 @@
 {
-  "name": "deepseekharness-remotecontrol",
-  "version": "0.8.21",
+  "name": "pocketagent",
+  "version": "0.9.0",
   "type": "module",
   "license": "MIT",
-  "description": "Self-hosted mobile remote control for Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness (DSH) & WorkBuddy — swipe approvals, voice input, multi-host hub & terminal QR.",
+  "description": "PocketAgent — Self-hosted mobile remote control for Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness (DSH) & WorkBuddy. Swipe approvals, voice input, multi-host hub & terminal QR.",
   "author": "oscarka",
   "icon": "./icon.svg",
   "main": "./index.js",
   "bin": {
-    "deepseekharness-remotecontrol": "./scripts/cli.mjs",
+    "pocketagent": "./scripts/cli.mjs",
     "dsh-remote": "./scripts/cli.mjs"
   },
   "exports": {
@@ -48,27 +48,28 @@
     }
   },
   "keywords": [
-    "dsh-plugin",
+    "pocketagent",
+    "claude-code",
+    "codex",
+    "antigravity",
     "deepseek-harness",
     "dsh",
+    "dsh-plugin",
     "remote-control",
     "mobile",
     "web-ui",
     "feishu",
     "lark",
-    "antigravity",
-    "codex",
-    "claude-code",
     "workbuddy",
     "doubao"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/oscarka/deepseekharness-remotecontrol"
+    "url": "https://github.com/oscarka/pocketagent"
   },
-  "homepage": "https://github.com/oscarka/deepseekharness-remotecontrol#readme",
+  "homepage": "https://harness.agentrun.vip/?demo=1",
   "bugs": {
-    "url": "https://github.com/oscarka/deepseekharness-remotecontrol/issues"
+    "url": "https://github.com/oscarka/pocketagent/issues"
   },
   "engines": {
     "node": ">=20",

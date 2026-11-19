@@ -345,7 +345,7 @@ function TopBar() {
 		type: "button",
 		class: "demo-pill-btn demo-pill-primary",
 		onClick: () => window.demoCopyNpx?.(),
-		title: "Copy npx deepseekharness-remotecontrol"
+		title: "Copy npx pocketagent"
 	}, "📋 npx"), /* @__PURE__ */ k("button", {
 		type: "button",
 		class: "demo-pill-btn",
@@ -353,7 +353,7 @@ function TopBar() {
 		title: "Reset Demo"
 	}, "↻"), /* @__PURE__ */ k("a", {
 		class: "demo-pill-btn",
-		href: "https://github.com/oscarka/deepseekharness-remotecontrol",
+		href: "https://github.com/oscarka/pocketagent",
 		target: "_blank",
 		rel: "noopener noreferrer"
 	}, "⭐ GitHub"))), /* @__PURE__ */ k("div", {
@@ -7066,8 +7066,8 @@ function createTriageDeckController(deps) {
 	};
 }
 // hub/web/src/demo-sandbox.js
-var DEMO_REPO_URL = "https://github.com/oscarka/deepseekharness-remotecontrol";
-var DEMO_NPX_CMD = "npx deepseekharness-remotecontrol";
+var DEMO_REPO_URL = "https://github.com/oscarka/pocketagent";
+var DEMO_NPX_CMD = "npx pocketagent";
 var DEMO_HTML_PREVIEW = `<!doctype html>
 <html lang="en">
 <head>

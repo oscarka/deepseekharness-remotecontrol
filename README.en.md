@@ -1,8 +1,8 @@
 <div align="center">
-  <img src="docs/assets/hero-banner-en.svg" alt="Mobile Remote Control for Claude Code, OpenAI Codex, Antigravity IDE &amp; DeepSeek Harness" width="100%" />
+  <img src="docs/assets/hero-banner-en.svg" alt="PocketAgent — Control Claude Code, OpenAI Codex, Antigravity IDE &amp; DeepSeek Harness from your phone" width="100%" />
 
   <p align="center">
-    <strong>Control <a href="#supported-ai-coding-tools">Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness (DSH) &amp; WorkBuddy</a> from your phone — 100% self-hosted, zero vendor relay.<br/>Swipe-approve shell commands, answer multiple-choice architecture popups, steer running tasks with Hold-to-Talk voice, or listen to replies with <code>🔊 Listen</code>.</strong>
+    <strong>PocketAgent</strong> — <strong>Control <a href="#supported-ai-coding-tools">Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness (DSH) &amp; WorkBuddy</a> from your phone — 100% self-hosted, zero vendor relay.<br/>Swipe-approve shell commands, answer multiple-choice popups, steer running tasks with Hold-to-Talk voice, or listen to replies with <code>🔊 Listen</code>.</strong>
   </p>
 
   <p align="center">
@@ -16,7 +16,7 @@
   </p>
 
 ```bash
-npx deepseekharness-remotecontrol
+npx pocketagent
 ```
 
   <p align="center">
@@ -25,7 +25,7 @@ npx deepseekharness-remotecontrol
 
   <p align="center">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" />
-    <img src="https://img.shields.io/badge/npm-deepseekharness--remotecontrol-cb3837?logo=npm&logoColor=white" alt="npm package" />
+    <img src="https://img.shields.io/badge/npm-pocketagent-cb3837?logo=npm&logoColor=white" alt="npm package" />
     <img src="https://img.shields.io/badge/Host-macOS%20%7C%20Linux%20%7C%20NAS%20%7C%20Raspberry%20Pi-0f766e" alt="Supported Platforms" />
     <img src="https://img.shields.io/badge/node-%3E%3D20-43853d?logo=node.js&logoColor=white" alt="Node >= 20" />
     <img src="https://img.shields.io/badge/Web%20Console-English%20%26%20%E4%B8%AD%E6%96%87%20Auto-2563eb" alt="Bilingual Web Console" />
@@ -105,13 +105,13 @@ Before starting, it helps to understand the two lightweight pieces and how data 
 
 > **⚡ 5-Second Local Tryout via `npx` (Works with Claude Code, Codex, Antigravity IDE, DSH &amp; WorkBuddy — Zero Config)**:
 > ```bash
-> npx deepseekharness-remotecontrol
+> npx pocketagent
 > ```
-> Starts a local Control Hub + session watcher in 3 seconds and prints a **scannable QR code right in your terminal** (same Wi-Fi, 1-tap passwordless phone login — no `git clone`, no Railway, no config files).
+> Starts a local Control Hub + session watcher in 3 seconds, auto-enables Claude Code mobile approvals, and prints a **scannable QR code right in your terminal** (same Wi-Fi, 1-tap passwordless phone login — no `git clone`, no Railway, no config files).
 >
 > **🔌 Using DeepSeek Harness (DSH &gt;= 0.2.0)?** Install directly from **DSH Market** or run:
 > ```bash
-> dsh plugin --profile desktop add github:oscarka/deepseekharness-remotecontrol
+> dsh plugin --profile desktop add github:oscarka/pocketagent
 > # Or use --profile web if you run `dsh web`
 > ```
 > Ready for **24/7 cellular (4G/5G) access across multiple computers**? Follow the 3 steps below:
@@ -129,8 +129,8 @@ If you want to control your home/office computers from anywhere on cellular 4G/5
 No cloud account or Docker needed. Clone the repo and start the Control Hub directly on your computer (requires Node.js >= 20):
 
 ```bash
-git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
-cd deepseekharness-remotecontrol
+git clone https://github.com/oscarka/pocketagent.git
+cd pocketagent
 
 # Replace choose-a-password with your own password
 HUB_TOKEN="choose-a-password" PORT=8080 npm start
@@ -141,20 +141,20 @@ The terminal will print both `http://localhost:8080` and your LAN URL (e.g. `htt
 If you have a lightweight VPS (e.g. paired with Nginx + Cloudflare HTTP/2 &amp; HTTP/3 CDN), home server, NAS, or Raspberry Pi, run the prebuilt Docker image (or `npm start` + `cloudflared tunnel --url http://localhost:8080`):
 
 ```bash
-docker run -d --name dsh-hub \
+docker run -d --name pocketagent-hub \
   --restart unless-stopped \
   -p 8080:8080 \
   -v dsh-hub-data:/data \
   -e HUB_TOKEN="choose-a-password" \
-  ghcr.io/oscarka/deepseekharness-remotecontrol:latest
+  ghcr.io/oscarka/pocketagent:latest
 ```
 
 #### ☁️ Option D: Google Cloud Run (CLI Script Deploy)
 If you prefer deploying on GCP via `gcloud`, use the bundled helper script (note: because connected computer daemons keep persistent 24/7 SSE/heartbeat streams open, Cloud Run remains resident while hosts are online rather than scaling to zero — for always-on multi-computer setups, Railway or a lightweight VPS is usually much more cost-effective):
 
 ```bash
-git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
-cd deepseekharness-remotecontrol
+git clone https://github.com/oscarka/pocketagent.git
+cd pocketagent
 
 # Replace with your GCP project ID and your chosen password
 GCP_PROJECT_ID="your-gcp-project-id" \
@@ -223,7 +223,9 @@ The background daemon automatically discovers local sessions across all 6 suppor
 > 💡 Grouped **one drawer per day** with every exact version tag preserved inside; see [`CHANGELOG.md`](CHANGELOG.md) for granular per-release notes.
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.9–v0.8.21</code> — Antigravity <code>ask_question</code> Options, Claude Code Native Approvals, <code>npx</code> Terminal QR &amp; <code>?demo=1</code> Sandbox</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.9–v0.9.0</code> — PocketAgent Rebrand (<code>npx pocketagent</code>), Claude Code Approvals, Antigravity <code>ask_question</code> &amp; <code>?demo=1</code> Sandbox</strong></summary>
+
+- **PocketAgent Launch (`v0.9.0`)**: Rebranded repository and primary CLI package to **PocketAgent** (`github.com/oscarka/pocketagent`, `npx pocketagent`, `ghcr.io/oscarka/pocketagent:latest`) with automatic 301 redirect from legacy `deepseekharness-remotecontrol` links and full DSH Market compatibility.
 
 - **Antigravity `ask_question` Interactive Options &amp; Reliable Resume (`v0.8.20–v0.8.21`)**: Parsed `ask_question` `questions` &amp; hydrated truncated `tool_calls` from `transcript_full.jsonl` into structured `kind: 'question'` cards (fixing the generic `Yes, allow this time` fallback), and cleanly cancelled the waiting step before delivering the user's selected choices via `SendUserCascadeMessage` so Antigravity resumes running immediately instead of treating it as a skipped popup.
 - **Native Claude Code Mobile Approvals (`v0.8.19`)**: Added official Claude Code `PermissionRequest` Hook bridge (`claude-permission-hook.js` + `--install-claude-hook` / auto-install in `npx`), real-time `<120ms` FSEvents approval watcher, 1-tap `Allow` / `Always allow in this chat` (`updatedPermissions`) / `Deny` and `AskUserQuestion` structured answers — bringing full mobile &amp; Swipe Triage approvals to all 5 coding harnesses (Claude Code, Codex, Antigravity IDE, DSH &amp; WorkBuddy).

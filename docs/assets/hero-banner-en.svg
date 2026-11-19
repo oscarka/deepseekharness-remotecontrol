@@ -63,16 +63,16 @@
   <text x="90" y="96" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="2.1" fill="#38BDF8">CLAUDE CODE · OPENAI CODEX · ANTIGRAVITY IDE · DEEPSEEK HARNESS</text>
 
   <!-- Main Title -->
-  <text x="88" y="156" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="48" font-weight="800" letter-spacing="-0.5" fill="#F8FAFC">Mobile Remote Control</text>
+  <text x="88" y="156" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="54" font-weight="800" letter-spacing="-0.6" fill="#F8FAFC">PocketAgent</text>
 
   <!-- Clear human subtitle -->
-  <text x="90" y="198" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="19" font-weight="500" fill="#CBD5E1">Swipe-approve commands, answer popups, steer with voice &amp; manage multiple Macs from your phone</text>
+  <text x="90" y="198" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="19" font-weight="500" fill="#CBD5E1">Put your AI coding agents in your pocket — swipe-approve commands, answer popups &amp; steer via voice</text>
 
   <!-- 5 Highlight Pills -->
   <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" font-weight="600" text-anchor="middle">
     <!-- Row 1 -->
     <rect x="90" y="226" width="234" height="34" rx="17" fill="#10B981" fill-opacity="0.14" stroke="#34D399" stroke-opacity="0.45"/>
-    <text x="207" y="248" fill="#D1FAE5">⚡ 1-Command npx + Terminal QR</text>
+    <text x="207" y="248" fill="#D1FAE5">⚡ npx pocketagent · 5s QR</text>
 
     <rect x="336" y="226" width="244" height="34" rx="17" fill="#F59E0B" fill-opacity="0.14" stroke="#FBBF24" stroke-opacity="0.45"/>
     <text x="458" y="248" fill="#FEF3C7">🃏 Swipe Triage &amp; 1-Tap Approve</text>

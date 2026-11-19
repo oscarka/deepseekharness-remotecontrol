@@ -1,6 +1,6 @@
 services:
   dsh-hub:
-    image: ghcr.io/oscarka/deepseekharness-remotecontrol:latest
+    image: ghcr.io/oscarka/pocketagent:latest
     build: .
     container_name: dsh-remote-hub
     restart: unless-stopped
