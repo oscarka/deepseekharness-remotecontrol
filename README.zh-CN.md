@@ -201,9 +201,9 @@ HUB_TOKEN="自定义一个安全密码" \
 ## 📅 最近版本更新记录
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.13</code> — 手机端与各桌面端 Harness 会话置顶（Pin）双向互通 &amp; 根治 CI 偶发锁库告警</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.14</code> — 手机端与各桌面端 Harness（含 Antigravity IDE 原生置顶）双向互通 &amp; 根治 CI 锁库告警</strong></summary>
 
-- **多端与各 Harness 会话置顶（Pin）双向实时互通（`v0.8.13`）**：升级为云端 Hub 持久化的 `sessionPinState`（`POST /api/sessions/pin` + SSE 增量广播），并双向打通电脑端各工具原生置顶存储——涵盖 **DSH 桌面版**（`workspace.json` `global.pinnedSessionIds`）、**Codex 桌面版**（`.codex-global-state.json` `pinned-thread-ids`）、**WorkBuddy**（`workbuddy.db` + `pinned-sessions.json`）、**豆包电脑版**（LevelDB `pinned`）及 **Antigravity IDE / Claude Code** 主机级置顶持久化，在电脑或任意手机上置顶/取消置顶均实时同步。
+- **多端与各 Harness 会话置顶（Pin）双向实时互通 + 独立「📌 置顶对话」分组（`v0.8.13–v0.8.14`）**：升级为云端 Hub 持久化的 `sessionPinState`（`POST /api/sessions/pin` + SSE 增量广播），手机列表新增与桌面端一致的 **「📌 置顶对话」** 独立分组栏与 `📌 置顶` 胶囊角标，并全量打通电脑端原生置顶存储——涵盖 **Antigravity IDE**（`annotations/<convId>.pbtxt` + Connect-RPC `UpdateConversationAnnotations` 实时双向联动 + FSEvents 秒级监听）、**DSH 桌面版**（`workspace.json` `global.pinnedSessionIds`）、**Codex 桌面版**（`.codex-global-state.json` `pinned-thread-ids`）、**WorkBuddy**（`workbuddy.db` + `pinned-sessions.json`）与 **豆包电脑版**（LevelDB `pinned`）。
 - **彻底消除 GitHub Actions CI 偶发 `database is locked` 失败告警邮件（`v0.8.13`）**：为全部 `sqlite3` 调用补齐 `-cmd ".timeout 5000"` 与 WAL 模式、限制 CI 双核并发度（`--test-concurrency=4`），并新增持久工作区门禁规则 [`.agent/rules/ci-zero-failure-gate.md`](.agent/rules/ci-zero-failure-gate.md)，杜绝后续提交再次触发偶发锁库报错邮件。
 
 </details>

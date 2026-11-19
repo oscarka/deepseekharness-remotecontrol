@@ -1491,7 +1491,25 @@ export function initHubController() {
         </div>
       ` : '';
 
-    const rowsHtml = filtered.map(s => {
+    const pinnedCount = filtered.reduce((acc, item) => acc + (item.pinned ? 1 : 0), 0);
+    const rowsHtml = filtered.map((s, idx) => {
+      let groupHeaderHtml = '';
+      if (pinnedCount > 0) {
+        if (idx === 0 && s.pinned) {
+          groupHeaderHtml = `
+            <div class="session-group-header pinned-group-header">
+              <span>📌 置顶对话</span>
+              <span class="session-group-count">${pinnedCount}</span>
+            </div>
+          `;
+        } else if (!s.pinned && idx > 0 && filtered[idx - 1]?.pinned) {
+          groupHeaderHtml = `
+            <div class="session-group-header">
+              <span>全部对话</span>
+            </div>
+          `;
+        }
+      }
       let rowStateClass = '';
       let statusHtml = `<span class="session-time">${esc(s.timeLabel)}</span>`;
       if (s.status === 'approval') {
@@ -1517,7 +1535,7 @@ export function initHubController() {
         statusHtml = `<span class="badge-interrupted">⚠️ 中断待继续</span>`;
       }
 
-      const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : '';
+      const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌 置顶</span>` : '';
       const shortHostLabel = shortHostMap[s.hostId] || s.hostName;
       const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag" title="${esc(s.hostName)}">${esc(shortHostLabel)}</span>` : '';
       const harnessBadgeHtml = renderHarnessBadgeHtml(s.harness, 'row', s.harnessLabel);
@@ -1525,7 +1543,7 @@ export function initHubController() {
       const rolePrefix = s.status === 'running' ? '' : (s.lastRole === 'user' ? '🧑 我: ' : '🤖 ');
       const displayTitle = stripRedundantProjectPrefix(s.title, s.project);
 
-      return `
+      return `${groupHeaderHtml}
           <div class="session-row ${rowStateClass} ${s.pinned ? 'pinned-row' : ''} ${s.id === activeSessionId ? 'selected-desktop' : ''}" onclick="openChat('${esc(s.id)}')">
             <div class="session-main">
               <div class="session-top-line">

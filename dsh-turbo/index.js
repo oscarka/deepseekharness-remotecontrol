@@ -262,11 +262,13 @@ export class TurboController {
     if (this.disposed) return
     if (this.dshHome) {
       this.watchDirOnce(join(resolve(this.dshHome), 'sessions'), 'dsh-sessions')
+      this.watchDirOnce(join(resolve(this.dshHome), 'storages'), 'dsh-storages')
     }
     for (const brainDir of this.brainDirs || []) {
       if (!brainDir) continue
       const resolvedBrain = resolve(brainDir)
       this.watchDirOnce(resolvedBrain, 'agy-brain')
+      this.watchDirOnce(join(dirname(resolvedBrain), 'annotations'), 'agy-annotations')
       try {
         const entries = await readdir(resolvedBrain, { withFileTypes: true })
         const subDirsWithMtime = []

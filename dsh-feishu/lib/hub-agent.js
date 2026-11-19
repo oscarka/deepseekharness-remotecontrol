@@ -15,6 +15,7 @@ import {
   getDefaultAntigravityBrainDirs,
   isAntigravityIdeSessionId,
   loadAntigravityIdeSessions,
+  setAntigravityConversationPinned,
   toRawConversationId,
 } from './antigravity-ide.js'
 
@@ -981,11 +982,7 @@ export class HubAgent {
         const existingCodes = new Set(bridgeState.approvals.map(a => a.code))
         for (const agySess of this.cachedAgySessions) {
           decorateTaskMetadata(agySess, { isLiveDsh: false, now: capturedAt })
-          if (Object.prototype.hasOwnProperty.call(hostPinnedMap, agySess.id)) {
-            agySess.pinned = Boolean(hostPinnedMap[agySess.id])
-          } else if (typeof agySess.pinned !== 'boolean') {
-            agySess.pinned = false
-          }
+          agySess.pinned = Boolean(agySess.pinned)
           if (!existingIds.has(agySess.id)) {
             bridgeState.tasks.push(agySess)
             existingIds.add(agySess.id)
@@ -1501,7 +1498,23 @@ export class HubAgent {
             }
           }
 
-          if (!isAntigravityIdeSessionId(targetId) && !extAdapter) {
+          if (isAntigravityIdeSessionId(targetId)) {
+            const agyRes = await setAntigravityConversationPinned(targetId, wantPin, {
+              brainDirs: this.config.antigravityBrainDirs || getDefaultAntigravityBrainDirs(),
+              execImpl: this.execImpl,
+              fetchImpl: this.fetch,
+            })
+            const agySess = (this.cachedAgySessions || []).find(s => s.id === targetId)
+            if (agySess) agySess.pinned = wantPin
+            return {
+              ok: agyRes.ok !== false,
+              agentId: targetId,
+              pinned: wantPin,
+              message: wantPin ? '📌 已同步置顶至 Antigravity IDE' : '已同步取消 Antigravity IDE 置顶',
+            }
+          }
+
+          if (!extAdapter) {
             await setSessionPinnedInDshWorkspaceStorage(this.config.dshHome, targetId, wantPin)
             invalidateDshSessionParseCache()
           } else {

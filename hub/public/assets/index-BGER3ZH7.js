@@ -3403,6 +3403,10 @@ var EXACT_ZH_TO_EN = {
 	"点此立即重试": "Tap to retry",
 	"搜索对话标题、项目或内容...": "Search sessions, projects, or messages...",
 	"对话": "Sessions",
+	"📌 置顶对话": "📌 Pinned Conversations",
+	"全部对话": "Conversations",
+	"📌 置顶": "📌 Pinned",
+	"已置顶": "Pinned",
 	"项目文件": "Files",
 	"设备与设置": "Settings",
 	"‹ 返回": "‹ Back",
@@ -8254,7 +8258,22 @@ function initHubController() {
           </div>
         </div>
       ` : "";
-		const rowsHtml = filtered.map((s) => {
+		const pinnedCount = filtered.reduce((acc, item) => acc + (item.pinned ? 1 : 0), 0);
+		const rowsHtml = filtered.map((s, idx) => {
+			let groupHeaderHtml = "";
+			if (pinnedCount > 0) {
+				if (idx === 0 && s.pinned) groupHeaderHtml = `
+            <div class="session-group-header pinned-group-header">
+              <span>📌 置顶对话</span>
+              <span class="session-group-count">${pinnedCount}</span>
+            </div>
+          `;
+				else if (!s.pinned && idx > 0 && filtered[idx - 1]?.pinned) groupHeaderHtml = `
+            <div class="session-group-header">
+              <span>全部对话</span>
+            </div>
+          `;
+			}
 			let rowStateClass = "";
 			let statusHtml = `<span class="session-time">${esc$1(s.timeLabel)}</span>`;
 			if (s.status === "approval") {
@@ -8272,14 +8291,14 @@ function initHubController() {
 				rowStateClass = "row-state-interrupted";
 				statusHtml = `<span class="badge-interrupted">⚠️ 中断待继续</span>`;
 			}
-			const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌</span>` : "";
+			const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌 置顶</span>` : "";
 			const shortHostLabel = shortHostMap[s.hostId] || s.hostName;
 			const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag" title="${esc$1(s.hostName)}">${esc$1(shortHostLabel)}</span>` : "";
 			const harnessBadgeHtml = renderHarnessBadgeHtml(s.harness, "row", s.harnessLabel);
 			const compactProject = formatCompactProjectLabel(s.project, nowDate);
 			const rolePrefix = s.status === "running" ? "" : s.lastRole === "user" ? "🧑 我: " : "🤖 ";
 			const displayTitle = stripRedundantProjectPrefix(s.title, s.project);
-			return `
+			return `${groupHeaderHtml}
           <div class="session-row ${rowStateClass} ${s.pinned ? "pinned-row" : ""} ${s.id === activeSessionId ? "selected-desktop" : ""}" onclick="openChat('${esc$1(s.id)}')">
             <div class="session-main">
               <div class="session-top-line">

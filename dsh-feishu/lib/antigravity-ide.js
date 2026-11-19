@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
-import { access, open, readdir, readFile, stat } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
+import { access, mkdir, open, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -1267,76 +1268,86 @@ export function getDefaultAntigravityBrainDirs(home = homedir()) {
  * 1. `<agyRoot>/annotations/<convId>.pbtxt` (`title:"..."`)
  * 2. `<agyRoot>/agyhub_summaries_proto.pb` (contains convId, summary title, and `file:///Users/...` workspace URI)
  */
-let cachedNativeMetaMap = null
-let cachedNativeMetaAt = 0
-let cachedNativeMetaKey = ''
+let cachedProtoMetaMap = null
+let cachedProtoMetaAt = 0
+let cachedProtoMetaKey = ''
 
 async function loadAntigravityMetadataForCandidates(brainDirs, candidates) {
   const now = Date.now()
-  const key = `${brainDirs.join('|')}:${candidates.map(c => c.convId).join(',')}`
-  if (cachedNativeMetaMap && cachedNativeMetaKey === key && now - cachedNativeMetaAt < 3000) {
-    return cachedNativeMetaMap
-  }
-  const metaMap = new Map()
   const agyRoots = [...new Set(brainDirs.filter(Boolean).map(d => dirname(resolve(d))))]
+  const key = `${brainDirs.join('|')}:${candidates.map(c => c.convId).join(',')}`
+  let protoBaseMap = null
+  if (cachedProtoMetaMap && cachedProtoMetaKey === key && now - cachedProtoMetaAt < 3000) {
+    protoBaseMap = cachedProtoMetaMap
+  } else {
+    protoBaseMap = new Map()
+    for (const agyRoot of agyRoots) {
+      try {
+        const pbBuf = await readFile(join(agyRoot, 'agyhub_summaries_proto.pb'))
+        const pbStr = pbBuf.toString('utf8')
+        const fileUriNeedle = Buffer.from('file:///')
+        for (const item of candidates) {
+          const bufIdx = pbBuf.indexOf(item.convId)
+          if (bufIdx === -1) continue
+          const subBuf = pbBuf.subarray(bufIdx, Math.min(pbBuf.length, bufIdx + 650))
+          const slice = pbStr.slice(pbStr.indexOf(item.convId), pbStr.indexOf(item.convId) + 600)
+          const existing = protoBaseMap.get(item.convId) || { title: '', workspace: null }
+          const uriRel = subBuf.indexOf(fileUriNeedle)
+          if (uriRel > 0 && !existing.workspace) {
+            const uriLen = subBuf[uriRel - 1]
+            let extractedPath = ''
+            if (uriLen >= 9 && uriLen < 180 && uriRel + uriLen <= subBuf.length) {
+              extractedPath = subBuf.subarray(uriRel + 7, uriRel + uriLen).toString('utf8')
+            } else {
+              const wsMatch = slice.match(/file:\/\/(\/Users\/[^"\r\n\x00-\x1f]+|\/home\/[^"\r\n\x00-\x1f]+)/)
+              if (wsMatch) extractedPath = wsMatch[1].replace(/B[\x20-\x7e].*$/, '')
+            }
+            if (extractedPath) {
+              const ws = inferWorkspaceFromPath(extractedPath)
+              if (ws) existing.workspace = ws
+            }
+          }
+          const titleMatch = slice.match(/\n\$([^\x00-\x1f\r\n]{2,90})/)
+          if (titleMatch && !existing.title) {
+            const candTitle = titleMatch[1].trim()
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(candTitle)) {
+              existing.title = candTitle
+            }
+          }
+          protoBaseMap.set(item.convId, existing)
+        }
+      } catch {
+        // summary proto optional
+      }
+    }
+    cachedProtoMetaMap = protoBaseMap
+    cachedProtoMetaAt = now
+    cachedProtoMetaKey = key
+  }
+
+  const metaMap = new Map()
+  for (const [cid, entry] of protoBaseMap.entries()) {
+    metaMap.set(cid, { ...entry, pinned: false, hasPbtxt: false })
+  }
 
   for (const agyRoot of agyRoots) {
-    try {
-      const pbBuf = await readFile(join(agyRoot, 'agyhub_summaries_proto.pb'))
-      const pbStr = pbBuf.toString('utf8')
-      const fileUriNeedle = Buffer.from('file:///')
-      for (const item of candidates) {
-        const bufIdx = pbBuf.indexOf(item.convId)
-        if (bufIdx === -1) continue
-        const subBuf = pbBuf.subarray(bufIdx, Math.min(pbBuf.length, bufIdx + 650))
-        const slice = pbStr.slice(pbStr.indexOf(item.convId), pbStr.indexOf(item.convId) + 600)
-        const existing = metaMap.get(item.convId) || { title: '', workspace: null }
-        const uriRel = subBuf.indexOf(fileUriNeedle)
-        if (uriRel > 0 && !existing.workspace) {
-          const uriLen = subBuf[uriRel - 1]
-          let extractedPath = ''
-          if (uriLen >= 9 && uriLen < 180 && uriRel + uriLen <= subBuf.length) {
-            extractedPath = subBuf.subarray(uriRel + 7, uriRel + uriLen).toString('utf8')
-          } else {
-            const wsMatch = slice.match(/file:\/\/(\/Users\/[^"\r\n\x00-\x1f]+|\/home\/[^"\r\n\x00-\x1f]+)/)
-            if (wsMatch) extractedPath = wsMatch[1].replace(/B[\x20-\x7e].*$/, '')
-          }
-          if (extractedPath) {
-            const ws = inferWorkspaceFromPath(extractedPath)
-            if (ws) existing.workspace = ws
-          }
-        }
-        const titleMatch = slice.match(/\n\$([^\x00-\x1f\r\n]{2,90})/)
-        if (titleMatch && !existing.title) {
-          const candTitle = titleMatch[1].trim()
-          if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(candTitle)) {
-            existing.title = candTitle
-          }
-        }
-        metaMap.set(item.convId, existing)
-      }
-    } catch {
-      // summary proto optional
-    }
-
     for (const item of candidates) {
       try {
         const pbtxt = await readFile(join(agyRoot, 'annotations', `${item.convId}.pbtxt`), 'utf8')
+        const existing = metaMap.get(item.convId) || { title: '', workspace: null, pinned: false, hasPbtxt: false }
+        existing.hasPbtxt = true
+        existing.pinned = /\bpinned:\s*true\b/i.test(pbtxt)
         const m = pbtxt.match(/title:\s*"((?:[^"\\]|\\.)*)"/)
         if (m && m[1].trim()) {
-          const existing = metaMap.get(item.convId) || { title: '', workspace: null }
           existing.title = m[1].replace(/\\"/g, '"').trim()
-          metaMap.set(item.convId, existing)
         }
+        metaMap.set(item.convId, existing)
       } catch {
         // annotation file optional
       }
     }
   }
 
-  cachedNativeMetaMap = metaMap
-  cachedNativeMetaAt = now
-  cachedNativeMetaKey = key
   return metaMap
 }
 
@@ -1510,9 +1521,12 @@ export async function loadAntigravityIdeSessions({
       const liveLastModifiedMs = parseSummaryModifiedMs(liveSummary)
       const liveTitle = String(liveSummary?.summary || '').trim()
       const effectiveNativeTitle = nativeMeta?.title || liveTitle || ''
+      const effectivePinned = nativeMeta?.hasPbtxt
+        ? Boolean(nativeMeta.pinned)
+        : Boolean(liveSummary?.annotations?.pinned)
       const sessionId = `${AGY_IDE_PREFIX}${item.convId}`
       const customTitle = customTitles[sessionId] || customTitles[item.convId] || ''
-      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${maxMessages}:${customTitle}:${effectiveNativeTitle}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}:${liveModel}:${liveLastModifiedMs}:${hasLiveSummary ? 1 : 0}:${waitingKey}`
+      const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${maxMessages}:${customTitle}:${effectiveNativeTitle}:${effectivePinned ? 1 : 0}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}:${liveModel}:${liveLastModifiedMs}:${hasLiveSummary ? 1 : 0}:${waitingKey}`
       const cached = sessionParseCache.get(item.convId)
       if (cached && cached.cacheKey === cacheKey && cached.session) {
         if (cached.session.isSubagent) continue
@@ -1544,6 +1558,7 @@ export async function loadAntigravityIdeSessions({
                 : '已完成'
         sessions.push({
           ...cached.session,
+          pinned: effectivePinned,
           status,
           turnState,
           statusLabel,
@@ -1578,6 +1593,7 @@ export async function loadAntigravityIdeSessions({
         diskArtifacts,
       })
       if (parsed) {
+        parsed.pinned = effectivePinned
         sessionParseCache.set(item.convId, { cacheKey, session: parsed })
         if (sessionParseCache.size > 120) {
           const oldestKey = sessionParseCache.keys().next().value
@@ -2950,4 +2966,119 @@ export async function executeAntigravityIdeAction(action, {
   }
 
   return { ok: false, error: `不支持的 Antigravity IDE 操作: ${type}` }
+}
+
+/**
+ * Bidirectionally synchronize a session's `Pinned Conversations` state with Antigravity IDE:
+ * 1. Invokes Connect-RPC `UpdateConversationAnnotations` (`mergeAnnotations: true`) across active
+ *    Antigravity LanguageServer instances so open IDE windows update their sidebar immediately.
+ * 2. Falls back to atomic update of `<agyRoot>/annotations/<convId>.pbtxt` when offline.
+ */
+export async function setAntigravityConversationPinned(
+  sessionIdOrConvId,
+  pinned = true,
+  {
+    brainDirs = getDefaultAntigravityBrainDirs(),
+    execImpl = execFileAsync,
+    fetchImpl = globalThis.fetch,
+  } = {},
+) {
+  const rawConvId = toRawConversationId(sessionIdOrConvId)
+  if (!rawConvId) return { ok: false, error: 'conversationId is required' }
+  const wantPin = Boolean(pinned)
+  let rpcUpdated = false
+
+  if (typeof fetchImpl === 'function') {
+    try {
+      const hubs = await discoverAntigravityHubInstances({ execImpl })
+      const orderedHubs = hubs.length > 1
+        ? await probeHubsForTrajectory(hubs, rawConvId, fetchImpl)
+        : hubs
+      for (const hub of orderedHubs) {
+        if (hub.hasTargetTrajectory === false && orderedHubs.some(h => h.hasTargetTrajectory)) {
+          continue
+        }
+        try {
+          const resp = await fetchImpl(
+            `http://${hub.address}/exa.language_server_pb.LanguageServerService/UpdateConversationAnnotations`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-codeium-csrf-token': hub.csrfToken,
+              },
+              body: JSON.stringify({
+                cascadeId: rawConvId,
+                annotations: { pinned: wantPin },
+                mergeAnnotations: true,
+              }),
+            },
+          )
+          if (resp?.ok) {
+            rpcUpdated = true
+          }
+        } catch {
+          // try next hub or disk fallback
+        }
+      }
+    } catch {
+      // fall back to disk annotation update
+    }
+  }
+
+  cachedLiveSummariesAt = 0
+
+  const agyRoots = [...new Set((brainDirs || []).filter(Boolean).map(d => dirname(resolve(d))))]
+  let diskUpdated = false
+  if (!rpcUpdated && agyRoots.length > 0) {
+    let targetRoot = agyRoots[0]
+    for (const root of agyRoots) {
+      try {
+        await access(join(root, 'annotations', `${rawConvId}.pbtxt`))
+        targetRoot = root
+        break
+      } catch {
+        try {
+          await access(join(root, 'brain', rawConvId))
+          targetRoot = root
+          break
+        } catch {
+          // keep looking
+        }
+      }
+    }
+    try {
+      const annDir = join(targetRoot, 'annotations')
+      const annPath = join(annDir, `${rawConvId}.pbtxt`)
+      let existingText = ''
+      try {
+        existingText = await readFile(annPath, 'utf8')
+      } catch {
+        existingText = ''
+      }
+      const stripped = existingText.replace(/\s*\bpinned:\s*(?:true|false)\b/gi, '').trim()
+      const nextText = wantPin
+        ? (stripped ? `${stripped}  pinned:true` : 'pinned:true')
+        : stripped
+      await mkdir(annDir, { recursive: true })
+      const tmpPath = `${annPath}.${randomBytes(3).toString('hex')}.tmp`
+      await writeFile(tmpPath, nextText, { mode: 0o600 })
+      await rename(tmpPath, annPath)
+      diskUpdated = true
+    } catch {
+      // ignore disk write error
+    }
+  }
+
+  const cached = sessionParseCache.get(rawConvId)
+  if (cached?.session) {
+    cached.session.pinned = wantPin
+  }
+
+  return {
+    ok: rpcUpdated || diskUpdated,
+    id: `${AGY_IDE_PREFIX}${rawConvId}`,
+    pinned: wantPin,
+    method: rpcUpdated ? 'connect-rpc' : 'pbtxt',
+  }
 }

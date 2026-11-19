@@ -3,6 +3,10 @@ import { test } from 'node:test'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import {
+  loadAntigravityIdeSessions,
+  setAntigravityConversationPinned,
+} from '../lib/antigravity-ide.js'
 import { CodexAdapter } from '../lib/harnesses/codex-adapter.js'
 import { WorkBuddyAdapter } from '../lib/harnesses/workbuddy-adapter.js'
 import { HubAgent } from '../lib/hub-agent.js'
@@ -313,5 +317,103 @@ test('HubCore and HubAgent synchronize pins bidirectionally across mobile API an
     assert.equal(hub.getFullState().sessionPinState['session-dsh-2']?.pinned, false)
   } finally {
     await rm(tmpRoot, { recursive: true, force: true })
+  }
+})
+
+test('Antigravity IDE annotations/<convId>.pbtxt and UpdateConversationAnnotations RPC sync pinned state bidirectionally', async () => {
+  const agyRoot = await mkdtemp(join(tmpdir(), 'agy-pin-test-'))
+  try {
+    const brainDir = join(agyRoot, 'brain')
+    const annDir = join(agyRoot, 'annotations')
+    const convId = 'e5b8d936-c3cb-4634-bfac-83fed58c8f1b'
+    const logsDir = join(brainDir, convId, '.system_generated', 'logs')
+    await mkdir(logsDir, { recursive: true })
+    await mkdir(annDir, { recursive: true })
+
+    const transcriptLines = [
+      JSON.stringify({
+        step_index: 0,
+        type: 'USER_INPUT',
+        status: 'DONE',
+        created_at: '2026-11-19T03:00:00Z',
+        content: '<USER_REQUEST>\n检查 Antigravity 置顶联通\n</USER_REQUEST>',
+      }),
+      JSON.stringify({
+        step_index: 1,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: '2026-11-19T03:00:05Z',
+        content: '已读取 annotations.pbtxt 并打通双向置顶。',
+      }),
+    ].join('\n')
+    await writeFile(join(logsDir, 'transcript.jsonl'), `${transcriptLines}\n`, 'utf8')
+    await writeFile(
+      join(annDir, `${convId}.pbtxt`),
+      'title:"手机视频加载与文件慢排查方案"  last_user_view_time:{seconds:1795058158  nanos:829000000}  pinned:true',
+      'utf8',
+    )
+
+    const noopExec = async () => ({ stdout: '' })
+    const noopFetch = async () => ({ ok: false, status: 503 })
+
+    // 1. Desktop Antigravity IDE `.pbtxt` (`pinned:true`) is surfaced immediately on `agy-ide:<convId>`
+    const list1 = await loadAntigravityIdeSessions({
+      brainDirs: [brainDir],
+      execImpl: noopExec,
+      fetchImpl: noopFetch,
+    })
+    const sess1 = list1.find(s => s.id === `agy-ide:${convId}`)
+    assert.ok(sess1)
+    assert.equal(sess1.title, '手机视频加载与文件慢排查方案')
+    assert.equal(sess1.pinned, true)
+
+    // 2. Offline `.pbtxt` unpin preserves title & last_user_view_time while clearing `pinned:true`
+    const unpinDisk = await setAntigravityConversationPinned(`agy-ide:${convId}`, false, {
+      brainDirs: [brainDir],
+      execImpl: noopExec,
+      fetchImpl: noopFetch,
+    })
+    assert.equal(unpinDisk.ok, true)
+    assert.equal(unpinDisk.method, 'pbtxt')
+    const pbtxtAfterUnpin = await readFile(join(annDir, `${convId}.pbtxt`), 'utf8')
+    assert.match(pbtxtAfterUnpin, /title:"手机视频加载与文件慢排查方案"/)
+    assert.doesNotMatch(pbtxtAfterUnpin, /pinned:true/)
+
+    const list2 = await loadAntigravityIdeSessions({
+      brainDirs: [brainDir],
+      execImpl: noopExec,
+      fetchImpl: noopFetch,
+    })
+    assert.equal(list2.find(s => s.id === `agy-ide:${convId}`)?.pinned, false)
+
+    // 3. Live Connect-RPC `UpdateConversationAnnotations` sends `{ cascadeId, annotations: { pinned: true }, mergeAnnotations: true }`
+    const rpcCalls = []
+    const mockExec = async (cmd) => {
+      if (cmd === 'ps') {
+        return { stdout: '12345 /Users/cc/.gemini/bin/agy --hub --hub-port=59123 --csrf_token=test-csrf\n' }
+      }
+      return { stdout: '' }
+    }
+    const mockFetch = async (url, opts) => {
+      rpcCalls.push({ url: String(url), body: JSON.parse(opts?.body || '{}'), headers: opts?.headers || {} })
+      return { ok: true, status: 200, json: async () => ({}) }
+    }
+
+    const pinRpc = await setAntigravityConversationPinned(`agy-ide:${convId}`, true, {
+      brainDirs: [brainDir],
+      execImpl: mockExec,
+      fetchImpl: mockFetch,
+    })
+    assert.equal(pinRpc.ok, true)
+    assert.equal(pinRpc.method, 'connect-rpc')
+    const updateCall = rpcCalls.find(c => c.url.endsWith('/UpdateConversationAnnotations'))
+    assert.ok(updateCall)
+    assert.deepEqual(updateCall.body, {
+      cascadeId: convId,
+      annotations: { pinned: true },
+      mergeAnnotations: true,
+    })
+  } finally {
+    await rm(agyRoot, { recursive: true, force: true })
   }
 })

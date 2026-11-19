@@ -201,9 +201,9 @@ The background daemon automatically discovers local sessions across all 6 suppor
 ## 📅 What's New (Recent Releases)
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.13</code> — Bidirectional Multi-Harness Session Pin Sync &amp; Deterministic Zero-Flake CI</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.14</code> — Bidirectional Multi-Harness Session Pin Sync (incl. Native Antigravity IDE) &amp; Zero-Flake CI</strong></summary>
 
-- **Bidirectional Session Pinning Across Phone, Web &amp; Desktop Harnesses (`v0.8.13`)**: Replaced isolated browser-only `localStorage` pins with Hub-persisted `sessionPinState` (`POST /api/sessions/pin` + instant SSE delta broadcast) and 2-way native desktop harness sync — including DSH Desktop (`workspace.json` `global.pinnedSessionIds`), OpenAI Codex Desktop (`.codex-global-state.json` `pinned-thread-ids`), WorkBuddy (`workbuddy.db` + `pinned-sessions.json`), Doubao Desktop LevelDB `pinned`, and host-persisted pins for Antigravity IDE / Claude Code.
+- **Bidirectional Session Pinning Across Phone, Web &amp; Native Desktop Harnesses (`v0.8.13–v0.8.14`)**: Replaced isolated browser-only `localStorage` pins with Hub-persisted `sessionPinState` (`POST /api/sessions/pin` + instant SSE delta broadcast), dedicated **`📌 Pinned Conversations`** section headers on mobile, and 2-way native desktop harness sync — including **Antigravity IDE** (`annotations/<convId>.pbtxt` + live Connect-RPC `UpdateConversationAnnotations` + FSEvents instant watch), **DSH Desktop** (`workspace.json` `global.pinnedSessionIds`), **OpenAI Codex Desktop** (`.codex-global-state.json` `pinned-thread-ids`), **WorkBuddy** (`workbuddy.db` + `pinned-sessions.json`), and **Doubao Desktop** LevelDB `pinned`.
 - **Deterministic Zero-Flake GitHub Actions CI (`v0.8.13`)**: Fixed intermittent `SQLITE_BUSY (5)` (`database is locked`) races on 2-vCPU Ubuntu runners by enforcing `-cmd ".timeout 5000"` + WAL mode across all `sqlite3` invocations, capping runner test concurrency (`--test-concurrency=4`), opting into Node 24 Actions runtime, and adding a permanent workspace CI gate rule (`.agent/rules/ci-zero-failure-gate.md`).
 
 </details>
