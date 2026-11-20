@@ -29,6 +29,7 @@ export function isTriageEligibleSession(s) {
   if (!s) return false;
   if (s.status === 'running') return false;
   if (s.status === 'approval') {
+    if (s.hostOnline === false) return false;
     if (s.approvalObj?.settling) return false;
     return true;
   }
@@ -401,7 +402,7 @@ export function buildTriageCardViewModel(s, shortHostMap = {}, lang = 'zh') {
     sub: `${hostShort} · ${projShort} · ${isInterrupted
         ? (en ? 'Interrupted' : '异常中断')
         : (en ? 'Completed' : '已出结论')
-      }`,
+      }${s.hostOnline === false ? (en ? ' · ⚪ Offline' : ' · ⚪ 电脑离线') : ''}`,
     promptInfo,
     diffInfo,
     kind: isInterrupted ? 'interrupted' : 'conclusion',

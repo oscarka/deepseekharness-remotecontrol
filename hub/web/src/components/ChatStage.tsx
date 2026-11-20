@@ -56,6 +56,7 @@ export function ChatStage() {
       </div>
 
       <div class="chat-switch-alert" id="chatSwitchAlert" style="display:none;"></div>
+      <div class="chat-offline-banner" id="chatOfflineBanner" style="display:none;"></div>
 
       <div class="chat-messages" id="chatMessages">
         <div style="margin:auto;text-align:center;color:#94a3b8;font-size:14px;">

@@ -92,6 +92,7 @@ import {
   stripRedundantProjectPrefix,
   sortNormalizedSessions,
   renderCapabilityMatrixRowsHtml,
+  isHostLiveOnline,
 } from './utils/session-labels';
 import {
   isTriageEligibleSession,
@@ -940,7 +941,7 @@ export function initHubController() {
         const inflightPromptCmds = (h.inflightCommands || []).filter(
           c => c && c.agentId === t.id && (c.type === 'prompt' || c.type === 'steer')
         );
-        const isHostOnlineNow = h.online !== false && h.activelyConnected !== false;
+        const isHostOnlineNow = isHostLiveOnline(h);
         const queuedCmds = pendingPromptCmds.filter(c => c.queued || !isHostOnlineNow);
         const dispatchingCmds = pendingPromptCmds.filter(c => !c.queued && isHostOnlineNow);
         const expiredCmds = (h.recentResults || []).filter(
@@ -1112,6 +1113,8 @@ export function initHubController() {
           id: t.id,
           hostId: h.hostId,
           hostName: h.hostName || h.hostId,
+          hostOnline: isHostOnlineNow,
+          hostLastSeen: Number(h.lastSeen) || 0,
           harness,
           harnessLabel,
           controlMode: t.controlMode || 'managed',
@@ -1332,21 +1335,27 @@ export function initHubController() {
       dotEl.className = 'status-dot offline';
       document.getElementById('topHostName').textContent = '未接入电脑 (0)';
     } else if (currentHostId === 'ALL_HOSTS') {
-      const anyOnline = hosts.some(h => h.online);
+      const anyOnline = hosts.some(h => isHostLiveOnline(h));
       dotEl.className = 'status-dot' + (anyOnline ? '' : ' offline');
       document.getElementById('topHostName').textContent = hosts.length <= 1 && hosts[0]
         ? `${hosts[0].hostName} (${totalSessions})`
         : `全部电脑 (${totalSessions})`;
     } else if (currentHostObj) {
-      dotEl.className = 'status-dot' + (currentHostObj.online ? '' : ' offline');
+      dotEl.className = 'status-dot' + (isHostLiveOnline(currentHostObj) ? '' : ' offline');
       document.getElementById('topHostName').textContent = `${currentHostObj.hostName} (${(currentHostObj.bridgeState?.tasks || []).length})`;
     }
 
     const turboBtn = document.getElementById('turboBadgeBtn');
     if (turboBtn) {
-      const refHost = currentHostObj || hosts.find(h => h.online) || hosts[0];
+      const refHost = currentHostObj || hosts.find(h => isHostLiveOnline(h)) || hosts[0];
+      const refOnline = Boolean(refHost && isHostLiveOnline(refHost));
       const turbo = refHost?.bridgeState?.turbo;
-      if (turbo?.enabled && turbo?.accessibilityGranted !== false) {
+      if (refHost && !refOnline) {
+        turboBtn.textContent = '⚪ 电脑离线';
+        turboBtn.style.background = '#f1f5f9';
+        turboBtn.style.color = '#64748b';
+        turboBtn.style.borderColor = '#cbd5e1';
+      } else if (turbo?.enabled && turbo?.accessibilityGranted !== false) {
         turboBtn.textContent = turbo.engine === 'rust-native' ? '🦀 极速实时' : '⚡ 极速实时';
         turboBtn.style.background = '#ecfdf5';
         turboBtn.style.color = '#059669';
@@ -1396,6 +1405,9 @@ export function initHubController() {
     if (document.getElementById('inChatFileSheet').classList.contains('open')) {
       renderInChatFileDrawerBody();
     }
+    if (document.getElementById('hostSheet')?.classList.contains('open')) {
+      renderHostSheetList();
+    }
     triageCtrl?.onStateUpdated();
     applyLangToDom(document.body, langPref);
   }
@@ -1403,7 +1415,7 @@ export function initHubController() {
   function renderProjectStrip(sessionsArg) {
     const sessions = Array.isArray(sessionsArg) ? sessionsArg : getNormalizedSessions();
     const triageCount = sessions.filter(isTriageEligibleSession).length;
-    const activeCount = sessions.filter(s => s.status === 'running' || s.status === 'approval').length;
+    const activeCount = sessions.filter(s => s.hostOnline !== false && (s.status === 'running' || s.status === 'approval')).length;
     const unreadCount = sessions.filter(s => s.hasUnreadConclusion || s.isUnreadInterrupted).length;
     const agyCount = sessions.filter(s => s.harness === 'antigravity-ide').length;
     const codexCount = sessions.filter(s => s.harness === 'codex').length;
@@ -1469,7 +1481,7 @@ export function initHubController() {
     let pendingAppInfo = null;
     const localSettling = window.__dshSettlingApprovals || {};
     for (const h of hubState.hosts || []) {
-      if (h.online === false) continue;
+      if (!isHostLiveOnline(h)) continue;
       if (currentHostId && currentHostId !== 'ALL_HOSTS' && h.hostId !== currentHostId) continue;
       const appRaw = (h.bridgeState?.approvals || [])[0];
       if (appRaw) {
@@ -1484,7 +1496,7 @@ export function initHubController() {
 
     const q = searchQuery.trim().toLowerCase();
     const filtered = allSessions.filter(s => {
-      if (currentProject === 'SMART_ACTIVE' && s.status !== 'running' && s.status !== 'approval') return false;
+      if (currentProject === 'SMART_ACTIVE' && (s.hostOnline === false || (s.status !== 'running' && s.status !== 'approval'))) return false;
       if (currentProject === 'SMART_UNREAD' && !s.hasUnreadConclusion && !s.isUnreadInterrupted) return false;
       if (currentProject === 'HARNESS_DSH' && s.harness !== 'dsh') return false;
       if (currentProject === 'HARNESS_AGY_IDE' && s.harness !== 'antigravity-ide') return false;
@@ -1512,9 +1524,9 @@ export function initHubController() {
     const bannerKey = pendingAppInfo
       ? `${pendingAppInfo.host.hostId}:${pendingAppInfo.app.code}:${pendingAppInfo.app.kind || ''}:${pendingAppInfo.app.promptTitle || ''}:${pendingAppInfo.app.settling ? 1 : 0}:${pendingAppInfo.app.lastError || ''}`
       : '';
-    const hostsSig = (hubState.hosts || []).map(h => `${h.hostId}:${h.hostName || ''}`).join(',');
+    const hostsSig = (hubState.hosts || []).map(h => `${h.hostId}:${h.hostName || ''}:${isHostLiveOnline(h) ? 1 : 0}:${formatTime(h.lastSeen)}`).join(',');
     const rowsSig = filtered
-      .map(s => `${s.id}:${s.harness}:${s.status}:${s.approvalObj?.kind || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.isStalledMidTurn ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`)
+      .map(s => `${s.id}:${s.harness}:${s.hostOnline !== false ? 1 : 0}:${s.status}:${s.approvalObj?.kind || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${s.queuedCount || 0}:${s.hasUnreadConclusion ? 1 : 0}:${s.isUnreadInterrupted ? 1 : 0}:${s.isStalledMidTurn ? 1 : 0}:${s.pinned ? 1 : 0}:${s.id === activeSessionId ? 1 : 0}:${s.title}:${s.project}:${s.lastRole}:${s.lastPreview}:${s.timeLabel}`)
       .join('|');
     const isInitialSyncPending = Boolean(getToken()) && !authLockConfirmed && !hasLoadedInitialState && (hubState.hosts || []).length === 0;
     const enrollSig = `${hubState.enrollment?.code || ''}:${hubState.enrollment?.joinedCount || 0}:${isInitialSyncPending ? 'sync' : 'ready'}`;
@@ -1522,6 +1534,26 @@ export function initHubController() {
     if (listKey === lastRenderedListKey && viewport.querySelector('.session-list')) return;
     lastRenderedListKey = listKey;
     const prevScrollTop = viewport.scrollTop;
+
+    const allHostsList = hubState.hosts || [];
+    const selectedSingleHost = currentHostId && currentHostId !== 'ALL_HOSTS'
+      ? allHostsList.find(h => h.hostId === currentHostId)
+      : (allHostsList.length === 1 ? allHostsList[0] : null);
+    const allHostsOffline = allHostsList.length > 0 && allHostsList.every(h => !isHostLiveOnline(h));
+    let hostOfflineBannerHtml = '';
+    if (selectedSingleHost && !isHostLiveOnline(selectedSingleHost)) {
+      hostOfflineBannerHtml = `
+        <div class="host-offline-list-banner">
+          <span>⚪ <strong>${esc(selectedSingleHost.hostName)}</strong> 已离线${selectedSingleHost.lastSeen ? `（${esc(formatTime(selectedSingleHost.lastSeen))}）` : ''} · 可查看历史对话，发消息将排队 10 分钟等待上线</span>
+        </div>
+      `;
+    } else if (allHostsOffline && allHostsList.length > 1) {
+      hostOfflineBannerHtml = `
+        <div class="host-offline-list-banner">
+          <span>⚪ 当前 ${allHostsList.length} 台电脑均已离线 · 可查看历史对话，发消息将在上线后自动排队执行</span>
+        </div>
+      `;
+    }
 
     const step6BannerHtml = showStep6Banner ? `
         <div class="step6-onboarding-banner" style="margin:10px 12px 4px;padding:10px 12px;border-radius:12px;background:var(--primary-soft);border:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
@@ -1574,9 +1606,22 @@ export function initHubController() {
           `;
         }
       }
-      let rowStateClass = '';
+      const isRowOffline = s.hostOnline === false;
+      let rowStateClass = isRowOffline ? 'row-host-offline' : '';
       let statusHtml = `<span class="session-time">${esc(s.timeLabel)}</span>`;
-      if (s.status === 'approval') {
+      if (isRowOffline) {
+        if (s.queuedCount > 0) {
+          statusHtml = `<span class="badge-approval" style="background:var(--amber-soft);color:#b45309;">⏳ ${s.queuedCount} 条排队</span>`;
+        } else if (s.status === 'running') {
+          statusHtml = `<span class="badge-offline">⚪ 离线 · 上次运行中</span>`;
+        } else if (s.status === 'approval') {
+          statusHtml = `<span class="badge-offline">⚪ 离线 · 待上线审批</span>`;
+        } else if (s.hasUnreadConclusion) {
+          statusHtml = `<span class="badge-conclusion" style="opacity:0.75;">🔵 已出结论</span>`;
+        } else if (s.isUnreadInterrupted) {
+          statusHtml = `<span class="badge-offline">⚪ 离线 · 中断</span>`;
+        }
+      } else if (s.status === 'approval') {
         rowStateClass = 'row-state-approval';
         const isRowQuestion = Boolean(
           s.approvalObj && (s.approvalObj.kind === 'question' || Array.isArray(s.approvalObj.questions))
@@ -1601,7 +1646,9 @@ export function initHubController() {
 
       const pinHtml = s.pinned ? `<span class="pin-tag" title="已置顶">📌 置顶</span>` : '';
       const shortHostLabel = shortHostMap[s.hostId] || s.hostName;
-      const hostBadgeHtml = showHostTag ? `<span class="host-mini-tag" title="${esc(s.hostName)}">${esc(shortHostLabel)}</span>` : '';
+      const hostBadgeHtml = showHostTag
+        ? `<span class="host-mini-tag${isRowOffline ? ' offline' : ''}" title="${esc(s.hostName)}${isRowOffline ? ' (已离线)' : ''}">${isRowOffline ? '⚪ ' : ''}${esc(shortHostLabel)}</span>`
+        : '';
       const harnessBadgeHtml = renderHarnessBadgeHtml(s.harness, 'row', s.harnessLabel);
       const compactProject = formatCompactProjectLabel(s.project, nowDate);
       const rolePrefix = s.status === 'running'
@@ -1672,6 +1719,7 @@ export function initHubController() {
 
     viewport.innerHTML = `
         ${liveBannerHtml}
+        ${hostOfflineBannerHtml}
         ${step6BannerHtml}
         <div class="session-list">
           ${rowsHtml || emptyStateHtml}
@@ -2425,7 +2473,9 @@ export function initHubController() {
         ? ' · 🔵 可续聊'
         : '';
     const compactChatProj = formatCompactProjectLabel(s.project);
-    const nextSubHtml = `${renderHarnessBadgeHtml(s.harness, 'inline')} ${esc(harnessNameText)} · 📁 ${esc(compactChatProj)} · 💻 ${esc(s.hostName)} (${s.msgCount} 条对话)${esc(modeTag)}`;
+    const hostOnline = isHostLiveOnline(found.host);
+    const offlineSubTag = hostOnline ? '' : ' · ⚪ 已离线';
+    const nextSubHtml = `${renderHarnessBadgeHtml(s.harness, 'inline')} ${esc(harnessNameText)} · 📁 ${esc(compactChatProj)} · 💻 ${esc(s.hostName)} (${s.msgCount} 条对话)${esc(modeTag)}${esc(offlineSubTag)}`;
     const chatSubEl = document.getElementById('chatSub');
     const nextSubSig = `${langPref}:${nextSubHtml}`;
     if (chatSubEl && chatSubEl.dataset.subSig !== nextSubSig) {
@@ -2433,9 +2483,29 @@ export function initHubController() {
       chatSubEl.innerHTML = nextSubHtml;
     }
 
-    // 检查其他会话是否有待确认审批
+    // 电脑离线提示条（紧贴顶栏下方，明确当前为历史快照、发消息将排队 10 分钟等待上线）
+    const offlineBannerEl = document.getElementById('chatOfflineBanner');
+    if (offlineBannerEl) {
+      if (!hostOnline) {
+        const lastSeenStr = found.host?.lastSeen ? `（${formatTime(found.host.lastSeen)}）` : '';
+        const runningHint = s.status === 'running' ? '；离线前运行中的任务将在恢复连网后同步进度' : '';
+        const nextOfflineHtml = `<span>⚪ <strong>${esc(s.hostName)}</strong> 已离线${esc(lastSeenStr)} · 可查看历史记录，发消息将排队（10 分钟内上线自动执行）${esc(runningHint)}</span>`;
+        offlineBannerEl.style.display = 'flex';
+        const nextOfflineSig = `${langPref}:${nextOfflineHtml}`;
+        if (offlineBannerEl.dataset.offlineSig !== nextOfflineSig) {
+          offlineBannerEl.dataset.offlineSig = nextOfflineSig;
+          offlineBannerEl.innerHTML = nextOfflineHtml;
+        }
+      } else {
+        offlineBannerEl.style.display = 'none';
+        offlineBannerEl.dataset.offlineSig = '';
+      }
+    }
+
+    // 检查其他在线电脑的会话是否有待确认审批
     let otherApproval = null;
     for (const h of hubState.hosts || []) {
+      if (!isHostLiveOnline(h)) continue;
       const app = (h.bridgeState?.approvals || []).find(a => a.agentId !== s.id);
       if (app) { otherApproval = { app, host: h }; break; }
     }
@@ -2468,7 +2538,7 @@ export function initHubController() {
     updateChatModelPill(s, found.host);
 
     // 更新底部输入状态（仅当状态变化时调整 placeholder，绝不清空用户正在输入的内容！）
-    const composerKey = `${s.id}:${s.status}:${s.controlMode || ''}`;
+    const composerKey = `${s.id}:${s.status}:${s.controlMode || ''}:${hostOnline ? 1 : 0}`;
     if (composerKey !== lastRenderedComposerKey) {
       lastRenderedComposerKey = composerKey;
       const runningBar = document.getElementById('runningControlBar');
@@ -2484,6 +2554,7 @@ export function initHubController() {
       const attachStrip = document.getElementById('composerAttachmentsStrip');
       if (isObserveOnly) {
         runningBar.classList.remove('show');
+        sendBtn.classList.remove('offline-queue');
         chatInput.disabled = true;
         sendBtn.disabled = true;
         sendBtn.style.display = 'none';
@@ -2514,7 +2585,16 @@ export function initHubController() {
         }
         if (toolbarRow) toolbarRow.style.display = '';
         renderAttachmentStrip('chat');
-        if (s.status === 'running') {
+        if (!hostOnline) {
+          runningBar.classList.remove('show');
+          chatInput.disabled = false;
+          sendBtn.disabled = false;
+          sendBtn.style.display = '';
+          sendBtn.classList.add('offline-queue');
+          chatInput.placeholder = '⚪ 电脑已离线，发送将排队（10 分钟内上线自动执行）...';
+          sendBtn.textContent = '⏳ 排队发送';
+        } else if (s.status === 'running') {
+          sendBtn.classList.remove('offline-queue');
           runningBar.classList.add('show');
           const canSteer = s.capabilities?.canSteer !== false && s.harness !== 'claude';
           if (!canSteer) {
@@ -2531,6 +2611,7 @@ export function initHubController() {
             sendBtn.textContent = '⚡ 插话';
           }
         } else {
+          sendBtn.classList.remove('offline-queue');
           runningBar.classList.remove('show');
           chatInput.disabled = false;
           sendBtn.disabled = false;
@@ -7405,7 +7486,7 @@ export function initHubController() {
       hosts: hosts.map(h => ({
         id: h.hostId,
         name: h.hostName,
-        online: h.online,
+        online: isHostLiveOnline(h),
         trustStatus: h.trustStatus || h.trust?.status || '',
         hasDedicatedToken: Boolean(h.hasDedicatedToken),
         isFeishuActive: h.isFeishuActive,
@@ -7465,8 +7546,9 @@ export function initHubController() {
       const shortFp = (h.fingerprint || '已锁定').slice(0, 14);
       const hubVer = String(buildInfo.version || '0.5.1');
       const hostVer = String(h.bridgeState?.agentVersion || '');
+      const isHostLive = isHostLiveOnline(h);
       const isUpgradingHost = Boolean(upgradingHostMap[h.hostId] && Date.now() - upgradingHostMap[h.hostId] < 45000);
-      const isHostOutdated = Boolean(h.online && !isRevoked && (!hostVer || compareSemver(hostVer, hubVer) < 0));
+      const isHostOutdated = Boolean(isHostLive && !isRevoked && (!hostVer || compareSemver(hostVer, hubVer) < 0));
       const versionBadgeHtml = isUpgradingHost
         ? `<span style="font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--amber-soft);color:#d97706;">⏳ 正在升级重启...</span>`
         : isHostOutdated
@@ -7476,25 +7558,25 @@ export function initHubController() {
             : '';
 
       return `
-                <div class="host-visual-card ${h.isFeishuActive ? 'active-feishu' : ''}" style="padding:12px 14px;">
+                <div class="host-visual-card ${h.isFeishuActive ? 'active-feishu' : ''}" style="padding:12px 14px;${isHostLive ? '' : 'opacity:0.78;'}">
                   <div
                     style="display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;"
                     onclick="toggleHostSettingsCard('${esc(h.hostId)}')"
                   >
                     <div style="min-width:0;flex:1;">
                       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                        <span class="status-dot ${h.online && !isRevoked ? '' : 'offline'}"></span>
+                        <span class="status-dot ${isHostLive && !isRevoked ? '' : 'offline'}"></span>
                         <span style="font-size:14.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;">${esc(h.hostName)}</span>
                         ${h.isFeishuActive ? `<span style="font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--primary-soft);color:var(--primary);">🎯 主控</span>` : ''}
                         ${isRevoked ? `<span style="font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--red-soft);color:var(--red);">🚫 已吊销</span>` : ''}
                         ${versionBadgeHtml}
                       </div>
                       <div style="font-size:11.5px;color:var(--muted);margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                        <span>${h.online ? `${tm.powerIcon} ${esc(tm.powerShort)}` : `⚪ 离线 (${formatTime(h.lastSeen)})`}</span>
+                        <span>${isHostLive ? `${tm.powerIcon} ${esc(tm.powerShort)}` : `⚪ 已离线 (${formatTime(h.lastSeen)})`}</span>
                         <span>·</span>
                         <span>${tm.netIcon} ${esc(tm.netShort)}</span>
                         <span>·</span>
-                        <span>💬 ${sessCount} 会话${runCount > 0 ? ` (<strong style="color:var(--green);">${runCount} 运行中</strong>)` : ''}</span>
+                        <span>💬 ${sessCount} 会话${isHostLive && runCount > 0 ? ` (<strong style="color:var(--green);">${runCount} 运行中</strong>)` : ''}</span>
                         <span>·</span>
                         <span>${turboShort}</span>
                       </div>
@@ -8140,13 +8222,16 @@ export function initHubController() {
   }
 
   // ==================== 14. 通用导航与抽屉控制 ====================
-  function openHostSheet() {
+  function renderHostSheetList() {
     const hosts = hubState.hosts || [];
     const totalCount = hosts.reduce((acc, h) => acc + ((h.bridgeState?.tasks || []).length), 0);
-    const onlineCount = hosts.filter(h => h.online).length;
-    document.getElementById('hostSheetCountLabel').textContent = `${onlineCount}/${hosts.length} 台设备在线`;
-
+    const onlineCount = hosts.filter(h => isHostLiveOnline(h)).length;
+    const countEl = document.getElementById('hostSheetCountLabel');
+    if (countEl) {
+      countEl.textContent = `${onlineCount}/${hosts.length} 台设备在线`;
+    }
     const list = document.getElementById('hostOptionList');
+    if (!list) return;
     list.innerHTML = [
       `<div class="host-option ${currentHostId === 'ALL_HOSTS' ? 'selected' : ''}" onclick="selectHost('ALL_HOSTS')">
           <div>
@@ -8155,16 +8240,27 @@ export function initHubController() {
           </div>
           <span style="font-size:13px;font-weight:600;color:var(--primary);">${currentHostId === 'ALL_HOSTS' ? '当前视图 ✓' : '切换 ›'}</span>
         </div>`,
-      ...hosts.map(h => `
-          <div class="host-option ${h.hostId === currentHostId ? 'selected' : ''}" onclick="selectHost('${esc(h.hostId)}')">
+      ...hosts.map(h => {
+        const live = isHostLiveOnline(h);
+        const statusDesc = live
+          ? '在线待命'
+          : `已离线 (${formatTime(h.lastSeen)})`;
+        const feishuTag = h.isFeishuActive ? ' · 🎯 飞书主控' : '';
+        return `
+          <div class="host-option ${h.hostId === currentHostId ? 'selected' : ''}" style="${live ? '' : 'opacity:0.78;'}" onclick="selectHost('${esc(h.hostId)}')">
             <div>
-              <div style="font-weight:700;font-size:15px;color:var(--text);">${h.online ? '🟢' : '⚪'} ${esc(h.hostName)}</div>
-              <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${(h.bridgeState?.tasks || []).length} 条会话 · ${h.isFeishuActive ? '🎯 飞书当前主控' : (h.online ? '在线待命' : '离线 (' + formatTime(h.lastSeen) + ')')}</div>
+              <div style="font-weight:700;font-size:15px;color:var(--text);">${live ? '🟢' : '⚪'} ${esc(h.hostName)}</div>
+              <div style="font-size:12.5px;color:var(--muted);margin-top:2px;">${(h.bridgeState?.tasks || []).length} 条会话 · ${esc(statusDesc)}${feishuTag}</div>
             </div>
             <span style="font-size:13px;font-weight:600;color:var(--primary);">${h.hostId === currentHostId ? '当前设备 ✓' : '切换 ›'}</span>
           </div>
-        `)
+        `;
+      })
     ].join('');
+  }
+
+  function openHostSheet() {
+    renderHostSheetList();
     openSheet('hostSheet');
   }
 

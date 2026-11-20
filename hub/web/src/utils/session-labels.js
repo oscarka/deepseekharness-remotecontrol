@@ -252,3 +252,12 @@ export function renderCapabilityMatrixRowsHtml(rows = HARNESS_CAPABILITY_MATRIX)
     })
     .join('\n');
 }
+
+/**
+ * Single source of truth for whether a host is actively reachable right now
+ * (within the 1-minute heartbeat window).
+ */
+export function isHostLiveOnline(host) {
+  if (!host || typeof host !== 'object') return false;
+  return host.online !== false && host.activelyConnected !== false;
+}

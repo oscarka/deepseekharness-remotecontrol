@@ -2,6 +2,16 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.9.6] - 2026-11-20
+
+### Improved
+
+- **电脑离线 1 分钟快速感知与全界面灰态联动（`hub/hub-core.js` / `hub/server.js` / `hub/web/src/controller.js` / `hub/web/src/components/ChatStage.tsx` / `hub/web/src/triage-deck.js` / `hub/web/src/styles/app.css`）**：
+  - **1 分钟判定离线 + SSE 主动推送**：`ONLINE_TTL_MS` 与 `ACTIVE_HEARTBEAT_WINDOW_MS` 统一收紧为 `60s`，`HubCore.checkHostLivenessTransitions()` 随客户端 SSE 心跳自动检测并推送 `host_liveness` 增量（即便全部电脑同时下线也能自动刷新，上线秒级恢复）；
+  - **列表页原位变淡 + 灰态**：离线电脑会话保留在原位但整体柔和降对比度，设备胶囊转为灰态 `⚪ Air`，离线前残留的 `● 运行中` / `⏳ 待你授权` 自动降级为灰底 `⚪ 离线 · 上次运行中` / `⚪ 离线 · 待上线审批` 且不再计入顶部 `🟢 运行中` 数量；
+  - **对话页顶部离线提示 + 保留 10 分钟排队发送**：进入离线电脑对话时顶栏下方展示轻量离线说明条，自动隐藏假「运行中控制栏」，底部输入框保持可用并切换为琥珀色 `⏳ 排队发送`（10 分钟内上线自动执行）；
+  - **设备弹窗与滑卡批阅同步修复**：修复「切换遥控的电脑」里 `🎯 飞书主控` 遮盖离线时间的问题（现同时显示 `已离线 (xx 前) · 🎯 飞书主控`），并在滑卡批阅中自动屏蔽离线电脑的不可操作审批卡、为离线未读结论追加 `⚪ 电脑离线` 标识。
+
 ## [0.9.5] - 2026-11-20
 
 ### Fixed

@@ -4,8 +4,8 @@ import { dirname } from 'node:path'
 import { generateOrLoadVapidKeys, sendWebPushNotification } from './web-push.js'
 import { formatWebPushNotification, shouldSuppressTaskPush } from './push-formatter.js'
 
-const ONLINE_TTL_MS = 30 * 60_000
-const ACTIVE_HEARTBEAT_WINDOW_MS = 90_000
+const ONLINE_TTL_MS = 60_000
+const ACTIVE_HEARTBEAT_WINDOW_MS = 60_000
 const DEFAULT_COMMAND_TTL_MS = 10 * 60_000
 const INLINE_TEXT_PREVIEW_MAX_CHARS = 16_384
 const FILE_PREVIEW_BLOB_TTL_MS = 6 * 60 * 60_000
@@ -68,6 +68,7 @@ export class HubCore {
     this.mediaStreamCacheBytes = 0
     this.mediaStreamCacheMaxBytes = 24 * 1024 * 1024
     this.mediaStreamCacheMaxEntries = 60
+    this.lastHostLivenessSig = new Map()
     this.stateSeq = 1
     this._persistInFlight = null
     this._persistQueued = false
@@ -548,15 +549,39 @@ export class HubCore {
     return this._persistInFlight
   }
 
-  isOnline(host) {
+  isOnline(host, now = this.now()) {
     if (!host?.lastSeen) return false
-    return this.now() - host.lastSeen <= ONLINE_TTL_MS
+    return now - host.lastSeen <= ONLINE_TTL_MS
+  }
+
+  getHostLivenessSig(host, now = this.now()) {
+    const online = this.isOnline(host, now)
+    const activelyConnected = Boolean(host?.lastSeen && now - host.lastSeen <= ACTIVE_HEARTBEAT_WINDOW_MS)
+    return `${online ? 1 : 0}:${activelyConnected ? 1 : 0}`
+  }
+
+  checkHostLivenessTransitions(now = this.now()) {
+    let changed = false
+    for (const host of this.hosts.values()) {
+      const nextSig = this.getHostLivenessSig(host, now)
+      const prevSig = this.lastHostLivenessSig.get(host.hostId)
+      if (prevSig !== undefined && prevSig !== nextSig) {
+        changed = true
+      }
+      this.lastHostLivenessSig.set(host.hostId, nextSig)
+    }
+    if (changed) {
+      this.emitStateChange('host_liveness')
+    }
+    return changed
   }
 
   getHostsSummary() {
+    const now = this.now()
     const list = []
     for (const host of this.hosts.values()) {
-      const online = this.isOnline(host)
+      const online = this.isOnline(host, now)
+      const activelyConnected = Boolean(host.lastSeen && now - host.lastSeen <= ACTIVE_HEARTBEAT_WINDOW_MS)
       const bridge = host.bridgeState ?? {}
       const rawBridgeTasks = Array.isArray(bridge.tasks) ? bridge.tasks : []
       const phantomWbCount = rawBridgeTasks.filter(t =>
@@ -575,6 +600,7 @@ export class HubCore {
         platform: host.platform || '',
         arch: host.arch || '',
         online,
+        activelyConnected,
         lastSeen: host.lastSeen,
         isFeishuActive: this.activeHostId === host.hostId,
         feishuConnected: Boolean(bridge.feishuConnected),
@@ -1822,8 +1848,17 @@ export class HubCore {
         this.lastObservedHarnessPin.delete(this.lastObservedHarnessPin.keys().next().value)
       }
     }
+    const prevLivenessSig = this.lastHostLivenessSig.get(hostId)
+    const nextLivenessSig = this.getHostLivenessSig(record, now)
+    const livenessChanged = prevLivenessSig !== undefined && prevLivenessSig !== nextLivenessSig
+    this.lastHostLivenessSig.set(hostId, nextLivenessSig)
     const nextFingerprint = this.computeHostFingerprint(record)
-    const stateChanged = urgentStateTransition || hasCommandActivity || pinStateChangedByHarness || nextFingerprint !== record._lastFingerprint
+    const stateChanged =
+      urgentStateTransition ||
+      hasCommandActivity ||
+      pinStateChangedByHarness ||
+      livenessChanged ||
+      nextFingerprint !== record._lastFingerprint
     if (stateChanged || now - (record._lastBroadcastAt || 0) >= 60_000) {
       record._lastFingerprint = nextFingerprint
       record._lastBroadcastAt = now

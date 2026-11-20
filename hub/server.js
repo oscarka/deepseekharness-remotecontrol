@@ -1614,6 +1614,7 @@ export function createHubServer({
           }
         })
         const keepAlive = setInterval(() => {
+          hub.checkHostLivenessTransitions()
           safeWrite(`event: ping\ndata: {"ts":${Date.now()},"stateSeq":${Number(hub.stateSeq) || 0}}\n\n`)
         }, 12_000)
         keepAlive.unref?.()

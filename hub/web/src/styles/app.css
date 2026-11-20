@@ -804,6 +804,56 @@
       color: var(--muted);
     }
 
+    .session-row.row-host-offline {
+      background: #f8fafc;
+      border-left-color: #cbd5e1;
+      opacity: 0.72;
+      transition: opacity 0.16s ease, background 0.16s ease;
+    }
+
+    .session-row.row-host-offline:hover {
+      background: #f1f5f9;
+      opacity: 0.88;
+    }
+
+    .session-row.row-host-offline .session-title {
+      color: var(--text-secondary);
+    }
+
+    .session-row.row-host-offline .session-preview-text {
+      color: var(--muted);
+    }
+
+    .session-row.row-host-offline .harness-icon-badge {
+      filter: grayscale(0.65);
+      opacity: 0.8;
+    }
+
+    .badge-offline {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+      background: #e2e8f0;
+      padding: 2px 8px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .host-offline-list-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      background: #f1f5f9;
+      border-bottom: 1px solid #e2e8f0;
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
     .badge-running {
       display: inline-flex;
       align-items: center;
@@ -913,6 +963,11 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .host-mini-tag.offline {
+      color: #64748b;
+      background: #e2e8f0;
     }
 
     .project-mini-tag {
@@ -1099,6 +1154,19 @@
       align-items: center;
       justify-content: space-between;
       gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .chat-offline-banner {
+      background: #f1f5f9;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 7px 14px;
+      font-size: 12px;
+      color: #475569;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      line-height: 1.45;
       flex-shrink: 0;
     }
 
@@ -2182,6 +2250,11 @@
       font-weight: 700;
       cursor: pointer;
       flex-shrink: 0;
+    }
+
+    .send-btn.offline-queue {
+      background: #d97706;
+      color: #ffffff;
     }
 
     .composer-send-btn {
@@ -3666,6 +3739,30 @@
       color: var(--text);
     }
 
+    :root[data-theme="dark"] .session-row.row-host-offline {
+      background: rgba(148, 163, 184, 0.06);
+      border-left-color: #475569;
+      opacity: 0.68;
+    }
+
+    :root[data-theme="dark"] .session-row.row-host-offline:hover {
+      background: rgba(148, 163, 184, 0.12);
+      opacity: 0.86;
+    }
+
+    :root[data-theme="dark"] .badge-offline,
+    :root[data-theme="dark"] .host-mini-tag.offline {
+      color: #94a3b8;
+      background: rgba(148, 163, 184, 0.16);
+    }
+
+    :root[data-theme="dark"] .chat-offline-banner,
+    :root[data-theme="dark"] .host-offline-list-banner {
+      background: rgba(51, 65, 85, 0.45);
+      border-bottom-color: rgba(148, 163, 184, 0.2);
+      color: #cbd5e1;
+    }
+
     :root[data-theme="dark"] .session-row.row-state-running {
       background: linear-gradient(90deg, rgba(16, 185, 129, 0.16) 0%, rgba(16, 185, 129, 0.08) 100%);
       border-left-color: #10b981;
@@ -3832,6 +3929,30 @@
       :root:not([data-theme="light"]) textarea,
       :root:not([data-theme="light"]) select {
         color: var(--text);
+      }
+
+      :root:not([data-theme="light"]) .session-row.row-host-offline {
+        background: rgba(148, 163, 184, 0.06);
+        border-left-color: #475569;
+        opacity: 0.68;
+      }
+
+      :root:not([data-theme="light"]) .session-row.row-host-offline:hover {
+        background: rgba(148, 163, 184, 0.12);
+        opacity: 0.86;
+      }
+
+      :root:not([data-theme="light"]) .badge-offline,
+      :root:not([data-theme="light"]) .host-mini-tag.offline {
+        color: #94a3b8;
+        background: rgba(148, 163, 184, 0.16);
+      }
+
+      :root:not([data-theme="light"]) .chat-offline-banner,
+      :root:not([data-theme="light"]) .host-offline-list-banner {
+        background: rgba(51, 65, 85, 0.45);
+        border-bottom-color: rgba(148, 163, 184, 0.2);
+        color: #cbd5e1;
       }
 
       :root:not([data-theme="light"]) .session-row.row-state-running {
