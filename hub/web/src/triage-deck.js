@@ -299,9 +299,9 @@ export function buildTriageCardViewModel(s, shortHostMap = {}, lang = 'zh') {
     const rawOpts = Array.isArray(app.options) && app.options.length > 0
       ? app.options
       : [
-          { index: 1, label: en ? 'Yes, allow this time' : '1. 本次允许执行' },
-          { index: 4, label: en ? 'Skip & tell AI what to do instead…' : '不执行，告诉 AI 改怎么做…' },
-        ];
+        { index: 1, label: en ? 'Yes, allow this time' : '1. 本次允许执行' },
+        { index: 4, label: en ? 'Skip & tell AI what to do instead…' : '不执行，告诉 AI 改怎么做…' },
+      ];
 
     const positiveOpts = [];
     let denyOptIndex = 4;
@@ -347,11 +347,10 @@ export function buildTriageCardViewModel(s, shortHostMap = {}, lang = 'zh') {
       hostId: s.hostId,
       harness: s.harness,
       title: cleanTitle,
-      sub: `${hostShort} · ${projShort} · ${
-        risk === 'high'
+      sub: `${hostShort} · ${projShort} · ${risk === 'high'
           ? (en ? 'High-Risk Approval' : '高危授权')
           : (en ? 'Tool Approval' : '命令授权')
-      }`,
+        }`,
       promptInfo,
       diffInfo,
       kind: 'approval',
@@ -399,11 +398,10 @@ export function buildTriageCardViewModel(s, shortHostMap = {}, lang = 'zh') {
     hostId: s.hostId,
     harness: s.harness,
     title: cleanTitle,
-    sub: `${hostShort} · ${projShort} · ${
-      isInterrupted
+    sub: `${hostShort} · ${projShort} · ${isInterrupted
         ? (en ? 'Interrupted' : '异常中断')
         : (en ? 'Completed' : '已出结论')
-    }`,
+      }`,
     promptInfo,
     diffInfo,
     kind: isInterrupted ? 'interrupted' : 'conclusion',
@@ -494,10 +492,10 @@ export function createTriageDeckController(deps) {
     const rateVal = st.rate || 1;
     const playBtns = isSpeakingThis
       ? `<button type="button" class="dsh-triage-speak-btn speaking" onclick="event.stopPropagation(); triageStopReplySpeech()">${stopLbl}</button>` +
-        (st.hasDistinctSummary
-          ? `<button type="button" class="dsh-triage-speak-sub-btn" onclick="event.stopPropagation(); triageSwitchReplySpeechMode('${sidEsc}')" title="${en ? 'Toggle Summary / Full' : '切换重点摘要 / 完整全文'}">${modeLbl}</button>`
-          : '') +
-        `<button type="button" class="dsh-triage-speak-sub-btn" onclick="event.stopPropagation(); triageCycleReplySpeechRate('${sidEsc}')" title="${en ? 'Change playback speed' : '切换播报倍速'}">${rateVal}x</button>`
+      (st.hasDistinctSummary
+        ? `<button type="button" class="dsh-triage-speak-sub-btn" onclick="event.stopPropagation(); triageSwitchReplySpeechMode('${sidEsc}')" title="${en ? 'Toggle Summary / Full' : '切换重点摘要 / 完整全文'}">${modeLbl}</button>`
+        : '') +
+      `<button type="button" class="dsh-triage-speak-sub-btn" onclick="event.stopPropagation(); triageCycleReplySpeechRate('${sidEsc}')" title="${en ? 'Change playback speed' : '切换播报倍速'}">${rateVal}x</button>`
       : `<button type="button" class="dsh-triage-speak-btn" onclick="event.stopPropagation(); triageToggleReplySpeech('${sidEsc}')">${listenLbl}</button>`;
     const copyBtn = includeCopy
       ? `<button type="button" class="dsh-triage-speak-sub-btn" onclick="event.stopPropagation(); triageCopyReplyText('${sidEsc}')">${copyLbl}</button>`
@@ -793,8 +791,8 @@ export function createTriageDeckController(deps) {
             ${emptyDesc}
           </div>
           ${runningCount > 0
-            ? `<button type="button" onclick="triageSwitchToRunningList()" style="width:100%;margin-top:6px;height:50px;border:none;border-radius:25px;background:linear-gradient(90deg,#2563eb,#4f46e5);color:#fff;font-size:14.5px;font-weight:800;cursor:pointer;box-shadow:0 6px 16px rgba(37,99,235,0.25);">${runBtnLbl}</button>`
-            : `<button type="button" onclick="closeTriageDeckMode()" style="width:100%;margin-top:6px;height:50px;border:none;border-radius:25px;background:#0f172a;color:#fff;font-size:14.5px;font-weight:800;cursor:pointer;">${backListLbl}</button>`}
+          ? `<button type="button" onclick="triageSwitchToRunningList()" style="width:100%;margin-top:6px;height:50px;border:none;border-radius:25px;background:linear-gradient(90deg,#2563eb,#4f46e5);color:#fff;font-size:14.5px;font-weight:800;cursor:pointer;box-shadow:0 6px 16px rgba(37,99,235,0.25);">${runBtnLbl}</button>`
+          : `<button type="button" onclick="closeTriageDeckMode()" style="width:100%;margin-top:6px;height:50px;border:none;border-radius:25px;background:#0f172a;color:#fff;font-size:14.5px;font-weight:800;cursor:pointer;">${backListLbl}</button>`}
         </div>`;
       return;
     }
@@ -834,8 +832,8 @@ export function createTriageDeckController(deps) {
           <span>${diffLabel}</span>
           <span style="font-family:var(--mono,monospace);font-weight:700;">
             ${vm.diffInfo.hasLineCounts
-              ? `<span style="color:#16a34a">+${vm.diffInfo.totalAdd}</span><span style="color:#dc2626;margin-left:5px;">-${vm.diffInfo.totalDel}</span>`
-              : `<span style="color:#64748b">${en ? 'View' : '点此查看'}</span>`}
+        ? `<span style="color:#16a34a">+${vm.diffInfo.totalAdd}</span><span style="color:#dc2626;margin-left:5px;">-${vm.diffInfo.totalDel}</span>`
+        : `<span style="color:#64748b">${en ? 'View' : '点此查看'}</span>`}
             <span style="color:#2563eb;margin-left:6px;">▾</span>
           </span>
         </div>`
@@ -891,9 +889,9 @@ export function createTriageDeckController(deps) {
 
         <div class="dsh-triage-opts">
           ${vm.options.map((o, oi) => {
-            const isSel = vm.multi ? draft.multiSel.includes(oi) : (!customActive && draft.sel === oi);
-            const selCls = isSel ? (vm.kind === 'question' ? 'sel-blue' : 'sel-green') : '';
-            return `
+      const isSel = vm.multi ? draft.multiSel.includes(oi) : (!customActive && draft.sel === oi);
+      const selCls = isSel ? (vm.kind === 'question' ? 'sel-blue' : 'sel-green') : '';
+      return `
               <div class="dsh-triage-opt ${selCls}" onclick="triagePickOption(${oi})">
                 <div class="dsh-triage-dot ${vm.multi ? 'sq' : ''}">${isSel ? '✓' : ''}</div>
                 <div style="flex:1;min-width:0;">
@@ -901,7 +899,7 @@ export function createTriageDeckController(deps) {
                   ${o.desc ? `<div style="font-size:11.5px;color:#64748b;margin-top:2px;line-height:1.35;">${esc(o.desc)}</div>` : ''}
                 </div>
               </div>`;
-          }).join('')}
+    }).join('')}
 
           ${vm.canCustom ? `
             <div class="dsh-triage-custom ${customActive ? 'sel' : ''} ${isRecording ? 'rec' : ''}" id="triageCustomBox"
@@ -914,8 +912,8 @@ export function createTriageDeckController(deps) {
                     <div style="font-size:13px;font-weight:700;color:#9a3412;">${esc(vm.customLabel)}</div>
                     <div style="font-size:11px;color:#ea580c;font-weight:600;">
                       ${isRecording
-                        ? (en ? '🎙️ Listening… Release to insert text' : '🎙️ 正在聆听语音… 松手落入输入框')
-                        : (en ? 'Tap to type · Hold to speak' : '短按弹键盘打字 · 长按直接说话')}
+          ? (en ? '🎙️ Listening… Release to insert text' : '🎙️ 正在聆听语音… 松手落入输入框')
+          : (en ? 'Tap to type · Hold to speak' : '短按弹键盘打字 · 长按直接说话')}
                     </div>
                   </div>
                 </div>
@@ -1972,15 +1970,15 @@ export function createTriageDeckController(deps) {
         const n = vm.diffInfo.files.length;
         const bodyHtml = `<div style="display:flex;flex-direction:column;gap:7px;">
           ${vm.diffInfo.files.map(f => {
-            const enc = encodeURIComponent(f.path || f.name).replace(/'/g, '%27');
-            return `<div class="dsh-triage-file-row" onclick="closeTriageDetailModal(); triageInspectSessionFile('${esc(vm.sessionId)}', '${enc}')">
+          const enc = encodeURIComponent(f.path || f.name).replace(/'/g, '%27');
+          return `<div class="dsh-triage-file-row" onclick="closeTriageDetailModal(); triageInspectSessionFile('${esc(vm.sessionId)}', '${enc}')">
               <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;">${esc(f.name)}</span>
               <span style="flex-shrink:0;">
                 ${vm.diffInfo.hasLineCounts ? `<b style="color:#16a34a">+${f.added}</b> <b style="color:#dc2626">-${f.removed}</b>` : ''}
                 <span style="color:#2563eb;margin-left:4px;">${en ? 'View ›' : '查看 ›'}</span>
               </span>
             </div>`;
-          }).join('')}
+        }).join('')}
         </div>`;
         openModalView({
           title: en ? `📄 Code Changes (${n} file${n === 1 ? '' : 's'})` : `📄 代码改动 (${n} 个文件)`,

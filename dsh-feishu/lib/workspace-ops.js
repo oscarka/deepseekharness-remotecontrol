@@ -474,7 +474,7 @@ async function findDshSessionZstdPath(dshHome, sessionId) {
   return ''
 }
 
-export async function renameDiskSession(dshHome, sessionId, newTitle) {
+export async function renameDiskSession(dshHome, sessionId, newTitle, { nativeOnly = false } = {}) {
   const id = String(sessionId ?? '').trim()
   const title = String(newTitle ?? '').replace(/[\r\n]+/g, ' ').trim()
   if (!dshHome || !id || !title) return { ok: false, error: '会话 ID 或新标题不能为空' }
@@ -505,6 +505,10 @@ export async function renameDiskSession(dshHome, sessionId, newTitle) {
     } catch {
       // fall through to timestamped session-titles.json fallback
     }
+  }
+
+  if (nativeOnly) {
+    return { ok: false, id, title, skipped: true }
   }
 
   const mapFile = join(resolve(dshHome), 'session-titles.json')

@@ -290,4 +290,109 @@ describe('Bidirectional Session Title Sync (Antigravity IDE, Claude Code, DSH)',
       rmSync(tmpDshHome, { recursive: true, force: true })
     }
   })
+
+  it('auto-migrates legacy session-titles.json entries across Antigravity, Claude Code & DSH on HubAgent startup without creating phantom files', async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'dsh-auto-migrate-titles-'))
+    try {
+      const agyRoot = join(tmpRoot, 'antigravity')
+      const brainDir = join(agyRoot, 'brain')
+      const annDir = join(agyRoot, 'annotations')
+      const dshHome = join(tmpRoot, 'dsh-home')
+      const claudeHome = join(tmpRoot, 'claude-home')
+      mkdirSync(annDir, { recursive: true })
+      mkdirSync(dshHome, { recursive: true })
+      mkdirSync(join(claudeHome, 'projects', '-tmp-p'), { recursive: true })
+
+      const realConvId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+      const missingConvId = '99999999-8888-7777-6666-555555555555'
+      createFakeAntigravityTranscript(brainDir, realConvId, 'test prompt')
+      writeFileSync(join(annDir, `${realConvId}.pbtxt`), 'title:"Old AI Title"  pinned:true', 'utf8')
+
+      const claudeRawId = 'sess-auto-mig-claude'
+      writeFileSync(
+        join(claudeHome, 'projects', '-tmp-p', `${claudeRawId}.jsonl`),
+        [
+          JSON.stringify({ type: 'user', sessionId: claudeRawId, cwd: '/tmp/p', message: { role: 'user', content: 'hi' } }),
+          JSON.stringify({ type: 'assistant', sessionId: claudeRawId, message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] } }),
+        ].join('\n') + '\n',
+        'utf8',
+      )
+
+      const dshSessId = 'session-auto-mig-dsh'
+      const dshSessDir = join(dshHome, 'sessions', 'p', dshSessId)
+      mkdirSync(dshSessDir, { recursive: true })
+      const zstdBuf = zlib.zstdCompressSync(
+        Buffer.from(
+          [
+            JSON.stringify({ type: 'session', id: dshSessId, cwd: '/tmp/p', time: Date.now() - 10_000 }),
+            JSON.stringify({ type: 'user/message', time: Date.now() - 9_000, data: { message: { content: [{ type: 'text', text: 'go' }] } } }),
+            JSON.stringify({ type: 'assistant/message', time: Date.now() - 5_000, data: { message: { content: [{ type: 'text', text: 'done' }] } } }),
+          ].join('\n') + '\n',
+          'utf8',
+        ),
+      )
+      writeFileSync(join(dshSessDir, 'session.v4.jsonl.zstd'), zstdBuf)
+
+      writeFileSync(
+        join(dshHome, 'session-titles.json'),
+        JSON.stringify({
+          [`agy-ide:${realConvId}`]: '其他电脑同步标题',
+          [`agy-ide:${missingConvId}`]: '不存在的幽灵会话',
+          [`claude:${claudeRawId}`]: 'Claude迁移标题',
+          [dshSessId]: 'DSH迁移标题',
+        }),
+        'utf8',
+      )
+
+      const hubAgent = new HubAgent({
+        config: {
+          dshHome,
+          claudeHome,
+          hubUrl: 'http://127.0.0.1:1',
+          hubToken: 'tok',
+          hostId: 'h2',
+          hostName: 'OtherMac',
+          antigravityBrainDirs: [brainDir],
+        },
+        bridge: {
+          agents: { list: () => [], get: () => undefined },
+          executeHubCommand: async () => ({ ok: true }),
+        },
+        execImpl: async () => ({ stdout: '' }),
+        fetchImpl: null,
+        logger: { info: () => {}, warn: () => {}, error: () => {} },
+      })
+
+      const migRes = await hubAgent.migrateLegacyCustomTitles()
+      assert.equal(migRes.ok, true)
+      assert.equal(migRes.migrated, 3)
+
+      // 1. Real Antigravity pbtxt updated & pinned preserved; missing conv did NOT create phantom pbtxt
+      const realPbtxt = readFileSync(join(annDir, `${realConvId}.pbtxt`), 'utf8')
+      assert.ok(realPbtxt.includes('title:"其他电脑同步标题"'))
+      assert.ok(realPbtxt.includes('pinned:true'))
+      let phantomExists = false
+      try {
+        readFileSync(join(annDir, `${missingConvId}.pbtxt`), 'utf8')
+        phantomExists = true
+      } catch {
+        phantomExists = false
+      }
+      assert.equal(phantomExists, false, 'must not create phantom pbtxt for non-local conversation IDs')
+
+      // 2. Claude JSONL got custom-title
+      const claudeContent = readFileSync(join(claudeHome, 'projects', '-tmp-p', `${claudeRawId}.jsonl`), 'utf8')
+      assert.ok(claudeContent.includes('"customTitle":"Claude迁移标题"'))
+
+      // 3. DSH zstd got native session/title
+      const dshSessions = await loadDiskSessionsFromDshHome(dshHome, { syncWorkspaceStorage: false })
+      assert.equal(dshSessions[0].title, 'DSH迁移标题')
+
+      // 4. Migrated keys removed from session-titles.json; only non-local missingConvId remains untouched
+      const remaining = JSON.parse(readFileSync(join(dshHome, 'session-titles.json'), 'utf8'))
+      assert.deepEqual(Object.keys(remaining), [`agy-ide:${missingConvId}`])
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
 })

@@ -235,8 +235,9 @@ HUB_TOKEN="自定义一个安全密码" \
 > 💡 按**自然日**折叠汇总，每条内保留完整子版本号；逐版本详细变更请见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 <details>
-<summary><strong><code>2026-11-20 · v0.9.1–v0.9.3</code> — 五大引擎会话双向改名同步、三端原生插件与全线统一 <code>pocketagents</code></strong></summary>
+<summary><strong><code>2026-11-20 · v0.9.1–v0.9.4</code> — 滑卡批阅「🔊 播报全文」、多电脑双向改名自动迁移与三端原生插件</strong></summary>
 
+- **滑卡批阅「🔊 播报全文」&amp; 多电脑启动自动迁移旧改名（`v0.9.4`）**：在滑卡批阅结论卡与展开全文弹窗补齐一键 `🔊 播报全文` / `⏹ 停止` / `⚡ 重点 / 📖 全文` / `1x–1.5x` 变速与 `📋 复制全文`（自动后台拉满全文、滑走或长按说话自动静音）；守护进程启动新增 `migrateLegacyCustomTitles()`，其他电脑只需在手机点一下「⚡ 更新电脑端」，重启时即自动把本机 `~/.dsh/session-titles.json` 历史手机改名写回 Antigravity / Claude Code / DSH 并清理旧锁死覆写。
 - **全引擎手机 ↔ 电脑双向会话重命名同步（`v0.9.3`）**：新增 Antigravity IDE 原生 `setAntigravityConversationTitle`（直连 `UpdateConversationAnnotations` 更新 `annotations.title` 并提供保留 `pinned:true` 的 `.pbtxt` 离线回写，读取侧优先取实时 `annotations.title`）、Claude Code `.jsonl` `custom-title` 双向读写，以及 DSH 离线会话原生 zstd `session/title` 帧追加；原生改名成功后自动清理 `~/.dsh/session-titles.json` 旧覆写，彻底解决此前“手机改名不同步电脑、改过一次后电脑改名也不再同步手机”的问题，并补齐手机端乐观刷新。
 - **三端原生 Agent 插件配置 &amp; Claude Code 审批 Hook 零阻塞守卫（`v0.9.2`）**：新增 **Antigravity**（`plugin.json` + `skills/pocketagents/SKILL.md` + `assets/logo.svg`）、**Claude Code**（`.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` + 隔离 `.claude-plugin/hooks.json`）与 **OpenAI Codex**（`.codex-plugin/plugin.json` + `.agents/plugins/marketplace.json` → `plugins/pocketagents`）原生 GitHub 插件清单，全量通过 `agy plugin validate` 与 `claude plugin validate` 校验；`claude-permission-hook.js` 新增本机监听心跳/锁文件活性校验与 `--from-plugin` 防重复弹窗，未启动 PocketAgents 时 `<5ms` 无感退回终端审批绝不卡死。
 - **全线统一 `pocketagents` &amp; 核心体验打磨（`v0.9.1`）**：GitHub 仓库（`oscarka/pocketagents`）、npm 包（`npx pocketagents` + OIDC Provenance）、Docker 镜像（`ghcr.io/oscarka/pocketagents:latest`）与在线体验域名（`https://pocketagents.agentrun.vip/?demo=1`）四合一对齐；对话页滑动返回收紧为仅限屏幕左侧边缘带（约 14%、48–72px）向右滑，并全链路根治 Antigravity `lastConclusionAt` 早于真实完结时间、极速 `idle → idle` 回复漏标未读、非结论已读回执覆盖以及后台锁屏静默已读等 4 类「已出结论」漏显问题。

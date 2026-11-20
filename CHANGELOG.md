@@ -2,6 +2,15 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.9.4] - 2026-11-20
+
+### Added
+
+- **滑卡批阅（Swipe Triage）结论卡与展开全文弹窗一键「🔊 播报全文」（`hub/web/src/triage-deck.js` / `hub/web/src/controller.js` / `hub/web/src/styles/triage-deck.css`）**：
+  - 结论预览卡底栏与展开全文弹窗顶部新增同步联动的 `🔊 播报全文` / `⏹ 停止` / `⚡ 重点 / 📖 全文` / `1x–1.5x` 语音播报控件与 `📋 复制全文`，复用防 GC、WakeLock 与 iOS 分段接力引擎，后台自动预拉取未截断全文并在切卡、归档、搁置或长按说话时自动静音。
+- **多电脑启动自动迁移历史手机改名（`dsh-feishu/lib/hub-agent.js` / `dsh-feishu/lib/workspace-ops.js`）**：
+  - `HubAgent.start()` 新增 `migrateLegacyCustomTitles()`：任意已接入的电脑更新重启后，自动将本机 `~/.dsh/session-titles.json` 残留的手机改名写回该电脑对应的 Antigravity IDE（`UpdateConversationAnnotations` / `.pbtxt`）、Claude Code（`.jsonl` `custom-title`）与离线 DSH（原生 zstd `session/title` 帧）并清理旧覆写，跨多台电脑只需在手机「设置 → 已接入电脑」点一下 `⚡ 更新电脑端` 即可全部自动对齐。
+
 ## [0.9.3] - 2026-11-20
 
 ### Fixed

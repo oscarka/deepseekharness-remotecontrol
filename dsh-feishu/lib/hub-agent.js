@@ -22,7 +22,7 @@ import {
 
 const execFileAsync = promisify(execFile)
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
-let AGENT_VERSION = '0.9.3'
+let AGENT_VERSION = '0.9.4'
 try {
   const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'))
   if (pkg?.version) AGENT_VERSION = String(pkg.version)
@@ -281,7 +281,88 @@ export class HubAgent {
       void this.tick()
     }, this.config.hubPollMs || 1500)
     this.timer.unref?.()
+    void this.migrateLegacyCustomTitles()
     void this.tick()
+  }
+
+  /**
+   * Automatically migrate any legacy mobile-renamed titles stored in `<dshHome>/session-titles.json`
+   * into each local AI tool's native storage (Antigravity IDE, Claude Code, offline DSH) so every
+   * enrolled computer self-heals upon upgrading/restarting without manual scripts.
+   */
+  async migrateLegacyCustomTitles() {
+    if (!this.config?.dshHome) return { ok: true, migrated: 0 }
+    const mapFile = join(resolve(this.config.dshHome), 'session-titles.json')
+    if (!existsSync(mapFile)) return { ok: true, migrated: 0 }
+    let titlesMap = null
+    try {
+      titlesMap = JSON.parse(readFileSync(mapFile, 'utf8'))
+    } catch {
+      return { ok: false, migrated: 0 }
+    }
+    if (!titlesMap || typeof titlesMap !== 'object' || Array.isArray(titlesMap)) {
+      return { ok: true, migrated: 0 }
+    }
+    const entries = Object.entries(titlesMap)
+    if (entries.length === 0) return { ok: true, migrated: 0 }
+
+    const brainDirs = this.config.antigravityBrainDirs || getDefaultAntigravityBrainDirs()
+    const agyRoots = [...new Set(brainDirs.filter(Boolean).map(d => dirname(resolve(d))))]
+    let migrated = 0
+
+    for (const [key, rawVal] of entries) {
+      const title = (typeof rawVal === 'string' ? rawVal : rawVal?.title || '').replace(/[\r\n]+/g, ' ').trim()
+      if (!key || !title) continue
+
+      try {
+        if (isAntigravityIdeSessionId(key)) {
+          const rawConvId = toRawConversationId(key)
+          const existsLocally = agyRoots.some(
+            root =>
+              existsSync(join(root, 'brain', rawConvId)) ||
+              existsSync(join(root, 'annotations', `${rawConvId}.pbtxt`)),
+          )
+          if (!existsLocally) continue
+          const res = await setAntigravityConversationTitle(key, title, {
+            brainDirs,
+            execImpl: this.execImpl,
+            fetchImpl: this.fetch,
+          })
+          if (res.ok) {
+            await clearCustomSessionTitle(this.config.dshHome, [key, rawConvId])
+            migrated += 1
+          }
+          continue
+        }
+
+        if (key.startsWith('claude:')) {
+          const claudeAdapter = this.harnessRouter?.getAdapter(key)
+          if (claudeAdapter && typeof claudeAdapter.renameSession === 'function') {
+            const res = await claudeAdapter.renameSession({ sessionId: key, title })
+            if (res?.ok && res.method === 'claude-jsonl') {
+              await clearCustomSessionTitle(this.config.dshHome, key)
+              migrated += 1
+            }
+          }
+          continue
+        }
+
+        if (!key.includes(':')) {
+          const res = await renameDiskSession(this.config.dshHome, key, title, { nativeOnly: true })
+          if (res?.ok && res.method === 'dsh-zstd') {
+            migrated += 1
+          }
+        }
+      } catch {
+        // never let a single broken entry block startup migration of remaining sessions
+      }
+    }
+
+    if (migrated > 0) {
+      this.logger?.info?.(`✅ 已自动将 ${migrated} 条历史手机改名同步写回本机工具并清理旧覆写`)
+      this.scheduleFollowUpTick?.(300)
+    }
+    return { ok: true, migrated }
   }
 
   stop() {
