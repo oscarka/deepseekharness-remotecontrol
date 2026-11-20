@@ -16,6 +16,7 @@ import {
   isAntigravityIdeSessionId,
   loadAntigravityIdeSessions,
   setAntigravityConversationPinned,
+  setAntigravityConversationTitle,
   toRawConversationId,
 } from './antigravity-ide.js'
 
@@ -42,6 +43,7 @@ import { discoverDshModels, DshHeadlessRunner } from './harnesses/dsh-headless-a
 import { discoverWorkBuddyModels, WorkBuddyAdapter } from './harnesses/workbuddy-adapter.js'
 import { safeError } from './redact.js'
 import {
+  clearCustomSessionTitle,
   collectHostSystemTelemetry,
   extractSessionTranscript,
   formatUserQuestionReplyText,
@@ -1536,17 +1538,44 @@ export class HubAgent {
           }
         }
         case 'rename_session': {
-          const targetId = String(cmd.agentId ?? '')
+          const targetId = String(cmd.agentId ?? '').trim()
+          const nextTitle = String(cmd.title ?? '').replace(/[\r\n]+/g, ' ').trim()
+          if (!targetId || !nextTitle) return { ok: false, error: '会话 ID 或新标题不能为空' }
+
           const liveAgent = this.bridge.agents.get(targetId)
           if (liveAgent) {
-            return await this.bridge.executeHubCommand(cmd)
+            const liveRes = await this.bridge.executeHubCommand({ ...cmd, title: nextTitle })
+            if (liveRes?.ok) {
+              await clearCustomSessionTitle(this.config.dshHome, targetId).catch(() => {})
+            }
+            return liveRes
           }
+
+          if (isAntigravityIdeSessionId(targetId)) {
+            const agyRes = await setAntigravityConversationTitle(targetId, nextTitle, {
+              brainDirs: this.config.antigravityBrainDirs || getDefaultAntigravityBrainDirs(),
+              execImpl: this.execImpl,
+              fetchImpl: this.fetch,
+            })
+            if (agyRes.ok) {
+              await clearCustomSessionTitle(this.config.dshHome, [targetId, toRawConversationId(targetId)]).catch(() => {})
+              const agySess = (this.cachedAgySessions || []).find(s => s.id === targetId)
+              if (agySess) agySess.title = agyRes.title
+              return {
+                ...agyRes,
+                agentId: targetId,
+                message: `已同步重命名至 Antigravity IDE：「${agyRes.title}」`,
+              }
+            }
+          }
+
           const extAdapter = this.harnessRouter?.getAdapter(targetId)
           if (extAdapter && typeof extAdapter.renameSession === 'function') {
-            const extRenamed = await extAdapter.renameSession({ sessionId: targetId, title: cmd.title })
+            const extRenamed = await extAdapter.renameSession({ sessionId: targetId, title: nextTitle })
             const extSess = (this.cachedExternalSessions || []).find(s => s.id === targetId)
-            if (extRenamed?.ok && extSess) {
-              extSess.title = extRenamed.title
+            if (extRenamed?.ok) {
+              if (extSess) extSess.title = extRenamed.title
+              await clearCustomSessionTitle(this.config.dshHome, targetId).catch(() => {})
             }
             return {
               ...extRenamed,
@@ -1554,11 +1583,12 @@ export class HubAgent {
               message: extRenamed?.ok ? `已重命名会话为「${extRenamed.title}」` : extRenamed?.error,
             }
           }
+
           const diskSession = (this.cachedDiskSessions || []).find(s => s.id === targetId)
             || (this.cachedAgySessions || []).find(s => s.id === targetId)
             || (this.cachedExternalSessions || []).find(s => s.id === targetId)
           if (!diskSession) return { ok: false, error: '找不到该任务会话' }
-          const renamed = await renameDiskSession(this.config.dshHome, targetId, cmd.title)
+          const renamed = await renameDiskSession(this.config.dshHome, targetId, nextTitle)
           if (renamed.ok) {
             diskSession.title = renamed.title
           }

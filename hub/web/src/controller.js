@@ -6652,11 +6652,18 @@ export function initHubController() {
   async function saveInlineRename() {
     const val = document.getElementById('renameInlineInput').value.trim();
     if (!val || !actionTargetSession) return;
+    const targetId = actionTargetSession.id;
+    const targetHostId = actionTargetHostId;
+    actionTargetSession.title = val;
+    const hostObj = (hubState.hosts || []).find(h => h.hostId === targetHostId);
+    const matchedTask = (hostObj?.tasks || []).find(t => t.id === targetId);
+    if (matchedTask) matchedTask.title = val;
     closeSheet('taskActionSheet');
-    showToast('✏️ 正在保存新标题...');
-    await dispatchHostCommand(actionTargetHostId, {
+    renderAll();
+    showToast('✏️ 正在同步新标题至电脑端...');
+    await dispatchHostCommand(targetHostId, {
       type: 'rename_session',
-      agentId: actionTargetSession.id,
+      agentId: targetId,
       title: val,
     });
     setTimeout(fetchState, 600);

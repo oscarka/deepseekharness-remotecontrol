@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { chmod, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, chmod, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, networkInterfaces, tmpdir } from 'node:os'
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
@@ -410,10 +410,103 @@ function decompressMultiFrameZstd(rawBuf) {
   return out
 }
 
+function readCustomTitleEntry(raw) {
+  if (!raw) return null
+  if (typeof raw === 'string') {
+    const title = raw.trim()
+    return title ? { title, updatedAt: 0 } : null
+  }
+  if (typeof raw === 'object' && typeof raw.title === 'string') {
+    const title = raw.title.trim()
+    return title ? { title, updatedAt: Number(raw.updatedAt || 0) } : null
+  }
+  return null
+}
+
+export async function clearCustomSessionTitle(dshHome, sessionIds) {
+  if (!dshHome) return { ok: false, removed: false }
+  const ids = (Array.isArray(sessionIds) ? sessionIds : [sessionIds])
+    .map(v => String(v ?? '').trim())
+    .filter(Boolean)
+  if (ids.length === 0) return { ok: true, removed: false }
+  const mapFile = join(resolve(dshHome), 'session-titles.json')
+  let titlesMap = {}
+  try {
+    titlesMap = JSON.parse(await readFile(mapFile, 'utf8'))
+  } catch {
+    return { ok: true, removed: false }
+  }
+  if (!titlesMap || typeof titlesMap !== 'object' || Array.isArray(titlesMap)) {
+    return { ok: true, removed: false }
+  }
+  let changed = false
+  for (const id of ids) {
+    if (Object.prototype.hasOwnProperty.call(titlesMap, id)) {
+      delete titlesMap[id]
+      changed = true
+    }
+  }
+  if (!changed) return { ok: true, removed: false }
+  const tmpPath = `${mapFile}.${randomBytes(3).toString('hex')}.tmp`
+  await writeFile(tmpPath, JSON.stringify(titlesMap, null, 2), 'utf8')
+  await rename(tmpPath, mapFile)
+  return { ok: true, removed: true }
+}
+
+async function findDshSessionZstdPath(dshHome, sessionId) {
+  const sessionsRoot = join(resolve(dshHome), 'sessions')
+  let projDirs = []
+  try {
+    projDirs = await readdir(sessionsRoot, { withFileTypes: true })
+  } catch {
+    return ''
+  }
+  for (const projEntry of projDirs) {
+    if (!projEntry.isDirectory()) continue
+    const candidate = join(sessionsRoot, projEntry.name, sessionId, 'session.v4.jsonl.zstd')
+    try {
+      const st = await stat(candidate)
+      if (st.isFile() && st.size > 0) return candidate
+    } catch {
+      // try next project dir
+    }
+  }
+  return ''
+}
+
 export async function renameDiskSession(dshHome, sessionId, newTitle) {
   const id = String(sessionId ?? '').trim()
-  const title = String(newTitle ?? '').trim()
+  const title = String(newTitle ?? '').replace(/[\r\n]+/g, ' ').trim()
   if (!dshHome || !id || !title) return { ok: false, error: '会话 ID 或新标题不能为空' }
+
+  // Native write for offline DSH v4 sessions: append a standalone zstd-compressed `session/title` frame
+  // so DSH Desktop immediately reflects the new name and future desktop renames stay bidirectional.
+  if (typeof zlib.zstdCompressSync === 'function' && !id.includes(':')) {
+    try {
+      const zstdPath = await findDshSessionZstdPath(dshHome, id)
+      if (zstdPath) {
+        const lockPath = join(dirname(zstdPath), 'session.lock')
+        let hasLock = false
+        try {
+          await stat(lockPath)
+          hasLock = true
+        } catch {
+          hasLock = false
+        }
+        if (!hasLock) {
+          const line = `${JSON.stringify({ type: 'session/title', time: Date.now(), data: { title } })}\n`
+          const frame = zlib.zstdCompressSync(Buffer.from(line, 'utf8'))
+          await appendFile(zstdPath, frame)
+          await clearCustomSessionTitle(dshHome, id)
+          invalidateDshSessionParseCache()
+          return { ok: true, id, title, method: 'dsh-zstd' }
+        }
+      }
+    } catch {
+      // fall through to timestamped session-titles.json fallback
+    }
+  }
+
   const mapFile = join(resolve(dshHome), 'session-titles.json')
   let titlesMap = {}
   try {
@@ -421,9 +514,12 @@ export async function renameDiskSession(dshHome, sessionId, newTitle) {
   } catch {
     titlesMap = {}
   }
-  titlesMap[id] = title
-  await writeFile(mapFile, JSON.stringify(titlesMap, null, 2), 'utf8')
-  return { ok: true, id, title }
+  titlesMap[id] = { title, updatedAt: Date.now() }
+  const tmpPath = `${mapFile}.${randomBytes(3).toString('hex')}.tmp`
+  await writeFile(tmpPath, JSON.stringify(titlesMap, null, 2), 'utf8')
+  await rename(tmpPath, mapFile)
+  invalidateDshSessionParseCache()
+  return { ok: true, id, title, method: 'session-titles' }
 }
 
 /**
@@ -1174,11 +1270,16 @@ export async function loadDiskSessionsFromDshHome(
       }
       if (!fileStat.isFile() || fileStat.size < 100) continue
 
-      const cachedKey = `${Math.round(fileStat.mtimeMs)}:${fileStat.size}:${customTitles[sessEntry.name] || ''}`
+      const customTitleForDir = readCustomTitleEntry(customTitles[sessEntry.name])
+      const cachedKey = `${Math.round(fileStat.mtimeMs)}:${fileStat.size}:${customTitleForDir?.title || ''}:${customTitleForDir?.updatedAt || 0}`
       const cachedEntry = dshSessionParseCache.get(zstdPath)
       if (cachedEntry && cachedEntry.cachedKey === cachedKey && cachedEntry.session) {
         if (archivedSet.has(cachedEntry.session.id)) continue
-        const customOverride = customTitles[cachedEntry.session.id]
+        const customEntry = readCustomTitleEntry(customTitles[cachedEntry.session.id])
+        const customOverride =
+          customEntry && (!cachedEntry.nativeTitleTime || customEntry.updatedAt === 0 || customEntry.updatedAt >= cachedEntry.nativeTitleTime)
+            ? customEntry.title
+            : ''
         const fullTr = Array.isArray(cachedEntry.fullTranscript)
           ? cachedEntry.fullTranscript
           : cachedEntry.session.transcript || []
@@ -1255,7 +1356,9 @@ export async function loadDiskSessionsFromDshHome(
         if (archivedSet.has(headerId)) continue
         const cwd = String(header.cwd || '').trim()
         const titles = lines.filter(e => e.type === 'session/title' && e.data?.title)
-        const title = String(titles.at(-1)?.data?.title || '').trim()
+        const lastNativeTitleEvent = titles.at(-1) || null
+        const title = String(lastNativeTitleEvent?.data?.title || '').trim()
+        const nativeTitleTime = Number(lastNativeTitleEvent?.time || 0)
 
         // Map tool/result outputs by callId so tool/call records include real execution output
         const toolResultsByCallId = new Map()
@@ -1419,7 +1522,11 @@ export async function loadDiskSessionsFromDshHome(
         const ageMs = Date.now() - fileStat.mtimeMs
         const isActivelyRunning =
           hasLock && (ageMs <= 6000 || (ageMs <= 45000 && !hasConcluded))
-        const effTitle = customTitles[id] || title || transcript[0]?.text?.slice(0, 36) || '历史会话'
+        const customEntry = readCustomTitleEntry(customTitles[id])
+        const useCustomTitle = Boolean(
+          customEntry?.title && (!title || !nativeTitleTime || customEntry.updatedAt === 0 || customEntry.updatedAt >= nativeTitleTime),
+        )
+        const effTitle = (useCustomTitle ? customEntry.title : title) || transcript[0]?.text?.slice(0, 36) || '历史会话'
         const rawPendingInteraction = extractRawPendingDshInteraction(lines)
         const pendingApproval = materializePendingDshInteraction(rawPendingInteraction, {
           sessionId: id,
@@ -1472,6 +1579,7 @@ export async function loadDiskSessionsFromDshHome(
         dshSessionParseCache.set(zstdPath, {
           cachedKey,
           hasConcluded,
+          nativeTitleTime,
           rawPendingInteraction,
           fullTranscript: transcript,
           session: sessionObj,

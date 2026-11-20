@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'node:child_process'
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -99,6 +100,7 @@ export function parseClaudeSessionContent(rawContent = '', fallbackId = '') {
   let sessionId = fallbackId
   let cwd = ''
   let model = ''
+  let customTitle = ''
   let lastRole = 'idle'
   let lastStepIndex = 0
   const transcript = []
@@ -113,6 +115,14 @@ export function parseClaudeSessionContent(rawContent = '', fallbackId = '') {
     lastStepIndex = i
     if (rec.sessionId) sessionId = rec.sessionId
     if (rec.cwd) cwd = rec.cwd
+    if (rec.type === 'custom-title' && typeof rec.customTitle === 'string' && rec.customTitle.trim()) {
+      customTitle = rec.customTitle.trim()
+      continue
+    }
+    if (rec.type === 'agent-name' && typeof rec.agentName === 'string' && rec.agentName.trim() && !customTitle) {
+      customTitle = rec.agentName.trim()
+      continue
+    }
     const ts = rec.timestamp ? Date.parse(rec.timestamp) || 0 : 0
 
     if (rec.type === 'user' && rec.message) {
@@ -187,6 +197,7 @@ export function parseClaudeSessionContent(rawContent = '', fallbackId = '') {
     sessionId,
     cwd,
     model,
+    customTitle,
     lastRole,
     lastStepIndex,
     transcript: transcript.slice(-80),
@@ -212,6 +223,7 @@ export class ClaudeAdapter {
     this.fileCache = new Map()
     this.activeRuns = new Map()
     this.deletedIds = new Set()
+    this.customTitles = new Map()
     this._lastWatcherHeartbeatAt = 0
   }
 
@@ -369,7 +381,7 @@ export class ClaudeAdapter {
         }
       }
 
-      const { sessionId, cwd, model, lastRole, lastStepIndex, transcript } = parsed.data
+      const { sessionId, cwd, model, customTitle, lastRole, lastStepIndex, transcript } = parsed.data
       const fullId = `${CLAUDE_SESSION_PREFIX}${sessionId}`
       const livePendingApp = pendingBySession.get(fullId) || null
       const hasAssistantReply = transcript.some(m => m.role === 'assistant')
@@ -407,7 +419,9 @@ export class ClaudeAdapter {
       const firstUser = transcript.find(m => m.role === 'user')
       const lastAssistant = [...transcript].reverse().find(m => m.role === 'assistant')
       const title =
-        extractCleanPromptTitle(firstUser?.text)
+        this.customTitles.get(sessionId)
+        || customTitle
+        || extractCleanPromptTitle(firstUser?.text)
         || livePendingApp?.title
         || `Claude (${sessionId.slice(0, 8)})`
 
@@ -577,6 +591,54 @@ export class ClaudeAdapter {
       return { ok: true, agentId: sessionId, message: '已中止 Claude Code 后台任务' }
     }
     return { ok: false, error: '该 Claude Code 会话当前没有受管运行中的后台进程' }
+  }
+
+  async renameSession({ sessionId = '', title = '' } = {}) {
+    const rawId = toRawClaudeId(sessionId)
+    const clean = String(title ?? '').replace(/[\r\n]+/g, ' ').trim()
+    if (!rawId || !clean) {
+      return { ok: false, error: '会话 ID 或新标题不能为空' }
+    }
+    const projectsDir = join(this.claudeHome, 'projects')
+    let targetFile = ''
+    if (existsSync(projectsDir)) {
+      const files = walkClaudeProjectFiles(projectsDir, 3)
+      const byName = files.find(f => basename(f.path, '.jsonl') === rawId)
+      if (byName) {
+        targetFile = byName.path
+      } else {
+        for (const f of files) {
+          const cached = this.fileCache.get(f.path)
+          if (cached?.data?.sessionId === rawId) {
+            targetFile = f.path
+            break
+          }
+        }
+      }
+    }
+    if (targetFile) {
+      try {
+        const record = `${JSON.stringify({ type: 'custom-title', customTitle: clean, sessionId: rawId })}\n`
+        appendFileSync(targetFile, record, 'utf8')
+        this.fileCache.delete(targetFile)
+        this.customTitles.delete(rawId)
+        return {
+          ok: true,
+          agentId: `${CLAUDE_SESSION_PREFIX}${rawId}`,
+          title: clean,
+          method: 'claude-jsonl',
+        }
+      } catch {
+        // fall through to in-memory fallback
+      }
+    }
+    this.customTitles.set(rawId, clean)
+    return {
+      ok: true,
+      agentId: `${CLAUDE_SESSION_PREFIX}${rawId}`,
+      title: clean,
+      method: 'memory',
+    }
   }
 
   async deleteSession({ sessionId } = {}) {

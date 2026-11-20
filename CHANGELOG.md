@@ -2,6 +2,16 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.9.3] - 2026-11-20
+
+### Fixed
+
+- **打通全引擎手机 ↔ 电脑双向会话重命名同步（`dsh-feishu/lib/antigravity-ide.js` / `dsh-feishu/lib/harnesses/claude-adapter.js` / `dsh-feishu/lib/workspace-ops.js` / `dsh-feishu/lib/hub-agent.js` / `hub/web/src/controller.js`）**：
+  - **Antigravity IDE**：新增 `setAntigravityConversationTitle`，手机改名直接调用 Connect-RPC `UpdateConversationAnnotations`（`annotations: { title }`, `mergeAnnotations: true`）实时刷新桌面侧边栏，离线自动回退原子更新 `annotations/<convId>.pbtxt`（完整保留 `pinned:true` 与浏览时间）；读取侧优先取实时 `annotations.title` 与 `.pbtxt` 标题，并支持八进制 UTF-8 解码；
+  - **Claude Code**：`ClaudeAdapter` 新增原生 `renameSession()`（向 `~/.claude/projects/*.jsonl` 追加官方 `custom-title` 记录）与 `custom-title` / `agent-name` 双向解析；
+  - **DSH（离线会话）**：`renameDiskSession` 优先向未加锁的 `session.v4.jsonl.zstd` 追加原生 zstd `session/title` 帧，回退 `session-titles.json` 时记录时间戳并与桌面端最新 `session/title` 按时间仲裁；
+  - **根治旧覆写锁死反向同步**：原生改名成功后自动清理 `~/.dsh/session-titles.json` 中对应旧覆写键，确保之后在电脑端改名也能立刻同步回手机；前端 `saveInlineRename` 同步补齐乐观更新，手机点保存零延迟刷新标题。
+
 ## [0.9.2] - 2026-11-20
 
 ### Added

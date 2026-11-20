@@ -1,6 +1,6 @@
 {
   "name": "pocketagents",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "type": "module",
   "license": "MIT",
   "description": "PocketAgents — Self-hosted mobile remote control for Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness (DSH) & WorkBuddy. Swipe approvals, voice input, multi-host hub & terminal QR.",

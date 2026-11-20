@@ -1174,8 +1174,8 @@ export function parseAntigravityTranscript(jsonlText, {
     ? nativeTitle
     : ''
 
-  const title = customTitles[sessionId]
-    || customTitles[conversationId]
+  const title = extractCustomTitleValue(customTitles[sessionId])
+    || extractCustomTitleValue(customTitles[conversationId])
     || safeNativeTitle
     || checkpointTitle
     || cleanFirstLine
@@ -1483,6 +1483,59 @@ let cachedProtoMetaMap = null
 let cachedProtoMetaAt = 0
 let cachedProtoMetaKey = ''
 
+function decodePbtxtQuotedString(raw = '') {
+  const bytes = []
+  const s = String(raw || '')
+  for (let i = 0; i < s.length; i += 1) {
+    if (s[i] === '\\' && i + 1 < s.length) {
+      const next = s[i + 1]
+      if (/[0-7]/.test(next)) {
+        const oct = s.slice(i + 1, i + 4).match(/^[0-7]{1,3}/)?.[0] || next
+        bytes.push(parseInt(oct, 8) & 0xff)
+        i += oct.length
+        continue
+      }
+      if (next === 'n') {
+        bytes.push(0x0a)
+        i += 1
+        continue
+      }
+      if (next === 'r') {
+        bytes.push(0x0d)
+        i += 1
+        continue
+      }
+      if (next === 't') {
+        bytes.push(0x09)
+        i += 1
+        continue
+      }
+      if (next === '"' || next === '\\' || next === "'") {
+        bytes.push(...Buffer.from(next, 'utf8'))
+        i += 1
+        continue
+      }
+    }
+    bytes.push(...Buffer.from(s[i], 'utf8'))
+  }
+  return Buffer.from(bytes).toString('utf8').trim()
+}
+
+function encodePbtxtQuotedString(value = '') {
+  return String(value || '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .trim()
+}
+
+function extractCustomTitleValue(entry) {
+  if (!entry) return ''
+  if (typeof entry === 'string') return entry.trim()
+  if (typeof entry === 'object' && typeof entry.title === 'string') return entry.title.trim()
+  return ''
+}
+
 async function loadAntigravityMetadataForCandidates(brainDirs, candidates) {
   const now = Date.now()
   const agyRoots = [...new Set(brainDirs.filter(Boolean).map(d => dirname(resolve(d))))]
@@ -1538,19 +1591,23 @@ async function loadAntigravityMetadataForCandidates(brainDirs, candidates) {
 
   const metaMap = new Map()
   for (const [cid, entry] of protoBaseMap.entries()) {
-    metaMap.set(cid, { ...entry, pinned: false, hasPbtxt: false })
+    metaMap.set(cid, { ...entry, pinned: false, hasPbtxt: false, hasPbtxtTitle: false })
   }
 
   for (const agyRoot of agyRoots) {
     for (const item of candidates) {
       try {
         const pbtxt = await readFile(join(agyRoot, 'annotations', `${item.convId}.pbtxt`), 'utf8')
-        const existing = metaMap.get(item.convId) || { title: '', workspace: null, pinned: false, hasPbtxt: false }
+        const existing = metaMap.get(item.convId) || { title: '', workspace: null, pinned: false, hasPbtxt: false, hasPbtxtTitle: false }
         existing.hasPbtxt = true
         existing.pinned = /\bpinned:\s*true\b/i.test(pbtxt)
-        const m = pbtxt.match(/title:\s*"((?:[^"\\]|\\.)*)"/)
+        const m = pbtxt.match(/\btitle:\s*"((?:[^"\\]|\\.)*)"/)
         if (m && m[1].trim()) {
-          existing.title = m[1].replace(/\\"/g, '"').trim()
+          const decoded = decodePbtxtQuotedString(m[1])
+          if (decoded) {
+            existing.title = decoded
+            existing.hasPbtxtTitle = true
+          }
         }
         metaMap.set(item.convId, existing)
       } catch {
@@ -1730,13 +1787,19 @@ export async function loadAntigravityIdeSessions({
       const liveStatus = String(liveSummary?.status || '')
       const liveModel = String(liveSummary?.planModel || '')
       const liveLastModifiedMs = parseSummaryModifiedMs(liveSummary)
+      const liveAnnotationTitle = String(liveSummary?.annotations?.title || '').trim()
       const liveTitle = String(liveSummary?.summary || '').trim()
-      const effectiveNativeTitle = nativeMeta?.title || liveTitle || ''
+      const effectiveNativeTitle =
+        liveAnnotationTitle
+        || (nativeMeta?.hasPbtxtTitle ? nativeMeta.title : '')
+        || liveTitle
+        || nativeMeta?.title
+        || ''
       const effectivePinned = nativeMeta?.hasPbtxt
         ? Boolean(nativeMeta.pinned)
         : Boolean(liveSummary?.annotations?.pinned)
       const sessionId = `${AGY_IDE_PREFIX}${item.convId}`
-      const customTitle = customTitles[sessionId] || customTitles[item.convId] || ''
+      const customTitle = extractCustomTitleValue(customTitles[sessionId]) || extractCustomTitleValue(customTitles[item.convId]) || ''
       const cacheKey = `${item.convId}:${item.mtimeMs}:${item.size || 0}:${maxMessages}:${customTitle}:${effectiveNativeTitle}:${effectivePinned ? 1 : 0}:${settledKey}:${liveStepCount ?? ''}:${liveLastUserInputStepIndex ?? ''}:${liveStatus}:${liveModel}:${liveLastModifiedMs}:${hasLiveSummary ? 1 : 0}:${waitingKey}`
       const cached = sessionParseCache.get(item.convId)
       if (cached && cached.cacheKey === cacheKey && cached.session) {
@@ -3409,6 +3472,131 @@ export async function setAntigravityConversationPinned(
     ok: rpcUpdated || diskUpdated,
     id: `${AGY_IDE_PREFIX}${rawConvId}`,
     pinned: wantPin,
+    method: rpcUpdated ? 'connect-rpc' : 'pbtxt',
+  }
+}
+
+/**
+ * Bidirectionally synchronize a session's title with Antigravity IDE:
+ * 1. Invokes Connect-RPC `UpdateConversationAnnotations` (`annotations: { title }`, `mergeAnnotations: true`)
+ *    across active Antigravity LanguageServer instances so open IDE sidebars update immediately.
+ * 2. Falls back to atomic update of `<agyRoot>/annotations/<convId>.pbtxt` (`title:"..."`) when offline,
+ *    preserving existing `pinned` and `last_user_view_time` fields.
+ */
+export async function setAntigravityConversationTitle(
+  sessionIdOrConvId,
+  newTitle = '',
+  {
+    brainDirs = getDefaultAntigravityBrainDirs(),
+    execImpl = execFileAsync,
+    fetchImpl = globalThis.fetch,
+  } = {},
+) {
+  const rawConvId = toRawConversationId(sessionIdOrConvId)
+  const cleanTitle = String(newTitle ?? '').replace(/[\r\n]+/g, ' ').trim()
+  if (!rawConvId || !cleanTitle) {
+    return { ok: false, error: '会话 ID 或新标题不能为空' }
+  }
+  let rpcUpdated = false
+
+  if (typeof fetchImpl === 'function') {
+    try {
+      const hubs = await discoverAntigravityHubInstances({ execImpl })
+      const orderedHubs = hubs.length > 1
+        ? await probeHubsForTrajectory(hubs, rawConvId, fetchImpl)
+        : hubs
+      for (const hub of orderedHubs) {
+        if (hub.hasTargetTrajectory === false && orderedHubs.some(h => h.hasTargetTrajectory)) {
+          continue
+        }
+        try {
+          const resp = await fetchImpl(
+            `http://${hub.address}/exa.language_server_pb.LanguageServerService/UpdateConversationAnnotations`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-codeium-csrf-token': hub.csrfToken,
+              },
+              body: JSON.stringify({
+                cascadeId: rawConvId,
+                annotations: { title: cleanTitle },
+                mergeAnnotations: true,
+              }),
+            },
+          )
+          if (resp?.ok) {
+            rpcUpdated = true
+          }
+        } catch {
+          // try next hub or disk fallback
+        }
+      }
+    } catch {
+      // fall back to disk annotation update
+    }
+  }
+
+  cachedLiveSummariesAt = 0
+  cachedProtoMetaAt = 0
+
+  const agyRoots = [...new Set((brainDirs || []).filter(Boolean).map(d => dirname(resolve(d))))]
+  let diskUpdated = false
+  if (!rpcUpdated && agyRoots.length > 0) {
+    let targetRoot = agyRoots[0]
+    for (const root of agyRoots) {
+      try {
+        await access(join(root, 'annotations', `${rawConvId}.pbtxt`))
+        targetRoot = root
+        break
+      } catch {
+        try {
+          await access(join(root, 'brain', rawConvId))
+          targetRoot = root
+          break
+        } catch {
+          // keep looking
+        }
+      }
+    }
+    try {
+      const annDir = join(targetRoot, 'annotations')
+      const annPath = join(annDir, `${rawConvId}.pbtxt`)
+      let existingText = ''
+      try {
+        existingText = await readFile(annPath, 'utf8')
+      } catch {
+        existingText = ''
+      }
+      const encoded = encodePbtxtQuotedString(cleanTitle)
+      const titleField = `title:"${encoded}"`
+      let nextText
+      if (/\btitle:\s*"(?:[^"\\]|\\.)*"/.test(existingText)) {
+        nextText = existingText.replace(/\btitle:\s*"(?:[^"\\]|\\.)*"/, titleField)
+      } else {
+        const trimmed = existingText.trim()
+        nextText = trimmed ? `${titleField}  ${trimmed}` : titleField
+      }
+      await mkdir(annDir, { recursive: true })
+      const tmpPath = `${annPath}.${randomBytes(3).toString('hex')}.tmp`
+      await writeFile(tmpPath, nextText, { mode: 0o600 })
+      await rename(tmpPath, annPath)
+      diskUpdated = true
+    } catch {
+      // ignore disk write error
+    }
+  }
+
+  const cached = sessionParseCache.get(rawConvId)
+  if (cached?.session) {
+    cached.session.title = cleanTitle
+    cached.cacheKey = ''
+  }
+
+  return {
+    ok: rpcUpdated || diskUpdated,
+    id: `${AGY_IDE_PREFIX}${rawConvId}`,
+    title: cleanTitle,
     method: rpcUpdated ? 'connect-rpc' : 'pbtxt',
   }
 }
