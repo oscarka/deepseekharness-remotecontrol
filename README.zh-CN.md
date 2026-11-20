@@ -223,6 +223,13 @@ HUB_TOKEN="自定义一个安全密码" \
 > 💡 按**自然日**折叠汇总，每条内保留完整子版本号；逐版本详细变更请见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 <details>
+<summary><strong><code>2026-11-20 · v0.9.1</code> — 全线统一 <code>pocketagents</code>、根治「已出结论」漏显与左侧边缘防误触返回</strong></summary>
+
+- **全线统一 `pocketagents` &amp; 核心体验打磨（`v0.9.1`）**：GitHub 仓库（`oscarka/pocketagents`）、npm 包（`npx pocketagents` + OIDC Provenance）、Docker 镜像（`ghcr.io/oscarka/pocketagents:latest`）与在线体验域名（`https://pocketagents.agentrun.vip/?demo=1`）四合一对齐；对话页滑动返回收紧为仅限屏幕左侧边缘带（约 14%、48–72px）向右滑，并全链路根治 Antigravity `lastConclusionAt` 早于真实完结时间、极速 `idle → idle` 回复漏标未读、非结论已读回执覆盖以及后台锁屏静默已读等 4 类「已出结论」漏显问题。
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-19 · v0.8.9–v0.9.0</code> — 正式更名 PocketAgents（<code>npx pocketagents</code>）、Claude Code 审批、Antigravity 多选题 &amp; <code>?demo=1</code> 沙盒</strong></summary>
 
 - **品牌升级为 PocketAgents（`v0.9.0`）**：GitHub 仓库原地更名为 `oscarka/pocketagents`（原 `deepseekharness-remotecontrol` 链接永久 301 自动跳转兼容 DSH 插件市场），主命令与容器镜像全面切换为 `npx pocketagents` 与 `ghcr.io/oscarka/pocketagents:latest`。

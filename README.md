@@ -223,6 +223,13 @@ The background daemon automatically discovers local sessions across all 6 suppor
 > 💡 Grouped **one drawer per day** with every exact version tag preserved inside; see [`CHANGELOG.md`](CHANGELOG.md) for granular per-release notes.
 
 <details>
+<summary><strong><code>2026-11-20 · v0.9.1</code> — Unified <code>pocketagents</code> Ecosystem, Zero-Miss <code>🔵 Completed</code> Unread Sync &amp; Left-Edge-Only Swipe Back</strong></summary>
+
+- **Unified `pocketagents` Launch (`v0.9.1`)**: Aligned GitHub repo (`oscarka/pocketagents`), npm CLI (`npx pocketagents` with OIDC provenance), multi-arch GHCR image (`ghcr.io/oscarka/pocketagents:latest`), and live sandbox (`https://pocketagents.agentrun.vip/?demo=1`); tightened mobile chat swipe-back strictly to rightward drags from the left edge (`14%`, `48–72px`) and fixed 4 conclusion unread bugs (stale Antigravity `created_at` timestamps, fast `idle -> idle` turn detection, non-conclusion read receipt overwrites, and background `visibilityState === 'hidden'` auto-reads).
+
+</details>
+
+<details>
 <summary><strong><code>2026-11-19 · v0.8.9–v0.9.0</code> — PocketAgents Rebrand (<code>npx pocketagents</code>), Claude Code Approvals, Antigravity <code>ask_question</code> &amp; <code>?demo=1</code> Sandbox</strong></summary>
 
 - **PocketAgents Launch (`v0.9.0`)**: Rebranded repository and primary CLI package to **PocketAgents** (`github.com/oscarka/pocketagents`, `npx pocketagents`, `ghcr.io/oscarka/pocketagents:latest`) with automatic 301 redirect from legacy `deepseekharness-remotecontrol` links and full DSH Market compatibility.

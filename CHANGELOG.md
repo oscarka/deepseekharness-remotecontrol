@@ -2,13 +2,12 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-## [0.9.0] - 2026-11-19
+## [0.9.1] - 2026-11-20
 
 ### Changed
 
-- **品牌正式升级为 PocketAgents（`github.com/oscarka/pocketagents` / `npx pocketagents`）**：
-  - GitHub 仓库原地更名为 `oscarka/pocketagents`（自动保留 `oscarka/deepseekharness-remotecontrol` 永久 301 重定向，老外链与 DSH 插件市场零断链）；
-  - `package.json`、CLI 入口（`npx pocketagents`，同时保留 `dsh-remote` 别名）、Demo 沙盒、Docker 镜像（`ghcr.io/oscarka/pocketagents:latest`）、中英 Hero Banner 与双语 README 全面升级为 **PocketAgents**。
+- **全线统一为 PocketAgents（`github.com/oscarka/pocketagents` / `npx pocketagents` / `ghcr.io/oscarka/pocketagents:latest` / `pocketagents.agentrun.vip/?demo=1`）**：
+  - GitHub 仓库、npm 包（含 OIDC Trusted Publishing Provenance 认证）、多架构 Docker 镜像与在线交互 Demo 域名全面统一为 **`pocketagents`**，彻底消除单复数割裂。
 
 ### Fixed
 
@@ -18,6 +17,14 @@
   - 修复 Antigravity `lastConclusionAt` 误取 `PLANNER_RESPONSE.created_at`（生成起点、早于实际完结 26–63 秒且截断到整秒）导致比手机 `seenAt` / `cmd.createdAt` 更早、从而漏显 `🔵 已出结论` 或滞留 `● 运行中` 的根因，改为完结时取 `Math.max(lastConclusionAt, lastActivity)` 并同步修复尾随元数据步滞留 `isMidTurn` 与缓存命中状态未重算；
   - `HubCore` 新增极速 `idle -> idle` 完结内容签名比对，即便回复在单次心跳内完成或途经偶发丢包也能立刻置 `sessionReadState.unread = true`、推送与广播 `task_concluded`；同时拦截 `running:`/`approval:` 非结论已读回执覆盖未读态；
   - 前端在锁屏/切后台（`visibilityState === 'hidden'`）时不再静默把新结论标为已读，点进运行中/待授权会话不再误发覆盖未读态的已读回执，并在关闭对话返回列表时立即刷新未读徽章。
+
+## [0.9.0] - 2026-11-19
+
+### Changed
+
+- **品牌正式升级为 PocketAgents（`github.com/oscarka/pocketagents` / `npx pocketagents`）**：
+  - GitHub 仓库原地更名为 `oscarka/pocketagents`（自动保留 `oscarka/deepseekharness-remotecontrol` 永久 301 重定向，老外链与 DSH 插件市场零断链）；
+  - `package.json`、CLI 入口（`npx pocketagents`，同时保留 `dsh-remote` 别名）、Demo 沙盒、Docker 镜像（`ghcr.io/oscarka/pocketagents:latest`）、中英 Hero Banner 与双语 README 全面升级为 **PocketAgents**。
 
 ## [0.8.21] - 2026-11-19
 
