@@ -72,7 +72,7 @@ When you kick off a long refactoring, test suite, or deployment in **Claude Code
 - **No visibility on the go**: You want to check whether the task finished, hold-to-talk a quick voice instruction, attach a phone screenshot, or hit emergency stop while away from your desk.
 - **Multiple computers**: You have both an office Mac and home workstations running tasks and want one unified mobile view.
 
-**DSH Remote Control** puts all of your computers' AI coding sessions into a clean mobile web app (with **WeChat-style Hold-to-Talk voice input + smart punctuation**, **1-tap `🔊 Listen` algorithmic reply playback (`⚡ Summary` / `📖 Full` + seamless mid-stream speed control)**, iOS 16.4+ Home Screen lock-screen push notifications, and automatic English/Chinese UI detection).
+**PocketAgents** puts all of your computers' AI coding sessions into a clean mobile web app (with **WeChat-style Hold-to-Talk voice input + smart punctuation**, **1-tap `🔊 Listen` algorithmic reply playback (`⚡ Summary` / `📖 Full` + seamless mid-stream speed control)**, iOS 16.4+ Home Screen lock-screen push notifications, and automatic English/Chinese UI detection).
 
 ---
 
@@ -109,11 +109,23 @@ Before starting, it helps to understand the two lightweight pieces and how data 
 > ```
 > Starts a local Control Hub + session watcher in 3 seconds, auto-enables Claude Code mobile approvals, and prints a **scannable QR code right in your terminal** (same Wi-Fi, 1-tap passwordless phone login — no `git clone`, no Railway, no config files).
 >
-> **🔌 Using DeepSeek Harness (DSH &gt;= 0.2.0)?** Install directly from **DSH Market** or run:
-> ```bash
-> dsh plugin --profile desktop add github:oscarka/pocketagents
-> # Or use --profile web if you run `dsh web`
-> ```
+> **🔌 Install as a Native Agent Plugin (GitHub direct — no store signup required)**:
+> - **Antigravity**:
+>   ```bash
+>   git clone --depth 1 https://github.com/oscarka/pocketagents ~/.gemini/config/plugins/pocketagents
+>   ```
+> - **Claude Code** *(includes zero-hang `PermissionRequest` hook + `pocketagents` skill)*:
+>   ```text
+>   /plugin marketplace add oscarka/pocketagents
+>   /plugin install pocketagents@pocketagents
+>   ```
+> - **OpenAI Codex** *(ships `.agents/plugins/marketplace.json` + `.codex-plugin/plugin.json`)*:
+>   Add `oscarka/pocketagents` via Codex `/plugins` (auto-discovers `plugins/pocketagents`).
+> - **DeepSeek Harness (DSH &gt;= 0.2.0)** *(also available in **DSH Market**)*:
+>   ```bash
+>   dsh plugin --profile desktop add github:oscarka/pocketagents
+>   # Or use --profile web if you run `dsh web`
+>   ```
 > Ready for **24/7 cellular (4G/5G) access across multiple computers**? Follow the 3 steps below:
 
 ### Step 1: Start Your Control Hub (Pick 1 of 4 Ways)
@@ -223,8 +235,9 @@ The background daemon automatically discovers local sessions across all 6 suppor
 > 💡 Grouped **one drawer per day** with every exact version tag preserved inside; see [`CHANGELOG.md`](CHANGELOG.md) for granular per-release notes.
 
 <details>
-<summary><strong><code>2026-11-20 · v0.9.1</code> — Unified <code>pocketagents</code> Ecosystem, Zero-Miss <code>🔵 Completed</code> Unread Sync &amp; Left-Edge-Only Swipe Back</strong></summary>
+<summary><strong><code>2026-11-20 · v0.9.1–v0.9.2</code> — Native Antigravity / Claude Code / Codex Plugins, Unified <code>pocketagents</code> Ecosystem &amp; Zero-Miss <code>🔵 Completed</code> Sync</strong></summary>
 
+- **Native Multi-Platform Agent Plugins &amp; Zero-Hang Claude Hook (`v0.9.2`)**: Added native GitHub-installable plugin manifests for **Antigravity** (`plugin.json` + `skills/pocketagents/SKILL.md` + `assets/logo.svg`), **Claude Code** (`.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, isolated `.claude-plugin/hooks.json`), and **OpenAI Codex** (`.codex-plugin/plugin.json` + `.agents/plugins/marketplace.json` → `plugins/pocketagents`), validated with `agy plugin validate` and `claude plugin validate`; added live watcher heartbeat/lock checks and `--from-plugin` deduplication to `claude-permission-hook.js` so stopped daemons never block Claude Code terminals.
 - **Unified `pocketagents` Launch (`v0.9.1`)**: Aligned GitHub repo (`oscarka/pocketagents`), npm CLI (`npx pocketagents` with OIDC provenance), multi-arch GHCR image (`ghcr.io/oscarka/pocketagents:latest`), and live sandbox (`https://pocketagents.agentrun.vip/?demo=1`); tightened mobile chat swipe-back strictly to rightward drags from the left edge (`14%`, `48–72px`) and fixed 4 conclusion unread bugs (stale Antigravity `created_at` timestamps, fast `idle -> idle` turn detection, non-conclusion read receipt overwrites, and background `visibilityState === 'hidden'` auto-reads).
 
 </details>

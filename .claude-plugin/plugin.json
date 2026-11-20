@@ -1,0 +1,25 @@
+{
+  "name": "pocketagents",
+  "version": "0.9.2",
+  "description": "Self-hosted mobile remote control for Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness (DSH), and WorkBuddy. Approve Bash, Edit, MCP, and AskUserQuestion prompts from your phone with zero vendor relay.",
+  "author": {
+    "name": "oscarka",
+    "url": "https://github.com/oscarka"
+  },
+  "homepage": "https://pocketagents.agentrun.vip/?demo=1",
+  "repository": "https://github.com/oscarka/pocketagents",
+  "license": "MIT",
+  "keywords": [
+    "pocketagents",
+    "mobile",
+    "remote-control",
+    "approvals",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "dsh",
+    "self-hosted"
+  ],
+  "skills": "./skills",
+  "hooks": "./.claude-plugin/hooks.json"
+}

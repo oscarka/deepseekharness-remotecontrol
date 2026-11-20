@@ -2,6 +2,24 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.9.2] - 2026-11-20
+
+### Added
+
+- **多端原生 Agent 插件配置（Antigravity / Claude Code / OpenAI Codex · GitHub 直装免审核）**：
+  - **Antigravity 原生插件（`plugin.json` + `assets/logo.svg` + `skills/pocketagents/SKILL.md`）**：严格遵循官方 `plugin.json` 规范（含 3 条 `suggestedPrompts` 与品牌 SVG 图标），通过 `agy plugin validate` 零警告校验；
+  - **Claude Code 原生插件与 GitHub 插件市场（`.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` + `.claude-plugin/hooks.json`）**：支持 `/plugin marketplace add oscarka/pocketagents` 与 `/plugin install pocketagents@pocketagents` 零审核直装，通过 `claude plugin validate` 校验，并将 `PermissionRequest` Hook 严格隔离在 `.claude-plugin/` 内避免泄漏到 Antigravity；
+  - **OpenAI Codex 原生插件与仓库市场（`.codex-plugin/plugin.json` + `.agents/plugins/marketplace.json` + `plugins/pocketagents/`）**：完整提供 `interface`（`shortDescription <= 30`、`defaultPrompt`、品牌配色与图标），并将市场本地源指向子目录 `./plugins/pocketagents` 以规避 `codex-rs` #17066 根路径校验限制；
+  - **全套多端插件清单回归测试（`dsh-feishu/test/plugin-manifests.test.js`）**：自动化守卫版本一致性、文件存在性、多端技能/图标同步及防串台隔离。
+
+### Fixed
+
+- **Claude Code 审批 Hook 零阻塞活性守卫与插件防重复弹窗（`dsh-feishu/lib/claude-permission-hook.js` / `dsh-feishu/lib/harnesses/claude-adapter.js`）**：
+  - `ClaudeAdapter.listPendingApprovals()` 自动维护 `~/.claude/.dsh-remote-approvals/.watcher-alive.json` 心跳并与 `~/.dsh/daemon.lock` 双路互补；当本机未运行 PocketAgents 监听进程时，Hook 在 `<5ms` 内立即无感退出并回退终端原生授权弹窗，彻底杜绝关闭服务后卡住终端的问题；
+  - 插件通道（`--from-plugin`）检测到 `~/.claude/settings.json` 已安装同类 Hook 时自动退让，避免同一权限请求弹出双份审批卡。
+- **修复 GitHub Actions npm 暂存校验窗口期并发发布误报失败（`.github/workflows/publish-npm.yml`）**：
+  - 将 npm 自动化审核期的 `Cannot publish over previously staged version` 识别为幂等成功，避免 `v*.*.*` Tag 与 GitHub Release 连续触发时误发失败邮件。
+
 ## [0.9.1] - 2026-11-20
 
 ### Changed

@@ -1,0 +1,18 @@
+{
+  "name": "pocketagents",
+  "displayName": "PocketAgents",
+  "version": "0.9.2",
+  "description": "Self-hosted mobile remote control for Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness (DSH), and WorkBuddy. Launch local QR pairing, approve commands from your phone, or deploy a 24/7 Hub.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Start PocketAgents locally and show a QR code for my phone",
+    "Connect this machine to my 24/7 PocketAgents Cloud Hub",
+    "Check PocketAgents daemon health and mobile approval hook status"
+  ],
+  "author": {
+    "name": "oscarka",
+    "url": "https://github.com/oscarka"
+  },
+  "homepage": "https://pocketagents.agentrun.vip/?demo=1",
+  "repository": "https://github.com/oscarka/pocketagents"
+}

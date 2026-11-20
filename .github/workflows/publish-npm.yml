@@ -59,8 +59,8 @@ jobs:
             rm -f "${PUB_LOG}"
             exit 0
           fi
-          if grep -Eqi "cannot publish over the previously published versions|You cannot publish over|EPUBLISHCONFLICT" "${PUB_LOG}"; then
-            echo "Package ${PKG_NAME}@${PKG_VER} was already published by a preceding run. Skipping."
+          if grep -Eqi "cannot publish over the previously published versions|cannot publish over previously staged version|You cannot publish over|EPUBLISHCONFLICT" "${PUB_LOG}"; then
+            echo "Package ${PKG_NAME}@${PKG_VER} was already published or staged by a preceding run. Skipping."
             rm -f "${PUB_LOG}"
             exit 0
           fi

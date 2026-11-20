@@ -72,7 +72,7 @@ npx pocketagents
 - **出门在外两眼一抹黑**：下楼买咖啡、在地铁上或躺在沙发上时，想看一眼任务跑完没有、按住语音像发微信一样说一句补充指令、传一张手机截图，或者发现跑偏了立即叫停。
 - **多台电脑来回切**：公司一台 Mac、家里两台 Mac mini 都在跑任务，想在一个手机页面里统一看管。
 
-**DSH Remote Control** 把你电脑上正在跑的 AI 编程会话装进手机浏览器里（内置**微信同款「按住说话」语音转文字 + 智能中文标点**、**`🔊 播报` 纯算法一键听回复（支持 `⚡ 重点` / `📖 全文` 切换与原地无损倍速）**，支持 iOS 16.4+ 添加到主屏幕开启原生锁屏推送，支持中英文自动识别与一键切换）。
+**PocketAgents** 把你电脑上正在跑的 AI 编程会话装进手机浏览器里（内置**微信同款「按住说话」语音转文字 + 智能中文标点**、**`🔊 播报` 纯算法一键听回复（支持 `⚡ 重点` / `📖 全文` 切换与原地无损倍速）**，支持 iOS 16.4+ 添加到主屏幕开启原生锁屏推送，支持中英文自动识别与一键切换）。
 
 ---
 
@@ -109,11 +109,23 @@ npx pocketagents
 > ```
 > 无需 `git clone`、无需云服务器、无需写配置：3 秒内自动启动本地总控台 + 扫描本机 AI 编程会话（自动装配 Claude Code 手机审批 Hook），并**直接在终端里打印手机可扫二维码**，手机连同一 Wi-Fi 扫一扫即刻免密遥控！
 >
-> **🔌 如果你在使用 DeepSeek Harness (DSH &gt;= 0.2.0)**，也可以直接在 **DSH 插件市场** 搜索安装，或运行：
-> ```bash
-> dsh plugin --profile desktop add github:oscarka/pocketagents
-> # 若使用 dsh web，可将 desktop 换成 web
-> ```
+> **🔌 各端原生插件直装（基于 GitHub 仓库分发 · 无需第三方商店审核）**：
+> - **Antigravity**：
+>   ```bash
+>   git clone --depth 1 https://github.com/oscarka/pocketagents ~/.gemini/config/plugins/pocketagents
+>   ```
+> - **Claude Code** *（自带零阻塞 `PermissionRequest` 手机审批 Hook 与 `pocketagents` 技能）*：
+>   ```text
+>   /plugin marketplace add oscarka/pocketagents
+>   /plugin install pocketagents@pocketagents
+>   ```
+> - **OpenAI Codex** *（内置 `.agents/plugins/marketplace.json` 与 `.codex-plugin/plugin.json`）*：
+>   在 Codex `/plugins` 中添加 `oscarka/pocketagents` 即可自动识别 `plugins/pocketagents`。
+> - **DeepSeek Harness (DSH &gt;= 0.2.0)** *（也可直接在 **DSH 插件市场** 搜索安装）*：
+>   ```bash
+>   dsh plugin --profile desktop add github:oscarka/pocketagents
+>   # 若使用 dsh web，可将 desktop 换成 web
+>   ```
 > 想出门在外用 **4G/5G 跨网 24 小时随时遥控多台电脑**？按下面 3 步部署你自己的云端总控台：
 
 ### 第 1 步：启动你的控制台（4 种方式任选其一）
@@ -223,8 +235,9 @@ HUB_TOKEN="自定义一个安全密码" \
 > 💡 按**自然日**折叠汇总，每条内保留完整子版本号；逐版本详细变更请见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 <details>
-<summary><strong><code>2026-11-20 · v0.9.1</code> — 全线统一 <code>pocketagents</code>、根治「已出结论」漏显与左侧边缘防误触返回</strong></summary>
+<summary><strong><code>2026-11-20 · v0.9.1–v0.9.2</code> — Antigravity / Claude Code / Codex 三端原生插件、全线统一 <code>pocketagents</code> 与根治「已出结论」漏显</strong></summary>
 
+- **三端原生 Agent 插件配置 &amp; Claude Code 审批 Hook 零阻塞守卫（`v0.9.2`）**：新增 **Antigravity**（`plugin.json` + `skills/pocketagents/SKILL.md` + `assets/logo.svg`）、**Claude Code**（`.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` + 隔离 `.claude-plugin/hooks.json`）与 **OpenAI Codex**（`.codex-plugin/plugin.json` + `.agents/plugins/marketplace.json` → `plugins/pocketagents`）原生 GitHub 插件清单，全量通过 `agy plugin validate` 与 `claude plugin validate` 校验；`claude-permission-hook.js` 新增本机监听心跳/锁文件活性校验与 `--from-plugin` 防重复弹窗，未启动 PocketAgents 时 `<5ms` 无感退回终端审批绝不卡死。
 - **全线统一 `pocketagents` &amp; 核心体验打磨（`v0.9.1`）**：GitHub 仓库（`oscarka/pocketagents`）、npm 包（`npx pocketagents` + OIDC Provenance）、Docker 镜像（`ghcr.io/oscarka/pocketagents:latest`）与在线体验域名（`https://pocketagents.agentrun.vip/?demo=1`）四合一对齐；对话页滑动返回收紧为仅限屏幕左侧边缘带（约 14%、48–72px）向右滑，并全链路根治 Antigravity `lastConclusionAt` 早于真实完结时间、极速 `idle → idle` 回复漏标未读、非结论已读回执覆盖以及后台锁屏静默已读等 4 类「已出结论」漏显问题。
 
 </details>

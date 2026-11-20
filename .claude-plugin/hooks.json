@@ -1,0 +1,17 @@
+{
+  "description": "Forward Claude Code PermissionRequest prompts to PocketAgents mobile console when a local PocketAgents watcher is running.",
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dsh-feishu/lib/claude-permission-hook.js\" --from-plugin",
+            "timeout": 250
+          }
+        ]
+      }
+    ]
+  }
+}

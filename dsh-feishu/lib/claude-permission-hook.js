@@ -21,10 +21,81 @@ import { fileURLToPath } from 'node:url'
 
 export const CLAUDE_APPROVAL_DIR_NAME = '.dsh-remote-approvals'
 export const CLAUDE_HOOK_MARKER = 'claude-permission-hook.js'
+export const CLAUDE_WATCHER_HEARTBEAT_FILE = '.watcher-alive.json'
 export const DEFAULT_HOOK_TIMEOUT_MS = 240_000
+export const DEFAULT_WATCHER_TTL_MS = 30_000
 
 export function getClaudeApprovalDir(claudeHome = join(homedir(), '.claude')) {
   return join(claudeHome || join(homedir(), '.claude'), CLAUDE_APPROVAL_DIR_NAME)
+}
+
+function isPidAliveSafe(pid) {
+  const num = Number(pid)
+  if (!Number.isInteger(num) || num <= 0) return false
+  try {
+    process.kill(num, 0)
+    return true
+  } catch (err) {
+    return err?.code === 'EPERM'
+  }
+}
+
+export function touchClaudeWatcherHeartbeat({
+  claudeHome = process.env.CLAUDE_HOME || join(homedir(), '.claude'),
+  pid = process.pid,
+  now = Date.now(),
+} = {}) {
+  if (!claudeHome || !existsSync(claudeHome)) return false
+  try {
+    const dir = getClaudeApprovalDir(claudeHome)
+    mkdirSync(dir, { recursive: true, mode: 0o700 })
+    const targetPath = join(dir, CLAUDE_WATCHER_HEARTBEAT_FILE)
+    const tmpPath = `${targetPath}.tmp-${pid}`
+    writeFileSync(tmpPath, JSON.stringify({ pid, updatedAt: now }) + '\n', { mode: 0o600 })
+    renameSync(tmpPath, targetPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function isPocketAgentsWatcherActive({
+  claudeHome = process.env.CLAUDE_HOME || join(homedir(), '.claude'),
+  dshHome = process.env.DSH_HOME || join(homedir(), '.dsh'),
+  now = Date.now(),
+  maxHeartbeatAgeMs = DEFAULT_WATCHER_TTL_MS,
+  isAliveImpl = isPidAliveSafe,
+} = {}) {
+  // 1. Check ClaudeAdapter watcher heartbeat written by `npx pocketagents`, `daemon.mjs`, or DSH plugin
+  try {
+    const hbPath = join(getClaudeApprovalDir(claudeHome), CLAUDE_WATCHER_HEARTBEAT_FILE)
+    if (existsSync(hbPath)) {
+      const hb = JSON.parse(readFileSync(hbPath, 'utf8'))
+      const pid = Number(hb?.pid)
+      const updatedAt = Number(hb?.updatedAt || 0)
+      if (pid > 0 && isAliveImpl(pid) && updatedAt > 0 && now - updatedAt <= maxHeartbeatAgeMs) {
+        return true
+      }
+    }
+  } catch {
+    // ignore corrupt or racing heartbeat file
+  }
+
+  // 2. Fallback to ~/.dsh/daemon.lock (written by `daemon.mjs` and DSH Desktop/Web plugin)
+  try {
+    const lockPath = join(dshHome || join(homedir(), '.dsh'), 'daemon.lock')
+    if (existsSync(lockPath)) {
+      const lock = JSON.parse(readFileSync(lockPath, 'utf8'))
+      const pid = Number(lock?.pid)
+      if (pid > 0 && isAliveImpl(pid)) {
+        return true
+      }
+    }
+  } catch {
+    // ignore missing or corrupt lockfile
+  }
+
+  return false
 }
 
 export function generateClaudeApprovalCode() {
@@ -303,8 +374,12 @@ function safeUnlink(p) {
 export async function runClaudePermissionHookProcess({
   rawStdin = '',
   claudeHome = process.env.CLAUDE_HOME || join(homedir(), '.claude'),
+  dshHome = process.env.DSH_HOME || join(homedir(), '.dsh'),
   timeoutMs = Number(process.env.DSH_CLAUDE_HOOK_TIMEOUT_MS) || DEFAULT_HOOK_TIMEOUT_MS,
   pollIntervalMs = 180,
+  requireWatcher = false,
+  skipIfSettingsHookInstalled = false,
+  isAliveImpl = isPidAliveSafe,
 } = {}) {
   const trimmed = String(rawStdin || '').trim()
   if (!trimmed) return null
@@ -315,6 +390,17 @@ export async function runClaudePermissionHookProcess({
     return null
   }
   if (!hookInput || typeof hookInput !== 'object') return null
+
+  // When invoked via Claude Code plugin hooks.json, yield immediately if ~/.claude/settings.json
+  // already registered this hook to avoid duplicate approval cards for the same PermissionRequest.
+  if (skipIfSettingsHookInstalled && isClaudePermissionHookInstalled({ claudeHome })) {
+    return null
+  }
+
+  // Never block Claude Code's terminal prompt if no live PocketAgents daemon/CLI watcher is running.
+  if (requireWatcher && !isPocketAgentsWatcherActive({ claudeHome, dshHome, isAliveImpl })) {
+    return null
+  }
 
   const dir = getClaudeApprovalDir(claudeHome)
   mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -395,8 +481,18 @@ async function readStdinAll() {
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
 if (isMain) {
+  const args = new Set(process.argv.slice(2))
+  const fromPlugin = args.has('--from-plugin')
+  const forceWait = process.env.DSH_CLAUDE_HOOK_FORCE === '1'
+  const requireWatcher = fromPlugin || args.has('--require-watcher') || !forceWait
   readStdinAll()
-    .then(raw => runClaudePermissionHookProcess({ rawStdin: raw }))
+    .then(raw =>
+      runClaudePermissionHookProcess({
+        rawStdin: raw,
+        requireWatcher,
+        skipIfSettingsHookInstalled: fromPlugin,
+      }),
+    )
     .then(output => {
       if (output) {
         process.stdout.write(JSON.stringify(output) + '\n')

@@ -1,0 +1,20 @@
+{
+  "name": "pocketagents",
+  "interface": {
+    "displayName": "PocketAgents"
+  },
+  "plugins": [
+    {
+      "name": "pocketagents",
+      "source": {
+        "source": "local",
+        "path": "./plugins/pocketagents"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

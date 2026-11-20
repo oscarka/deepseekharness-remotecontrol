@@ -9,7 +9,9 @@ import {
   getClaudeApprovalDir,
   installClaudePermissionHook,
   isClaudePermissionHookInstalled,
+  isPocketAgentsWatcherActive,
   runClaudePermissionHookProcess,
+  touchClaudeWatcherHeartbeat,
   uninstallClaudePermissionHook,
 } from '../lib/claude-permission-hook.js'
 import { ClaudeAdapter } from '../lib/harnesses/claude-adapter.js'
@@ -200,6 +202,88 @@ describe('Claude Code PermissionRequest Hook & Mobile Approval', () => {
       assert.equal(existsSync(stalePath), false)
     } finally {
       rmSync(tmpClaudeHome, { recursive: true, force: true })
+    }
+  })
+
+  it('exits immediately without blocking when requireWatcher is true and no PocketAgents watcher is alive', async () => {
+    const tmpClaudeHome = mkdtempSync(join(tmpdir(), 'dsh-claude-hook-idle-'))
+    const tmpDshHome = mkdtempSync(join(tmpdir(), 'dsh-home-idle-'))
+    try {
+      assert.equal(
+        isPocketAgentsWatcherActive({ claudeHome: tmpClaudeHome, dshHome: tmpDshHome }),
+        false,
+      )
+
+      const startedAt = Date.now()
+      const res = await runClaudePermissionHookProcess({
+        rawStdin: JSON.stringify({
+          session_id: 'no-watcher-1',
+          cwd: '/tmp/app',
+          tool_name: 'Bash',
+          tool_input: { command: 'ls' },
+        }),
+        claudeHome: tmpClaudeHome,
+        dshHome: tmpDshHome,
+        timeoutMs: 10_000,
+        requireWatcher: true,
+      })
+      assert.equal(res, null)
+      assert.ok(Date.now() - startedAt < 1000, 'should exit immediately without waiting for timeout')
+
+      // Stale/dead PID heartbeat must still be treated as inactive
+      touchClaudeWatcherHeartbeat({ claudeHome: tmpClaudeHome, pid: 999999, now: Date.now() })
+      assert.equal(
+        isPocketAgentsWatcherActive({
+          claudeHome: tmpClaudeHome,
+          dshHome: tmpDshHome,
+          isAliveImpl: () => false,
+        }),
+        false,
+      )
+
+      // Active daemon.lock with live PID counts as active
+      writeFileSync(join(tmpDshHome, 'daemon.lock'), JSON.stringify({ pid: process.pid }))
+      assert.equal(
+        isPocketAgentsWatcherActive({ claudeHome: tmpClaudeHome, dshHome: tmpDshHome }),
+        true,
+      )
+    } finally {
+      rmSync(tmpClaudeHome, { recursive: true, force: true })
+      rmSync(tmpDshHome, { recursive: true, force: true })
+    }
+  })
+
+  it('yields immediately when invoked via --from-plugin if settings.json hook is already installed, and refreshes heartbeat via ClaudeAdapter', async () => {
+    const tmpClaudeHome = mkdtempSync(join(tmpdir(), 'dsh-claude-hook-plugin-'))
+    const tmpDshHome = mkdtempSync(join(tmpdir(), 'dsh-home-plugin-'))
+    try {
+      const adapter = new ClaudeAdapter({ claudeHome: tmpClaudeHome, binaryPath: '' })
+      await adapter.listSessions()
+      assert.equal(
+        isPocketAgentsWatcherActive({ claudeHome: tmpClaudeHome, dshHome: tmpDshHome }),
+        true,
+      )
+
+      installClaudePermissionHook({ claudeHome: tmpClaudeHome })
+      const startedAt = Date.now()
+      const res = await runClaudePermissionHookProcess({
+        rawStdin: JSON.stringify({
+          session_id: 'dedupe-1',
+          cwd: '/tmp/app',
+          tool_name: 'Bash',
+          tool_input: { command: 'npm test' },
+        }),
+        claudeHome: tmpClaudeHome,
+        dshHome: tmpDshHome,
+        timeoutMs: 10_000,
+        requireWatcher: true,
+        skipIfSettingsHookInstalled: true,
+      })
+      assert.equal(res, null)
+      assert.ok(Date.now() - startedAt < 1000, 'plugin hook should yield immediately to settings.json hook')
+    } finally {
+      rmSync(tmpClaudeHome, { recursive: true, force: true })
+      rmSync(tmpDshHome, { recursive: true, force: true })
     }
   })
 })

@@ -15,6 +15,7 @@ import { promisify } from 'node:util'
 import {
   getClaudeApprovalDir,
   isClaudePermissionHookInstalled,
+  touchClaudeWatcherHeartbeat,
 } from '../claude-permission-hook.js'
 
 const execFileAsync = promisify(execFile)
@@ -211,6 +212,7 @@ export class ClaudeAdapter {
     this.fileCache = new Map()
     this.activeRuns = new Map()
     this.deletedIds = new Set()
+    this._lastWatcherHeartbeatAt = 0
   }
 
   getCapabilities() {
@@ -241,6 +243,10 @@ export class ClaudeAdapter {
   }
 
   listPendingApprovals({ now = Date.now(), maxAgeMs = 10 * 60_000 } = {}) {
+    if (now - this._lastWatcherHeartbeatAt >= 4000) {
+      this._lastWatcherHeartbeatAt = now
+      touchClaudeWatcherHeartbeat({ claudeHome: this.claudeHome, now })
+    }
     const dir = getClaudeApprovalDir(this.claudeHome)
     if (!existsSync(dir)) return []
     const out = []
