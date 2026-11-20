@@ -12,7 +12,7 @@ Security fixes are delivered on the latest commit of the `main` branch. While th
 
 **Please do NOT open a public GitHub issue for security vulnerabilities.**
 
-Submit reports privately via [GitHub Private Vulnerability Reporting](https://github.com/oscarka/deepseekharness-remotecontrol/security/advisories/new) or contact the repository maintainer directly. Please include:
+Submit reports privately via [GitHub Private Vulnerability Reporting](https://github.com/oscarka/pocketagents/security/advisories/new) or contact the repository maintainer directly. Please include:
 
 - Steps to reproduce or a minimal PoC
 - Impact scope (what can be read, modified, or executed)
@@ -131,7 +131,7 @@ Please review and harden as needed for production deployments:
 
 **请不要开公开 issue。**
 
-请通过 GitHub 的 [Private Vulnerability Reporting](https://github.com/oscarka/deepseekharness-remotecontrol/security/advisories/new) 提交，或直接联系仓库维护者。请附上：
+请通过 GitHub 的 [Private Vulnerability Reporting](https://github.com/oscarka/pocketagents/security/advisories/new) 提交，或直接联系仓库维护者。请附上：
 
 - 复现步骤或 PoC
 - 影响范围（能读到什么、能改什么）

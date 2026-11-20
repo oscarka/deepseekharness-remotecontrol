@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="DSH Remote Control — 用手机与飞书遥控你的 AI 编码助手">
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-label="PocketAgents — Control Claude Code, OpenAI Codex, Antigravity IDE &amp; DeepSeek Harness from your phone">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0B1220"/>
@@ -7,15 +7,15 @@
     </linearGradient>
     <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#3B82F6"/>
-      <stop offset="1" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#10B981"/>
     </linearGradient>
     <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
       <stop offset="0" stop-color="#3B82F6" stop-opacity="0.30"/>
       <stop offset="1" stop-color="#3B82F6" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="glow2" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#22D3EE" stop-opacity="0.22"/>
-      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+      <stop offset="0" stop-color="#10B981" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#10B981" stop-opacity="0"/>
     </radialGradient>
     <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
       <path d="M40 0H0V40" fill="none" stroke="#7DD3FC" stroke-opacity="0.05" stroke-width="1"/>
@@ -24,40 +24,71 @@
 
   <rect width="1280" height="640" fill="url(#bg)"/>
   <rect width="1280" height="640" fill="url(#grid)"/>
-  <circle cx="1090" cy="180" r="380" fill="url(#glow)"/>
-  <circle cx="1230" cy="520" r="300" fill="url(#glow2)"/>
+  <circle cx="1060" cy="180" r="360" fill="url(#glow)"/>
+  <circle cx="1180" cy="490" r="280" fill="url(#glow2)"/>
 
-  <g fill="none" stroke="#60A5FA" stroke-opacity="0.16">
-    <circle cx="1085" cy="320" r="110" stroke-width="1.5"/>
-    <circle cx="1085" cy="320" r="152" stroke-width="1.2" stroke-opacity="0.11"/>
-    <circle cx="1085" cy="320" r="196" stroke-width="1" stroke-opacity="0.07"/>
+  <!-- Right side: Laptop -> Phone live approval & remote control illustration -->
+  <g transform="translate(880, 170) scale(1.22)">
+    <rect x="0" y="34" width="132" height="92" rx="10" fill="#0F172A" stroke="#334155" stroke-width="2"/>
+    <circle cx="14" cy="48" r="3.5" fill="#EF4444"/>
+    <circle cx="25" cy="48" r="3.5" fill="#F59E0B"/>
+    <circle cx="36" cy="48" r="3.5" fill="#10B981"/>
+    <rect x="14" y="64" width="76" height="6" rx="3" fill="#38BDF8" fill-opacity="0.85"/>
+    <rect x="14" y="78" width="100" height="6" rx="3" fill="#64748B" fill-opacity="0.55"/>
+    <rect x="14" y="92" width="60" height="6" rx="3" fill="#10B981" fill-opacity="0.85"/>
+    <path d="M-12 126 H144 L134 136 H-2 Z" fill="#1E293B" stroke="#334155" stroke-width="1.5"/>
+
+    <path d="M140 80 C164 80, 164 80, 186 80" fill="none" stroke="url(#accent)" stroke-width="3" stroke-dasharray="5 4"/>
+    <circle cx="163" cy="80" r="5" fill="#10B981"/>
+
+    <rect x="192" y="6" width="96" height="176" rx="18" fill="#0F172A" stroke="#38BDF8" stroke-opacity="0.75" stroke-width="2"/>
+    <rect x="224" y="14" width="32" height="4" rx="2" fill="#334155"/>
+    <rect x="204" y="30" width="72" height="36" rx="7" fill="#1E293B" stroke="#10B981" stroke-opacity="0.55" stroke-width="1.2"/>
+    <circle cx="214" cy="42" r="3.5" fill="#10B981"/>
+    <rect x="222" y="39" width="44" height="5" rx="2.5" fill="#E2E8F0"/>
+    <rect x="211" y="52" width="52" height="4" rx="2" fill="#64748B"/>
+    <rect x="204" y="74" width="72" height="54" rx="7" fill="#1E293B" stroke="#F59E0B" stroke-opacity="0.65" stroke-width="1.2"/>
+    <rect x="211" y="83" width="54" height="5" rx="2.5" fill="#FCD34D"/>
+    <rect x="211" y="94" width="42" height="4" rx="2" fill="#94A3B8"/>
+    <rect x="211" y="107" width="27" height="13" rx="4" fill="#10B981"/>
+    <rect x="242" y="107" width="27" height="13" rx="4" fill="#334155"/>
+    <rect x="204" y="138" width="72" height="20" rx="6" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+    <rect x="256" y="142" width="16" height="12" rx="3" fill="#3B82F6"/>
   </g>
-  <circle cx="1085" cy="320" r="38" fill="#0B1220" stroke="#38BDF8" stroke-opacity="0.5" stroke-width="1.5"/>
-  <path d="M1077 308v24M1085 303v34M1093 312v20" stroke="#38BDF8" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.85"/>
-  <circle cx="1085" cy="210" r="5" fill="#22D3EE"/>
-  <circle cx="1195" cy="320" r="4" fill="#3B82F6"/>
-  <circle cx="975" cy="320" r="4" fill="#818CF8"/>
 
-  <rect x="80" y="232" width="5" height="152" rx="2.5" fill="url(#accent)"/>
+  <!-- Left accent bar -->
+  <rect x="78" y="158" width="6" height="218" rx="3" fill="url(#accent)"/>
 
-  <text x="112" y="252" font-family="-apple-system, 'PingFang SC', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="18" font-weight="600" letter-spacing="4" fill="#7DD3FC">SELF-HOSTED · OPEN SOURCE</text>
-  <text x="110" y="330" font-family="-apple-system, 'PingFang SC', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="66" font-weight="700" letter-spacing="-1" fill="#F8FAFC">DSH Remote Control</text>
-  <text x="112" y="382" font-family="-apple-system, 'PingFang SC', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="27" fill="#94A3B8">用手机与飞书，遥控你的 AI 编码助手</text>
+  <!-- Eyebrow -->
+  <text x="110" y="186" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" letter-spacing="2.4" fill="#38BDF8">SELF-HOSTED · OPEN SOURCE · ZERO VENDOR RELAY</text>
 
-  <g font-family="-apple-system, 'PingFang SC', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="500" text-anchor="middle">
-    <rect x="112" y="416" width="140" height="38" rx="19" fill="#3B82F6" fill-opacity="0.12" stroke="#60A5FA" stroke-opacity="0.35"/>
-    <text x="182" y="441" fill="#BFDBFE">飞书长连接</text>
+  <!-- Main Title -->
+  <text x="108" y="274" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="76" font-weight="800" letter-spacing="-1.2" fill="#F8FAFC">PocketAgents</text>
 
-    <rect x="264" y="416" width="110" height="38" rx="19" fill="#3B82F6" fill-opacity="0.12" stroke="#60A5FA" stroke-opacity="0.35"/>
-    <text x="319" y="441" fill="#BFDBFE">iOS PWA</text>
+  <!-- Subtitle -->
+  <text x="110" y="330" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#CBD5E1">Control Claude Code, Codex, Antigravity IDE &amp; DSH</text>
+  <text x="110" y="366" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="25" font-weight="500" fill="#94A3B8">from your phone — swipe approvals, voice &amp; 5s QR</text>
 
-    <rect x="386" y="416" width="120" height="38" rx="19" fill="#3B82F6" fill-opacity="0.12" stroke="#60A5FA" stroke-opacity="0.35"/>
-    <text x="446" y="441" fill="#BFDBFE">Web Push</text>
+  <!-- Feature Pills -->
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="600" text-anchor="middle">
+    <!-- Row 1 -->
+    <rect x="110" y="418" width="236" height="42" rx="21" fill="#10B981" fill-opacity="0.16" stroke="#34D399" stroke-opacity="0.48"/>
+    <text x="228" y="445" fill="#D1FAE5">npx pocketagents</text>
 
-    <rect x="518" y="416" width="126" height="38" rx="19" fill="#3B82F6" fill-opacity="0.12" stroke="#60A5FA" stroke-opacity="0.35"/>
-    <text x="581" y="441" fill="#BFDBFE">E2EE 分享</text>
+    <rect x="360" y="418" width="208" height="42" rx="21" fill="#F59E0B" fill-opacity="0.15" stroke="#FBBF24" stroke-opacity="0.48"/>
+    <text x="464" y="445" fill="#FEF3C7">Swipe Approvals</text>
 
-    <rect x="656" y="416" width="102" height="38" rx="19" fill="#3B82F6" fill-opacity="0.12" stroke="#60A5FA" stroke-opacity="0.35"/>
-    <text x="707" y="441" fill="#BFDBFE">自托管</text>
+    <rect x="582" y="418" width="194" height="42" rx="21" fill="#3B82F6" fill-opacity="0.15" stroke="#60A5FA" stroke-opacity="0.45"/>
+    <text x="679" y="445" fill="#E0F2FE">Voice &amp; TTS</text>
+
+    <!-- Row 2 -->
+    <rect x="110" y="476" width="210" height="42" rx="21" fill="#3B82F6" fill-opacity="0.15" stroke="#60A5FA" stroke-opacity="0.45"/>
+    <text x="215" y="503" fill="#E0F2FE">Multi-Host Hub</text>
+
+    <rect x="334" y="476" width="186" height="42" rx="21" fill="#8B5CF6" fill-opacity="0.16" stroke="#A78BFA" stroke-opacity="0.48"/>
+    <text x="427" y="503" fill="#EDE9FE">iOS Web Push</text>
+
+    <rect x="534" y="476" width="242" height="42" rx="21" fill="#3B82F6" fill-opacity="0.15" stroke="#60A5FA" stroke-opacity="0.45"/>
+    <text x="655" y="503" fill="#E0F2FE">E2EE Replay Share</text>
   </g>
 </svg>

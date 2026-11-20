@@ -16,9 +16,9 @@
 | Antigravity IDE | ✅ | ✅ | ✅ | ✅ | ✅ |
 | OpenAI Codex | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 腾讯 WorkBuddy | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Claude Code | ✅ | ✅ | ✅ | 计划中 | ❌ |
+| Claude Code | ✅ | ✅ | ✅ | ✅ | ❌ |
 
-DSH、Antigravity IDE、OpenAI Codex 与腾讯 WorkBuddy 均已支持**完整远程控制**（含手机审批、提问卡片与运行中实时插话）；Claude Code 目前按轮次续聊（能看、能发指令、能停止，暂不支持手机审批与实时插话）。
+DSH、Antigravity IDE、OpenAI Codex、腾讯 WorkBuddy 与 **Claude Code** 五大主力工具现已全部支持**手机审批与提问卡片**（Claude Code 通过官方 `PermissionRequest` Hook 支持 Bash/Edit/Write/MCP 与 `AskUserQuestion`，仅运行中实时插话 Steer 受限于上游 CLI 暂不支持）。
 
 电脑上没装的工具不会显示点不动的按钮，界面会自动隐藏不支持的操作。
 
@@ -135,12 +135,10 @@ Hub 保存的是会话元数据和待审批内容，保留多久取决于你部�
 
 ## 能力与限制
 
-### 为什么 Claude Code 暂时还没有手机审批？
-
-审批需要工具本身提供常驻的「执行前询问」交互协议：
+### Claude Code 支持哪些手机端能力？
 
 - **DSH / Antigravity IDE / OpenAI Codex (`app-server`) / 腾讯 WorkBuddy (`ACP`)**：均已通过各自原生协议完整接入手机审批、多选题卡片与运行中实时插话
-- **Claude Code**：目前通过 `claude --resume` 按轮次调用，后续计划接入官方 `PreToolUse` 权限钩子
+- **Claude Code**：通过官方 `PermissionRequest` Hook 已完整支持手机审批（Bash / Edit / Write / MCP、`本对话内始终允许` 与 `AskUserQuestion` 多选题，运行 `npx pocketagents` 自动装配，未运行守护进程时 `<5ms` 零阻塞退回终端），以及查看会话、续聊、重命名与停止；仅单轮运行中实时插话（Steer）受限于上游 CLI 暂不支持
 
 各工具完整能力矩阵见 [主 README 支持的 AI 编程工具](../README.zh-CN.md#支持的-ai-编程工具)。
 
@@ -166,4 +164,4 @@ MIT 许可，代码可以随时 fork 继续。
 
 ---
 
-还有问题？[开一个 issue](https://github.com/oscarka/deepseekharness-remotecontrol/issues/new/choose)。
+还有问题？[开一个 issue](https://github.com/oscarka/pocketagents/issues/new/choose)。

@@ -20,7 +20,7 @@
 ### 1. 启动容器（带持久化数据盘）
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/oscarka/deepseekharness-remotecontrol/main/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/oscarka/pocketagents/main/docker-compose.yml
 HUB_TOKEN="你的管理员强密码" TRUST_PROXY=1 docker compose up -d
 ```
 
@@ -96,7 +96,7 @@ docker run -d --name dsh-hub \
   -v dsh-hub-data:/data \
   -e HUB_TOKEN="你的管理员强密码" \
   -e TRUST_PROXY=1 \
-  ghcr.io/oscarka/deepseekharness-remotecontrol:latest
+  ghcr.io/oscarka/pocketagents:latest
 
 # 2. 将 Cloudflare Tunnel 指向 http://127.0.0.1:8080
 cloudflared tunnel --url http://127.0.0.1:8080
@@ -116,7 +116,7 @@ docker run -d --name dsh-hub \
   -v dsh-hub-data:/data \
   -e HUB_TOKEN="你的管理员强密码" \
   -e TRUST_PROXY=1 \
-  ghcr.io/oscarka/deepseekharness-remotecontrol:latest
+  ghcr.io/oscarka/pocketagents:latest
 
 # 2. 用 cpolar / natapp 暴露 HTTPS 隧道到 8080 端口
 cpolar http 8080
@@ -148,7 +148,7 @@ docker run -d --name dsh-hub \
   -p 8080:8080 \
   -v /volume1/docker/dsh-hub:/data \
   -e HUB_TOKEN="你的管理员强密码" \
-  ghcr.io/oscarka/deepseekharness-remotecontrol:latest
+  ghcr.io/oscarka/pocketagents:latest
 ```
 
 启动后执行 `docker logs dsh-hub`，即可看到打印出的局域网访问地址与密码。

@@ -124,15 +124,6 @@
   - 手机端置顶或取消置顶 Antigravity IDE 会话时，直接通过 Connect-RPC `UpdateConversationAnnotations`（`mergeAnnotations: true`，离线时自动原子回写 `.pbtxt`）实时刷新 Antigravity IDE 侧栏；
   - 手机与网页端会话列表新增与 Antigravity IDE 一致的 **「📌 置顶对话」/「全部对话」** 分组栏及醒目 `📌 置顶` 胶囊角标，即使会话处于绿色运行中或蓝色新结论状态也一目了然。
 
-## [0.8.14] - 2026-11-19
-
-### Added & Fixed
-
-- **打通 Antigravity IDE 原生 `Pinned Conversations` 双向实时同步与手机端「📌 置顶对话」独立分区展示（`dsh-feishu/lib/antigravity-ide.js` / `dsh-turbo/index.js` / `hub/web/src/controller.js`）**：
-  - 实时解析 `~/.gemini/antigravity/annotations/<convId>.pbtxt`（`pinned:true`）与 LanguageServer `GetAllCascadeTrajectories`（`annotations.pinned`），并在 `TurboController` 增加 `annotations/` 目录 FSEvents 监听（`<150ms` 唤醒同步），电脑端在 Antigravity IDE 侧栏置顶/取消置顶后手机端立即联动；
-  - 手机端置顶或取消置顶 Antigravity IDE 会话时，直接通过 Connect-RPC `UpdateConversationAnnotations`（`mergeAnnotations: true`，离线时自动原子回写 `.pbtxt`）实时刷新 Antigravity IDE 侧栏；
-  - 手机与网页端会话列表新增与 Antigravity IDE 一致的 **「📌 置顶对话」/「全部对话」** 分组栏及醒目 `📌 置顶` 胶囊角标，即使会话处于绿色运行中或蓝色新结论状态也一目了然。
-
 ## [0.8.13] - 2026-11-19
 
 ### Added & Fixed

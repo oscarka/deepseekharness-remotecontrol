@@ -20,8 +20,8 @@ If you accidentally commit a secret: rotate/revoke it immediately on the respect
 - No external database or third-party service required; the Control Hub has zero runtime dependencies
 
 ```bash
-git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
-cd deepseekharness-remotecontrol
+git clone https://github.com/oscarka/pocketagents.git
+cd pocketagents
 
 npm install                      # Installs frontend build devDependencies (Preact + Vite)
 npm --prefix dsh-feishu install  # Installs daemon/plugin dependencies (@larksuiteoapi/node-sdk, needed for tests)
@@ -102,8 +102,8 @@ Issues and PRs are welcome in either **English** or **Chinese**.
 - 不需要数据库、不需要外部服务；Hub 零运行时依赖
 
 ```bash
-git clone https://github.com/oscarka/deepseekharness-remotecontrol.git
-cd deepseekharness-remotecontrol
+git clone https://github.com/oscarka/pocketagents.git
+cd pocketagents
 
 npm install                      # 只装前端构建需要的 devDependencies
 npm --prefix dsh-feishu install   # 插件依赖（@larksuiteoapi/node-sdk，跑测试需要）

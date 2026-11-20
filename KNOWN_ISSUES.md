@@ -8,12 +8,12 @@
 
 ## 能力限制
 
-### Claude Code 暂不支持手机审批与运行中实时插话
+### Claude Code 暂不支持运行中实时插话（Steer）
 
-- **现象**：用 Claude Code 时，界面上没有「批准」按钮，任务运行中也不能实时追加指令（DSH、Antigravity IDE、OpenAI Codex、腾讯 WorkBuddy 均已完整支持手机审批、选择题弹窗与运行中实时插话）
-- **原因**：Claude Code 适配器目前通过 `claude --resume` 按轮次调用，尚未接入常驻交互钩子
-- **临时办法**：需要手机审批或实时插话时优先用 DSH / Antigravity / Codex / WorkBuddy；在 Claude Code 中可先停止当前轮次再带新指令继续
-- **状态**：计划中
+- **现象**：Claude Code 已完整支持手机审批（通过官方 `PermissionRequest` Hook 支持 Bash、Edit、Write、MCP 工具放行、`本对话内始终允许` 与 `AskUserQuestion` 多选题，且支持滑卡批阅），但在单轮任务执行中途仍不支持实时追加插话（DSH、Antigravity IDE、OpenAI Codex、腾讯 WorkBuddy 均支持审批与运行中实时插话）
+- **原因**：Claude Code CLI 以单轮 `claude --resume` 方式运行，官方 CLI 暂未暴露运行中无损注入新消息的接口
+- **临时办法**：如需中途调整方向，可在手机端先点「停止」中止当前轮次，再发新指令继续；日常需要频繁实时插话时可优先使用 DSH / Antigravity IDE / Codex / WorkBuddy
+- **状态**：受限于上游 CLI 能力
 
 ### WorkBuddy 首次远程发消息需在电脑浏览器点一次授权
 
@@ -94,7 +94,7 @@
 
 ## 报新问题
 
-不在上面的，请 [开 issue](https://github.com/oscarka/deepseekharness-remotecontrol/issues/new/choose)，附上：
+不在上面的，请 [开 issue](https://github.com/oscarka/pocketagents/issues/new/choose)，附上：
 
 - 操作系统与版本
 - 用的哪个 harness（DSH / Antigravity / Codex / WorkBuddy / Claude）

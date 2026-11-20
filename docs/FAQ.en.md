@@ -12,9 +12,9 @@ No — you can use any one (or any mix) of the 5 supported AI coding tools:
 | Antigravity IDE | ✅ | ✅ | ✅ | ✅ | ✅ |
 | OpenAI Codex | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Tencent WorkBuddy | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Claude Code | ✅ | ✅ | ✅ | planned | ❌ |
+| Claude Code | ✅ | ✅ | ✅ | ✅ | ❌ |
 
-DSH, Antigravity IDE, OpenAI Codex, and Tencent WorkBuddy all support **full interactive remote control** (live transcripts, prompts, emergency stop, mobile approvals/question popups, and live mid-run steering). Claude Code currently runs per-turn via `--resume` (watch, prompt, and stop work; mobile approvals are planned). Controls that a backend can't support are automatically hidden.
+All 5 primary tools — DSH, Antigravity IDE, OpenAI Codex, Tencent WorkBuddy, and **Claude Code** — support **mobile approvals and question cards** (Claude Code integrates via its official `PermissionRequest` hook for Bash, Edit, Write, MCP, and `AskUserQuestion`; only live mid-run steering is unsupported due to upstream CLI limits). Controls that a backend can't support are automatically hidden.
 
 ## Does the phone need an app?
 
@@ -74,12 +74,10 @@ Tunnel choice matters:
 
 No. Feishu is an optional notification and approval channel. The web console works without it.
 
-## Why doesn't Claude Code have mobile approvals yet?
-
-Approvals require a persistent "ask before executing" protocol hook:
+## How do Claude Code mobile approvals work?
 
 - **DSH / Antigravity IDE / OpenAI Codex (`app-server`) / Tencent WorkBuddy (`ACP`)**: native interactive protocols — all working with mobile approvals, question cards, and live mid-run steering
-- **Claude Code**: currently invoked per-turn via `claude --resume`; `PreToolUse` permission hook integration is planned
+- **Claude Code**: uses the official `PermissionRequest` hook (`npx pocketagents` auto-enables it, or install via `/plugin install pocketagents@pocketagents`) to approve Bash, Edit, Write, MCP, and `AskUserQuestion` prompts from your phone with zero terminal blocking when PocketAgents is stopped; only live mid-run steering is unsupported by the upstream CLI
 
 ## Found a vulnerability?
 
@@ -87,4 +85,4 @@ Use GitHub Security Advisories, not a public issue. Details in [SECURITY.md](../
 
 ---
 
-Something not covered? [Open an issue](https://github.com/oscarka/deepseekharness-remotecontrol/issues/new/choose).
+Something not covered? [Open an issue](https://github.com/oscarka/pocketagents/issues/new/choose).

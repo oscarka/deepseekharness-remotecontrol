@@ -22,7 +22,7 @@ import {
 
 const execFileAsync = promisify(execFile)
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
-let AGENT_VERSION = '0.5.1'
+let AGENT_VERSION = '0.9.3'
 try {
   const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'))
   if (pkg?.version) AGENT_VERSION = String(pkg.version)
