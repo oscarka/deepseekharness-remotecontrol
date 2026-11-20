@@ -1,12 +1,12 @@
 <div align="center">
-  <img src="docs/assets/hero-banner-zh.svg" alt="PocketAgent — 手机遥控 Claude Code、OpenAI Codex、Antigravity IDE 与 DeepSeek Harness" width="100%" />
+  <img src="docs/assets/hero-banner-zh.svg" alt="PocketAgents — 手机遥控 Claude Code、OpenAI Codex、Antigravity IDE 与 DeepSeek Harness" width="100%" />
 
   <p align="center">
-    <strong>PocketAgent</strong> —— <strong>把电脑上正在跑的 <a href="#支持的-ai-编程工具">Claude Code、OpenAI Codex、Antigravity IDE、DeepSeek Harness (DSH) 与 WorkBuddy</a> 装进手机口袋 —— 100% 开源自托管、零第三方中继。<br/>手机滑卡批阅、一键放行命令与多选弹窗、微信式按住说话插话、或点 <code>🔊 播报</code> 直接听结论。</strong>
+    <strong>PocketAgents</strong> —— <strong>把电脑上正在跑的 <a href="#支持的-ai-编程工具">Claude Code、OpenAI Codex、Antigravity IDE、DeepSeek Harness (DSH) 与 WorkBuddy</a> 装进手机口袋 —— 100% 开源自托管、零第三方中继。<br/>手机滑卡批阅、一键放行命令与多选弹窗、微信式按住说话插话、或点 <code>🔊 播报</code> 直接听结论。</strong>
   </p>
 
   <p align="center">
-    <a href="https://harness.agentrun.vip/?demo=1&amp;lang=zh"><img src="https://img.shields.io/badge/%E2%9C%A8_%E5%9C%A8%E7%BA%BF%E4%BA%A4%E4%BA%92%E4%BD%93%E9%AA%8C_Demo-%E5%85%8D%E5%AE%89%E8%A3%85%E7%A7%92%E5%BC%80-10b981?style=for-the-badge" alt="在线交互体验 Demo" height="32" /></a>
+    <a href="https://pocketagents.agentrun.vip/?demo=1&amp;lang=zh"><img src="https://img.shields.io/badge/%E2%9C%A8_%E5%9C%A8%E7%BA%BF%E4%BA%A4%E4%BA%92%E4%BD%93%E9%AA%8C_Demo-%E5%85%8D%E5%AE%89%E8%A3%85%E7%A7%92%E5%BC%80-10b981?style=for-the-badge" alt="在线交互体验 Demo" height="32" /></a>
     &nbsp;
     <a href="https://railway.com/deploy/dsh-remote-control-hub?referralCode=44kg1p&amp;utm_medium=integration&amp;utm_source=template&amp;utm_campaign=generic"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="32" /></a>
   </p>
@@ -32,7 +32,7 @@ npx pocketagents
   </p>
 
   <p align="center">
-    <a href="./README.md">🇺🇸 English</a> · <strong>🇨🇳 简体中文</strong> · <a href="https://harness.agentrun.vip/?demo=1&amp;lang=zh">✨ 在线 Demo</a> · <a href="#三步快速上手">4G/5G 跨网部署</a> · <a href="#支持的-ai-编程工具">支持工具</a> · <a href="#最近版本更新记录">版本更新</a> · <a href="#常见问题">常见问题</a>
+    <a href="./README.md">🇺🇸 English</a> · <strong>🇨🇳 简体中文</strong> · <a href="https://pocketagents.agentrun.vip/?demo=1&amp;lang=zh">✨ 在线 Demo</a> · <a href="#三步快速上手">4G/5G 跨网部署</a> · <a href="#支持的-ai-编程工具">支持工具</a> · <a href="#最近版本更新记录">版本更新</a> · <a href="#常见问题">常见问题</a>
   </p>
 </div>
 
@@ -111,7 +111,7 @@ npx pocketagents
 >
 > **🔌 如果你在使用 DeepSeek Harness (DSH &gt;= 0.2.0)**，也可以直接在 **DSH 插件市场** 搜索安装，或运行：
 > ```bash
-> dsh plugin --profile desktop add github:oscarka/pocketagent
+> dsh plugin --profile desktop add github:oscarka/pocketagents
 > # 若使用 dsh web，可将 desktop 换成 web
 > ```
 > 想出门在外用 **4G/5G 跨网 24 小时随时遥控多台电脑**？按下面 3 步部署你自己的云端总控台：
@@ -129,8 +129,8 @@ npx pocketagents
 不需要云服务器，也不需要装 Docker。只要电脑有 Node.js（>= 20），克隆仓库加密码参数直接启动：
 
 ```bash
-git clone https://github.com/oscarka/pocketagent.git
-cd pocketagent
+git clone https://github.com/oscarka/pocketagents.git
+cd pocketagents
 
 # 把「自定义一个密码」换成你自己的密码
 HUB_TOKEN="自定义一个密码" PORT=8080 npm start
@@ -141,20 +141,20 @@ HUB_TOKEN="自定义一个密码" PORT=8080 npm start
 如果你有自己的轻量云服务器 / VPS（推荐搭配 Nginx + Cloudflare 边缘 CDN 开启 HTTP/2 &amp; HTTP/3 加速）、群晖 NAS 或软路由，可以直接用一行 Docker 命令启动（或者本机 `npm start` 搭配 `cloudflared` / `cpolar` / `Tailscale`）：
 
 ```bash
-docker run -d --name pocketagent-hub \
+docker run -d --name pocketagents-hub \
   --restart unless-stopped \
   -p 8080:8080 \
   -v dsh-hub-data:/data \
   -e HUB_TOKEN="自定义一个密码" \
-  ghcr.io/oscarka/pocketagent:latest
+  ghcr.io/oscarka/pocketagents:latest
 ```
 
 #### ☁️ 方式 D：Google Cloud Run 云端脚本部署
 如果你习惯使用 GCP `gcloud` 命令行部署，可直接运行项目自带的一键脚本（提示：由于接入的电脑守护进程会 24 小时保持 SSE 与心跳长连接，电脑在线期间 Cloud Run 实例会保持常驻计费而不会缩容到 0；多机长期在线更推荐上面的 Railway 或轻量 VPS 方案）：
 
 ```bash
-git clone https://github.com/oscarka/pocketagent.git
-cd pocketagent
+git clone https://github.com/oscarka/pocketagents.git
+cd pocketagents
 
 # 把 your-gcp-project-id 换成你的 Google Cloud 项目 ID，密码换成你自己的密码
 GCP_PROJECT_ID="your-gcp-project-id" \
@@ -223,9 +223,9 @@ HUB_TOKEN="自定义一个安全密码" \
 > 💡 按**自然日**折叠汇总，每条内保留完整子版本号；逐版本详细变更请见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.9–v0.9.0</code> — 正式更名 PocketAgent（<code>npx pocketagents</code>）、Claude Code 审批、Antigravity 多选题 &amp; <code>?demo=1</code> 沙盒</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.9–v0.9.0</code> — 正式更名 PocketAgents（<code>npx pocketagents</code>）、Claude Code 审批、Antigravity 多选题 &amp; <code>?demo=1</code> 沙盒</strong></summary>
 
-- **品牌升级为 PocketAgent（`v0.9.0`）**：GitHub 仓库原地更名为 `oscarka/pocketagent`（原 `deepseekharness-remotecontrol` 链接永久 301 自动跳转兼容 DSH 插件市场），主命令与容器镜像全面切换为 `npx pocketagents` 与 `ghcr.io/oscarka/pocketagent:latest`。
+- **品牌升级为 PocketAgents（`v0.9.0`）**：GitHub 仓库原地更名为 `oscarka/pocketagents`（原 `deepseekharness-remotecontrol` 链接永久 301 自动跳转兼容 DSH 插件市场），主命令与容器镜像全面切换为 `npx pocketagents` 与 `ghcr.io/oscarka/pocketagents:latest`。
 
 - **修复 Antigravity `ask_question` 多选题渲染与提交续跑（`v0.8.20–v0.8.21`）**：完整解析 `ask_question` 的单选/多选题目并支持从 `transcript_full.jsonl` 回补被截断的 `tool_calls`，将 `kind: 'question'` 与完整选项数组透传至手机审批卡与滑卡批阅；提交时先通过 `CancelCascadeInvocation` 解除等待态，再通过 `SendUserCascadeMessage` 直接发送勾选结果，根治此前提交被误判为「跳过弹窗」并停跑的问题。
 - **Claude Code 原生手机审批与滑卡批阅全面打通（`v0.8.19`）**：新增官方 `PermissionRequest` Hook 桥接脚本（`claude-permission-hook.js` + `--install-claude-hook` / `npx` 启动自动装配）与 `<120ms` FSEvents 瞬时监听，支持手机端一键放行、`本对话始终允许`（`updatedPermissions`）、拒绝与 `AskUserQuestion` 多选题回传，自此五大主力引擎（Claude Code、Codex、Antigravity IDE、DSH、WorkBuddy）全部满血支持手机审批。

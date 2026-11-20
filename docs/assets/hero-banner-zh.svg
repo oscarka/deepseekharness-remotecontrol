@@ -63,7 +63,7 @@
   <text x="90" y="96" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif" font-size="14.5" font-weight="700" letter-spacing="2.0" fill="#38BDF8">CLAUDE CODE · OPENAI CODEX · ANTIGRAVITY IDE · DSH · WORKBUDDY</text>
 
   <!-- Main Title -->
-  <text x="88" y="156" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif" font-size="52" font-weight="800" letter-spacing="-0.6" fill="#F8FAFC">PocketAgent</text>
+  <text x="88" y="156" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif" font-size="52" font-weight="800" letter-spacing="-0.6" fill="#F8FAFC">PocketAgents</text>
 
   <!-- Clear human subtitle -->
   <text x="90" y="198" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="500" fill="#CBD5E1">把电脑上的 AI 编程助手装进口袋 —— 一行 npx pocketagents 扫码即用，手机滑卡审批、语音插话</text>

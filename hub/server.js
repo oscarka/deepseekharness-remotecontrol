@@ -88,7 +88,7 @@ export function validateHubStartupToken(token, { allowInsecureNoToken = false } 
         '❌ 拒绝无密码启动：未设置 HUB_TOKEN 环境变量。\n' +
         '   为了防止控制台在公网裸奔，启动时必须指定管理员密码，例如：\n' +
         '   HUB_TOKEN="$(openssl rand -hex 16)" node hub/server.js\n' +
-        '   docker run -d -p 8080:8080 -v dsh-data:/data -e HUB_TOKEN="你的密码" ghcr.io/oscarka/pocketagent:latest',
+        '   docker run -d -p 8080:8080 -v dsh-data:/data -e HUB_TOKEN="你的密码" ghcr.io/oscarka/pocketagents:latest',
     }
   }
   return { ok: true, token: clean }

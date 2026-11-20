@@ -88,7 +88,7 @@ describe('npx CLI entrypoint & package.json bin', () => {
           timeout: 15000,
         },
       )
-      assert.match(out, /PocketAgent v\d+\.\d+\.\d+/)
+      assert.match(out, /PocketAgents v\d+\.\d+\.\d+/)
       assert.match(out, /Pair code:\s+[A-Z0-9]{6}/)
       assert.match(out, /Phone \(LAN\):/)
       assert.match(out, /[█▀▄]{4,}/)

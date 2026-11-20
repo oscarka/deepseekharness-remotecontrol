@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PocketAgent — One-command zero-config mobile console for Claude Code, OpenAI Codex, Antigravity IDE, DSH & WorkBuddy.
+// PocketAgents — One-command zero-config mobile console for Claude Code, OpenAI Codex, Antigravity IDE, DSH & WorkBuddy.
 // Usage: npx pocketagents [--port 8788] [--hub-only] [--no-qr]
 
 for (const k of [
@@ -106,7 +106,7 @@ export function parseCliArgs(argv = []) {
 
 function printHelp() {
   console.log(`
-PocketAgent v${PKG_VERSION}
+PocketAgents v${PKG_VERSION}
 Control Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness & WorkBuddy from your phone.
 
 Usage:
@@ -131,7 +131,7 @@ Examples:
   npx pocketagents --hub-only   # Run Hub only (for VPS / server)
 
 Want 24/7 cellular (4G/5G) access away from home Wi-Fi?
-  Deploy on Railway (1-click) or Docker: https://github.com/oscarka/pocketagent
+  Deploy on Railway (1-click) or Docker: https://github.com/oscarka/pocketagents
 `.trim())
 }
 
@@ -286,7 +286,7 @@ export async function runCli(argv = process.argv.slice(2)) {
   const qrBlock = opts.noQr ? '' : renderTerminalQr(qrTargetUrl, { margin: 2, indent: '  ', useAnsi })
 
   console.log('')
-  console.log(`🚀 PocketAgent v${PKG_VERSION} — Ready on port ${localHub.port}`)
+  console.log(`🚀 PocketAgents v${PKG_VERSION} — Ready on port ${localHub.port}`)
   console.log(`   💻 Host: ${baseConfig.hostName} (${baseConfig.hostId})`)
   if (!opts.hubOnly) {
     console.log(`   🔌 Synced: ${summarizeDiscoveredSessions(hubAgent)}`)
@@ -314,7 +314,7 @@ export async function runCli(argv = process.argv.slice(2)) {
   console.log('')
   console.log('  💡 Need 24/7 cellular (4G/5G) access away from Wi-Fi?')
   console.log('     Deploy your own Hub in 1 click on Railway or Docker:')
-  console.log('     https://github.com/oscarka/pocketagent')
+  console.log('     https://github.com/oscarka/pocketagents')
   console.log('')
 
   if (opts.once) {
@@ -334,7 +334,7 @@ export async function runCli(argv = process.argv.slice(2)) {
     const shutdown = async () => {
       if (shuttingDown) return
       shuttingDown = true
-      console.log('\n🛑 Stopping PocketAgent...')
+      console.log('\n🛑 Stopping PocketAgents...')
       try {
         hubAgent?.stop?.()
       } catch {}
@@ -365,7 +365,7 @@ if (isInvokedAsCli()) {
       process.exit(code)
     })
     .catch(err => {
-      console.error(`❌ Failed to start PocketAgent: ${err?.message || err}`)
+      console.error(`❌ Failed to start PocketAgents: ${err?.message || err}`)
       process.exit(1)
     })
 }

@@ -1,7 +1,7 @@
 // Zero-backend interactive sandbox for ?demo=1
 // Completely isolated in browser memory — zero network calls, zero localStorage token access, zero real host leakage.
 
-const DEMO_REPO_URL = 'https://github.com/oscarka/pocketagent';
+const DEMO_REPO_URL = 'https://github.com/oscarka/pocketagents';
 const DEMO_NPX_CMD = 'npx pocketagents';
 
 const DEMO_HTML_PREVIEW = `<!doctype html>

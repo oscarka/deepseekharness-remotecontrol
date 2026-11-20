@@ -6,9 +6,9 @@
 
 ### Changed
 
-- **品牌正式升级为 PocketAgent（`github.com/oscarka/pocketagent` / `npx pocketagents`）**：
-  - GitHub 仓库原地更名为 `oscarka/pocketagent`（自动保留 `oscarka/deepseekharness-remotecontrol` 永久 301 重定向，老外链与 DSH 插件市场零断链）；
-  - `package.json`、CLI 入口（`npx pocketagents`，同时保留 `dsh-remote` 别名）、Demo 沙盒、Docker 镜像（`ghcr.io/oscarka/pocketagent:latest`）、中英 Hero Banner 与双语 README 全面升级为 **PocketAgent**。
+- **品牌正式升级为 PocketAgents（`github.com/oscarka/pocketagents` / `npx pocketagents`）**：
+  - GitHub 仓库原地更名为 `oscarka/pocketagents`（自动保留 `oscarka/deepseekharness-remotecontrol` 永久 301 重定向，老外链与 DSH 插件市场零断链）；
+  - `package.json`、CLI 入口（`npx pocketagents`，同时保留 `dsh-remote` 别名）、Demo 沙盒、Docker 镜像（`ghcr.io/oscarka/pocketagents:latest`）、中英 Hero Banner 与双语 README 全面升级为 **PocketAgents**。
 
 ### Fixed
 

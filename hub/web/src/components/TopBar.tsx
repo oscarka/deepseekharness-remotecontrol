@@ -70,7 +70,7 @@ export function TopBar() {
           </button>
           <a
             class="demo-pill-btn"
-            href="https://github.com/oscarka/pocketagent"
+            href="https://github.com/oscarka/pocketagents"
             target="_blank"
             rel="noopener noreferrer"
           >

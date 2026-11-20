@@ -215,7 +215,7 @@ if [ -z "$SCRIPT_DIR" ] && [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0
 fi
 
 if [ -z "$SCRIPT_DIR" ]; then
-  for local_candidate in "$PWD" "$HOME/pocketagent" "$HOME/deepseekharness-remote" "$HOME/deepseekharness-remotecontrol"; do
+  for local_candidate in "$PWD" "$HOME/pocketagents" "$HOME/pocketagent" "$HOME/deepseekharness-remote" "$HOME/deepseekharness-remotecontrol"; do
     if [ -f "$local_candidate/dsh-feishu/daemon.mjs" ]; then
       SCRIPT_DIR="$(cd "$local_candidate" && pwd)"
       echo "📦 检测到本地客户端代码目录，直接复用: $SCRIPT_DIR"
@@ -226,7 +226,7 @@ fi
 
 if [ -z "$SCRIPT_DIR" ]; then
   REPO_DIR="$DSH_DIR/remotecontrol"
-  REPO_URL="${DSH_REPO_URL:-https://github.com/oscarka/pocketagent.git}"
+  REPO_URL="${DSH_REPO_URL:-https://github.com/oscarka/pocketagents.git}"
   if [ -d "$REPO_DIR/.git" ]; then
     echo "📦 正在更新本地客户端仓库 ($REPO_DIR)..."
     git -C "$REPO_DIR" pull --ff-only origin main >/dev/null 2>&1 || true

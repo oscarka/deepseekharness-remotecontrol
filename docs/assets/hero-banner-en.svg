@@ -63,7 +63,7 @@
   <text x="90" y="96" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="2.1" fill="#38BDF8">CLAUDE CODE · OPENAI CODEX · ANTIGRAVITY IDE · DEEPSEEK HARNESS</text>
 
   <!-- Main Title -->
-  <text x="88" y="156" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="54" font-weight="800" letter-spacing="-0.6" fill="#F8FAFC">PocketAgent</text>
+  <text x="88" y="156" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="54" font-weight="800" letter-spacing="-0.6" fill="#F8FAFC">PocketAgents</text>
 
   <!-- Clear human subtitle -->
   <text x="90" y="198" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="19" font-weight="500" fill="#CBD5E1">Put your AI coding agents in your pocket — swipe-approve commands, answer popups &amp; steer via voice</text>
