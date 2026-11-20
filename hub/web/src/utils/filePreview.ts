@@ -1,4 +1,20 @@
-import { esc } from './format';
+import { esc } from './format.ts';
+
+export const IMAGE_FILE_EXT_RE = /\.(png|jpe?g|webp|gif|svg|bmp|ico|avif|heic|heif)$/i;
+
+export function isImageFileName(nameOrPath: string): boolean {
+  return IMAGE_FILE_EXT_RE.test(String(nameOrPath || '').trim());
+}
+
+export interface FilePreviewRetryContext {
+  hostId: string;
+  agentId?: string;
+  cwd?: string;
+  relPath: string;
+  inDrawer?: boolean;
+  size?: number;
+  backupRelPath?: string;
+}
 
 export interface FilePreviewData {
   at?: number;
@@ -13,6 +29,7 @@ export interface FilePreviewData {
   hasBlob?: boolean;
   previewUrl?: string;
   streamUrl?: string;
+  backupStreamUrl?: string;
   hlsAvailable?: boolean;
   videoProbe?: {
     strategy?: string;
@@ -28,6 +45,11 @@ export interface FilePreviewData {
   _rawVideo?: boolean;
   _showInDrawer?: boolean;
   _showInMain?: boolean;
+  _reloadNonce?: number;
+  _imgStatus?: 'loading' | 'loaded' | 'error';
+  _imgDims?: string;
+  _loadError?: string;
+  _retryContext?: FilePreviewRetryContext | null;
 }
 
 export function appendMediaAuth(rawUrl: string, mediaTicket = ''): string {
@@ -75,11 +97,12 @@ export function buildFastStreamUrl(
   return appendMediaAuth(raw, opts.mediaTicket || '');
 }
 
-// 文件预览统一按 kind 分流：图片走 <img>，视频走 <video>，文本才逐行编号，二进制给提示
+// 文件预览统一按 kind 分流：错误给原位重试，图片走 <img>，视频走 <video>，文本才逐行编号，二进制给提示
 export function previewKind(
   preview: FilePreviewData | null | undefined
-): 'none' | 'image' | 'video' | 'binary' | 'text' {
+): 'none' | 'error' | 'image' | 'video' | 'binary' | 'text' {
   if (!preview) return 'none';
+  if (preview._loadError || preview.kind === 'error') return 'error';
   if (
     preview.kind === 'video' ||
     /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i.test(preview.name || preview.relPath || '')
@@ -96,25 +119,37 @@ export function previewKind(
   return 'text';
 }
 
+function buildPreviewImageStreamHref(rawStreamUrl: string, preview: FilePreviewData, mediaTicket = ''): string {
+  const extLower = String(preview.ext || preview.name || preview.relPath || '').toLowerCase();
+  const canThumb = !preview._origImage && !/\.(svg|gif)$/i.test(extLower);
+  let url = rawStreamUrl;
+  if (canThumb) {
+    const sep = url.includes('?') ? '&' : '?';
+    url = `${url}${sep}thumb=1`;
+  }
+  if (preview._reloadNonce) {
+    const sep = url.includes('?') ? '&' : '?';
+    url = `${url}${sep}_r=${encodeURIComponent(String(preview._reloadNonce))}`;
+  }
+  return appendMediaAuth(url, mediaTicket);
+}
+
 export function imagePreviewSrc(preview: FilePreviewData, mediaTicket = ''): string {
   if (preview.dataBase64) {
     return `data:${preview.mime || 'image/png'};base64,${preview.dataBase64}`;
   }
   if (preview.streamUrl) {
-    const extLower = String(preview.ext || preview.name || preview.relPath || '').toLowerCase();
-    const isHeic = /\.(heic|heif)$/i.test(extLower);
-    const canThumb =
-      !preview._origImage &&
-      !/\.(svg|gif)$/i.test(extLower) &&
-      (isHeic || !preview.size || preview.size > 300 * 1024);
-    const sep = preview.streamUrl.includes('?') ? '&' : '?';
-    const base = canThumb ? `${preview.streamUrl}${sep}thumb=1` : preview.streamUrl;
-    return appendMediaAuth(base, mediaTicket);
+    return buildPreviewImageStreamHref(preview.streamUrl, preview, mediaTicket);
   }
   if (preview.previewUrl) {
     return appendMediaAuth(preview.previewUrl, mediaTicket);
   }
   return '';
+}
+
+export function backupImagePreviewSrc(preview: FilePreviewData, mediaTicket = ''): string {
+  if (!preview?.backupStreamUrl) return '';
+  return buildPreviewImageStreamHref(preview.backupStreamUrl, preview, mediaTicket);
 }
 
 export function videoPreviewSrc(preview: FilePreviewData, mediaTicket = ''): string {

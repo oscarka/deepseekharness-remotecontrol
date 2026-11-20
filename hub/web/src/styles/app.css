@@ -2840,11 +2840,76 @@
       max-height: 54dvh;
       object-fit: contain;
       border-radius: 8px;
-      transition: max-height 0.22s ease;
+      transition: max-height 0.22s ease, opacity 0.18s ease;
     }
 
     #inChatFileSheet .sheet-panel.sheet-expanded .drawer-preview-img {
       max-height: 76dvh;
+    }
+
+    .img-preview-stage {
+      position: relative;
+      width: 100%;
+      min-height: 220px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .img-preview-stage.is-loading img.saveable-preview-img {
+      opacity: 0;
+      position: absolute;
+      inset: 0;
+      margin: auto;
+      pointer-events: none;
+    }
+
+    .img-preview-stage.is-loaded img.saveable-preview-img {
+      opacity: 1;
+    }
+
+    .img-preview-stage.is-loaded .img-preview-loader,
+    .img-preview-stage.is-error .img-preview-loader,
+    .img-preview-stage.is-error img.saveable-preview-img {
+      display: none !important;
+    }
+
+    .img-preview-loader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 36px 20px;
+      color: #94a3b8;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .img-preview-error-box {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 28px 18px;
+      color: #cbd5e1;
+      text-align: center;
+      max-width: 340px;
+    }
+
+    .img-preview-stage.is-error .img-preview-error-box {
+      display: flex;
+    }
+
+    .img-preview-error-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 4px;
     }
 
     .drawer-preview-iframe {

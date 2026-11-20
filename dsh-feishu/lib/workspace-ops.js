@@ -31,7 +31,7 @@ function isSystemInjectedUserText(text) {
 const MAX_PREVIEW_BYTES = 256 * 1024 // 256 KiB max text/code file preview
 const MAX_IMAGE_PREVIEW_BYTES = 5 * 1024 * 1024 // 5 MiB max inline legacy image preview
 const DEFAULT_STREAM_CHUNK_BYTES = 8 * 1024 * 1024 // 8 MiB open-ended Range slice (16 MiB closed-range cap, safe below Serverless 32 MiB ingress limits)
-const THUMB_MIN_BYTES = 300 * 1024 // Keep small images (<300 KiB) untouched
+const THUMB_MIN_BYTES = 120 * 1024 // Compress screenshots/photos >120 KiB into crisp mobile JPEGs; keep tiny icons untouched
 const MAX_MEDIA_CACHE_FILES = 100
 const IGNORED_DIRS = new Set(['.git', 'node_modules', '.pnpm-store', '.cache', '.DS_Store', 'dist', 'build'])
 
@@ -2371,51 +2371,60 @@ async function getOrCreateSmartThumbnail(
     }
   } catch {}
 
-  let dims = null
-  try {
-    const fh = await open(realFile, 'r')
+  return withSingleFlightMediaJob(`thumb:${key}`, async () => {
     try {
-      const headLen = Math.min(info.size, 65536)
-      const headBuf = Buffer.allocUnsafe(headLen)
-      const { bytesRead } = await fh.read(headBuf, 0, headLen, 0)
-      dims = parseImageDimensions(headBuf.subarray(0, bytesRead))
-    } finally {
-      await fh.close()
-    }
-  } catch {}
+      const cachedInfo = await stat(outPath)
+      if (cachedInfo.isFile() && cachedInfo.size > 0) {
+        return { filePath: outPath, size: cachedInfo.size, mime: 'image/jpeg' }
+      }
+    } catch {}
 
-  await mkdir(cacheDir, { recursive: true })
-  const tmpOut = join(cacheDir, `${key}.tmp-${randomBytes(3).toString('hex')}.jpg`)
-  let sipsArgs
-  if (dims?.width && dims?.height) {
-    if (dims.width <= maxWidth) {
-      // Preserve 100% pixel width for tall screenshots so small code/text stays sharp
-      sipsArgs = ['-s', 'format', 'jpeg', '-s', 'formatOptions', '80', realFile, '--out', tmpOut]
+    let dims = null
+    try {
+      const fh = await open(realFile, 'r')
+      try {
+        const headLen = Math.min(info.size, 65536)
+        const headBuf = Buffer.allocUnsafe(headLen)
+        const { bytesRead } = await fh.read(headBuf, 0, headLen, 0)
+        dims = parseImageDimensions(headBuf.subarray(0, bytesRead))
+      } finally {
+        await fh.close()
+      }
+    } catch {}
+
+    await mkdir(cacheDir, { recursive: true })
+    const tmpOut = join(cacheDir, `${key}.tmp-${randomBytes(3).toString('hex')}.jpg`)
+    let sipsArgs
+    if (dims?.width && dims?.height) {
+      if (dims.width <= maxWidth) {
+        // Preserve 100% pixel width for tall screenshots so small code/text stays sharp
+        sipsArgs = ['-s', 'format', 'jpeg', '-s', 'formatOptions', '78', realFile, '--out', tmpOut]
+      } else {
+        const targetMaxSide =
+          dims.height > dims.width
+            ? Math.min(12000, Math.round((maxWidth * dims.height) / dims.width))
+            : maxWidth
+        sipsArgs = ['-Z', String(targetMaxSide), '-s', 'format', 'jpeg', '-s', 'formatOptions', '78', realFile, '--out', tmpOut]
+      }
     } else {
-      const targetMaxSide =
-        dims.height > dims.width
-          ? Math.min(12000, Math.round((maxWidth * dims.height) / dims.width))
-          : maxWidth
-      sipsArgs = ['-Z', String(targetMaxSide), '-s', 'format', 'jpeg', '-s', 'formatOptions', '80', realFile, '--out', tmpOut]
+      sipsArgs = ['-Z', '1920', '-s', 'format', 'jpeg', '-s', 'formatOptions', '78', realFile, '--out', tmpOut]
     }
-  } else {
-    sipsArgs = ['-Z', '1920', '-s', 'format', 'jpeg', '-s', 'formatOptions', '80', realFile, '--out', tmpOut]
-  }
 
-  try {
-    await execImpl('/usr/bin/sips', sipsArgs, { timeout: 8000 })
-    const outInfo = await stat(tmpOut)
-    if (!outInfo.isFile() || outInfo.size === 0 || (!isHeic && outInfo.size >= info.size)) {
+    try {
+      await execImpl('/usr/bin/sips', sipsArgs, { timeout: 8000 })
+      const outInfo = await stat(tmpOut)
+      if (!outInfo.isFile() || outInfo.size === 0 || (!isHeic && outInfo.size >= info.size)) {
+        await rm(tmpOut, { force: true }).catch(() => {})
+        return null
+      }
+      await rename(tmpOut, outPath)
+      void pruneMediaCacheDir(cacheDir)
+      return { filePath: outPath, size: outInfo.size, mime: 'image/jpeg' }
+    } catch {
       await rm(tmpOut, { force: true }).catch(() => {})
       return null
     }
-    await rename(tmpOut, outPath)
-    void pruneMediaCacheDir(cacheDir)
-    return { filePath: outPath, size: outInfo.size, mime: 'image/jpeg' }
-  } catch {
-    await rm(tmpOut, { force: true }).catch(() => {})
-    return null
-  }
+  })
 }
 
 const inflightMediaJobs = new Map()
@@ -3439,6 +3448,7 @@ export async function prepareWorkspaceFileStream(
     etag,
     variant,
     isThumb,
+    origSize: info.size,
     transcoded,
     remuxed,
     transcodeUnavailable,

@@ -2,6 +2,16 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.9.5] - 2026-11-20
+
+### Fixed
+
+- **彻底根治手机端图片预览加载慢及未加载完自动弹回项目目录的问题（`hub/web/src/controller.js` / `hub/web/src/utils/filePreview.ts` / `hub/hub-core.js` / `hub/server.js` / `dsh-feishu/lib/workspace-ops.js`）**：
+  - **0-RTT 图片直出流（砍掉阻塞型 `/fs/read` 往返）**：点击图片链接或目录中的图片不再先阻塞等待一次跨海 `/fs/read` 往返，而是 0ms 立即挂载图片预览页与柔和加载态并直拉 `/fs/stream?thumb=1`，同时统一了聊天内嵌缩略图与大图预览的 URL 键，点开聊天内图片秒命中浏览器缓存；
+  - **绝不因加载慢/超时弹回项目目录**：移除 `/fs/read` 超时（12s）与旧版轮询（4s/15s）清空加载态直接回退目录列表的隐患；引入 `filePreviewLoadSeq` 竞态防误杀、SSE 刷新免疫（不再销毁加载中的 `<img>`），图片加载遇网络波动自动切换备用路径并静默重试 1 次，失败也原位停留并提供一键 `🔄 重新加载` / `🔍 尝试加载原图` 按钮；
+  - **Hub 端有界内存图片热缓存（24 MiB LRU / 90s TTL / 304 瞬返）**：`/fs/stream` 对 `<= 1.5 MiB` 的非 Range 图片开启零额外延迟流式旁路缓存，二次点开或 `If-None-Match` 校验直接由 Hub 内存毫秒级返回（零电脑端回源），点击 `🔄 重新加载`（`_r=`）自动穿透拉取最新磁盘内容；
+  - **电脑端智能缩略图并发去重与提速**：`getOrCreateSmartThumbnail` 接入 `withSingleFlightMediaJob` 防止同一图片并发启动多个 `sips` 进程，并将压缩阈值从 300 KiB 下调至 120 KiB（JPEG q78），大幅缩小跨网传输体积。
+
 ## [0.9.4] - 2026-11-20
 
 ### Added

@@ -1467,6 +1467,10 @@ function buildSandboxedHtmlSrcdoc(rawHtml, opts = {}) {
 	return html;
 }
 // hub/web/src/utils/filePreview.ts
+var IMAGE_FILE_EXT_RE = /\.(png|jpe?g|webp|gif|svg|bmp|ico|avif|heic|heif)$/i;
+function isImageFileName(nameOrPath) {
+	return IMAGE_FILE_EXT_RE.test(String(nameOrPath || "").trim());
+}
 function appendMediaAuth(rawUrl, mediaTicket = "") {
 	if (!rawUrl) return "";
 	const mt = mediaTicket || typeof window !== "undefined" && window.getHubState?.()?.mediaTicket || "";
@@ -1491,22 +1495,35 @@ function buildFastStreamUrl(hostId, relPath, opts = {}) {
 }
 function previewKind(preview) {
 	if (!preview) return "none";
+	if (preview._loadError || preview.kind === "error") return "error";
 	if (preview.kind === "video" || /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i.test(preview.name || preview.relPath || "")) return "video";
 	if (preview.kind === "image" && (preview.dataBase64 || preview.streamUrl || preview.previewUrl || preview.hasBlob)) return "image";
 	if (preview.kind === "binary") return "binary";
 	return "text";
 }
+function buildPreviewImageStreamHref(rawStreamUrl, preview, mediaTicket = "") {
+	const extLower = String(preview.ext || preview.name || preview.relPath || "").toLowerCase();
+	const canThumb = !preview._origImage && !/\.(svg|gif)$/i.test(extLower);
+	let url = rawStreamUrl;
+	if (canThumb) {
+		const sep = url.includes("?") ? "&" : "?";
+		url = `${url}${sep}thumb=1`;
+	}
+	if (preview._reloadNonce) {
+		const sep = url.includes("?") ? "&" : "?";
+		url = `${url}${sep}_r=${encodeURIComponent(String(preview._reloadNonce))}`;
+	}
+	return appendMediaAuth(url, mediaTicket);
+}
 function imagePreviewSrc(preview, mediaTicket = "") {
 	if (preview.dataBase64) return `data:${preview.mime || "image/png"};base64,${preview.dataBase64}`;
-	if (preview.streamUrl) {
-		const extLower = String(preview.ext || preview.name || preview.relPath || "").toLowerCase();
-		const isHeic = /\.(heic|heif)$/i.test(extLower);
-		const canThumb = !preview._origImage && !/\.(svg|gif)$/i.test(extLower) && (isHeic || !preview.size || preview.size > 307200);
-		const sep = preview.streamUrl.includes("?") ? "&" : "?";
-		return appendMediaAuth(canThumb ? `${preview.streamUrl}${sep}thumb=1` : preview.streamUrl, mediaTicket);
-	}
+	if (preview.streamUrl) return buildPreviewImageStreamHref(preview.streamUrl, preview, mediaTicket);
 	if (preview.previewUrl) return appendMediaAuth(preview.previewUrl, mediaTicket);
 	return "";
+}
+function backupImagePreviewSrc(preview, mediaTicket = "") {
+	if (!preview?.backupStreamUrl) return "";
+	return buildPreviewImageStreamHref(preview.backupStreamUrl, preview, mediaTicket);
 }
 function videoPreviewSrc(preview, mediaTicket = "") {
 	const raw = preview.streamUrl || preview.previewUrl || "";
@@ -3754,6 +3771,15 @@ var EXACT_ZH_TO_EN = {
 	"关闭": "Close",
 	"‹ 返回目录": "‹ Back to folder",
 	"‹ 返回文件列表": "‹ Back to files",
+	"正在加载图片…": "Loading image…",
+	"网络稍慢，正在自动重试加载…": "Slow network, auto-retrying…",
+	"正在切换备用路径加载…": "Trying fallback path…",
+	"图片加载超时或连接中断": "Image timed out or connection dropped",
+	"🔄 重新加载": "🔄 Reload",
+	"🔍 尝试加载原图": "🔍 Try Original",
+	"🔍 查看无损原图": "🔍 Original Quality",
+	"⚡ 切回智能省流图": "⚡ Smart Fast Preview",
+	"⬇️ 保存图片": "⬇️ Save Image",
 	"🏠 根目录": "🏠 Root",
 	"目录": "Folder",
 	"📎 插入到输入框": "📎 Quote in Chat",
@@ -8687,6 +8713,7 @@ function initHubController() {
 	let fileProjectCwd = "";
 	let fileLoading = null;
 	let filePreviewLoading = null;
+	let filePreviewLoadSeq = 0;
 	const pinnedDrawerPreviewByHost = {};
 	const pinnedMainPreviewByHost = {};
 	let actionTargetSession = null;
@@ -11518,7 +11545,7 @@ function initHubController() {
 		if (cleanCwd && clean.startsWith(cleanCwd + "/")) return clean.slice(cleanCwd.length + 1);
 		return clean;
 	}
-	async function openChatFileLink(encodedPath) {
+	async function openChatFileLink(encodedPath, opts = {}) {
 		let rawPath = String(encodedPath || "").trim();
 		try {
 			rawPath = decodeURIComponent(rawPath);
@@ -11526,6 +11553,7 @@ function initHubController() {
 		if (!rawPath) return;
 		const found = findSessionGlobal(!document.getElementById("chatFullscreen")?.classList.contains("open") && triageCtrl?.isOpen() && triageCtrl?.getTopSessionId?.() || activeSessionId);
 		if (!found) return;
+		drawerChangedFilesSessionId = null;
 		const sessionArts = Array.isArray(found.session.artifacts) ? found.session.artifacts : [];
 		const cleanLookup = rawPath.replace(/^file:\/\//i, "").replace(/#L\d+(?:-L?\d+)?$/i, "").trim();
 		if (!cleanLookup.startsWith("/") && sessionArts.length > 0) {
@@ -11534,6 +11562,7 @@ function initHubController() {
 		}
 		fileProjectCwd = found.session.cwd || "";
 		const relPath = toWorkspaceRelPath(fileProjectCwd, rawPath);
+		const backupRelPath = opts?.backupRelPath ? toWorkspaceRelPath(fileProjectCwd, String(opts.backupRelPath)) : "";
 		const baseName = relPath.split("/").filter(Boolean).pop() || relPath || "file";
 		openSheet("inChatFileSheet");
 		document.body.classList.add("mobile-file-open");
@@ -11558,7 +11587,7 @@ function initHubController() {
 			renderInChatFileDrawerBody();
 			return;
 		}
-		await clickRealFileEntry(found.session.hostId, found.session.id, fileProjectCwd, relPath, false, true);
+		await clickRealFileEntry(found.session.hostId, found.session.id, fileProjectCwd, relPath, false, true, { ...backupRelPath ? { backupRelPath } : {} });
 	}
 	async function hydrateInlineChatImages(session, containerEl) {
 		if (!session || !containerEl) return;
@@ -11615,7 +11644,7 @@ function initHubController() {
 			}) : "";
 			uNode.classList.remove("md-user-img-pending");
 			uNode.dataset.activeImgPath = primaryPath;
-			uNode.innerHTML = `<img class="user-msg-thumb saveable-preview-img" src="${primarySrc}" data-fallback-src="${backupSrc}" data-backup-path="${esc$1(backupPath)}" alt="${esc$1(label)}" loading="lazy" onerror="if(this.dataset.fallbackSrc && this.src !== this.dataset.fallbackSrc){const card=this.closest('.user-msg-img-card');if(card&&this.dataset.backupPath)card.dataset.activeImgPath=this.dataset.backupPath;this.src=this.dataset.fallbackSrc;}else{this.style.display='none';}" /><span class="user-msg-img-badge">🔍 ${esc$1(label)}</span>`;
+			uNode.innerHTML = `<img class="user-msg-thumb saveable-preview-img" src="${primarySrc}" data-fallback-src="${backupSrc}" data-backup-path="${esc$1(backupPath)}" alt="${esc$1(label)}" loading="lazy" decoding="async" onerror="if(this.dataset.fallbackSrc && this.src !== this.dataset.fallbackSrc){const card=this.closest('.user-msg-img-card');if(card&&this.dataset.backupPath)card.dataset.activeImgPath=this.dataset.backupPath;this.src=this.dataset.fallbackSrc;}else if(!this.dataset.rtTried){this.dataset.rtTried='1';const sep=this.src.includes('?')?'&':'?';setTimeout(()=>{if(this.isConnected)this.src=this.src+sep+'_rt=1';},800);}else{this.style.display='none';}" /><span class="user-msg-img-badge">🔍 ${esc$1(label)}</span>`;
 		}
 		const pendingNodes = Array.from(containerEl.querySelectorAll(".md-local-img-pending[data-local-img-path]"));
 		if (pendingNodes.length === 0) return;
@@ -11634,7 +11663,7 @@ function initHubController() {
 			});
 			window.__dshInlineImgCache[imgPath] = srcUrl;
 			node.classList.remove("md-local-img-pending");
-			node.innerHTML = `<img class="md-inline-img" src="${srcUrl}" alt="${esc$1(baseName)}" loading="lazy" />`;
+			node.innerHTML = `<img class="md-inline-img" src="${srcUrl}" alt="${esc$1(baseName)}" loading="lazy" decoding="async" onerror="if(!this.dataset.rtTried){this.dataset.rtTried='1';const sep=this.src.includes('?')?'&':'?';setTimeout(()=>{if(this.isConnected)this.src=this.src+sep+'_rt=1';},850);}" />`;
 		}
 	}
 	function openOptimisticImagePreview(optId, idx = 0) {
@@ -11680,10 +11709,7 @@ function initHubController() {
 		const firstChoice = activeRaw || primary || backup;
 		const secondChoice = firstChoice === primary && backup ? backup : firstChoice === backup && primary ? primary : "";
 		if (!firstChoice) return;
-		await openChatFileLink(encodeURIComponent(firstChoice));
-		const found = findSessionGlobal(activeSessionId);
-		const curPreview = found?.host ? pinnedDrawerPreviewByHost[found.host.hostId] : null;
-		if (secondChoice && (!curPreview || curPreview.error)) await openChatFileLink(encodeURIComponent(secondChoice));
+		await openChatFileLink(encodeURIComponent(firstChoice), { ...secondChoice ? { backupRelPath: secondChoice } : {} });
 	}
 	const previewTextCache = /* @__PURE__ */ new Map();
 	async function ensureTextPreviewLoaded(hostId, preview) {
@@ -11728,6 +11754,132 @@ function initHubController() {
 			preview._fullHtmlFetched = false;
 		}
 	}
+	function getPinnedPreviewTarget(hostId, inDrawer = false) {
+		const pinned = inDrawer ? pinnedDrawerPreviewByHost[hostId] : pinnedMainPreviewByHost[hostId];
+		if (pinned) return pinned;
+		return (hubState.hosts || []).find((h) => h.hostId === hostId)?.lastFilePreview || null;
+	}
+	function buildPreviewImageBodyHtml(preview, hostId, inDrawer, mt, dlUrl, canToggleOrigImg) {
+		const imgSrc = imagePreviewSrc(preview, mt);
+		const backupSrc = backupImagePreviewSrc(preview, mt);
+		const initialState = preview.dataBase64 ? "is-loaded" : preview._imgStatus === "loaded" ? "is-loaded" : preview._imgStatus === "error" ? "is-error" : "is-loading";
+		const sizeText = preview.size > 0 ? formatBytes(preview.size) : preview._imgDims || (preview._origImage ? "无损原图" : "智能高清图");
+		const bodyMinHeight = inDrawer ? "min-height:300px;" : "min-height:calc(100% - 44px);";
+		const imgInlineStyle = inDrawer ? "" : " style=\"max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;transition:opacity 0.18s ease;\"";
+		return `<div class="file-preview-body" style="padding:16px;background:#0f172a;${bodyMinHeight}display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+        <div class="img-preview-stage ${initialState}">
+          <div class="img-preview-loader">
+            <div class="file-loading-dot"></div>
+            <div class="img-preview-loader-text">正在加载图片…</div>
+          </div>
+          <img class="saveable-preview-img${inDrawer ? " drawer-preview-img" : ""}" src="${esc$1(imgSrc)}" data-backup-src="${esc$1(backupSrc)}" data-host-id="${esc$1(hostId)}" data-in-drawer="${inDrawer ? "1" : "0"}" data-download-url="${esc$1(dlUrl || imgSrc)}" data-file-name="${esc$1(preview.name || "image.png")}" alt="${esc$1(preview.name || "image")}" decoding="async"${imgInlineStyle} onload="onPreviewImageLoad(this)" onerror="onPreviewImageError(this)" />
+          <div class="img-preview-error-box">
+            <div style="font-size:28px;">🖼️</div>
+            <div class="img-preview-error-text" style="font-size:13px;line-height:1.5;">图片加载超时或连接中断</div>
+            <div class="img-preview-error-actions">
+              <button type="button" class="media-toolbar-pill" onclick="retryFilePreview('${esc$1(hostId)}', ${inDrawer ? "true" : "false"})">🔄 重新加载</button>
+              ${canToggleOrigImg && !preview._origImage ? `<button type="button" class="media-toolbar-pill" onclick="toggleOriginalPreviewImage('${esc$1(hostId)}', ${inDrawer ? "true" : "false"})">🔍 尝试加载原图</button>` : ""}
+            </div>
+          </div>
+        </div>
+        <div class="file-preview-meta-bar" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
+          <span class="img-preview-size-label">${esc$1(sizeText)} · 长按或点按钮保存图片</span>
+          <button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl || imgSrc)}', '${esc$1(preview.name || "image.png")}', this)">⬇️ 保存图片</button>
+          ${canToggleOrigImg ? `<button type="button" class="media-toolbar-pill" onclick="toggleOriginalPreviewImage('${esc$1(hostId)}', ${inDrawer ? "true" : "false"})">${preview._origImage ? "⚡ 切回智能省流图" : "🔍 查看无损原图"}</button>` : ""}
+        </div>
+      </div>`;
+	}
+	function buildPreviewErrorBodyHtml(preview, hostId, inDrawer) {
+		const bodyMinHeight = inDrawer ? "min-height:300px;" : "min-height:calc(100% - 44px);";
+		const reason = String(preview._loadError || "文件加载超时或电脑暂未响应");
+		return `<div class="file-preview-body" style="padding:32px 16px;background:#0f172a;color:#cbd5e1;${bodyMinHeight}display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;">
+        <div style="font-size:32px;">⚠️</div>
+        <div style="font-size:14px;font-weight:600;color:#f1f5f9;">${esc$1(preview.name || "文件加载失败")}</div>
+        <div style="font-size:12.5px;color:#94a3b8;max-width:320px;line-height:1.5;">${esc$1(reason)}</div>
+        <button type="button" class="media-toolbar-pill" onclick="retryFilePreview('${esc$1(hostId)}', ${inDrawer ? "true" : "false"})">🔄 重新加载</button>
+      </div>`;
+	}
+	function syncMountedPreviewImage(containerEl) {
+		if (!containerEl) return;
+		const imgEl = containerEl.querySelector(".img-preview-stage img.saveable-preview-img");
+		if (imgEl && imgEl.complete && imgEl.naturalWidth > 0) onPreviewImageLoad(imgEl);
+	}
+	function onPreviewImageLoad(imgEl) {
+		if (!imgEl) return;
+		const stage = imgEl.closest(".img-preview-stage");
+		if (stage) {
+			stage.classList.remove("is-loading", "is-error");
+			stage.classList.add("is-loaded");
+		}
+		const hostId = imgEl.dataset?.hostId || "";
+		const inDrawer = imgEl.dataset?.inDrawer === "1";
+		const preview = hostId ? getPinnedPreviewTarget(hostId, inDrawer) : null;
+		if (preview) {
+			preview._imgStatus = "loaded";
+			if (imgEl.naturalWidth > 0 && imgEl.naturalHeight > 0) preview._imgDims = `${imgEl.naturalWidth}×${imgEl.naturalHeight}`;
+			if (!preview.size && preview._imgDims) {
+				const sizeLabel = imgEl.closest(".file-preview-body")?.querySelector(".img-preview-size-label");
+				if (sizeLabel) sizeLabel.textContent = `${preview._imgDims} · 长按或点按钮保存图片`;
+			}
+		}
+	}
+	function onPreviewImageError(imgEl) {
+		if (!imgEl) return;
+		const stage = imgEl.closest(".img-preview-stage");
+		const loaderText = stage?.querySelector(".img-preview-loader-text");
+		const backupSrc = imgEl.dataset?.backupSrc || "";
+		if (backupSrc && imgEl.dataset.usedBackup !== "1") {
+			imgEl.dataset.usedBackup = "1";
+			if (loaderText) loaderText.textContent = "正在切换备用路径加载…";
+			imgEl.src = backupSrc;
+			return;
+		}
+		const retryCount = Number(imgEl.dataset?.autoRetry || "0");
+		if (retryCount < 1 && imgEl.src && !imgEl.src.startsWith("data:")) {
+			imgEl.dataset.autoRetry = String(retryCount + 1);
+			if (loaderText) loaderText.textContent = "网络稍慢，正在自动重试加载…";
+			const curSrc = imgEl.src;
+			setTimeout(() => {
+				if (!imgEl.isConnected) return;
+				try {
+					const u = new URL(curSrc, typeof location !== "undefined" ? location.origin : "http://localhost");
+					if (hubState.mediaTicket) u.searchParams.set("mt", hubState.mediaTicket);
+					u.searchParams.set("_rt", String(retryCount + 1));
+					imgEl.src = `${u.pathname}?${u.searchParams.toString()}`;
+				} catch {
+					const sep = curSrc.includes("?") ? "&" : "?";
+					imgEl.src = `${curSrc}${sep}_rt=${retryCount + 1}`;
+				}
+			}, 650);
+			return;
+		}
+		if (stage) {
+			stage.classList.remove("is-loading", "is-loaded");
+			stage.classList.add("is-error");
+		}
+		const hostId = imgEl.dataset?.hostId || "";
+		const inDrawer = imgEl.dataset?.inDrawer === "1";
+		const preview = hostId ? getPinnedPreviewTarget(hostId, inDrawer) : null;
+		if (preview) preview._imgStatus = "error";
+	}
+	function retryFilePreview(hostId, inDrawer = false) {
+		const preview = getPinnedPreviewTarget(hostId, inDrawer);
+		if (!preview) return;
+		if (preview.streamUrl && (preview.kind === "image" || isImageFileName(preview.name || preview.relPath || ""))) {
+			preview.kind = "image";
+			preview._loadError = "";
+			preview._imgStatus = "loading";
+			preview._reloadNonce = (Number(preview._reloadNonce) || 0) + 1;
+			renderAll();
+			renderFilePanes();
+			return;
+		}
+		const ctx = preview._retryContext;
+		if (ctx && ctx.relPath) clickRealFileEntry(ctx.hostId || hostId, ctx.agentId || "", ctx.cwd || "", ctx.relPath, false, Boolean(inDrawer), {
+			size: ctx.size,
+			backupRelPath: ctx.backupRelPath
+		});
+	}
 	function renderInChatFileDrawerBody() {
 		const found = findSessionGlobal(activeSessionId);
 		if (!found) return;
@@ -11761,11 +11913,11 @@ function initHubController() {
 			const isHtml = kind === "text" && isHtmlFileName(preview.name || preview.relPath || "");
 			const rawMdMode = Boolean(window.__dshRawMdPreview);
 			const rawHtmlMode = Boolean(window.__dshRawHtmlPreview);
-			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${preview._origImage ? 1 : 0}:${preview._transcodeVideo ? 1 : 0}:${preview._rawVideo ? 1 : 0}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${isHtml ? rawHtmlMode ? "raw-html" : "html" : ""}:${(preview.content || "").length}`;
+			const previewKey = `${kind === "image" && preview.streamUrl ? `r${preview._reloadNonce || 0}` : `${preview.at || 0}:r${preview._reloadNonce || 0}`}:${preview.relPath || ""}:${kind}:${preview._origImage ? 1 : 0}:${preview._transcodeVideo ? 1 : 0}:${preview._rawVideo ? 1 : 0}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${isHtml ? rawHtmlMode ? "raw-html" : "html" : ""}:${(preview.content || "").length}:${preview._loadError || ""}`;
 			if (body.dataset.dshPreviewKey === previewKey && body.querySelector(".file-preview-body")) return;
 			body.dataset.dshPreviewKey = previewKey;
 			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc$1(line)}</span></div>`).join("");
-			const canToggleOrigImg = kind === "image" && Boolean(preview.streamUrl) && !/\.(svg|gif)$/i.test(preview.name || "") && (!preview.size || preview.size > 307200);
+			const canToggleOrigImg = kind === "image" && Boolean(preview.streamUrl) && !/\.(svg|gif)$/i.test(preview.name || "") && (!preview.size || preview.size > 122880);
 			const dlUrl = preview.streamUrl ? appendMediaAuth(`${preview.streamUrl}${preview.streamUrl.includes("?") ? "&" : "?"}download=1`, mt) : "";
 			const videoMetaUi = kind === "video" ? describeVideoPreviewStatus(preview) : null;
 			const htmlSrcdocAttr = isHtml && !rawHtmlMode ? escapeSrcdocAttr(buildSandboxedHtmlSrcdoc(preview.content || "", {
@@ -11776,21 +11928,14 @@ function initHubController() {
 				mediaTicket: mt,
 				origin: typeof location !== "undefined" ? location.origin : ""
 			})) : "";
-			const previewBodyHtml = kind === "video" ? `<div class="file-preview-body" style="padding:16px 12px;background:#0f172a;min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+			const previewBodyHtml = kind === "error" ? buildPreviewErrorBodyHtml(preview, host.hostId, true) : kind === "video" ? `<div class="file-preview-body" style="padding:16px 12px;background:#0f172a;min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
                <video class="file-preview-video" data-hls-src="${esc$1(videoHlsSrc(preview, mt))}" data-fallback-src="${esc$1(videoPreviewSrc(preview, mt))}" data-video-bytes="${Number(preview.size || 0)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? "1" : "0"}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
                  <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc$1(formatBytes(preview.size))} · ${esc$1(videoMetaUi.badge)}</span>
                  <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc$1(host.hostId)}', true)">${esc$1(videoMetaUi.toggleLabel)}</button>
                  ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl)}', '${esc$1(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
                </div>
-             </div>` : kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-                 <img class="saveable-preview-img drawer-preview-img" src="${imagePreviewSrc(preview, mt)}" data-download-url="${esc$1(dlUrl || imagePreviewSrc(preview, mt))}" data-file-name="${esc$1(preview.name || "image.png")}" alt="${esc$1(preview.name)}" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回目录重新点击文件加载';" />
-                 <div class="file-preview-meta-bar" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
-                   <span>${esc$1(formatBytes(preview.size))} · 长按或点按钮保存图片</span>
-                   <button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl || imagePreviewSrc(preview, mt))}', '${esc$1(preview.name || "image.png")}', this)">⬇️ 保存图片</button>
-                   ${canToggleOrigImg ? `<button type="button" class="media-toolbar-pill" onclick="toggleOriginalPreviewImage('${esc$1(host.hostId)}', true)">${preview._origImage ? "⚡ 切回智能省流图" : "🔍 查看无损原图"}</button>` : ""}
-                 </div>
-               </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:32px 16px;background:#0f172a;color:#94a3b8;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
+             </div>` : kind === "image" ? buildPreviewImageBodyHtml(preview, host.hostId, true, mt, dlUrl, canToggleOrigImg) : kind === "binary" ? `<div class="file-preview-body" style="padding:32px 16px;background:#0f172a;color:#94a3b8;min-height:300px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
                    <div style="font-size:32px;">📦</div>
                    <div style="font-size:14px;font-weight:600;color:#e2e8f0;">${esc$1(preview.name)}</div>
                    <div style="font-size:12.5px;">二进制文件（${esc$1(formatBytes(preview.size))}），不支持直接文本预览</div>
@@ -11818,7 +11963,7 @@ function initHubController() {
 			else if (kind === "video") {
 				const vidEl = body.querySelector("video.file-preview-video");
 				if (vidEl) mountSmartVideoElement(vidEl);
-			}
+			} else if (kind === "image") syncMountedPreviewImage(body);
 			return;
 		}
 		body.dataset.dshPreviewKey = "";
@@ -11921,7 +12066,7 @@ function initHubController() {
 				if (filePreviewLoading.drawer) pinnedDrawerPreviewByHost[host.hostId] = box;
 				else pinnedMainPreviewByHost[host.hostId] = box;
 				filePreviewLoading = null;
-			} else if (Date.now() - filePreviewLoading.at > 15e3) filePreviewLoading = null;
+			} else if (Date.now() - filePreviewLoading.at > 35e3) filePreviewLoading = null;
 		}
 	}
 	function fileEntryIcon(entry) {
@@ -12179,6 +12324,7 @@ function initHubController() {
 		const preview = target || host?.lastFilePreview;
 		if (!preview) return;
 		preview._origImage = !preview._origImage;
+		preview._imgStatus = "loading";
 		showToast(preview._origImage ? "🔍 已切换为无损原图模式" : "⚡ 已切换为智能省流高清模式");
 		renderAll();
 		renderFilePanes();
@@ -12276,84 +12422,153 @@ function initHubController() {
 		renderAll();
 		renderFilePanes();
 	}
-	async function clickRealFileEntry(hostId, agentId, cwd, relPath, isDir, inDrawer = false) {
+	async function clickRealFileEntry(hostId, agentId, cwd, relPath, isDir, inDrawer = false, opts = {}) {
 		if (isDir) {
 			await requestDirList(hostId, agentId, cwd, relPath, inDrawer);
 			return;
 		}
+		const loadSeq = ++filePreviewLoadSeq;
 		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
+		const cleanRelPath = String(relPath || "");
+		const baseName = cleanRelPath.split("/").filter(Boolean).pop() || cleanRelPath || "file";
+		const listedEntry = (host?.lastFsListing?.entries || []).find((e) => !e?.isDirectory && (e.relPath === cleanRelPath || e.name === baseName));
+		const knownSize = Number(opts?.size ?? listedEntry?.size) || 0;
+		const backupRelPath = String(opts?.backupRelPath || "").trim();
+		const retryContext = {
+			hostId,
+			agentId: agentId || "",
+			cwd: cwd || "",
+			relPath: cleanRelPath,
+			inDrawer: Boolean(inDrawer),
+			size: knownSize,
+			...backupRelPath ? { backupRelPath } : {}
+		};
+		const pinPreviewBox = (box) => {
+			if (host) host.lastFilePreview = box;
+			if (inDrawer) pinnedDrawerPreviewByHost[hostId] = box;
+			else pinnedMainPreviewByHost[hostId] = box;
+			filePreviewLoading = null;
+			renderAll();
+			renderFilePanes();
+		};
+		const pinErrorPreview = (errorMessage) => {
+			const ext = baseName.includes(".") ? "." + (baseName.split(".").pop() || "").toLowerCase() : "";
+			pinPreviewBox({
+				at: Date.now(),
+				agentId: agentId || "",
+				relPath: cleanRelPath,
+				name: baseName,
+				ext,
+				size: knownSize,
+				kind: "error",
+				_loadError: String(errorMessage || "读取文件超时，请点击重新加载"),
+				_retryContext: retryContext,
+				_showInDrawer: Boolean(inDrawer),
+				_showInMain: !inDrawer
+			});
+		};
+		if (!isDemoMode && isImageFileName(cleanRelPath)) {
+			const buildRawStream = (targetPath) => {
+				const sq = new URLSearchParams({
+					path: String(targetPath || ""),
+					...cwd ? { cwd: String(cwd) } : {},
+					...agentId ? { agentId: String(agentId) } : {}
+				}).toString();
+				return `/api/hosts/${encodeURIComponent(hostId)}/fs/stream?${sq}`;
+			};
+			const ext = baseName.includes(".") ? "." + (baseName.split(".").pop() || "").toLowerCase() : "";
+			pinPreviewBox({
+				at: Date.now(),
+				agentId: agentId || "",
+				relPath: cleanRelPath,
+				name: baseName,
+				ext,
+				kind: "image",
+				size: knownSize,
+				streamUrl: buildRawStream(cleanRelPath),
+				...backupRelPath ? { backupStreamUrl: buildRawStream(backupRelPath) } : {},
+				_imgStatus: "loading",
+				_retryContext: retryContext,
+				_showInDrawer: Boolean(inDrawer),
+				_showInMain: !inDrawer
+			});
+			return;
+		}
 		filePreviewLoading = {
 			hostId,
-			relPath,
+			relPath: cleanRelPath,
 			prevAt: host?.lastFilePreview?.at || 0,
 			at: Date.now(),
-			drawer: inDrawer
+			drawer: inDrawer,
+			seq: loadSeq
 		};
 		renderAll();
 		try {
 			const qp = new URLSearchParams({
 				cwd: String(cwd || ""),
-				path: String(relPath || ""),
+				path: cleanRelPath,
 				agentId: String(agentId || "")
 			});
 			const fastRes = await apiFetch(`/api/hosts/${encodeURIComponent(hostId)}/fs/read?${qp.toString()}`);
+			if (loadSeq !== filePreviewLoadSeq) return;
 			const fastData = await fastRes.json().catch(() => null);
 			if (fastRes.ok && fastData?.ok) {
 				const streamQuery = new URLSearchParams({
-					path: String(fastData.relPath || relPath || ""),
+					path: String(fastData.relPath || cleanRelPath),
 					...cwd ? { cwd: String(cwd) } : {},
 					...agentId ? { agentId: String(agentId) } : {}
 				}).toString();
-				const box = {
+				pinPreviewBox({
 					...fastData,
 					at: Date.now(),
 					agentId: agentId || "",
-					relPath: fastData.relPath || relPath,
+					relPath: fastData.relPath || cleanRelPath,
 					streamUrl: fastData.streamUrl || `/api/hosts/${encodeURIComponent(hostId)}/fs/stream?${streamQuery}`,
+					_retryContext: retryContext,
 					_showInDrawer: Boolean(inDrawer),
 					_showInMain: !inDrawer
-				};
-				if (host) host.lastFilePreview = box;
-				if (inDrawer) pinnedDrawerPreviewByHost[hostId] = box;
-				else pinnedMainPreviewByHost[hostId] = box;
-				filePreviewLoading = null;
-				renderAll();
-				renderFilePanes();
+				});
 				return;
 			}
 			if (fastRes.status !== 404 && fastData?.error) {
-				filePreviewLoading = null;
 				showToast("❌ 读取文件失败：" + fastData.error);
-				renderAll();
+				pinErrorPreview(fastData.error);
 				return;
 			}
-		} catch {}
+		} catch {
+			if (loadSeq !== filePreviewLoadSeq) return;
+		}
 		let failure = "";
 		try {
 			const out = await dispatchHostCommand(hostId, {
 				type: "read_file",
 				agentId,
 				cwd,
-				relPath
+				relPath: cleanRelPath
 			});
+			if (loadSeq !== filePreviewLoadSeq) return;
 			if (out && out.ok === false) failure = out.error || "电脑未接受该指令";
 		} catch (err) {
+			if (loadSeq !== filePreviewLoadSeq) return;
 			failure = err && err.message || String(err);
 		}
 		if (failure) {
-			filePreviewLoading = null;
 			showToast("❌ 读取文件失败：" + failure);
-			renderAll();
+			pinErrorPreview(failure);
 			return;
 		}
-		for (let i = 0; i < 22 && filePreviewLoading; i++) {
-			await sleepMs(180);
-			if (!filePreviewLoading) break;
-			if (!(await fetchState()).ok) break;
+		for (let i = 0; i < 45 && filePreviewLoading && loadSeq === filePreviewLoadSeq; i++) {
+			await sleepMs(250);
+			if (!filePreviewLoading || loadSeq !== filePreviewLoadSeq) break;
+			const state = await fetchState({ silent: true });
+			if (loadSeq !== filePreviewLoadSeq) return;
+			if (!state.ok) continue;
 		}
+		if (loadSeq !== filePreviewLoadSeq) return;
 		if (filePreviewLoading) {
-			filePreviewLoading = null;
-			showToast("⚠️ 读取文件超时：电脑可能离线，请重新点一下文件");
+			showToast("⚠️ 读取文件超时，可在当前页点重新加载");
+			pinErrorPreview("等待电脑响应超时（可能网络较慢或电脑暂时忙碌），请点击下方按钮重试");
+			return;
 		}
 		renderAll();
 		renderFilePanes();
@@ -12691,12 +12906,13 @@ function initHubController() {
 		}
 	}
 	function cancelFilePreviewLoading() {
+		filePreviewLoadSeq += 1;
 		filePreviewLoading = null;
 		renderAll();
 	}
 	function renderFilesTab(container = document.getElementById("mainViewport")) {
 		const hosts = hubState.hosts || [];
-		const host = currentHostId === "ALL_HOSTS" ? hosts[0] : hosts.find((h) => h.hostId === currentHostId);
+		const host = currentHostId === "ALL_HOSTS" ? filePreviewLoading && !filePreviewLoading.drawer && hosts.find((h) => h.hostId === filePreviewLoading.hostId) || hosts.find((h) => pinnedMainPreviewByHost[h.hostId]?._showInMain) || hosts[0] : hosts.find((h) => h.hostId === currentHostId);
 		if (!host) {
 			container.innerHTML = `
           <div style="padding:48px 20px;text-align:center;">
@@ -12737,11 +12953,11 @@ function initHubController() {
 			const isHtml = kind === "text" && isHtmlFileName(preview.name || preview.relPath || "");
 			const rawMdMode = Boolean(window.__dshRawMdPreview);
 			const rawHtmlMode = Boolean(window.__dshRawHtmlPreview);
-			const previewKey = `${preview.at || 0}:${preview.relPath || ""}:${kind}:${preview._origImage ? 1 : 0}:${preview._transcodeVideo ? 1 : 0}:${preview._rawVideo ? 1 : 0}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${isHtml ? rawHtmlMode ? "raw-html" : "html" : ""}:${(preview.content || "").length}`;
+			const previewKey = `${kind === "image" && preview.streamUrl ? `r${preview._reloadNonce || 0}` : `${preview.at || 0}:r${preview._reloadNonce || 0}`}:${preview.relPath || ""}:${kind}:${preview._origImage ? 1 : 0}:${preview._transcodeVideo ? 1 : 0}:${preview._rawVideo ? 1 : 0}:${isMarkdown ? rawMdMode ? "raw" : "md" : ""}:${isHtml ? rawHtmlMode ? "raw-html" : "html" : ""}:${(preview.content || "").length}:${preview._loadError || ""}`;
 			if (container.dataset.dshPreviewKey === previewKey && container.querySelector(".file-preview-body")) return;
 			container.dataset.dshPreviewKey = previewKey;
 			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc$1(line)}</span></div>`).join("");
-			const canToggleOrigImg = kind === "image" && Boolean(preview.streamUrl) && !/\.(svg|gif)$/i.test(preview.name || "") && (!preview.size || preview.size > 307200);
+			const canToggleOrigImg = kind === "image" && Boolean(preview.streamUrl) && !/\.(svg|gif)$/i.test(preview.name || "") && (!preview.size || preview.size > 122880);
 			const dlUrl = preview.streamUrl ? appendMediaAuth(`${preview.streamUrl}${preview.streamUrl.includes("?") ? "&" : "?"}download=1`, mt) : "";
 			const videoMetaUi = kind === "video" ? describeVideoPreviewStatus(preview) : null;
 			const htmlSrcdocAttr = isHtml && !rawHtmlMode ? escapeSrcdocAttr(buildSandboxedHtmlSrcdoc(preview.content || "", {
@@ -12752,21 +12968,14 @@ function initHubController() {
 				mediaTicket: mt,
 				origin: typeof location !== "undefined" ? location.origin : ""
 			})) : "";
-			const previewBodyHtml = kind === "video" ? `<div class="file-preview-body" style="padding:18px 14px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
+			const previewBodyHtml = kind === "error" ? buildPreviewErrorBodyHtml(preview, host.hostId, false) : kind === "video" ? `<div class="file-preview-body" style="padding:18px 14px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
                <video class="file-preview-video" data-hls-src="${esc$1(videoHlsSrc(preview, mt))}" data-fallback-src="${esc$1(videoPreviewSrc(preview, mt))}" data-video-bytes="${Number(preview.size || 0)}" data-dsh-universal-direct="${preview.videoProbe?.universalDirectPlay ? "1" : "0"}" controls playsinline webkit-playsinline preload="metadata" onloadedmetadata="onSmartVideoLoadedMeta(this)" onerror="onSmartVideoError(this)"></video>
                <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;">
                  <span data-dsh-video-status="1" style="font-size:12px;color:#94a3b8;">🎬 ${esc$1(formatBytes(preview.size))} · ${esc$1(videoMetaUi.badge)}</span>
                  <button type="button" class="media-toolbar-pill" onclick="switchVideoTranscodeMode('${esc$1(host.hostId)}', false)">${esc$1(videoMetaUi.toggleLabel)}</button>
                  ${dlUrl ? `<button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl)}', '${esc$1(preview.name || "video.mp4")}', this)">⬇️ 保存/分享视频</button>` : ""}
                </div>
-             </div>` : kind === "image" ? `<div class="file-preview-body" style="padding:16px;background:#0f172a;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
-                 <img class="saveable-preview-img" src="${imagePreviewSrc(preview, mt)}" data-download-url="${esc$1(dlUrl || imagePreviewSrc(preview, mt))}" data-file-name="${esc$1(preview.name || "image.png")}" alt="${esc$1(preview.name)}" style="max-width:100%;max-height:62vh;object-fit:contain;border-radius:8px;" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.textContent='⚠️ 图片预览已过期，请返回文件列表重新点击加载';" />
-                 <div class="file-preview-meta-bar" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;font-size:12px;color:#94a3b8;">
-                   <span>${esc$1(formatBytes(preview.size))} · 长按或点按钮保存图片</span>
-                   <button type="button" class="media-toolbar-pill" onclick="downloadPreviewMedia('${esc$1(dlUrl || imagePreviewSrc(preview, mt))}', '${esc$1(preview.name || "image.png")}', this)">⬇️ 保存图片</button>
-                   ${canToggleOrigImg ? `<button type="button" class="media-toolbar-pill" onclick="toggleOriginalPreviewImage('${esc$1(host.hostId)}', false)">${preview._origImage ? "⚡ 切回智能省流图" : "🔍 查看无损原图"}</button>` : ""}
-                 </div>
-               </div>` : kind === "binary" ? `<div class="file-preview-body" style="padding:36px 16px;background:#0f172a;color:#94a3b8;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
+             </div>` : kind === "image" ? buildPreviewImageBodyHtml(preview, host.hostId, false, mt, dlUrl, canToggleOrigImg) : kind === "binary" ? `<div class="file-preview-body" style="padding:36px 16px;background:#0f172a;color:#94a3b8;min-height:calc(100% - 44px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;">
                    <div style="font-size:36px;">📦</div>
                    <div style="font-size:14.5px;font-weight:600;color:#e2e8f0;">${esc$1(preview.name)}</div>
                    <div style="font-size:13px;">二进制文件（${esc$1(formatBytes(preview.size))}），不支持直接文本预览</div>
@@ -12798,7 +13007,7 @@ function initHubController() {
 			else if (kind === "video") {
 				const vidEl = container.querySelector("video.file-preview-video");
 				if (vidEl) mountSmartVideoElement(vidEl);
-			}
+			} else if (kind === "image") syncMountedPreviewImage(container);
 			return;
 		}
 		container.dataset.dshPreviewKey = "";
@@ -15463,7 +15672,7 @@ function initHubController() {
 				}
 			}
 			const pinnedDrawer = pinnedDrawerPreviewByHost[host.hostId];
-			if (pinnedDrawer && next && next.relPath === pinnedDrawer.relPath && next.at >= (pinnedDrawer.at || 0)) {
+			if (pinnedDrawer && !pinnedDrawer._loadError && !(pinnedDrawer.kind === "image" && pinnedDrawer.streamUrl) && next && next.relPath === pinnedDrawer.relPath && next.at >= (pinnedDrawer.at || 0)) {
 				if ((next.content === void 0 || pinnedDrawer._fullHtmlFetched) && pinnedDrawer.content !== void 0) {
 					next.content = pinnedDrawer.content;
 					if (pinnedDrawer._fullHtmlFetched) {
@@ -15473,7 +15682,12 @@ function initHubController() {
 					}
 				}
 				if (!next.streamUrl && pinnedDrawer.streamUrl) next.streamUrl = pinnedDrawer.streamUrl;
+				if (!next.backupStreamUrl && pinnedDrawer.backupStreamUrl) next.backupStreamUrl = pinnedDrawer.backupStreamUrl;
 				if (!next.videoProbe && pinnedDrawer.videoProbe) next.videoProbe = pinnedDrawer.videoProbe;
+				if (pinnedDrawer._retryContext) next._retryContext = pinnedDrawer._retryContext;
+				if (pinnedDrawer._reloadNonce) next._reloadNonce = pinnedDrawer._reloadNonce;
+				if (pinnedDrawer._imgStatus) next._imgStatus = pinnedDrawer._imgStatus;
+				if (pinnedDrawer._imgDims) next._imgDims = pinnedDrawer._imgDims;
 				next._origImage = Boolean(pinnedDrawer._origImage);
 				next._transcodeVideo = Boolean(pinnedDrawer._transcodeVideo);
 				next._rawVideo = Boolean(pinnedDrawer._rawVideo);
@@ -15481,7 +15695,7 @@ function initHubController() {
 				pinnedDrawerPreviewByHost[host.hostId] = next;
 			}
 			const pinnedMain = pinnedMainPreviewByHost[host.hostId];
-			if (pinnedMain && next && next.relPath === pinnedMain.relPath && next.at >= (pinnedMain.at || 0)) {
+			if (pinnedMain && !pinnedMain._loadError && !(pinnedMain.kind === "image" && pinnedMain.streamUrl) && next && next.relPath === pinnedMain.relPath && next.at >= (pinnedMain.at || 0)) {
 				if ((next.content === void 0 || pinnedMain._fullHtmlFetched) && pinnedMain.content !== void 0) {
 					next.content = pinnedMain.content;
 					if (pinnedMain._fullHtmlFetched) {
@@ -15491,7 +15705,12 @@ function initHubController() {
 					}
 				}
 				if (!next.streamUrl && pinnedMain.streamUrl) next.streamUrl = pinnedMain.streamUrl;
+				if (!next.backupStreamUrl && pinnedMain.backupStreamUrl) next.backupStreamUrl = pinnedMain.backupStreamUrl;
 				if (!next.videoProbe && pinnedMain.videoProbe) next.videoProbe = pinnedMain.videoProbe;
+				if (pinnedMain._retryContext) next._retryContext = pinnedMain._retryContext;
+				if (pinnedMain._reloadNonce) next._reloadNonce = pinnedMain._reloadNonce;
+				if (pinnedMain._imgStatus) next._imgStatus = pinnedMain._imgStatus;
+				if (pinnedMain._imgDims) next._imgDims = pinnedMain._imgDims;
 				next._origImage = Boolean(pinnedMain._origImage);
 				next._transcodeVideo = Boolean(pinnedMain._transcodeVideo);
 				next._rawVideo = Boolean(pinnedMain._rawVideo);
@@ -16330,6 +16549,9 @@ function initHubController() {
 		reloadFullscreenHtmlPreview,
 		downloadPreviewMedia,
 		toggleOriginalPreviewImage,
+		onPreviewImageLoad,
+		onPreviewImageError,
+		retryFilePreview,
 		switchVideoTranscodeMode,
 		mountSmartVideoElement,
 		maybeAccelerateVideoViaP2p,

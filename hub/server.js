@@ -4,7 +4,7 @@ import { accessSync, constants, existsSync, readFileSync } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir, networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
-import { Readable } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -13,6 +13,38 @@ import { HubCore } from './hub-core.js'
 import { captureStateDigest, buildStateDelta } from './delta-state.js'
 
 const gzipAsync = promisify(gzip)
+const HUB_MEDIA_CACHE_MAX_ITEM_BYTES = 1.5 * 1024 * 1024
+
+function createImageCacheTransform(expectedBytes, maxBytes, onComplete) {
+  const chunks = []
+  let collected = 0
+  let overflow = false
+  return new Transform({
+    transform(chunk, _encoding, callback) {
+      if (!overflow) {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+        collected += buf.length
+        if (collected <= maxBytes) {
+          chunks.push(buf)
+        } else {
+          overflow = true
+          chunks.length = 0
+        }
+      }
+      callback(null, chunk)
+    },
+    flush(callback) {
+      if (!overflow && collected > 0 && (!expectedBytes || collected === expectedBytes)) {
+        try {
+          onComplete(Buffer.concat(chunks, collected))
+        } catch {
+          // ignore cache populate failure
+        }
+      }
+      callback()
+    },
+  })
+}
 
 const staticAssetMemCache = new Map()
 
@@ -1033,7 +1065,7 @@ export function createHubServer({
               cwd,
               agentId,
             },
-            { signal },
+            { timeoutMs: 20_000, signal },
           )
           if (
             out.ok &&
@@ -1056,9 +1088,54 @@ export function createHubServer({
         const fastPreview = urlObj.searchParams.get('preview') === '1'
         const download = urlObj.searchParams.get('download') === '1'
         const raw = urlObj.searchParams.get('raw') === '1'
+        const bypassCache = Boolean(urlObj.searchParams.get('_r') || urlObj.searchParams.get('_rt'))
         const rangeHeader = String(headers.range ?? headers.Range ?? '').trim()
         const ifNoneMatch = String(headers['if-none-match'] ?? headers['If-None-Match'] ?? '').trim()
         const isVideoPath = /\.(mp4|m4v|mov|webm|ogv|mkv|avi)$/i.test(reqPath)
+        const isImagePath = /\.(png|jpe?g|webp|gif|svg|bmp|ico|avif|heic|heif)$/i.test(reqPath)
+        const mtParam = String(urlObj.searchParams.get('mt') ?? '').trim()
+        const hasMediaTicket = Boolean(mtParam && hub.verifyMediaTicket(mtParam))
+        const exposeHeaders =
+          'content-range, content-length, accept-ranges, etag, x-dsh-media-variant, x-dsh-thumb, x-dsh-orig-size, x-dsh-hub-cache, x-dsh-remuxed, x-dsh-transcoded, x-dsh-transcode-unavailable'
+        const mediaCacheEligible = isImagePath && !rangeHeader && !download && !transcode && !fastPreview
+        const mediaCacheKey = mediaCacheEligible
+          ? hub.buildMediaStreamCacheKey(hostId, { cwd, path: reqPath, thumb, raw })
+          : ''
+        if (mediaCacheKey && !bypassCache) {
+          const cachedMedia = hub.getMediaStreamCache(mediaCacheKey)
+          if (cachedMedia) {
+            if (ifNoneMatch && cachedMedia.etag && ifNoneMatch === cachedMedia.etag) {
+              return {
+                status: 304,
+                headers: {
+                  etag: cachedMedia.etag,
+                  ...(hasMediaTicket ? { 'access-control-allow-origin': '*' } : {}),
+                  'accept-ranges': 'bytes',
+                  'cache-control': 'private, max-age=300',
+                  'x-dsh-hub-cache': '1',
+                },
+                body: '',
+              }
+            }
+            return {
+              status: 200,
+              headers: {
+                'content-type': cachedMedia.mime || 'application/octet-stream',
+                'content-length': String(cachedMedia.buffer.length),
+                'accept-ranges': 'bytes',
+                'cache-control': 'private, max-age=300',
+                'access-control-expose-headers': exposeHeaders,
+                'x-dsh-hub-cache': '1',
+                ...(hasMediaTicket ? { 'access-control-allow-origin': '*' } : {}),
+                ...(cachedMedia.etag ? { etag: cachedMedia.etag } : {}),
+                ...(cachedMedia.variant ? { 'x-dsh-media-variant': cachedMedia.variant } : {}),
+                ...(cachedMedia.isThumb ? { 'x-dsh-thumb': '1' } : {}),
+                ...(cachedMedia.origSize > 0 ? { 'x-dsh-orig-size': String(cachedMedia.origSize) } : {}),
+              },
+              buffer: cachedMedia.buffer,
+            }
+          }
+        }
         const out = await hub.dispatchFastFsRequest(
           hostId,
           {
@@ -1076,8 +1153,6 @@ export function createHubServer({
           },
           { timeoutMs: transcode || fastPreview || download || isVideoPath ? 60_000 : 30_000, signal },
         )
-        const mtParam = String(urlObj.searchParams.get('mt') ?? '').trim()
-        const hasMediaTicket = Boolean(mtParam && hub.verifyMediaTicket(mtParam))
         if (out.status === 304) {
           out.stream?.resume?.()
           out.onStreamDone?.()
@@ -1105,8 +1180,6 @@ export function createHubServer({
             json: out.meta || { ok: false, error: 'File stream failed' },
           }
         }
-        const exposeHeaders =
-          'content-range, content-length, accept-ranges, etag, x-dsh-media-variant, x-dsh-remuxed, x-dsh-transcoded, x-dsh-transcode-unavailable'
         const commonMediaHeaders = {
           'content-type': out.meta?.mime || 'application/octet-stream',
           'accept-ranges': 'bytes',
@@ -1118,6 +1191,7 @@ export function createHubServer({
           ...(out.meta?.contentRange ? { 'content-range': out.meta.contentRange } : {}),
           ...(out.meta?.variant ? { 'x-dsh-media-variant': String(out.meta.variant) } : {}),
           ...(out.meta?.isThumb ? { 'x-dsh-thumb': '1' } : {}),
+          ...(Number(out.meta?.origSize) > 0 ? { 'x-dsh-orig-size': String(Number(out.meta.origSize)) } : {}),
           ...(out.meta?.remuxed ? { 'x-dsh-remuxed': '1' } : {}),
           ...(out.meta?.transcoded ? { 'x-dsh-transcoded': '1' } : {}),
           ...(out.meta?.transcodeUnavailable ? { 'x-dsh-transcode-unavailable': '1' } : {}),
@@ -1125,8 +1199,17 @@ export function createHubServer({
             ? { 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(out.meta.name)}` }
             : {}),
         }
+        const shouldCacheImageResponse =
+          Boolean(mediaCacheKey) &&
+          (out.status || 200) === 200 &&
+          String(out.meta?.mime || '').toLowerCase().startsWith('image/')
         if (out.stream) {
           const declaredByteLen = Number(out.meta?.byteLength)
+          const canTeeCache =
+            shouldCacheImageResponse &&
+            Number.isFinite(declaredByteLen) &&
+            declaredByteLen > 0 &&
+            declaredByteLen <= HUB_MEDIA_CACHE_MAX_ITEM_BYTES
           return {
             status: out.status || 200,
             headers: {
@@ -1137,9 +1220,36 @@ export function createHubServer({
             },
             stream: out.stream,
             onStreamDone: out.onStreamDone,
+            ...(canTeeCache
+              ? {
+                expectedBytes: declaredByteLen,
+                onCompleteBuffer: fullBuf => {
+                  hub.storeMediaStreamCache(mediaCacheKey, {
+                    buffer: fullBuf,
+                    mime: out.meta?.mime || 'image/jpeg',
+                    etag: out.meta?.etag || '',
+                    name: out.meta?.name || '',
+                    variant: out.meta?.variant || '',
+                    isThumb: Boolean(out.meta?.isThumb),
+                    origSize: Number(out.meta?.origSize) || 0,
+                  })
+                },
+              }
+              : {}),
           }
         }
         const buf = out.buffer ?? Buffer.from(out.meta?.content ?? '', 'utf8')
+        if (shouldCacheImageResponse && buf.length > 0 && buf.length <= HUB_MEDIA_CACHE_MAX_ITEM_BYTES) {
+          hub.storeMediaStreamCache(mediaCacheKey, {
+            buffer: buf,
+            mime: out.meta?.mime || 'image/jpeg',
+            etag: out.meta?.etag || '',
+            name: out.meta?.name || '',
+            variant: out.meta?.variant || '',
+            isThumb: Boolean(out.meta?.isThumb),
+            origSize: Number(out.meta?.origSize) || 0,
+          })
+        }
         return {
           status: out.status || 200,
           headers: {
@@ -1650,7 +1760,16 @@ export function createHubServer({
         }
         res.writeHead(result.status, result.headers || {})
         try {
-          await pipeline(result.stream, res)
+          if (typeof result.onCompleteBuffer === 'function') {
+            const cacheTee = createImageCacheTransform(
+              Number(result.expectedBytes) || 0,
+              HUB_MEDIA_CACHE_MAX_ITEM_BYTES,
+              result.onCompleteBuffer,
+            )
+            await pipeline(result.stream, cacheTee, res)
+          } else {
+            await pipeline(result.stream, res)
+          }
         } catch {
           result.stream.destroy?.()
           try {
@@ -1773,6 +1892,18 @@ export function createHubServer({
           out.onStreamDone?.()
         }
         out.buffer = Buffer.concat(chunks)
+        if (
+          typeof out.onCompleteBuffer === 'function' &&
+          out.buffer.length > 0 &&
+          out.buffer.length <= HUB_MEDIA_CACHE_MAX_ITEM_BYTES &&
+          (!out.expectedBytes || out.buffer.length === out.expectedBytes)
+        ) {
+          try {
+            out.onCompleteBuffer(out.buffer)
+          } catch {
+            // ignore cache populate failure
+          }
+        }
       }
       return {
         status: out.status,

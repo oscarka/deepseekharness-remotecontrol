@@ -64,6 +64,10 @@ export class HubCore {
     this.fullTranscriptCache = new Map()
     this.pendingFsRequests = new Map()
     this.fsHotCache = new Map()
+    this.mediaStreamCache = new Map()
+    this.mediaStreamCacheBytes = 0
+    this.mediaStreamCacheMaxBytes = 24 * 1024 * 1024
+    this.mediaStreamCacheMaxEntries = 60
     this.stateSeq = 1
     this._persistInFlight = null
     this._persistQueued = false
@@ -2864,6 +2868,65 @@ export class HubCore {
     this.fsHotCache.delete(key)
     this.fsHotCache.set(key, hit)
     return hit.value
+  }
+
+  buildMediaStreamCacheKey(hostId, { cwd = '', path = '', thumb = false, raw = false } = {}) {
+    const cleanHost = String(hostId ?? '').trim()
+    const cleanCwd = String(cwd ?? '').trim().replace(/\/+$/, '')
+    const cleanPath = String(path ?? '').trim()
+    if (!cleanHost || !cleanPath) return ''
+    const variant = raw ? 'raw' : thumb ? 'th' : 'orig'
+    return `${cleanHost}::${cleanCwd}::${cleanPath}::${variant}`
+  }
+
+  storeMediaStreamCache(key, entry, ttlMs = 90_000) {
+    const cleanKey = String(key ?? '').trim()
+    if (!cleanKey || !entry || !Buffer.isBuffer(entry.buffer)) return
+    const byteLen = entry.buffer.length
+    if (byteLen === 0 || byteLen > 1.5 * 1024 * 1024) return
+    const existing = this.mediaStreamCache.get(cleanKey)
+    if (existing) {
+      this.mediaStreamCacheBytes = Math.max(0, this.mediaStreamCacheBytes - existing.buffer.length)
+      this.mediaStreamCache.delete(cleanKey)
+    }
+    this.mediaStreamCache.set(cleanKey, {
+      buffer: entry.buffer,
+      mime: String(entry.mime || 'application/octet-stream'),
+      etag: String(entry.etag || ''),
+      name: String(entry.name || ''),
+      variant: String(entry.variant || ''),
+      isThumb: Boolean(entry.isThumb),
+      origSize: Number(entry.origSize) || 0,
+      expiresAt: this.now() + ttlMs,
+    })
+    this.mediaStreamCacheBytes += byteLen
+    while (
+      this.mediaStreamCache.size > this.mediaStreamCacheMaxEntries ||
+      this.mediaStreamCacheBytes > this.mediaStreamCacheMaxBytes
+    ) {
+      const oldestKey = this.mediaStreamCache.keys().next().value
+      if (!oldestKey) break
+      const oldest = this.mediaStreamCache.get(oldestKey)
+      this.mediaStreamCache.delete(oldestKey)
+      if (oldest) {
+        this.mediaStreamCacheBytes = Math.max(0, this.mediaStreamCacheBytes - oldest.buffer.length)
+      }
+    }
+  }
+
+  getMediaStreamCache(key) {
+    const cleanKey = String(key ?? '').trim()
+    if (!cleanKey) return null
+    const hit = this.mediaStreamCache.get(cleanKey)
+    if (!hit) return null
+    if (this.now() > hit.expiresAt) {
+      this.mediaStreamCache.delete(cleanKey)
+      this.mediaStreamCacheBytes = Math.max(0, this.mediaStreamCacheBytes - hit.buffer.length)
+      return null
+    }
+    this.mediaStreamCache.delete(cleanKey)
+    this.mediaStreamCache.set(cleanKey, hit)
+    return hit
   }
 
   drainPendingFsRequests(hostId) {
