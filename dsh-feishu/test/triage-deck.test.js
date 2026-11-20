@@ -337,3 +337,19 @@ test('triage-deck 7: full English mode (lang="en") localizes options, subtitles,
   assert.equal(concEn.options[0].shortBtn, 'Mark as Read');
   assert.equal(concEn.customLabel, '2. Follow up / Request changes…');
 });
+
+test('triage-deck 8: Swipe Triage reply card & full-reply modal expose full-text TTS controls and auto-stop wiring', async () => {
+  const triageSrc = await readFile(new URL('../../hub/web/src/triage-deck.js', import.meta.url), 'utf8');
+  const ctrlSrc = await readFile(new URL('../../hub/web/src/controller.js', import.meta.url), 'utf8');
+  assert.ok(triageSrc.includes('renderTriageSpeechControlsHtml(vm, { compact: true })'));
+  assert.ok(triageSrc.includes('renderTriageSpeechControlsHtml(vm, { compact: false, includeCopy: true })'));
+  assert.ok(triageSrc.includes('🔊 播报全文'));
+  assert.ok(triageSrc.includes('🔊 Listen'));
+  assert.ok(triageSrc.includes('triageToggleReplySpeech'));
+  assert.ok(triageSrc.includes('triageCycleReplySpeechRate'));
+  assert.ok(triageSrc.includes('.dsh-triage-speak-controls'));
+  assert.ok(ctrlSrc.includes('TRIAGE_SPEECH_MSG_IDX'));
+  assert.ok(ctrlSrc.includes('toggleTriageSpeech'));
+  assert.ok(ctrlSrc.includes('upgradeTriageSpeechIfHydrated'));
+  assert.ok(ctrlSrc.includes('triageCtrl?.onSpeechStateChanged?.()'));
+});

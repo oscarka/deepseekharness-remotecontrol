@@ -1935,10 +1935,12 @@ export function initHubController() {
 
   // ---- AI 回复纯算法语音播报（全局防 GC 保活 + 按句接力防超时断流 + 全文默认 / 重点切换 + 原地无损倍速） ----
   const SPEECH_RATES = [1, 1.25, 1.5];
+  const TRIAGE_SPEECH_MSG_IDX = -101;
   const activeSpeechState = {
     playing: false,
     sessionId: '',
     msgIdx: -1,
+    rawSourceText: '',
     mode: (typeof localStorage !== 'undefined' && localStorage.getItem('dsh_tts_mode_v2') === 'concise') ? 'concise' : 'full',
     rate: (() => {
       const saved = typeof localStorage !== 'undefined' ? Number(localStorage.getItem('dsh_tts_rate')) : 1;
@@ -2037,6 +2039,7 @@ export function initHubController() {
       }
       el.replaceWith(nextEl);
     });
+    triageCtrl?.onSpeechStateChanged?.();
   }
 
   function stopAssistantSpeech() {
@@ -2045,6 +2048,7 @@ export function initHubController() {
     activeSpeechState.playing = false;
     activeSpeechState.sessionId = '';
     activeSpeechState.msgIdx = -1;
+    activeSpeechState.rawSourceText = '';
     activeSpeechState.fullSpokenText = '';
     activeSpeechState.segmentBaseOffset = 0;
     activeSpeechState.segmentStartedAt = 0;
@@ -2061,12 +2065,22 @@ export function initHubController() {
     }
   }
 
-  function startAssistantSpeech(msgIdx, { startOffset = 0, _recoveryDepth = 0 } = {}) {
+  function startAssistantSpeech(
+    msgIdx,
+    { startOffset = 0, _recoveryDepth = 0, rawTextOverride = '', sessionIdOverride = '' } = {},
+  ) {
     if (typeof window === 'undefined' || !window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') {
       showToast('⚠️ 当前浏览器暂不支持系统语音播报');
       return;
     }
-    const rawText = String(lastRenderedAssistantTexts?.[msgIdx] || '').trim();
+    const effectiveSessionId =
+      sessionIdOverride ||
+      (msgIdx === TRIAGE_SPEECH_MSG_IDX ? activeSpeechState.sessionId : (activeSessionId || ''));
+    const rawText = String(
+      rawTextOverride ||
+      (msgIdx === TRIAGE_SPEECH_MSG_IDX ? activeSpeechState.rawSourceText : lastRenderedAssistantTexts?.[msgIdx]) ||
+      '',
+    ).trim();
     if (!rawText) {
       showToast('⚠️ 暂无可播报的回复内容');
       return;
@@ -2107,8 +2121,9 @@ export function initHubController() {
 
     const nowMs = Date.now();
     activeSpeechState.playing = true;
-    activeSpeechState.sessionId = activeSessionId || '';
+    activeSpeechState.sessionId = effectiveSessionId;
     activeSpeechState.msgIdx = msgIdx;
+    activeSpeechState.rawSourceText = rawText;
     activeSpeechState.hasDistinctSummary = prepared.hasDistinctSummary;
     activeSpeechState.fullSpokenText = fullSpokenText;
     activeSpeechState.docLang = prepared.docLang;
@@ -2144,6 +2159,7 @@ export function initHubController() {
       activeSpeechState.playing = false;
       activeSpeechState.sessionId = '';
       activeSpeechState.msgIdx = -1;
+      activeSpeechState.rawSourceText = '';
       releaseSpeechRuntimeHandles();
       syncSpeechFooterDom();
     };
@@ -2251,7 +2267,12 @@ export function initHubController() {
           });
           const nextSentenceOffset = findNextSentenceOffset(Math.max(approxOffset, desc.baseOffset + 6));
           if (nextSentenceOffset > desc.baseOffset) {
-            startAssistantSpeech(msgIdx, { startOffset: nextSentenceOffset, _recoveryDepth: _recoveryDepth + 1 });
+            startAssistantSpeech(msgIdx, {
+              startOffset: nextSentenceOffset,
+              _recoveryDepth: _recoveryDepth + 1,
+              rawTextOverride: rawText,
+              sessionIdOverride: effectiveSessionId,
+            });
             return;
           }
         }
@@ -10029,6 +10050,134 @@ export function initHubController() {
     showToast,
     formatAssistantText,
     punctuateSpeechText,
+    getSpeechState: () => ({
+      playing: activeSpeechState.playing,
+      sessionId: activeSpeechState.sessionId,
+      isTriage: activeSpeechState.msgIdx === TRIAGE_SPEECH_MSG_IDX,
+      mode: activeSpeechState.mode,
+      rate: activeSpeechState.rate,
+      hasDistinctSummary: activeSpeechState.hasDistinctSummary,
+    }),
+    toggleTriageSpeech: (sessionId, rawText) => {
+      if (
+        activeSpeechState.playing &&
+        activeSpeechState.msgIdx === TRIAGE_SPEECH_MSG_IDX &&
+        activeSpeechState.sessionId === sessionId
+      ) {
+        stopAssistantSpeech();
+        return;
+      }
+      startAssistantSpeech(TRIAGE_SPEECH_MSG_IDX, {
+        startOffset: 0,
+        rawTextOverride: rawText,
+        sessionIdOverride: sessionId,
+      });
+    },
+    switchTriageSpeechMode: (sessionId, rawText) => {
+      activeSpeechState.mode = activeSpeechState.mode === 'concise' ? 'full' : 'concise';
+      try {
+        localStorage.setItem('dsh_tts_mode_v2', activeSpeechState.mode);
+      } catch { }
+      if (
+        activeSpeechState.playing &&
+        activeSpeechState.msgIdx === TRIAGE_SPEECH_MSG_IDX &&
+        activeSpeechState.sessionId === sessionId
+      ) {
+        startAssistantSpeech(TRIAGE_SPEECH_MSG_IDX, {
+          startOffset: 0,
+          rawTextOverride: rawText || activeSpeechState.rawSourceText,
+          sessionIdOverride: sessionId,
+        });
+      } else {
+        syncSpeechFooterDom();
+      }
+    },
+    cycleTriageSpeechRate: (sessionId, rawText) => {
+      const prevRate = activeSpeechState.rate;
+      const isSpeakingThis =
+        activeSpeechState.playing &&
+        activeSpeechState.msgIdx === TRIAGE_SPEECH_MSG_IDX &&
+        activeSpeechState.sessionId === sessionId;
+      const resumeOffset = isSpeakingThis
+        ? computeSpeechResumeOffset({
+          fullText: activeSpeechState.fullSpokenText,
+          docLang: activeSpeechState.docLang,
+          segmentBaseOffset: activeSpeechState.segmentBaseOffset,
+          segmentStartedAt: activeSpeechState.segmentStartedAt,
+          segmentRate: prevRate,
+          boundaryCharOffset: activeSpeechState.boundaryCharOffset,
+          boundaryUpdatedAt: activeSpeechState.boundaryUpdatedAt,
+          nowMs: Date.now(),
+        })
+        : 0;
+      const curIdx = SPEECH_RATES.indexOf(prevRate);
+      activeSpeechState.rate = SPEECH_RATES[(curIdx + 1) % SPEECH_RATES.length];
+      try {
+        localStorage.setItem('dsh_tts_rate', String(activeSpeechState.rate));
+      } catch { }
+      if (isSpeakingThis) {
+        startAssistantSpeech(TRIAGE_SPEECH_MSG_IDX, {
+          startOffset: resumeOffset,
+          rawTextOverride: rawText || activeSpeechState.rawSourceText,
+          sessionIdOverride: sessionId,
+        });
+      } else {
+        syncSpeechFooterDom();
+      }
+    },
+    upgradeTriageSpeechIfHydrated: (sessionId, fullerRawText) => {
+      if (
+        !activeSpeechState.playing ||
+        activeSpeechState.msgIdx !== TRIAGE_SPEECH_MSG_IDX ||
+        activeSpeechState.sessionId !== sessionId
+      ) {
+        return;
+      }
+      const nextRaw = String(fullerRawText || '').trim();
+      const prevRaw = String(activeSpeechState.rawSourceText || '').trim();
+      if (!nextRaw || nextRaw.length <= prevRaw.length + 120) return;
+      const resumeOffset = computeSpeechResumeOffset({
+        fullText: activeSpeechState.fullSpokenText,
+        docLang: activeSpeechState.docLang,
+        segmentBaseOffset: activeSpeechState.segmentBaseOffset,
+        segmentStartedAt: activeSpeechState.segmentStartedAt,
+        segmentRate: activeSpeechState.segmentRate,
+        boundaryCharOffset: activeSpeechState.boundaryCharOffset,
+        boundaryUpdatedAt: activeSpeechState.boundaryUpdatedAt,
+        nowMs: Date.now(),
+      });
+      startAssistantSpeech(TRIAGE_SPEECH_MSG_IDX, {
+        startOffset: resumeOffset,
+        rawTextOverride: nextRaw,
+        sessionIdOverride: sessionId,
+      });
+    },
+    stopSpeech: () => stopAssistantSpeech(),
+    copyText: async text => {
+      const clean = String(text || '').trim();
+      if (!clean) return false;
+      try {
+        await navigator.clipboard.writeText(clean);
+        showToast(langPref === 'en' ? '📋 Copied full reply' : '📋 已复制完整回复');
+        return true;
+      } catch {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = clean;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+          showToast(langPref === 'en' ? '📋 Copied full reply' : '📋 已复制完整回复');
+          return true;
+        } catch {
+          showToast(langPref === 'en' ? 'Copy failed' : '复制失败');
+          return false;
+        }
+      }
+    },
     hydrateColdSession: (hostId, sessionId, sessionRev) =>
       hydrateColdSessionTranscript(hostId, sessionId, sessionRev),
     openSession: sessionId => openChat(sessionId),

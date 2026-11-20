@@ -497,6 +497,94 @@
   border-color: #fde68a;
 }
 
+.dsh-triage-reply-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  flex-wrap: wrap;
+}
+
+.dsh-triage-reply-expand {
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dsh-triage-speak-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.dsh-triage-speak-btn,
+.dsh-triage-speak-sub-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.dsh-triage-speak-controls.compact .dsh-triage-speak-btn,
+.dsh-triage-speak-controls.compact .dsh-triage-speak-sub-btn {
+  padding: 3px 9px;
+  font-size: 11px;
+}
+
+.dsh-triage-speak-btn:active,
+.dsh-triage-speak-sub-btn:active {
+  transform: scale(0.95);
+}
+
+.dsh-triage-speak-btn.speaking {
+  background: #fee2e2;
+  border-color: rgba(220, 38, 38, 0.35);
+  color: #b91c1c;
+}
+
+.dsh-triage-speak-sub-btn {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.dsh-triage-modal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.dsh-triage-modal-char-meta {
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 600;
+  margin-left: auto;
+}
+
 /* 代码改动单行折叠条 */
 .dsh-triage-diff-bar {
   background: #f8fafc;

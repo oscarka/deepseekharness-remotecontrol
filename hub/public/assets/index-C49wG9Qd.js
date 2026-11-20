@@ -5861,6 +5861,46 @@ function createTriageDeckController(deps) {
 	let modalExpanded = false;
 	let lastModalRenderedLen = -1;
 	let lastRenderedSig = "";
+	let lastPrehydratedCardKey = "";
+	function stopTriageSpeechIfActive() {
+		const st = deps.getSpeechState?.();
+		if (st?.playing && st?.isTriage) deps.stopSpeech?.();
+	}
+	function renderTriageSpeechControlsHtml(vm, { compact = false, includeCopy = false } = {}) {
+		if (!vm || !vm.sessionId) return "";
+		const en = isEn();
+		const st = deps.getSpeechState?.() || {};
+		const isSpeakingThis = Boolean(st.playing && st.isTriage && st.sessionId === vm.sessionId);
+		const sidEsc = esc(vm.sessionId);
+		const stopLbl = en ? "⏹ Stop" : "⏹ 停止";
+		const listenLbl = en ? "🔊 Listen" : "🔊 播报全文";
+		const modeLbl = st.mode === "concise" ? en ? "⚡ Summary" : "⚡ 重点" : en ? "📖 Full" : "📖 全文";
+		const copyLbl = en ? "📋 Copy" : "📋 复制全文";
+		const rateVal = st.rate || 1;
+		const playBtns = isSpeakingThis ? `<button type="button" class="dsh-triage-speak-btn speaking" onclick="event.stopPropagation(); triageStopReplySpeech()">${stopLbl}</button>` + (st.hasDistinctSummary ? `<button type="button" class="dsh-triage-speak-sub-btn" onclick="event.stopPropagation(); triageSwitchReplySpeechMode('${sidEsc}')" title="${en ? "Toggle Summary / Full" : "切换重点摘要 / 完整全文"}">${modeLbl}</button>` : "") + `<button type="button" class="dsh-triage-speak-sub-btn" onclick="event.stopPropagation(); triageCycleReplySpeechRate('${sidEsc}')" title="${en ? "Change playback speed" : "切换播报倍速"}">${rateVal}x</button>` : `<button type="button" class="dsh-triage-speak-btn" onclick="event.stopPropagation(); triageToggleReplySpeech('${sidEsc}')">${listenLbl}</button>`;
+		const copyBtn = includeCopy ? `<button type="button" class="dsh-triage-speak-sub-btn" onclick="event.stopPropagation(); triageCopyReplyText('${sidEsc}')">${copyLbl}</button>` : "";
+		return `<div class="dsh-triage-speak-controls ${compact ? "compact" : ""}" data-triage-speak-sid="${sidEsc}" data-compact="${compact ? "1" : "0"}" data-include-copy="${includeCopy ? "1" : "0"}" onclick="event.stopPropagation()">${playBtns}${copyBtn}</div>`;
+	}
+	function syncTriageSpeechDom() {
+		if (typeof document === "undefined") return;
+		document.querySelectorAll(".dsh-triage-speak-controls[data-triage-speak-sid]").forEach((el) => {
+			const sid = el.getAttribute("data-triage-speak-sid") || "";
+			if (!sid) return;
+			const compact = el.getAttribute("data-compact") === "1";
+			const includeCopy = el.getAttribute("data-include-copy") === "1";
+			const tmp = document.createElement("div");
+			tmp.innerHTML = renderTriageSpeechControlsHtml({ sessionId: sid }, {
+				compact,
+				includeCopy
+			});
+			const nextEl = tmp.firstElementChild;
+			if (nextEl) el.replaceWith(nextEl);
+		});
+	}
+	function findTriageCardBySessionId(sessionId) {
+		const cards = getOrderedActiveCards();
+		return cards.find((c) => c.vm.sessionId === sessionId) || cards[0] || null;
+	}
 	function appendMediaAuthUrl(url) {
 		const mt = deps.getMediaTicket?.() || "";
 		if (!mt || !url) return url;
@@ -6092,6 +6132,11 @@ function createTriageDeckController(deps) {
 			return;
 		}
 		const { session: s, vm } = cards[0];
+		const prehydrateKey = `${s.id}:${s.sessionRev || ""}`;
+		if ((s._wireTruncated || s.omittedTranscriptCount > 0 || s.hasMoreTranscript) && lastPrehydratedCardKey !== prehydrateKey) {
+			lastPrehydratedCardKey = prehydrateKey;
+			deps.hydrateColdSession?.(s.hostId, s.id, s.sessionRev);
+		}
 		const draft = ensureDraft(vm);
 		fgCard.classList.toggle("is-high", vm.risk === "high");
 		const customActive = vm.canCustom && (vm.multi ? draft.useCustom : draft.sel === vm.options.length);
@@ -6118,7 +6163,10 @@ function createTriageDeckController(deps) {
           <div class="dsh-triage-cmd-mono">${highlightDangerousCommandHtml(vm.cmdLine)}</div>
         </div>` : vm.replyPreview ? `<div class="dsh-triage-reply-card ${vm.kind === "interrupted" ? "interrupted" : ""}" onclick="openTriageReplyModal()">
             <div class="dsh-triage-clamp3">${esc(vm.replyPreview)}</div>
-            <div style="color:#2563eb;font-size:11px;font-weight:700;margin-top:4px;">${en ? "Tap to read full reply ›" : "点击展开完整回复全文 ›"}</div>
+            <div class="dsh-triage-reply-footer">
+              <span class="dsh-triage-reply-expand">${en ? "Tap to read full reply ›" : "点击展开完整回复全文 ›"}</span>
+              ${renderTriageSpeechControlsHtml(vm, { compact: true })}
+            </div>
           </div>` : "";
 		const expandAskLbl = en ? `Tap to view full prompt${vm.promptInfo.imageCount > 0 ? " & image" : ""} ›` : `点击查看完整提问${vm.promptInfo.imageCount > 0 ? "与截图" : ""} ›`;
 		fgCard.innerHTML = `
@@ -6214,6 +6262,7 @@ function createTriageDeckController(deps) {
 		setTimeout(() => document.getElementById("triageCustomTextarea")?.focus(), 50);
 	}
 	function startLiveSpeechDictation(vm, draft) {
+		stopTriageSpeechIfActive();
 		const SpeechCtor = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
 		if (!SpeechCtor) {
 			isRecording = false;
@@ -6341,6 +6390,7 @@ function createTriageDeckController(deps) {
 			nudgeEmptyCustom();
 			return;
 		}
+		stopTriageSpeechIfActive();
 		const fgCard = document.getElementById("triageFgCard");
 		const lRight = document.getElementById("triageLayerRight");
 		const commitFn = buildCommitAction(session, vm, draft);
@@ -6387,6 +6437,7 @@ function createTriageDeckController(deps) {
 			return;
 		}
 		const { session, vm } = cards[0];
+		stopTriageSpeechIfActive();
 		const draft = ensureDraft(vm);
 		const prevSnooze = snoozeOrder.get(vm.cardKey) || 0;
 		snoozeSeq += 1;
@@ -6472,7 +6523,15 @@ function createTriageDeckController(deps) {
 		const en = isEn();
 		const { vm, session } = top;
 		const rawMd = vm.fullReplyMarkdown || vm.headline;
-		return `<div class="md-body" style="font-size:14px;line-height:1.68;padding:2px 2px 6px;color:#0f172a;">${deps.formatAssistantText ? deps.formatAssistantText(rawMd, vm.artifacts) : `<div style="white-space:pre-wrap;">${esc(rawMd)}</div>`}</div>${session._wireTruncated ? `<div style="margin-top:12px;padding:9px 12px;border-radius:10px;background:#f8fafc;color:#64748b;font-size:12px;text-align:center;">${en ? "⏳ Fetching full untruncated reply…" : "⏳ 正在从云端拉取完整未截断全文…"}</div>` : ""}${`<div style="margin-top:14px;padding-top:12px;border-top:1px solid #f1f5f9;display:flex;justify-content:center;">
+		const renderedMd = deps.formatAssistantText ? deps.formatAssistantText(rawMd, vm.artifacts) : `<div style="white-space:pre-wrap;">${esc(rawMd)}</div>`;
+		const charMeta = session._wireTruncated ? en ? "Syncing full…" : "全文同步中…" : en ? `${rawMd.length} chars` : `共 ${rawMd.length} 字`;
+		return `${`<div class="dsh-triage-modal-toolbar">
+      ${renderTriageSpeechControlsHtml(vm, {
+			compact: false,
+			includeCopy: true
+		})}
+      <span class="dsh-triage-modal-char-meta">${charMeta}</span>
+    </div>`}<div class="md-body" style="font-size:14px;line-height:1.68;padding:2px 2px 6px;color:#0f172a;">${renderedMd}</div>${session._wireTruncated ? `<div style="margin-top:12px;padding:9px 12px;border-radius:10px;background:#f8fafc;color:#64748b;font-size:12px;text-align:center;">${en ? "⏳ Fetching full untruncated reply…" : "⏳ 正在从云端拉取完整未截断全文…"}</div>` : ""}${`<div style="margin-top:14px;padding-top:12px;border-top:1px solid #f1f5f9;display:flex;justify-content:center;">
       <button type="button" class="dsh-triage-open-chat" style="padding:7px 14px;font-size:12.5px;" onclick="closeTriageDetailModal(); triageOpenFullSession('${esc(vm.sessionId)}')">${en ? "💬 Open Full Conversation ›" : "💬 进入完整对话上下文 ›"}</button>
     </div>`}`;
 	}
@@ -6676,7 +6735,7 @@ function createTriageDeckController(deps) {
 		function onPointerStart(clientX, clientY, target) {
 			if (!isOpen) return;
 			if (document.getElementById("triageDetailModal")?.classList.contains("open")) return;
-			if (target?.closest?.(".dsh-triage-custom, textarea")) return;
+			if (target?.closest?.(".dsh-triage-custom, textarea, .dsh-triage-speak-controls")) return;
 			if (!getOrderedActiveCards().length) return;
 			dragging = true;
 			axisLocked = "";
@@ -6844,6 +6903,7 @@ function createTriageDeckController(deps) {
 		closeTriageDeckMode() {
 			flushAllGraceCommits();
 			stopLiveSpeechDictation();
+			stopTriageSpeechIfActive();
 			closeDetailModal();
 			isOpen = false;
 			document.getElementById("triageDeckOverlay")?.classList.remove("open");
@@ -6859,7 +6919,34 @@ function createTriageDeckController(deps) {
 		},
 		triageOpenFullSession(sessionId) {
 			if (!sessionId) return;
+			stopTriageSpeechIfActive();
 			deps.openSession?.(sessionId);
+		},
+		triageToggleReplySpeech(sessionId) {
+			const target = findTriageCardBySessionId(sessionId);
+			if (!target) return;
+			const { session, vm } = target;
+			if (session._wireTruncated || session.omittedTranscriptCount > 0 || session.hasMoreTranscript) deps.hydrateColdSession?.(session.hostId, session.id, session.sessionRev);
+			const rawText = String(vm.fullReplyMarkdown || vm.replyPreview || vm.headline || "").trim();
+			deps.toggleTriageSpeech?.(vm.sessionId, rawText);
+		},
+		triageStopReplySpeech() {
+			deps.stopSpeech?.();
+		},
+		triageSwitchReplySpeechMode(sessionId) {
+			const target = findTriageCardBySessionId(sessionId);
+			const rawText = target ? String(target.vm.fullReplyMarkdown || target.vm.replyPreview || target.vm.headline || "").trim() : "";
+			deps.switchTriageSpeechMode?.(target?.vm?.sessionId || sessionId, rawText);
+		},
+		triageCycleReplySpeechRate(sessionId) {
+			const target = findTriageCardBySessionId(sessionId);
+			const rawText = target ? String(target.vm.fullReplyMarkdown || target.vm.replyPreview || target.vm.headline || "").trim() : "";
+			deps.cycleTriageSpeechRate?.(target?.vm?.sessionId || sessionId, rawText);
+		},
+		triageCopyReplyText(sessionId) {
+			const target = findTriageCardBySessionId(sessionId);
+			const rawText = target ? String(target.vm.fullReplyMarkdown || target.vm.replyPreview || target.vm.headline || "").trim() : "";
+			deps.copyText?.(rawText);
 		},
 		triagePickOption(oi) {
 			const top = getOrderedActiveCards()[0];
@@ -7062,7 +7149,14 @@ function createTriageDeckController(deps) {
 		getTopSessionId: () => getOrderedActiveCards()[0]?.vm?.sessionId || "",
 		getPendingCount: () => getOrderedActiveCards().length,
 		onStateUpdated: () => {
-			if (isOpen) render({ force: false });
+			if (isOpen) {
+				render({ force: false });
+				const top = getOrderedActiveCards()[0];
+				if (top && !top.session._wireTruncated && top.vm.fullReplyMarkdown) deps.upgradeTriageSpeechIfHydrated?.(top.vm.sessionId, top.vm.fullReplyMarkdown);
+			}
+		},
+		onSpeechStateChanged: () => {
+			if (isOpen) syncTriageSpeechDom();
 		},
 		onLangChanged: () => {
 			lastRenderedSig = "";
@@ -9488,10 +9582,12 @@ function initHubController() {
 		1.25,
 		1.5
 	];
+	const TRIAGE_SPEECH_MSG_IDX = -101;
 	const activeSpeechState = {
 		playing: false,
 		sessionId: "",
 		msgIdx: -1,
+		rawSourceText: "",
 		mode: typeof localStorage !== "undefined" && localStorage.getItem("dsh_tts_mode_v2") === "concise" ? "concise" : "full",
 		rate: (() => {
 			const saved = typeof localStorage !== "undefined" ? Number(localStorage.getItem("dsh_tts_rate")) : 1;
@@ -9573,6 +9669,7 @@ function initHubController() {
 			if (getLangPref() === "en") applyLangToDom(nextEl, "en");
 			el.replaceWith(nextEl);
 		});
+		triageCtrl?.onSpeechStateChanged?.();
 	}
 	function stopAssistantSpeech() {
 		activeSpeechState.runId += 1;
@@ -9580,6 +9677,7 @@ function initHubController() {
 		activeSpeechState.playing = false;
 		activeSpeechState.sessionId = "";
 		activeSpeechState.msgIdx = -1;
+		activeSpeechState.rawSourceText = "";
 		activeSpeechState.fullSpokenText = "";
 		activeSpeechState.segmentBaseOffset = 0;
 		activeSpeechState.segmentStartedAt = 0;
@@ -9591,12 +9689,13 @@ function initHubController() {
 		} catch {}
 		if (wasPlaying) syncSpeechFooterDom();
 	}
-	function startAssistantSpeech(msgIdx, { startOffset = 0, _recoveryDepth = 0 } = {}) {
+	function startAssistantSpeech(msgIdx, { startOffset = 0, _recoveryDepth = 0, rawTextOverride = "", sessionIdOverride = "" } = {}) {
 		if (typeof window === "undefined" || !window.speechSynthesis || typeof SpeechSynthesisUtterance === "undefined") {
 			showToast("⚠️ 当前浏览器暂不支持系统语音播报");
 			return;
 		}
-		const rawText = String(lastRenderedAssistantTexts?.[msgIdx] || "").trim();
+		const effectiveSessionId = sessionIdOverride || (msgIdx === TRIAGE_SPEECH_MSG_IDX ? activeSpeechState.sessionId : activeSessionId || "");
+		const rawText = String(rawTextOverride || (msgIdx === TRIAGE_SPEECH_MSG_IDX ? activeSpeechState.rawSourceText : lastRenderedAssistantTexts?.[msgIdx]) || "").trim();
 		if (!rawText) {
 			showToast("⚠️ 暂无可播报的回复内容");
 			return;
@@ -9620,8 +9719,9 @@ function initHubController() {
 		} catch {}
 		const nowMs = Date.now();
 		activeSpeechState.playing = true;
-		activeSpeechState.sessionId = activeSessionId || "";
+		activeSpeechState.sessionId = effectiveSessionId;
 		activeSpeechState.msgIdx = msgIdx;
+		activeSpeechState.rawSourceText = rawText;
 		activeSpeechState.hasDistinctSummary = prepared.hasDistinctSummary;
 		activeSpeechState.fullSpokenText = fullSpokenText;
 		activeSpeechState.docLang = prepared.docLang;
@@ -9655,6 +9755,7 @@ function initHubController() {
 			activeSpeechState.playing = false;
 			activeSpeechState.sessionId = "";
 			activeSpeechState.msgIdx = -1;
+			activeSpeechState.rawSourceText = "";
 			releaseSpeechRuntimeHandles();
 			syncSpeechFooterDom();
 		};
@@ -9750,7 +9851,9 @@ function initHubController() {
 					if (nextSentenceOffset > desc.baseOffset) {
 						startAssistantSpeech(msgIdx, {
 							startOffset: nextSentenceOffset,
-							_recoveryDepth: _recoveryDepth + 1
+							_recoveryDepth: _recoveryDepth + 1,
+							rawTextOverride: rawText,
+							sessionIdOverride: effectiveSessionId
 						});
 						return;
 					}
@@ -16272,6 +16375,109 @@ function initHubController() {
 		showToast,
 		formatAssistantText,
 		punctuateSpeechText,
+		getSpeechState: () => ({
+			playing: activeSpeechState.playing,
+			sessionId: activeSpeechState.sessionId,
+			isTriage: activeSpeechState.msgIdx === TRIAGE_SPEECH_MSG_IDX,
+			mode: activeSpeechState.mode,
+			rate: activeSpeechState.rate,
+			hasDistinctSummary: activeSpeechState.hasDistinctSummary
+		}),
+		toggleTriageSpeech: (sessionId, rawText) => {
+			if (activeSpeechState.playing && activeSpeechState.msgIdx === TRIAGE_SPEECH_MSG_IDX && activeSpeechState.sessionId === sessionId) {
+				stopAssistantSpeech();
+				return;
+			}
+			startAssistantSpeech(TRIAGE_SPEECH_MSG_IDX, {
+				startOffset: 0,
+				rawTextOverride: rawText,
+				sessionIdOverride: sessionId
+			});
+		},
+		switchTriageSpeechMode: (sessionId, rawText) => {
+			activeSpeechState.mode = activeSpeechState.mode === "concise" ? "full" : "concise";
+			try {
+				localStorage.setItem("dsh_tts_mode_v2", activeSpeechState.mode);
+			} catch {}
+			if (activeSpeechState.playing && activeSpeechState.msgIdx === TRIAGE_SPEECH_MSG_IDX && activeSpeechState.sessionId === sessionId) startAssistantSpeech(TRIAGE_SPEECH_MSG_IDX, {
+				startOffset: 0,
+				rawTextOverride: rawText || activeSpeechState.rawSourceText,
+				sessionIdOverride: sessionId
+			});
+			else syncSpeechFooterDom();
+		},
+		cycleTriageSpeechRate: (sessionId, rawText) => {
+			const prevRate = activeSpeechState.rate;
+			const isSpeakingThis = activeSpeechState.playing && activeSpeechState.msgIdx === TRIAGE_SPEECH_MSG_IDX && activeSpeechState.sessionId === sessionId;
+			const resumeOffset = isSpeakingThis ? computeSpeechResumeOffset({
+				fullText: activeSpeechState.fullSpokenText,
+				docLang: activeSpeechState.docLang,
+				segmentBaseOffset: activeSpeechState.segmentBaseOffset,
+				segmentStartedAt: activeSpeechState.segmentStartedAt,
+				segmentRate: prevRate,
+				boundaryCharOffset: activeSpeechState.boundaryCharOffset,
+				boundaryUpdatedAt: activeSpeechState.boundaryUpdatedAt,
+				nowMs: Date.now()
+			}) : 0;
+			const curIdx = SPEECH_RATES.indexOf(prevRate);
+			activeSpeechState.rate = SPEECH_RATES[(curIdx + 1) % SPEECH_RATES.length];
+			try {
+				localStorage.setItem("dsh_tts_rate", String(activeSpeechState.rate));
+			} catch {}
+			if (isSpeakingThis) startAssistantSpeech(TRIAGE_SPEECH_MSG_IDX, {
+				startOffset: resumeOffset,
+				rawTextOverride: rawText || activeSpeechState.rawSourceText,
+				sessionIdOverride: sessionId
+			});
+			else syncSpeechFooterDom();
+		},
+		upgradeTriageSpeechIfHydrated: (sessionId, fullerRawText) => {
+			if (!activeSpeechState.playing || activeSpeechState.msgIdx !== TRIAGE_SPEECH_MSG_IDX || activeSpeechState.sessionId !== sessionId) return;
+			const nextRaw = String(fullerRawText || "").trim();
+			const prevRaw = String(activeSpeechState.rawSourceText || "").trim();
+			if (!nextRaw || nextRaw.length <= prevRaw.length + 120) return;
+			const resumeOffset = computeSpeechResumeOffset({
+				fullText: activeSpeechState.fullSpokenText,
+				docLang: activeSpeechState.docLang,
+				segmentBaseOffset: activeSpeechState.segmentBaseOffset,
+				segmentStartedAt: activeSpeechState.segmentStartedAt,
+				segmentRate: activeSpeechState.segmentRate,
+				boundaryCharOffset: activeSpeechState.boundaryCharOffset,
+				boundaryUpdatedAt: activeSpeechState.boundaryUpdatedAt,
+				nowMs: Date.now()
+			});
+			startAssistantSpeech(TRIAGE_SPEECH_MSG_IDX, {
+				startOffset: resumeOffset,
+				rawTextOverride: nextRaw,
+				sessionIdOverride: sessionId
+			});
+		},
+		stopSpeech: () => stopAssistantSpeech(),
+		copyText: async (text) => {
+			const clean = String(text || "").trim();
+			if (!clean) return false;
+			try {
+				await navigator.clipboard.writeText(clean);
+				showToast(langPref === "en" ? "📋 Copied full reply" : "📋 已复制完整回复");
+				return true;
+			} catch {
+				try {
+					const ta = document.createElement("textarea");
+					ta.value = clean;
+					ta.style.position = "fixed";
+					ta.style.opacity = "0";
+					document.body.appendChild(ta);
+					ta.select();
+					document.execCommand("copy");
+					ta.remove();
+					showToast(langPref === "en" ? "📋 Copied full reply" : "📋 已复制完整回复");
+					return true;
+				} catch {
+					showToast(langPref === "en" ? "Copy failed" : "复制失败");
+					return false;
+				}
+			}
+		},
 		hydrateColdSession: (hostId, sessionId, sessionRev) => hydrateColdSessionTranscript(hostId, sessionId, sessionRev),
 		openSession: (sessionId) => openChat(sessionId),
 		openFileForSession: (sessionId, rawPath) => {
