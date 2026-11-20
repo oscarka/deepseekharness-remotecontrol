@@ -59,6 +59,66 @@ const VIDEO_MIME = {
   '.avi': 'video/x-msvideo',
 }
 
+const DOCUMENT_MIME = {
+  '.md': 'text/markdown',
+  '.markdown': 'text/markdown',
+  '.mdx': 'text/markdown',
+  '.txt': 'text/plain',
+  '.log': 'text/plain',
+  '.html': 'text/html',
+  '.htm': 'text/html',
+  '.css': 'text/css',
+  '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.cjs': 'text/javascript',
+  '.json': 'application/json',
+  '.jsonl': 'application/json',
+  '.csv': 'text/csv',
+  '.tsv': 'text/tab-separated-values',
+  '.xml': 'application/xml',
+  '.yaml': 'text/yaml',
+  '.yml': 'text/yaml',
+  '.pdf': 'application/pdf',
+  '.zip': 'application/zip',
+  '.gz': 'application/gzip',
+  '.tar': 'application/x-tar',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.ogg': 'audio/ogg',
+  '.flac': 'audio/flac',
+}
+
+function resolveStreamMime(ext, { download = false, isText = false } = {}) {
+  const lower = String(ext || '').toLowerCase()
+  if (VIDEO_MIME[lower]) return VIDEO_MIME[lower]
+  if (IMAGE_MIME[lower]) return IMAGE_MIME[lower]
+  const docMime = DOCUMENT_MIME[lower]
+  if (isText) {
+    // Keep .html/.htm as text/plain on inline stream requests to prevent same-origin HTML execution;
+    // return text/html only when download=true (which sets Content-Disposition: attachment).
+    if ((lower === '.html' || lower === '.htm') && !download) {
+      return 'text/plain; charset=utf-8'
+    }
+    const base =
+      docMime &&
+      (docMime.startsWith('text/') || docMime === 'application/json' || docMime === 'application/xml')
+        ? docMime
+        : 'text/plain'
+    return `${base}; charset=utf-8`
+  }
+  if ((lower === '.html' || lower === '.htm') && !download) {
+    return 'text/plain; charset=utf-8'
+  }
+  return docMime || 'application/octet-stream'
+}
+
 /**
  * Load or generate a persistent host cryptographic identity (Ed25519 / SHA-256 fingerprint)
  * for device pinning (replaces dsh.r2049.cn device identity descriptor).
@@ -3175,7 +3235,7 @@ export async function prepareWorkspaceFileStream(
 
   let streamFile = realFile
   let streamSize = info.size
-  let streamMime = VIDEO_MIME[ext] || IMAGE_MIME[ext] || 'application/octet-stream'
+  let streamMime = resolveStreamMime(ext, { download, isText: false })
   let variant = 'orig'
   let transcodeUnavailable = false
 
@@ -3399,11 +3459,12 @@ export async function prepareWorkspaceFileStream(
     const fullBuf = await readFile(streamFile)
     if (!fullBuf.includes(0)) {
       const redacted = Buffer.from(redactText(fullBuf.toString('utf8')), 'utf8')
+      const textMime = resolveStreamMime(ext, { download, isText: true })
       return {
         ok: true,
         status: 200,
         name,
-        mime: 'text/plain; charset=utf-8',
+        mime: textMime,
         etag,
         variant,
         isThumb,
@@ -3413,7 +3474,7 @@ export async function prepareWorkspaceFileStream(
         byteLength: redacted.length,
         headers: {
           ...baseHeaders,
-          'content-type': 'text/plain; charset=utf-8',
+          'content-type': textMime,
           'content-length': String(redacted.length),
         },
         buffer: redacted,

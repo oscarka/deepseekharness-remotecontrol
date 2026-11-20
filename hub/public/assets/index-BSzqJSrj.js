@@ -944,6 +944,20 @@ function Sheets() {
 		style: "border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;",
 		onClick: () => window.closeSheet?.("pluginDetailSheet")
 	}, "✕")), /* @__PURE__ */ k("div", { id: "pluginDetailBody" }))), /* @__PURE__ */ k("div", {
+		class: "sheet-backdrop",
+		id: "fileExportSheet",
+		onClick: closeIfBackdrop("fileExportSheet")
+	}, /* @__PURE__ */ k("div", { class: "sheet-panel file-export-sheet-panel" }, /* @__PURE__ */ k("div", { class: "sheet-handle" }), /* @__PURE__ */ k("div", {
+		class: "sheet-title",
+		style: "margin-bottom:10px;"
+	}, /* @__PURE__ */ k("span", {
+		id: "fileExportSheetTitle",
+		style: "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;"
+	}, "⤓ 导出与分享"), /* @__PURE__ */ k("button", {
+		type: "button",
+		style: "border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;flex-shrink:0;",
+		onClick: () => window.closeSheet?.("fileExportSheet")
+	}, "✕")), /* @__PURE__ */ k("div", { id: "fileExportSheetBody" }))), /* @__PURE__ */ k("div", {
 		id: "htmlPreviewOverlay",
 		style: "display:none;position:fixed;inset:0;z-index:9999;background:#0f172a;flex-direction:column;"
 	}, /* @__PURE__ */ k("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:8px;padding:max(10px, env(safe-area-inset-top)) 12px 10px;background:#0f172a;border-bottom:1px solid rgba(148,163,184,0.22);color:#f8fafc;flex-shrink:0;" }, /* @__PURE__ */ k("button", {
@@ -955,6 +969,13 @@ function Sheets() {
 		id: "htmlPreviewOverlayTitle",
 		style: "font-size:13.5px;font-weight:700;color:#f8fafc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:center;"
 	}, "🌐 HTML 交互预览"), /* @__PURE__ */ k("div", { style: "display:flex;align-items:center;gap:6px;flex-shrink:0;" }, /* @__PURE__ */ k("button", {
+		type: "button",
+		class: "icon-pill-btn",
+		title: "保存或分享此 HTML 文件",
+		"aria-label": "保存或分享此 HTML 文件",
+		style: "background:rgba(255,255,255,0.1);color:#e2e8f0;border-color:rgba(255,255,255,0.18);",
+		onClick: (e) => window.downloadFullscreenHtmlPreview?.(e.currentTarget)
+	}, "⤓"), /* @__PURE__ */ k("button", {
 		type: "button",
 		class: "icon-pill-btn",
 		id: "htmlPreviewModeBtn",
@@ -1638,6 +1659,441 @@ function fileLoadingSpinnerHtml(text) {
     <div class="file-loading-dot"></div>
     <div>${esc$1(text)}</div>
   </div>`;
+}
+// hub/web/src/utils/fileExport.ts
+var MARKDOWN_FILE_EXT_RE = /\.(md|markdown|mdx)$/i;
+function isMarkdownFileName(nameOrPath) {
+	return MARKDOWN_FILE_EXT_RE.test(String(nameOrPath || "").trim());
+}
+var EXPORT_MIME_MAP = {
+	".png": "image/png",
+	".jpg": "image/jpeg",
+	".jpeg": "image/jpeg",
+	".webp": "image/webp",
+	".gif": "image/gif",
+	".svg": "image/svg+xml",
+	".bmp": "image/bmp",
+	".ico": "image/x-icon",
+	".avif": "image/avif",
+	".heic": "image/heic",
+	".heif": "image/heif",
+	".mp4": "video/mp4",
+	".m4v": "video/mp4",
+	".mov": "video/quicktime",
+	".webm": "video/webm",
+	".ogv": "video/ogg",
+	".mkv": "video/x-matroska",
+	".avi": "video/x-msvideo",
+	".mp3": "audio/mpeg",
+	".wav": "audio/wav",
+	".m4a": "audio/mp4",
+	".ogg": "audio/ogg",
+	".flac": "audio/flac",
+	".aac": "audio/aac",
+	".md": "text/markdown",
+	".markdown": "text/markdown",
+	".mdx": "text/markdown",
+	".txt": "text/plain",
+	".log": "text/plain",
+	".html": "text/html",
+	".htm": "text/html",
+	".xhtml": "application/xhtml+xml",
+	".css": "text/css",
+	".csv": "text/csv",
+	".tsv": "text/tab-separated-values",
+	".json": "application/json",
+	".jsonl": "application/json",
+	".xml": "application/xml",
+	".yaml": "text/yaml",
+	".yml": "text/yaml",
+	".js": "text/javascript",
+	".mjs": "text/javascript",
+	".cjs": "text/javascript",
+	".ts": "text/plain",
+	".tsx": "text/plain",
+	".jsx": "text/plain",
+	".py": "text/plain",
+	".go": "text/plain",
+	".rs": "text/plain",
+	".java": "text/plain",
+	".kt": "text/plain",
+	".swift": "text/plain",
+	".c": "text/plain",
+	".h": "text/plain",
+	".cpp": "text/plain",
+	".hpp": "text/plain",
+	".sh": "text/plain",
+	".bash": "text/plain",
+	".zsh": "text/plain",
+	".sql": "text/plain",
+	".toml": "text/plain",
+	".ini": "text/plain",
+	".env": "text/plain",
+	".conf": "text/plain",
+	".pdf": "application/pdf",
+	".zip": "application/zip",
+	".gz": "application/gzip",
+	".tar": "application/x-tar",
+	".doc": "application/msword",
+	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+	".xls": "application/vnd.ms-excel",
+	".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	".ppt": "application/vnd.ms-powerpoint",
+	".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+};
+function guessExportMimeByName(nameOrPath) {
+	const clean = String(nameOrPath || "").trim().split("?")[0].split("#")[0];
+	const base = clean.split("/").filter(Boolean).pop() || clean;
+	const dotIdx = base.lastIndexOf(".");
+	if (dotIdx <= 0) return "application/octet-stream";
+	return EXPORT_MIME_MAP[base.slice(dotIdx).toLowerCase()] || "application/octet-stream";
+}
+function isTextLikeMime(mimeType) {
+	const clean = String(mimeType || "").split(";")[0].trim().toLowerCase();
+	return clean.startsWith("text/") || clean === "application/json" || clean === "application/xml" || clean === "application/xhtml+xml" || clean === "application/javascript";
+}
+function buildExportHtmlFileName(fileName) {
+	const safeBase = String(fileName || "document.md").split("/").filter(Boolean).pop() || "document.md";
+	if (MARKDOWN_FILE_EXT_RE.test(safeBase)) return safeBase.replace(MARKDOWN_FILE_EXT_RE, ".html");
+	return `${safeBase}.html`;
+}
+function describeFileKindLabel(fileName, kind) {
+	const base = String(fileName || "").trim().toLowerCase();
+	if (isMarkdownFileName(base)) return "Markdown 文档";
+	if (/\.(html?|xhtml)$/.test(base)) return "HTML 网页";
+	if (/\.(json|jsonl)$/.test(base)) return "JSON 数据";
+	if (/\.(csv|tsv)$/.test(base)) return "表格数据";
+	if (/\.(ya?ml|toml|ini|env|conf)$/.test(base)) return "配置文件";
+	if (/\.(txt|log)$/.test(base)) return "纯文本文档";
+	if (/\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|swift|c|h|cpp|hpp|sh|bash|zsh|sql|css)$/.test(base)) return "源码文件";
+	if (kind === "image") return "图片文件";
+	if (kind === "video") return "视频文件";
+	if (kind === "binary") return "二进制文件";
+	return "文本文件";
+}
+function stripInlineMarkdown(line) {
+	let out = String(line || "");
+	out = out.replace(/<plugin-card\b[^>]*>[\s\S]*?<\/plugin-card>/gi, "");
+	out = out.replace(/!\[([^\]]*)\]\([^)]+\)/g, (_, alt) => alt ? String(alt).trim() : "");
+	out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, rawLabel, rawHref) => {
+		const label = String(rawLabel || "").trim();
+		const href = String(rawHref || "").trim();
+		if (/^https?:\/\//i.test(href)) return !label || label === href ? href : `${label} (${href})`;
+		return label;
+	});
+	out = out.replace(/`([^`\n]+)`/g, "$1");
+	out = out.replace(/\*\*([^*\n]+)\*\*/g, "$1");
+	out = out.replace(/__([^_\n]+)__/g, "$1");
+	out = out.replace(/~~([^~\n]+)~~/g, "$1");
+	out = out.replace(/(^|[\s(（【「『])\*([^*\n]+)\*(?=$|[\s.,!?;:）)】」』，。！？；：])/g, "$1$2");
+	out = out.replace(/(^|[\s(（【「『])_([^_\n]+)_(?=$|[\s.,!?;:）)】」』，。！？；：])/g, "$1$2");
+	out = out.replace(/\\([\\`*_{}[\]()#+\-.!|>~])/g, "$1");
+	return out;
+}
+/**
+* Convert Markdown to clean, paste-ready plain text for WeChat / Notes / social posts.
+*/
+function stripMarkdownToPlainText(markdown) {
+	const normalized = String(markdown || "").replace(/\r\n?/g, "\n");
+	if (!normalized.trim()) return "";
+	const lines = normalized.split("\n");
+	const out = [];
+	let inCodeBlock = false;
+	for (let i = 0; i < lines.length; i += 1) {
+		const rawLine = lines[i];
+		const trimmed = rawLine.trim();
+		if (/^```/.test(trimmed) || /^~~~/.test(trimmed)) {
+			inCodeBlock = !inCodeBlock;
+			if (!inCodeBlock && out.length > 0 && out[out.length - 1] !== "") out.push("");
+			continue;
+		}
+		if (inCodeBlock) {
+			out.push(rawLine);
+			continue;
+		}
+		if (/^([-*_])(\s*\1){2,}$/.test(trimmed)) {
+			if (out.length > 0 && out[out.length - 1] !== "") out.push("");
+			continue;
+		}
+		if (/^\|?(\s*:?-{2,}:?\s*\|)+\s*:?-{2,}:?\s*\|?$/.test(trimmed)) continue;
+		if (/^\|.*\|$/.test(trimmed)) {
+			const cells = trimmed.slice(1, -1).split("|").map((c) => stripInlineMarkdown(c.trim()));
+			out.push(cells.join(" | "));
+			continue;
+		}
+		const headingMatch = /^#{1,6}\s+(.*)$/.exec(trimmed);
+		if (headingMatch) {
+			const headingText = stripInlineMarkdown(headingMatch[1].replace(/\s+#+$/, "").trim());
+			if (headingText) {
+				if (out.length > 0 && out[out.length - 1] !== "") out.push("");
+				out.push(headingText);
+			}
+			continue;
+		}
+		const quoteMatch = /^>\s?(.*)$/.exec(trimmed);
+		if (quoteMatch) {
+			const inner = quoteMatch[1].replace(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i, "");
+			out.push(stripInlineMarkdown(inner));
+			continue;
+		}
+		const taskMatch = /^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/.exec(rawLine);
+		if (taskMatch) {
+			const prefix = taskMatch[2].toLowerCase() === "x" ? "☑ " : "☐ ";
+			out.push(`${taskMatch[1]}${prefix}${stripInlineMarkdown(taskMatch[3])}`);
+			continue;
+		}
+		const bulletMatch = /^(\s*)[-*+]\s+(.*)$/.exec(rawLine);
+		if (bulletMatch) {
+			out.push(`${bulletMatch[1]}• ${stripInlineMarkdown(bulletMatch[2])}`);
+			continue;
+		}
+		const orderedMatch = /^(\s*)(\d+[.)])\s+(.*)$/.exec(rawLine);
+		if (orderedMatch) {
+			out.push(`${orderedMatch[1]}${orderedMatch[2]} ${stripInlineMarkdown(orderedMatch[3])}`);
+			continue;
+		}
+		out.push(stripInlineMarkdown(rawLine));
+	}
+	return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+/**
+* Strip PocketAgents-specific interactive inline handlers so exported standalone HTML
+* opens cleanly offline in Safari, Chrome, and WeChat without missing global function errors.
+*/
+function sanitizeExportedBodyHtml(renderedHtml) {
+	let html = String(renderedHtml || "");
+	html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+	html = html.replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+	html = html.replace(/href\s*=\s*(["'])\s*javascript:[^"']*\1/gi, "href=\"#\"");
+	html = html.replace(/<button\b[^>]*class="[^"]*\bmd-code-copy\b[^"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
+	return html;
+}
+function buildStandaloneMarkdownHtml({ title = "Document", renderedBodyHtml = "", sourcePath = "", exportedAt = "" }) {
+	const safeTitle = esc$1(String(title || "Document"));
+	const safePath = esc$1(String(sourcePath || ""));
+	const safeDate = esc$1(String(exportedAt || (/* @__PURE__ */ new Date()).toLocaleString("zh-CN", {
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false
+	})));
+	const cleanBody = sanitizeExportedBodyHtml(renderedBodyHtml);
+	return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${safeTitle}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #ffffff;
+      --page-bg: #f8fafc;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --accent: #2563eb;
+      --accent-soft: #eff6ff;
+      --code-bg: #f1f5f9;
+      --pre-bg: #0f172a;
+      --pre-text: #f8fafc;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--page-bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.75;
+      -webkit-font-smoothing: antialiased;
+    }
+    .doc-shell {
+      max-width: 780px;
+      margin: 20px auto;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px 32px 36px;
+      box-shadow: 0 6px 24px rgba(15, 23, 42, 0.05);
+    }
+    .doc-meta-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 6px 12px;
+      padding-bottom: 14px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .doc-meta-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text);
+      word-break: break-all;
+    }
+    .doc-meta-sub {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .md-article h1, .md-article h2, .md-article h3, .md-article h4 {
+      color: var(--text);
+      line-height: 1.38;
+      margin: 1.35em 0 0.6em;
+      font-weight: 700;
+    }
+    .md-article h1:first-child, .md-article h2:first-child { margin-top: 0; }
+    .md-article h1 { font-size: 1.55em; }
+    .md-article h2 { font-size: 1.28em; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+    .md-article h3 { font-size: 1.12em; }
+    .md-article p { margin: 0.7em 0; word-break: break-word; }
+    .md-article ul, .md-article ol { margin: 0.65em 0; padding-left: 1.5em; }
+    .md-article li { margin: 0.3em 0; }
+    .md-article blockquote, .md-article .md-quote {
+      margin: 0.9em 0;
+      padding: 12px 15px;
+      border-left: 3.5px solid var(--accent);
+      background: #f1f5f9;
+      border-radius: 0 10px 10px 0;
+      color: #1e293b;
+    }
+    .md-article code, .md-article .md-inline-code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.88em;
+      background: var(--code-bg);
+      color: #0f172a;
+      padding: 2px 6px;
+      border-radius: 5px;
+      border: 1px solid #e2e8f0;
+    }
+    .md-article pre, .md-article .md-code-block {
+      background: var(--pre-bg);
+      color: var(--pre-text);
+      border-radius: 10px;
+      overflow-x: auto;
+      margin: 1em 0;
+    }
+    .md-article .md-code-head {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 12px;
+      font-size: 11.5px;
+      color: #94a3b8;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .md-article pre {
+      padding: 12px 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .md-article .md-code-block pre { margin: 0; border-radius: 0; }
+    .md-article pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      border: none;
+      font-size: inherit;
+    }
+    .md-article table, .md-article .md-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1em 0;
+      font-size: 13.5px;
+    }
+    .md-article .md-table-wrap { overflow-x: auto; margin: 1em 0; }
+    .md-article .md-table-wrap table { margin: 0; }
+    .md-article th, .md-article td {
+      border: 1px solid var(--border);
+      padding: 8px 11px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .md-article th {
+      background: #f8fafc;
+      font-weight: 700;
+    }
+    .md-article a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .md-article a:hover { text-decoration: underline; }
+    .md-article .md-file-chip,
+    .md-article .md-plugin-chip,
+    .md-article .md-sidecar-chip,
+    .md-article .md-conv-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 1px 8px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #1d4ed8;
+      font-size: 0.9em;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      vertical-align: baseline;
+    }
+    .md-article hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 1.5em 0;
+    }
+    .md-article img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+    }
+    @media (max-width: 640px) {
+      body { background: var(--bg); }
+      .doc-shell {
+        margin: 0;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        padding: 18px 16px 28px;
+      }
+    }
+    @media print {
+      @page { margin: 15mm; }
+      body { background: #ffffff; font-size: 11pt; }
+      .doc-shell {
+        margin: 0;
+        max-width: none;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        padding: 0;
+      }
+      .md-article h1, .md-article h2, .md-article h3 { break-after: avoid; }
+      .md-article blockquote, .md-article .md-quote, .md-article pre, .md-article .md-code-block, .md-article tr {
+        break-inside: avoid;
+      }
+      .md-article pre, .md-article .md-code-block {
+        background: #f8fafc;
+        color: #0f172a;
+        border: 1px solid #cbd5e1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="doc-shell">
+    <header class="doc-meta-header">
+      <span class="doc-meta-title">📄 ${safeTitle}</span>
+      <span class="doc-meta-sub">${safePath && safePath !== title ? `${safePath} · ` : ""}导出时间 ${safeDate}</span>
+    </header>
+    <article class="md-article">
+      ${cleanBody}
+    </article>
+  </main>
+</body>
+</html>`;
 }
 // \0vite/preload-helper.js
 var scriptRel = "modulepreload";
@@ -3920,6 +4376,36 @@ var EXACT_ZH_TO_EN = {
 	"⬇️ 保存/分享视频": "⬇️ Save / Share Video",
 	"⬇️ 保存/分享文件": "⬇️ Save / Share File",
 	"⬇️ 保存图片": "⬇️ Save Image",
+	"⤓ 导出与分享": "⤓ Export & Share",
+	"📄 导出与分享文档": "📄 Export & Share Document",
+	"⤓ 导出与分享文件": "⤓ Export & Share File",
+	"导出/保存": "Export / Save",
+	"保存": "Save",
+	"导出、分享或复制 Markdown 文档": "Export, share, or copy Markdown document",
+	"保存、分享或复制文件": "Save, share, or copy file",
+	"保存或分享原文件": "Save or share original file",
+	"保存或分享此 HTML 文件": "Save or share this HTML file",
+	"复制 Markdown 原文": "Copy Raw Markdown",
+	"保留标题、代码块、引用与列表原始语法": "Keep headings, code blocks, quotes, and Markdown syntax",
+	"复制纯文本（去格式）": "Copy Plain Text",
+	"自动清理 #、** 等符号，适合直接贴进微信、备忘录、小红书": "Strip #, ** and Markdown syntax for clean pasting into chats or notes",
+	"打印 / 另存为 PDF": "Print / Save as PDF",
+	"调起系统打印预览，可直接存为 PDF 文件或发送打印": "Open system print preview to save as PDF or print",
+	"复制完整内容": "Copy Full Content",
+	"一键将文件全文复制到系统剪贴板": "Copy full file content to clipboard",
+	"存入手机「文件」/ 发微信、飞书、AirDrop / 导入 Obsidian（电脑端直接下载）": "Save to Files / Share via AirDrop or apps (downloads directly on desktop)",
+	"存入手机「文件」/ 发微信、飞书、AirDrop（电脑端直接下载）": "Save to Files / Share via AirDrop or apps (downloads directly on desktop)",
+	"保存 / 分享原文件": "Save / Share Original File",
+	"导出排版版 HTML": "Export Formatted HTML",
+	"生成带清爽排版、表格与代码块样式的独立 .html，发朋友点开即看": "Standalone styled .html with clean typography, tables, and code blocks",
+	"ℹ️ 当前预览仅展示前 256 KB，导出或保存原文件时将自动拉取完整内容": "ℹ️ Preview shows the first 256 KB; exporting will fetch the full file automatically",
+	"Markdown 文档": "Markdown Document",
+	"HTML 网页": "HTML Page",
+	"JSON 数据": "JSON Data",
+	"表格数据": "Spreadsheet / CSV",
+	"配置文件": "Config File",
+	"纯文本文档": "Plain Text",
+	"源码文件": "Source Code",
 	"📥 松开手指即可保存或分享图片": "📥 Release finger to save or share image",
 	"🌐 交互预览": "🌐 Live Preview",
 	"⛶ 全屏体验": "⛶ Fullscreen",
@@ -12312,7 +12798,8 @@ function initHubController() {
 			body.dataset.dshPreviewKey = previewKey;
 			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc$1(line)}</span></div>`).join("");
 			const canToggleOrigImg = kind === "image" && Boolean(preview.streamUrl) && !/\.(svg|gif)$/i.test(preview.name || "") && (!preview.size || preview.size > 122880);
-			const dlUrl = preview.streamUrl ? appendMediaAuth(`${preview.streamUrl}${preview.streamUrl.includes("?") ? "&" : "?"}download=1`, mt) : "";
+			const dlUrl = resolvePreviewDownloadUrl(host.hostId, preview, mt, found.session?.cwd || "", found.session?.id || "");
+			const headerExportBtnHtml = buildHeaderExportBtnHtml(host.hostId, preview, kind, dlUrl, mt, true);
 			const videoMetaUi = kind === "video" ? describeVideoPreviewStatus(preview) : null;
 			const htmlSrcdocAttr = isHtml && !rawHtmlMode ? escapeSrcdocAttr(buildSandboxedHtmlSrcdoc(preview.content || "", {
 				hostId: host.hostId,
@@ -12342,12 +12829,13 @@ function initHubController() {
                      ${numberedHtml}
                    </div>`;
 			body.innerHTML = `
-          <div class="breadcrumbs-bar" style="justify-content:space-between;gap:6px;">
-            <button class="back-btn" style="padding:0;font-size:13px;" onclick="backFromDrawerPreview()">‹ 返回目录</button>
-            <span style="font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc$1(preview.name)}</span>
-            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+          <div class="breadcrumbs-bar file-preview-header-bar">
+            <button class="back-btn" style="padding:0;font-size:13px;flex-shrink:0;" onclick="backFromDrawerPreview()">‹ 返回目录</button>
+            <span class="file-preview-header-name" title="${esc$1(preview.name)}">${esc$1(preview.name)}</span>
+            <div style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
               ${isHtml ? `<button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="openFullscreenHtmlFromPreview('${esc$1(host.hostId)}', true)">⛶ 全屏体验</button><button class="icon-pill-btn" onclick="toggleHtmlPreviewMode()">${rawHtmlMode ? "🌐 预览" : "</> 源码"}</button>` : ""}
               ${isMarkdown ? `<button class="icon-pill-btn" onclick="toggleMdPreviewMode()">${rawMdMode ? "📖 渲染" : "</> 源码"}</button>` : ""}
+              ${headerExportBtnHtml}
               <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="quoteFileIntoChat('${esc$1(preview.relPath || preview.name)}')">📎 引用</button>
             </div>
           </div>
@@ -13078,35 +13566,170 @@ function initHubController() {
 		renderFullscreenHtmlOverlay();
 		showToast("🔄 已重新加载 HTML 页面");
 	}
+	const EXPORT_TRAY_ICON_SVG = "<svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M8 2.2v7.6M5 7l3 3 3-3M2.8 11.4v1.4A1.2 1.2 0 0 0 4 14h8a1.2 1.2 0 0 0 1.2-1.2v-1.4\"/></svg>";
+	function resolvePreviewDownloadUrl(hostId, preview, mt = "", fallbackCwd = "", fallbackAgentId = "") {
+		if (!preview) return "";
+		if (preview.streamUrl) return appendMediaAuth(`${preview.streamUrl}${preview.streamUrl.includes("?") ? "&" : "?"}download=1`, mt);
+		if (!isDemoMode && hostId && preview.relPath) return buildFastStreamUrl(hostId, preview.relPath, {
+			cwd: preview._retryContext?.cwd || fallbackCwd || fileProjectCwd || "",
+			agentId: preview.agentId || preview._retryContext?.agentId || fallbackAgentId || "",
+			download: true,
+			mediaTicket: mt
+		});
+		return "";
+	}
+	function buildHeaderExportBtnHtml(hostId, preview, kind, dlUrl, mt, inDrawer) {
+		if (!preview || kind === "error" || kind === "none") return "";
+		if (kind === "text") {
+			const label = inDrawer ? "" : "<span>导出/保存</span>";
+			const titleText = isMarkdownFileName(preview.name || preview.relPath || "") ? "导出、分享或复制 Markdown 文档" : "保存、分享或复制文件";
+			return `<button type="button" class="icon-pill-btn file-export-trigger-btn${inDrawer ? " is-compact-icon" : ""}" title="${esc$1(titleText)}" aria-label="${esc$1(titleText)}" onclick="openFileExportSheet('${esc$1(hostId)}', ${inDrawer ? "true" : "false"})">${EXPORT_TRAY_ICON_SVG}${label}</button>`;
+		}
+		const effectiveDl = dlUrl || (kind === "image" ? imagePreviewSrc(preview, mt) : "");
+		if (!effectiveDl) return "";
+		const label = inDrawer ? "" : "<span>保存</span>";
+		return `<button type="button" class="icon-pill-btn file-export-trigger-btn${inDrawer ? " is-compact-icon" : ""}" title="保存或分享原文件" aria-label="保存或分享原文件" onclick="downloadPreviewMedia('${esc$1(effectiveDl)}', '${esc$1(preview.name || "download")}', this)">${EXPORT_TRAY_ICON_SVG}${label}</button>`;
+	}
+	function setExportBtnBusy(btnEl, busyText) {
+		if (!btnEl) return;
+		if (btnEl.__origHtml === void 0) btnEl.__origHtml = btnEl.innerHTML;
+		btnEl.dataset.downloading = "1";
+		btnEl.disabled = true;
+		if (btnEl.classList.contains("file-export-action-btn")) {
+			const titleEl = btnEl.querySelector(".file-export-action-title");
+			if (titleEl) {
+				if (titleEl.__origTitle === void 0) titleEl.__origTitle = titleEl.textContent || "";
+				titleEl.textContent = busyText;
+			}
+			return;
+		}
+		if (btnEl.classList.contains("is-compact-icon")) {
+			btnEl.textContent = "⏳";
+			return;
+		}
+		btnEl.textContent = busyText;
+	}
+	function restoreExportBtn(btnEl) {
+		if (!btnEl) return;
+		btnEl.dataset.downloading = "0";
+		btnEl.disabled = false;
+		if (btnEl.classList.contains("file-export-action-btn")) {
+			const titleEl = btnEl.querySelector(".file-export-action-title");
+			if (titleEl && titleEl.__origTitle !== void 0) titleEl.textContent = titleEl.__origTitle;
+			return;
+		}
+		if (btnEl.__origHtml !== void 0) btnEl.innerHTML = btnEl.__origHtml;
+	}
+	function markExportBtnReadyForSecondTap(btnEl, readyFile) {
+		if (!btnEl) return;
+		btnEl.__readyShareFile = readyFile;
+		btnEl.dataset.downloading = "0";
+		btnEl.disabled = false;
+		if (btnEl.classList.contains("file-export-action-btn")) {
+			const titleEl = btnEl.querySelector(".file-export-action-title");
+			if (titleEl) {
+				if (titleEl.__origTitle === void 0) titleEl.__origTitle = titleEl.textContent || "";
+				titleEl.textContent = "📲 已就绪 · 再点存入文件/分享";
+			}
+			return;
+		}
+		btnEl.textContent = btnEl.classList.contains("is-compact-icon") ? "📲" : "📲 已缓存 · 再点存入相册/文件";
+	}
+	async function tryInvokeCachedShareFile(btnEl, safeName) {
+		if (!btnEl?.__readyShareFile || typeof navigator === "undefined" || typeof navigator.share !== "function") return false;
+		const cachedFile = btnEl.__readyShareFile;
+		try {
+			await navigator.share({
+				files: [cachedFile],
+				title: safeName
+			});
+			delete btnEl.__readyShareFile;
+			restoreExportBtn(btnEl);
+			return true;
+		} catch (err) {
+			if (err?.name === "AbortError") return true;
+			return false;
+		}
+	}
+	async function shareOrSaveBlob(blob, fileName = "download", { mimeType = "", btnEl = null, successToast = "" } = {}) {
+		if (!blob) return false;
+		const safeName = String(fileName || "download").split("/").filter(Boolean).pop() || "download";
+		const rawMime = String(mimeType || blob.type || guessExportMimeByName(safeName)).split(";")[0].trim() || "application/octet-stream";
+		const finalMime = rawMime === "application/octet-stream" ? guessExportMimeByName(safeName) : rawMime;
+		const typedBlob = blob.type === finalMime ? blob : new Blob([blob], { type: finalMime });
+		const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+		if ((isIosDevice() || isStandaloneApp() || /Android|iPhone|iPad|iPod|Mobile/i.test(ua)) && typeof File === "function" && typeof navigator !== "undefined" && typeof navigator.canShare === "function" && typeof navigator.share === "function") {
+			let shareFile = new File([typedBlob], safeName, { type: finalMime });
+			let canShareFile = false;
+			try {
+				canShareFile = navigator.canShare({ files: [shareFile] });
+			} catch {
+				canShareFile = false;
+			}
+			if (!canShareFile && finalMime !== "text/plain" && isTextLikeMime(finalMime)) {
+				const plainFile = new File([typedBlob], safeName, { type: "text/plain" });
+				try {
+					if (navigator.canShare({ files: [plainFile] })) {
+						shareFile = plainFile;
+						canShareFile = true;
+					}
+				} catch {}
+			}
+			if (canShareFile) try {
+				await navigator.share({
+					files: [shareFile],
+					title: safeName
+				});
+				restoreExportBtn(btnEl);
+				return true;
+			} catch (shareErr) {
+				if (shareErr?.name === "AbortError") {
+					restoreExportBtn(btnEl);
+					return true;
+				}
+				if (shareErr?.name === "NotAllowedError" && btnEl) {
+					markExportBtnReadyForSecondTap(btnEl, shareFile);
+					showToast("📲 文件已拉取完成，再点一次按钮即可存入相册或文件");
+					return false;
+				}
+			}
+		}
+		if (/MicroMessenger/i.test(ua)) {
+			showToast("💡 微信内置浏览器限制直接存盘，可点右上角 ⋯ 在系统浏览器打开保存");
+			return false;
+		}
+		const blobUrl = URL.createObjectURL(typedBlob);
+		const anchor = document.createElement("a");
+		anchor.href = blobUrl;
+		anchor.download = safeName;
+		anchor.rel = "noopener";
+		anchor.style.display = "none";
+		document.body.appendChild(anchor);
+		anchor.click();
+		anchor.remove();
+		setTimeout(() => URL.revokeObjectURL(blobUrl), 6e4);
+		showToast(successToast || `✅ 已开始保存 ${safeName}`);
+		return true;
+	}
 	async function downloadPreviewMedia(dlUrl, fileName = "download", btnEl = null) {
 		if (!dlUrl) return;
 		const safeName = String(fileName || "download").split("/").filter(Boolean).pop() || "download";
-		if (btnEl?.__readyShareFile && typeof navigator !== "undefined" && typeof navigator.share === "function") {
-			const cachedFile = btnEl.__readyShareFile;
-			try {
-				await navigator.share({
-					files: [cachedFile],
-					title: safeName
-				});
-				delete btnEl.__readyShareFile;
-				if (btnEl.__origLabel) btnEl.textContent = btnEl.__origLabel;
-				return;
-			} catch (err) {
-				if (err?.name === "AbortError") return;
-			}
-		}
+		if (await tryInvokeCachedShareFile(btnEl, safeName)) return;
 		if (btnEl?.dataset?.downloading === "1") return;
-		const origLabel = btnEl ? btnEl.__origLabel || btnEl.textContent || "" : "";
-		if (btnEl) {
-			btnEl.__origLabel = origLabel;
-			btnEl.dataset.downloading = "1";
-			btnEl.disabled = true;
-			btnEl.textContent = "⏳ 准备中…";
-		}
+		setExportBtnBusy(btnEl, "⏳ 准备中…");
 		let wakeLockSentinel = null;
 		try {
 			if (typeof navigator !== "undefined" && navigator.wakeLock?.request) wakeLockSentinel = await navigator.wakeLock.request("screen").catch(() => null);
 		} catch {}
+		const updateProgressText = (text) => {
+			if (!btnEl) return;
+			if (btnEl.classList.contains("file-export-action-btn")) {
+				const titleEl = btnEl.querySelector(".file-export-action-title");
+				if (titleEl) titleEl.textContent = text;
+				return;
+			}
+			if (!btnEl.classList.contains("is-compact-icon")) btnEl.textContent = text;
+		};
 		try {
 			const token = getToken();
 			const freshMt = hubState.mediaTicket || "";
@@ -13117,9 +13740,8 @@ function initHubController() {
 				u.searchParams.set("mt", freshMt);
 				effectiveDlUrl = `${u.pathname}?${u.searchParams.toString()}`;
 			} catch {}
-			const guessMimeByName = (nameStr) => /\.png$/i.test(nameStr) ? "image/png" : /\.(jpe?g)$/i.test(nameStr) ? "image/jpeg" : /\.webp$/i.test(nameStr) ? "image/webp" : /\.gif$/i.test(nameStr) ? "image/gif" : /\.svg$/i.test(nameStr) ? "image/svg+xml" : /\.mp4$/i.test(nameStr) ? "video/mp4" : /\.mov$/i.test(nameStr) ? "video/quicktime" : /\.webm$/i.test(nameStr) ? "video/webm" : "application/octet-stream";
 			let blob = null;
-			let mimeType = guessMimeByName(safeName);
+			let mimeType = guessExportMimeByName(safeName);
 			const streamDesc = !isDataUrl ? parseStreamUrlDescriptor(effectiveDlUrl) : null;
 			if (streamDesc) {
 				const p2pOut = await fetchMediaViaWebRtc(effectiveDlUrl, {
@@ -13131,14 +13753,16 @@ function initHubController() {
 					transcode: false,
 					connectTimeoutMs: 1500,
 					onProgress: ({ received, totalBytes }) => {
-						if (!btnEl) return;
-						if (totalBytes > 0) btnEl.textContent = `⚡ 直连拉取 ${Math.min(99, Math.round(received / totalBytes * 100))}%…`;
-						else if (received > 0) btnEl.textContent = `⚡ 已直连拉取 ${formatBytes(received)}…`;
+						if (totalBytes > 0) {
+							const pct = Math.min(99, Math.round(received / totalBytes * 100));
+							updateProgressText(`⚡ 直连拉取 ${pct}%…`);
+						} else if (received > 0) updateProgressText(`⚡ 已直连拉取 ${formatBytes(received)}…`);
 					}
 				});
 				if (p2pOut?.ok && p2pOut.blob) {
 					blob = p2pOut.blob;
-					mimeType = (p2pOut.mime || "").split(";")[0].trim() || mimeType;
+					const p2pMime = (p2pOut.mime || "").split(";")[0].trim();
+					if (p2pMime && p2pMime !== "application/octet-stream") mimeType = p2pMime;
 				}
 			}
 			if (!blob) {
@@ -13154,9 +13778,10 @@ function initHubController() {
 					};
 				};
 				const updateBtnProgress = (received, totalBytes) => {
-					if (!btnEl) return;
-					if (totalBytes > 0) btnEl.textContent = `⏳ 拉取中 ${Math.min(99, Math.round(received / totalBytes * 100))}%…`;
-					else btnEl.textContent = `⏳ 已拉取 ${formatBytes(received)}…`;
+					if (totalBytes > 0) {
+						const pct = Math.min(99, Math.round(received / totalBytes * 100));
+						updateProgressText(`⏳ 拉取中 ${pct}%…`);
+					} else updateProgressText(`⏳ 已拉取 ${formatBytes(received)}…`);
 				};
 				const fetchSliceBytesWithRetry = async (extraHeaders = {}, onDelta = null) => {
 					let lastErr = null;
@@ -13207,7 +13832,8 @@ function initHubController() {
 				const firstResp = firstSlice.resp;
 				const firstCr = firstResp.status === 206 ? parseContentRangeInfo(firstResp.headers.get("content-range")) : null;
 				knownTotalBytes = firstCr?.total || Number(firstResp.headers.get("content-length") || 0);
-				mimeType = (firstResp.headers.get("content-type") || "").split(";")[0].trim() || mimeType;
+				const respMime = (firstResp.headers.get("content-type") || "").split(";")[0].trim();
+				if (respMime && respMime !== "application/octet-stream") mimeType = respMime;
 				updateBtnProgress(receivedBytes, knownTotalBytes);
 				if (firstCr && firstCr.end + 1 < firstCr.total) {
 					const ranges = [];
@@ -13239,64 +13865,287 @@ function initHubController() {
 					blob = new Blob(flatChunks, { type: mimeType });
 				} else blob = new Blob(firstSlice.chunks, { type: mimeType });
 			}
-			const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
-			if ((isIosDevice() || isStandaloneApp() || /Android|iPhone|iPad|iPod|Mobile/i.test(ua)) && typeof File === "function" && typeof navigator !== "undefined" && typeof navigator.canShare === "function" && typeof navigator.share === "function") {
-				const shareFile = new File([blob], safeName, { type: mimeType });
-				if (navigator.canShare({ files: [shareFile] })) try {
-					await navigator.share({
-						files: [shareFile],
-						title: safeName
-					});
-					if (btnEl) {
-						btnEl.dataset.downloading = "0";
-						btnEl.disabled = false;
-						btnEl.textContent = origLabel;
-					}
-					return;
-				} catch (shareErr) {
-					if (shareErr?.name === "AbortError") {
-						if (btnEl) {
-							btnEl.dataset.downloading = "0";
-							btnEl.disabled = false;
-							btnEl.textContent = origLabel;
-						}
-						return;
-					}
-					if (shareErr?.name === "NotAllowedError" && btnEl) {
-						btnEl.__readyShareFile = shareFile;
-						btnEl.dataset.downloading = "0";
-						btnEl.disabled = false;
-						btnEl.textContent = "📲 已缓存 · 再点存入相册/文件";
-						showToast("📲 文件已拉取完成，再点一次按钮即可存入相册或文件");
-						return;
-					}
-				}
-			}
-			if (/MicroMessenger/i.test(ua)) showToast("💡 微信内置浏览器限制直接存盘，可点右上角 ⋯ 在系统浏览器打开保存");
-			else {
-				const blobUrl = URL.createObjectURL(blob);
-				const anchor = document.createElement("a");
-				anchor.href = blobUrl;
-				anchor.download = safeName;
-				anchor.rel = "noopener";
-				anchor.style.display = "none";
-				document.body.appendChild(anchor);
-				anchor.click();
-				anchor.remove();
-				setTimeout(() => URL.revokeObjectURL(blobUrl), 6e4);
-				showToast(`✅ 已开始保存 ${safeName}`);
-			}
+			await shareOrSaveBlob(blob, safeName, {
+				mimeType,
+				btnEl
+			});
 		} catch (err) {
 			showToast("❌ 保存失败：" + (err && err.message || String(err)));
 		} finally {
 			if (wakeLockSentinel) try {
 				await wakeLockSentinel.release();
 			} catch {}
-			if (btnEl && !btnEl.__readyShareFile) {
-				btnEl.dataset.downloading = "0";
-				btnEl.disabled = false;
-				btnEl.textContent = origLabel;
+			if (btnEl && !btnEl.__readyShareFile) restoreExportBtn(btnEl);
+		}
+	}
+	let activeFileExportCtx = null;
+	function resolveActiveExportPreview(hostId, inDrawer) {
+		const host = (hubState.hosts || []).find((h) => h.hostId === hostId);
+		return (inDrawer ? pinnedDrawerPreviewByHost[hostId] : pinnedMainPreviewByHost[hostId]) || host?.lastFilePreview || null;
+	}
+	function hasCompleteMemoryText(preview) {
+		return Boolean(preview && typeof preview.content === "string" && !preview.truncated && preview.content !== "正在按需加载大文本预览…");
+	}
+	async function resolveFullExportText(ctx) {
+		if (!ctx?.preview) return "";
+		if (hasCompleteMemoryText(ctx.preview)) return ctx.preview.content;
+		if (ctx.dlUrl) try {
+			const token = getToken();
+			const resp = await fetch(ctx.dlUrl, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+			if (resp.ok) return await resp.text();
+		} catch {}
+		return String(ctx.preview.content || "");
+	}
+	async function downloadFullscreenHtmlPreview(btnEl = null) {
+		if (!activeHtmlOverlay) return;
+		const safeName = String(activeHtmlOverlay.title || activeHtmlOverlay.relPath || "page.html").split("/").filter(Boolean).pop() || "page.html";
+		const finalName = /\.html?$/i.test(safeName) ? safeName : `${safeName}.html`;
+		const rawHtml = String(activeHtmlOverlay.rawHtml || "");
+		if (rawHtml) {
+			await shareOrSaveBlob(new Blob([rawHtml], { type: "text/html;charset=utf-8" }), finalName, {
+				mimeType: "text/html",
+				btnEl
+			});
+			return;
+		}
+		const mt = hubState.mediaTicket || "";
+		if (activeHtmlOverlay.hostId && activeHtmlOverlay.relPath) await downloadPreviewMedia(buildFastStreamUrl(activeHtmlOverlay.hostId, activeHtmlOverlay.relPath, {
+			cwd: activeHtmlOverlay.cwd || "",
+			agentId: activeHtmlOverlay.agentId || "",
+			download: true,
+			mediaTicket: mt
+		}), finalName, btnEl);
+	}
+	function openFileExportSheet(hostId, inDrawer = false) {
+		const preview = resolveActiveExportPreview(hostId, inDrawer);
+		if (!preview) {
+			showToast("当前没有可导出的文件");
+			return;
+		}
+		const found = findSessionGlobal(activeSessionId);
+		const mt = hubState.mediaTicket || "";
+		const safeName = String(preview.name || preview.relPath || "file.txt").split("/").filter(Boolean).pop() || "file.txt";
+		const kind = previewKind(preview);
+		const isMd = kind === "text" && isMarkdownFileName(safeName);
+		const dlUrl = resolvePreviewDownloadUrl(hostId, preview, mt, found?.session?.cwd || fileProjectCwd || "", preview.agentId || found?.session?.id || "");
+		activeFileExportCtx = {
+			hostId,
+			inDrawer: Boolean(inDrawer),
+			preview,
+			safeName,
+			relPath: preview.relPath || safeName,
+			kind,
+			isMarkdown: isMd,
+			dlUrl,
+			htmlExportName: buildExportHtmlFileName(safeName)
+		};
+		const titleEl = document.getElementById("fileExportSheetTitle");
+		const bodyEl = document.getElementById("fileExportSheetBody");
+		if (titleEl) titleEl.textContent = isMd ? "📄 导出与分享文档" : "⤓ 导出与分享文件";
+		const typeLabel = describeFileKindLabel(safeName, kind);
+		const sizeBytes = Number(preview.size) > 0 ? Number(preview.size) : typeof preview.content === "string" ? new Blob([preview.content]).size : 0;
+		const metaParts = [typeLabel, sizeBytes > 0 ? formatBytes(sizeBytes) : ""].filter(Boolean);
+		const truncatedNotice = preview.truncated ? `<div class="file-export-meta-note">ℹ️ 当前预览仅展示前 256 KB，导出或保存原文件时将自动拉取完整内容</div>` : "";
+		const mdActionsHtml = `
+      <button type="button" class="file-export-action-btn is-primary" onclick="exportCurrentFileOriginal(this)">
+        <span class="file-export-action-ico">📄</span>
+        <span class="file-export-action-copy">
+          <span class="file-export-action-title">保存 / 分享原文件</span>
+          <span class="file-export-action-sub">存入手机「文件」/ 发微信、飞书、AirDrop / 导入 Obsidian（电脑端直接下载）</span>
+        </span>
+        <span class="file-export-action-arrow">›</span>
+      </button>
+      <button type="button" class="file-export-action-btn" onclick="exportCurrentMarkdownHtml(this)">
+        <span class="file-export-action-ico">🌐</span>
+        <span class="file-export-action-copy">
+          <span class="file-export-action-title">导出排版版 HTML</span>
+          <span class="file-export-action-sub">生成带清爽排版、表格与代码块样式的独立 .html，发朋友点开即看</span>
+        </span>
+        <span class="file-export-action-arrow">›</span>
+      </button>
+      <button type="button" class="file-export-action-btn" onclick="copyCurrentFileText('raw', this)">
+        <span class="file-export-action-ico">📋</span>
+        <span class="file-export-action-copy">
+          <span class="file-export-action-title">复制 Markdown 原文</span>
+          <span class="file-export-action-sub">保留标题、代码块、引用与列表原始语法</span>
+        </span>
+        <span class="file-export-action-arrow">›</span>
+      </button>
+      <button type="button" class="file-export-action-btn" onclick="copyCurrentFileText('plain', this)">
+        <span class="file-export-action-ico">📝</span>
+        <span class="file-export-action-copy">
+          <span class="file-export-action-title">复制纯文本（去格式）</span>
+          <span class="file-export-action-sub">自动清理 #、** 等符号，适合直接贴进微信、备忘录、小红书</span>
+        </span>
+        <span class="file-export-action-arrow">›</span>
+      </button>
+      <button type="button" class="file-export-action-btn" onclick="printCurrentMarkdownToPdf(this)">
+        <span class="file-export-action-ico">🖨️</span>
+        <span class="file-export-action-copy">
+          <span class="file-export-action-title">打印 / 另存为 PDF</span>
+          <span class="file-export-action-sub">调起系统打印预览，可直接存为 PDF 文件或发送打印</span>
+        </span>
+        <span class="file-export-action-arrow">›</span>
+      </button>
+    `;
+		const genericTextActionsHtml = `
+      <button type="button" class="file-export-action-btn is-primary" onclick="exportCurrentFileOriginal(this)">
+        <span class="file-export-action-ico">📄</span>
+        <span class="file-export-action-copy">
+          <span class="file-export-action-title">保存 / 分享原文件</span>
+          <span class="file-export-action-sub">存入手机「文件」/ 发微信、飞书、AirDrop（电脑端直接下载）</span>
+        </span>
+        <span class="file-export-action-arrow">›</span>
+      </button>
+      <button type="button" class="file-export-action-btn" onclick="copyCurrentFileText('raw', this)">
+        <span class="file-export-action-ico">📋</span>
+        <span class="file-export-action-copy">
+          <span class="file-export-action-title">复制完整内容</span>
+          <span class="file-export-action-sub">一键将文件全文复制到系统剪贴板</span>
+        </span>
+        <span class="file-export-action-arrow">›</span>
+      </button>
+    `;
+		if (bodyEl) bodyEl.innerHTML = `
+        <div class="file-export-meta-card">
+          <div class="file-export-meta-name">${esc$1(safeName)}</div>
+          <div class="file-export-meta-sub">${esc$1(metaParts.join(" · "))}${activeFileExportCtx.relPath && activeFileExportCtx.relPath !== safeName ? ` · ${esc$1(activeFileExportCtx.relPath)}` : ""}</div>
+          ${truncatedNotice}
+        </div>
+        <div class="file-export-actions-list">
+          ${isMd ? mdActionsHtml : genericTextActionsHtml}
+        </div>
+      `;
+		openSheet("fileExportSheet");
+	}
+	async function exportCurrentFileOriginal(btnEl = null) {
+		const ctx = activeFileExportCtx;
+		if (!ctx?.preview) return;
+		const safeName = ctx.safeName || "file.txt";
+		if (await tryInvokeCachedShareFile(btnEl, safeName)) {
+			closeSheet("fileExportSheet");
+			return;
+		}
+		if (ctx.kind === "text" && hasCompleteMemoryText(ctx.preview)) {
+			const mimeType = guessExportMimeByName(safeName);
+			if (await shareOrSaveBlob(new Blob([ctx.preview.content], { type: isTextLikeMime(mimeType) ? `${mimeType};charset=utf-8` : mimeType }), safeName, {
+				mimeType,
+				btnEl
+			})) closeSheet("fileExportSheet");
+			return;
+		}
+		if (!ctx.dlUrl) {
+			showToast("暂未获取到文件下载地址，请重新打开文件再试");
+			return;
+		}
+		await downloadPreviewMedia(ctx.dlUrl, safeName, btnEl);
+		if (!btnEl?.__readyShareFile) closeSheet("fileExportSheet");
+	}
+	async function exportCurrentMarkdownHtml(btnEl = null) {
+		const ctx = activeFileExportCtx;
+		if (!ctx?.preview) return;
+		const htmlName = ctx.htmlExportName || buildExportHtmlFileName(ctx.safeName);
+		if (await tryInvokeCachedShareFile(btnEl, htmlName)) {
+			closeSheet("fileExportSheet");
+			return;
+		}
+		if (btnEl?.dataset?.downloading === "1") return;
+		const needsFetch = !hasCompleteMemoryText(ctx.preview);
+		if (needsFetch) setExportBtnBusy(btnEl, "⏳ 正在拉取完整文档…");
+		try {
+			const renderedBody = formatAssistantText((needsFetch ? await resolveFullExportText(ctx) : ctx.preview.content) || "");
+			const standaloneHtml = buildStandaloneMarkdownHtml({
+				title: ctx.safeName,
+				renderedBodyHtml: renderedBody,
+				sourcePath: ctx.relPath
+			});
+			if (await shareOrSaveBlob(new Blob([standaloneHtml], { type: "text/html;charset=utf-8" }), htmlName, {
+				mimeType: "text/html",
+				btnEl,
+				successToast: `🌐 已导出排版版 HTML (${htmlName})`
+			})) closeSheet("fileExportSheet");
+		} catch (err) {
+			showToast("❌ 导出 HTML 失败：" + (err && err.message || String(err)));
+		} finally {
+			if (btnEl && !btnEl.__readyShareFile) restoreExportBtn(btnEl);
+		}
+	}
+	async function copyCurrentFileText(mode = "raw", btnEl = null) {
+		const ctx = activeFileExportCtx;
+		if (!ctx?.preview) return;
+		if (btnEl?.dataset?.downloading === "1") return;
+		const needsFetch = !hasCompleteMemoryText(ctx.preview);
+		if (needsFetch) setExportBtnBusy(btnEl, "⏳ 正在拉取完整内容…");
+		try {
+			const rawText = needsFetch ? await resolveFullExportText(ctx) : ctx.preview.content;
+			const targetText = mode === "plain" ? stripMarkdownToPlainText(rawText) : String(rawText || "");
+			if (!targetText) {
+				showToast("文件内容为空");
+				return;
 			}
+			if (await copyText(targetText, {
+				successMessage: mode === "plain" ? "📝 已复制纯文本（已去格式）" : "📋 已复制完整内容",
+				title: mode === "plain" ? "📝 复制纯文本" : `📋 复制 ${ctx.safeName}`
+			})) closeSheet("fileExportSheet");
+		} catch (err) {
+			showToast("❌ 复制失败：" + (err && err.message || String(err)));
+		} finally {
+			restoreExportBtn(btnEl);
+		}
+	}
+	async function printCurrentMarkdownToPdf(btnEl = null) {
+		const ctx = activeFileExportCtx;
+		if (!ctx?.preview) return;
+		const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+		if (/MicroMessenger/i.test(ua)) {
+			showToast("💡 微信内置浏览器不支持直接打印，请点上方「🌐 导出排版版 HTML」分享或用系统浏览器打开");
+			return;
+		}
+		if (btnEl?.dataset?.downloading === "1") return;
+		const needsFetch = !hasCompleteMemoryText(ctx.preview);
+		if (needsFetch) setExportBtnBusy(btnEl, "⏳ 正在准备打印排版…");
+		try {
+			const renderedBody = formatAssistantText((needsFetch ? await resolveFullExportText(ctx) : ctx.preview.content) || "");
+			const printableHtml = buildStandaloneMarkdownHtml({
+				title: ctx.safeName,
+				renderedBodyHtml: renderedBody,
+				sourcePath: ctx.relPath
+			});
+			const existing = document.getElementById("dshPrintExportFrame");
+			if (existing) existing.remove();
+			const frame = document.createElement("iframe");
+			frame.id = "dshPrintExportFrame";
+			frame.setAttribute("aria-hidden", "true");
+			frame.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;";
+			const cleanup = () => {
+				try {
+					frame.remove();
+				} catch {}
+			};
+			frame.onload = () => {
+				try {
+					const win = frame.contentWindow;
+					if (!win || typeof win.print !== "function") {
+						cleanup();
+						showToast("💡 当前环境不支持打印，请使用「🌐 导出排版版 HTML」");
+						return;
+					}
+					win.addEventListener("afterprint", cleanup, { once: true });
+					win.focus();
+					win.print();
+					setTimeout(cleanup, 6e4);
+				} catch {
+					cleanup();
+					showToast("💡 当前环境不支持打印，请使用「🌐 导出排版版 HTML」");
+				}
+			};
+			frame.srcdoc = printableHtml;
+			document.body.appendChild(frame);
+			closeSheet("fileExportSheet");
+		} catch (err) {
+			showToast("❌ 准备打印失败：" + (err && err.message || String(err)));
+		} finally {
+			restoreExportBtn(btnEl);
 		}
 	}
 	function cancelFilePreviewLoading() {
@@ -13352,7 +14201,8 @@ function initHubController() {
 			container.dataset.dshPreviewKey = previewKey;
 			const numberedHtml = String(preview.content || "").split("\n").map((line, i) => `<div style="display:flex;gap:14px;"><span style="color:#64748b;user-select:none;width:28px;text-align:right;flex-shrink:0;">${i + 1}</span><span style="white-space:pre;">${esc$1(line)}</span></div>`).join("");
 			const canToggleOrigImg = kind === "image" && Boolean(preview.streamUrl) && !/\.(svg|gif)$/i.test(preview.name || "") && (!preview.size || preview.size > 122880);
-			const dlUrl = preview.streamUrl ? appendMediaAuth(`${preview.streamUrl}${preview.streamUrl.includes("?") ? "&" : "?"}download=1`, mt) : "";
+			const dlUrl = resolvePreviewDownloadUrl(host.hostId, preview, mt, fileProjectCwd || firstSession?.cwd || "", agentId || "");
+			const headerExportBtnHtml = buildHeaderExportBtnHtml(host.hostId, preview, kind, dlUrl, mt, false);
 			const videoMetaUi = kind === "video" ? describeVideoPreviewStatus(preview) : null;
 			const htmlSrcdocAttr = isHtml && !rawHtmlMode ? escapeSrcdocAttr(buildSandboxedHtmlSrcdoc(preview.content || "", {
 				hostId: host.hostId,
@@ -13382,12 +14232,13 @@ function initHubController() {
                      ${numberedHtml}
                    </div>`;
 			container.innerHTML = `
-          <div class="breadcrumbs-bar" style="justify-content:space-between;gap:6px;">
-            <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;" onclick="closeMainFilePreview('${esc$1(host.hostId)}')">‹ 返回文件列表</button>
-            <span style="font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc$1(preview.name)}</span>
-            <div style="display:flex;gap:6px;flex-shrink:0;">
+          <div class="breadcrumbs-bar file-preview-header-bar">
+            <button class="back-btn" style="padding:0;font-size:13.5px;display:inline-flex !important;flex-shrink:0;" onclick="closeMainFilePreview('${esc$1(host.hostId)}')">‹ 返回文件列表</button>
+            <span class="file-preview-header-name" title="${esc$1(preview.name)}">${esc$1(preview.name)}</span>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
               ${isHtml ? `<button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="openFullscreenHtmlFromPreview('${esc$1(host.hostId)}', false)">⛶ 全屏体验</button><button class="icon-pill-btn" onclick="toggleHtmlPreviewMode()">${rawHtmlMode ? "🌐 预览" : "</> 源码"}</button>` : ""}
               ${isMarkdown ? `<button class="icon-pill-btn" onclick="toggleMdPreviewMode()">${rawMdMode ? "📖 渲染" : "</> 源码"}</button>` : ""}
+              ${headerExportBtnHtml}
               ${kind !== "text" ? "" : `<button class="icon-pill-btn" onclick="copyCodeText('${encodeURIComponent(preview.content || "")}')">📋 复制</button>`}
               <button class="icon-pill-btn" style="color:var(--primary);border-color:#bfdbfe;background:var(--primary-soft);" onclick="askAiAboutFile('${esc$1(host.hostId)}', '${esc$1(fileProjectCwd)}', '${esc$1(preview.relPath || preview.name)}')">💬 让 AI 分析</button>
             </div>
@@ -16955,7 +17806,13 @@ function initHubController() {
 		closeFullscreenHtmlPreview,
 		toggleFullscreenHtmlSource,
 		reloadFullscreenHtmlPreview,
+		downloadFullscreenHtmlPreview,
 		downloadPreviewMedia,
+		openFileExportSheet,
+		exportCurrentFileOriginal,
+		exportCurrentMarkdownHtml,
+		copyCurrentFileText,
+		printCurrentMarkdownToPdf,
 		toggleOriginalPreviewImage,
 		onPreviewImageLoad,
 		onPreviewImageError,

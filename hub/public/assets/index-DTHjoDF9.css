@@ -4944,6 +4944,186 @@
         border-bottom-color: rgba(96, 165, 250, 0.28);
       }
     }
+
+    /* ==================== 统一文件导出 / 分享动作表 (v0.9.8) ==================== */
+    .breadcrumbs-bar.file-preview-header-bar {
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      padding: 9px 12px;
+      gap: 6px;
+    }
+
+    .file-preview-header-name {
+      flex: 1;
+      min-width: 0;
+      font-weight: 700;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    #fileExportSheet {
+      z-index: 110;
+    }
+
+    #copyFallbackSheet {
+      z-index: 120;
+    }
+
+    .file-export-trigger-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .file-export-trigger-btn.is-compact-icon {
+      min-width: 30px;
+      padding: 5px 8px;
+    }
+
+    .file-export-meta-card {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: var(--subtle);
+      border: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+
+    .file-export-meta-name {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text);
+      word-break: break-all;
+      line-height: 1.35;
+    }
+
+    .file-export-meta-sub {
+      margin-top: 3px;
+      font-size: 11.5px;
+      color: var(--muted);
+      word-break: break-all;
+      line-height: 1.4;
+    }
+
+    .file-export-meta-note {
+      margin-top: 7px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-size: 11.5px;
+      line-height: 1.45;
+    }
+
+    .file-export-actions-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .file-export-action-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 11px 13px;
+      border-radius: 13px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      transition: background 0.14s ease, border-color 0.14s ease, transform 0.12s ease;
+    }
+
+    .file-export-action-btn:hover {
+      background: var(--subtle);
+    }
+
+    .file-export-action-btn:active {
+      transform: scale(0.985);
+    }
+
+    .file-export-action-btn:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+
+    .file-export-action-btn.is-primary {
+      background: var(--primary-soft);
+      border-color: rgba(37, 99, 235, 0.34);
+    }
+
+    .file-export-action-ico {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: var(--subtle);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 17px;
+      flex-shrink: 0;
+    }
+
+    .file-export-action-btn.is-primary .file-export-action-ico {
+      background: rgba(37, 99, 235, 0.14);
+    }
+
+    .file-export-action-copy {
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .file-export-action-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .file-export-action-btn.is-primary .file-export-action-title {
+      color: var(--primary);
+    }
+
+    .file-export-action-sub {
+      font-size: 11.5px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .file-export-action-arrow {
+      font-size: 18px;
+      color: var(--muted);
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    :root[data-theme="dark"] .file-export-action-btn.is-primary {
+      background: rgba(59, 130, 246, 0.16);
+      border-color: rgba(96, 165, 250, 0.38);
+    }
+
+    :root[data-theme="dark"] .file-export-action-btn.is-primary .file-export-action-ico {
+      background: rgba(96, 165, 250, 0.22);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .file-export-action-btn.is-primary {
+        background: rgba(59, 130, 246, 0.16);
+        border-color: rgba(96, 165, 250, 0.38);
+      }
+      :root:not([data-theme="light"]) .file-export-action-btn.is-primary .file-export-action-ico {
+        background: rgba(96, 165, 250, 0.22);
+      }
+    }
 /* ==================== DSH 滑卡批阅模式 (Triage Swipe Deck) — 独立命名空间样式 ==================== */
 
 /* 列表筛选栏最左侧：低调正方形 4 格小方块入口按钮 */

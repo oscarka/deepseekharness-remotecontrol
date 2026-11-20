@@ -526,6 +526,26 @@ export function Sheets() {
         </div>
       </div>
 
+      {/* 抽屉：统一文件导出 / 保存 / 分享动作表（叠加在文件预览抽屉上方） */}
+      <div class="sheet-backdrop" id="fileExportSheet" onClick={closeIfBackdrop('fileExportSheet')}>
+        <div class="sheet-panel file-export-sheet-panel">
+          <div class="sheet-handle"></div>
+          <div class="sheet-title" style="margin-bottom:10px;">
+            <span id="fileExportSheetTitle" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">
+              ⤓ 导出与分享
+            </span>
+            <button
+              type="button"
+              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;flex-shrink:0;"
+              onClick={() => (window as any).closeSheet?.('fileExportSheet')}
+            >
+              ✕
+            </button>
+          </div>
+          <div id="fileExportSheetBody"></div>
+        </div>
+      </div>
+
       {/* 全屏 HTML 交互预览层（自带顶部安全区返回栏，解决移动端与 iOS 主屏幕模式体验网页无返回键问题） */}
       <div
         id="htmlPreviewOverlay"
@@ -549,6 +569,16 @@ export function Sheets() {
             🌐 HTML 交互预览
           </span>
           <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <button
+              type="button"
+              class="icon-pill-btn"
+              title="保存或分享此 HTML 文件"
+              aria-label="保存或分享此 HTML 文件"
+              style="background:rgba(255,255,255,0.1);color:#e2e8f0;border-color:rgba(255,255,255,0.18);"
+              onClick={e => (window as any).downloadFullscreenHtmlPreview?.(e.currentTarget)}
+            >
+              ⤓
+            </button>
             <button
               type="button"
               class="icon-pill-btn"

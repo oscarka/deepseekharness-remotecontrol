@@ -2,6 +2,15 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.9.8] - 2026-11-20
+
+### Added
+
+- **全文件统一导出/分享引擎与 Markdown 文档增强动作表（`hub/web/src/utils/fileExport.ts` / `hub/web/src/controller.js` / `hub/web/src/components/Sheets.tsx` / `hub/web/src/styles/app.css` / `dsh-feishu/lib/workspace-ops.js`）**：
+  - **统一顶栏导出入口（零挤压单行排版）**：手机文件抽屉与桌面文件预览顶栏统一新增精致的 `⤓` 导出按钮，并锁定预览顶栏为防换行单行布局（长文件名自动居中省略）；图片/视频/二进制一键直达原生保存与分享，文本/代码/HTML/Markdown 点开叠加在预览抽屉上方的轻动作表（`#fileExportSheet`），全屏 HTML 预览顶栏同步补齐一键下载；
+  - **Markdown 完整文档增强导出**：针对 `.md` / `.markdown` / `.mdx` 文档提供 5 项高频动作——① **保存 / 分享原文件**（iOS 优先原生 Share Sheet 存入「文件」/ 发微信、飞书、AirDrop、Obsidian，电脑端直接下载）；② **导出排版版 HTML**（生成零外部依赖、自带清爽排版与表格/代码样式的独立 `.html`，发给非技术朋友点开即看）；③ **复制 Markdown 原文**；④ **复制纯文本（去格式）**（自动清理 `#`、`**`、`file://` 与表格分隔符，直接粘贴到微信/备忘录/小红书）；⑤ **打印 / 另存为 PDF**（原地隐藏 `<iframe>` 调起系统打印预览，绝不困住 iOS PWA）；
+  - **iOS MIME 智能兼容与 0ms 本地直出**：后端 `prepareWorkspaceFileStream` 补全常见文档/表格/PDF/压缩包 MIME（同时保持内联 `.html` 流为 `text/plain` 防同源 XSS，仅 `download=1` 附件返回 `text/html`）；前端 `shareOrSaveBlob` 对已完整加载的文本文件 0ms 同步打包 `File` 彻底杜绝 iOS 手势超时，并在旧版 iOS Safari 拒绝 `text/markdown` / `application/json` 等扩展 MIME 时自动保留原文件名回退 `text/plain` 拉起系统分享。
+
 ## [0.9.7] - 2026-11-20
 
 ### Added
