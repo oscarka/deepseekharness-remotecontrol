@@ -55,6 +55,7 @@ export class HubCore {
     this.sessionPinState = new Map()
     this.lastObservedHarnessPin = new Map()
     this.hostTaskStates = new Map()
+    this.lastObservedConclusionSigs = new Map()
     this.pushHistory = []
     this.sseListeners = new Set()
     this.hostCommandListeners = new Set()
@@ -453,10 +454,14 @@ export class HubCore {
       }
       const curTotal = Math.max(Number(task?.messageCount) || 0, tr.length)
       const baseTotal = ic.baselineTotalCount || 0
+      const effectiveTaskConclusionAt = Math.max(
+        Number(task?.lastConclusionAt) || 0,
+        task?.turnState === 'conclusion' ? (Number(task?.updatedAt) || 0) : 0,
+      )
       const taskAlreadyConcludedAfterCmd =
         task?.status === 'idle' &&
         !task?.isMidTurn &&
-        (Number(task?.lastConclusionAt) > (ic.createdAt || 0) || curTotal >= baseTotal + 2)
+        (effectiveTaskConclusionAt > (ic.createdAt || 0) || curTotal >= baseTotal + 2)
       const imageOnlySynced = !icText && curTotal > baseTotal
       const synced =
         taskAlreadyConcludedAfterCmd ||
@@ -1110,8 +1115,14 @@ export class HubCore {
     if (!cleanId) return { ok: false, error: 'sessionId is required' }
     const now = this.now()
     const prev = this.sessionReadState.get(cleanId)
+    const rawSig = String(sig || '').trim()
+    // Never let a non-conclusion read receipt (e.g. peeking at a `running:` or `approval:` session)
+    // wipe out an unread conclusion that just arrived!
+    if (prev?.unread && /^(?:running|approval):/.test(rawSig)) {
+      return { ok: true, sessionId: cleanId, readState: { ...prev }, preservedUnread: true }
+    }
     const nextAt = Math.max(Number(at) || 0, Number(prev?.at) || 0, now)
-    const nextSig = String(sig || prev?.sig || '')
+    const nextSig = rawSig || String(prev?.sig || '')
     this.sessionReadState.set(cleanId, { unread: false, sig: nextSig, at: nextAt })
     while (this.sessionReadState.size > 500) {
       const oldestKey = this.sessionReadState.keys().next().value
@@ -1390,6 +1401,7 @@ export class HubCore {
       if (shouldSuppressTaskPush(task)) continue
       const key = `${hostId}:${task.id}`
       const prevStatus = this.hostTaskStates.get(key)
+      const prevConclusionContentSig = this.lastObservedConclusionSigs.get(key)
       const curStatus = String(task.status || 'unknown')
       const isStillMidTurn =
         Boolean(task.isMidTurn) ||
@@ -1398,10 +1410,29 @@ export class HubCore {
         task.turnState === 'approval'
       const effectiveStatus = curStatus === 'idle' && isStillMidTurn ? 'running' : curStatus
       this.hostTaskStates.set(key, effectiveStatus)
-      if (!prevStatus || prevStatus === effectiveStatus) continue
+
+      const isConcludedIdle = effectiveStatus === 'idle' && task.turnState === 'conclusion'
+      const conclusionContentSig = isConcludedIdle
+        ? `${task.lastStepIndex ?? ''}:${String(task.lastOutput || '').slice(0, 80)}`
+        : ''
+      if (isConcludedIdle && conclusionContentSig) {
+        this.lastObservedConclusionSigs.set(key, conclusionContentSig)
+        while (this.lastObservedConclusionSigs.size > 1200) {
+          this.lastObservedConclusionSigs.delete(this.lastObservedConclusionSigs.keys().next().value)
+        }
+      }
+
+      if (!prevStatus) continue
 
       const wasActiveTurn = prevStatus === 'running' || prevStatus === 'approval'
-      if (wasActiveTurn && effectiveStatus === 'idle') {
+      const fastIdleToIdleConclusion = Boolean(
+        prevStatus === 'idle' &&
+        isConcludedIdle &&
+        prevConclusionContentSig &&
+        conclusionContentSig &&
+        conclusionContentSig !== prevConclusionContentSig,
+      )
+      if ((wasActiveTurn && effectiveStatus === 'idle') || fastIdleToIdleConclusion) {
         if (task.turnState === 'interrupted') continue
         const completionSig = `${task.lastStepIndex ?? ''}:${task.lastConclusionAt || ''}:${String(task.lastOutput || '').slice(0, 80)}`
         if (completionSig && this.pushedCompletionSigs.get(key) === completionSig) continue
@@ -1415,7 +1446,7 @@ export class HubCore {
         this.sessionReadState.set(task.id, {
           unread: true,
           sig: '',
-          at: Number(task.lastConclusionAt) || Number(task.updatedAt) || this.now(),
+          at: Math.max(Number(task.lastConclusionAt) || 0, Number(task.updatedAt) || 0, this.now()),
         })
         const formatted = formatWebPushNotification({
           kind: 'completed',
@@ -1788,7 +1819,7 @@ export class HubCore {
       }
     }
     const nextFingerprint = this.computeHostFingerprint(record)
-    const stateChanged = hasCommandActivity || pinStateChangedByHarness || nextFingerprint !== record._lastFingerprint
+    const stateChanged = urgentStateTransition || hasCommandActivity || pinStateChangedByHarness || nextFingerprint !== record._lastFingerprint
     if (stateChanged || now - (record._lastBroadcastAt || 0) >= 60_000) {
       record._lastFingerprint = nextFingerprint
       record._lastBroadcastAt = now

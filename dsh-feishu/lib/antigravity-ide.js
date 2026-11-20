@@ -1295,7 +1295,9 @@ export function parseAntigravityTranscript(jsonlText, {
     && lastStepTools.length === 0
     && Boolean(String(lastStep.content || '').trim())
   const isErrorStep = lastStepType === 'ERROR_MESSAGE' || lastStep.status === 'ERROR' || Boolean(trailingError)
-  const isMidTurn = hasActiveBackgroundTask || isLsRunning || (!isConcludedStep && !isErrorStep)
+  const hasFinalConclusion = isConcludedStep
+    || (!hasActiveBackgroundTask && !isLsRunning && !isErrorStep && lastConclusionAt > 0 && lastConclusionAt >= lastUserInputAt)
+  const isMidTurn = hasActiveBackgroundTask || isLsRunning || (!hasFinalConclusion && !isErrorStep)
 
   const isRecentlyActive = isLsRunning
     || hasActiveBackgroundTask
@@ -1308,7 +1310,7 @@ export function parseAntigravityTranscript(jsonlText, {
       ? 'running'
       : 'idle'
 
-  const hasConcludedCurrentTurn = !isRecentlyActive && (isConcludedStep || (lastConclusionAt > 0 && lastConclusionAt >= lastUserInputAt))
+  const hasConcludedCurrentTurn = !isRecentlyActive && hasFinalConclusion
   const turnState = pendingApproval
     ? 'approval'
     : status === 'running'
@@ -1318,6 +1320,12 @@ export function parseAntigravityTranscript(jsonlText, {
         : hasConcludedCurrentTurn
           ? 'conclusion'
           : 'idle'
+  // Antigravity transcript.jsonl records `created_at` when PLANNER_RESPONSE *starts* generating
+  // (often 20-60s earlier and truncated to whole seconds). When the turn has actually concluded,
+  // use `Math.max(lastConclusionAt, lastActivity)` so `lastConclusionAt` reflects completion time.
+  const effectiveLastConclusionAt = turnState === 'conclusion'
+    ? Math.max(lastConclusionAt, lastActivity)
+    : lastConclusionAt
 
   const statusLabel = pendingApproval
     ? '⏳ 待审批'
@@ -1378,7 +1386,7 @@ export function parseAntigravityTranscript(jsonlText, {
     cwd: cwd || process.cwd(),
     lastActivity,
     updatedAt: lastActivity,
-    lastConclusionAt,
+    lastConclusionAt: effectiveLastConclusionAt,
     lastInterruptedAt: isErrorStep ? lastActivity : 0,
     lastOutput: lastConclusionText || lastOutput || String(slicedTranscript.at(-1)?.text || '').slice(0, 400),
     runningSummary: runningSummary || lastOutput,
@@ -1743,30 +1751,32 @@ export async function loadAntigravityIdeSessions({
           : isRecentlyActive
             ? 'running'
             : 'idle'
-        const turnState = cached.session.pendingApproval
-          ? 'approval'
-          : status === 'running'
-            ? 'running'
-            : cached.session.turnState === 'running'
-              ? 'idle'
+        // If dynamic status transitioned (e.g. running -> idle after background task timeout),
+        // fall through to re-parse so turnState & lastConclusionAt are accurately recomputed.
+        if (status === cached.session.status) {
+          const turnState = cached.session.pendingApproval
+            ? 'approval'
+            : status === 'running'
+              ? 'running'
               : (cached.session.turnState || 'idle')
-        const statusLabel = cached.session.pendingApproval
-          ? '⏳ 待审批'
-          : status === 'running'
-            ? '🟢 运行中'
-            : turnState === 'interrupted'
-              ? '⚠️ 中断待继续'
-              : turnState === 'conclusion'
-                ? '🔵 已出结论'
-                : '已完成'
-        sessions.push({
-          ...cached.session,
-          pinned: effectivePinned,
-          status,
-          turnState,
-          statusLabel,
-        })
-        continue
+          const statusLabel = cached.session.pendingApproval
+            ? '⏳ 待审批'
+            : status === 'running'
+              ? '🟢 运行中'
+              : turnState === 'interrupted'
+                ? '⚠️ 中断待继续'
+                : turnState === 'conclusion'
+                  ? '🔵 已出结论'
+                  : '已完成'
+          sessions.push({
+            ...cached.session,
+            pinned: effectivePinned,
+            status,
+            turnState,
+            statusLabel,
+          })
+          continue
+        }
       }
 
       const [rawText, diskArtifacts] = await Promise.all([

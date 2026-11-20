@@ -14,6 +14,10 @@
 
 - **收紧手机端对话详情页滑动返回手势至仅限页面左侧边缘（`hub/web/src/controller.js` / `hub/web/src/utils/gestures.ts`）**：
   - 移除全屏任意区域及右侧向左滑触发返回列表的逻辑，改为仅当手指起手落点位于屏幕左侧边缘带（约屏幕宽度 14%、48–72px）且向右拖动时触发返回会话列表，正文中间与最右侧区域滑动不再误触后退。
+- **根治手机端「已出结论」蓝色未读状态漏显或延迟的问题（`dsh-feishu/lib/antigravity-ide.js` / `hub/hub-core.js` / `hub/web/src/controller.js`）**：
+  - 修复 Antigravity `lastConclusionAt` 误取 `PLANNER_RESPONSE.created_at`（生成起点、早于实际完结 26–63 秒且截断到整秒）导致比手机 `seenAt` / `cmd.createdAt` 更早、从而漏显 `🔵 已出结论` 或滞留 `● 运行中` 的根因，改为完结时取 `Math.max(lastConclusionAt, lastActivity)` 并同步修复尾随元数据步滞留 `isMidTurn` 与缓存命中状态未重算；
+  - `HubCore` 新增极速 `idle -> idle` 完结内容签名比对，即便回复在单次心跳内完成或途经偶发丢包也能立刻置 `sessionReadState.unread = true`、推送与广播 `task_concluded`；同时拦截 `running:`/`approval:` 非结论已读回执覆盖未读态；
+  - 前端在锁屏/切后台（`visibilityState === 'hidden'`）时不再静默把新结论标为已读，点进运行中/待授权会话不再误发覆盖未读态的已读回执，并在关闭对话返回列表时立即刷新未读徽章。
 
 ## [0.8.21] - 2026-11-19
 

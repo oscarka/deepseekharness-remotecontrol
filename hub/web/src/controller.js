@@ -830,8 +830,11 @@ export function initHubController() {
     const list = [];
     const optMap = ensureOptimisticMsgsMap();
     let optMapDirty = false;
-    const isChatOpenNow = document.getElementById('chatFullscreen')?.classList.contains('open')
-      || document.body.classList.contains('DesktopSplitMode');
+    const isPageVisibleNow = typeof document === 'undefined' || document.visibilityState !== 'hidden';
+    const isChatOpenNow = isPageVisibleNow && (
+      document.getElementById('chatFullscreen')?.classList.contains('open')
+      || document.body.classList.contains('DesktopSplitMode')
+    );
 
     for (const h of hubState.hosts || []) {
       if (currentHostId && currentHostId !== 'ALL_HOSTS' && h.hostId !== currentHostId) continue;
@@ -947,7 +950,9 @@ export function initHubController() {
         );
         const optimisticList = optMap[t.id] || [];
         const nowMs = Date.now();
-        const serverConcludedAt = t.status === 'idle' && !t.isMidTurn ? (Number(t.lastConclusionAt) || 0) : 0;
+        const serverConcludedAt = t.status === 'idle' && !t.isMidTurn
+          ? Math.max(Number(t.lastConclusionAt) || 0, t.turnState === 'conclusion' ? (Number(t.updatedAt) || 0) : 0)
+          : 0;
         const remainingOpt = [];
         const renderedOptItems = [];
         for (const opt of optimisticList) {
@@ -1160,27 +1165,15 @@ export function initHubController() {
     const serverReadMap = hubState.sessionReadState || {};
     sortedByTime.forEach((s) => {
       const srvRead = serverReadMap[s.id];
-      if (srvRead && !srvRead.unread) {
+      const srvSigStr = String(srvRead?.sig || '');
+      const isLegacyNonConclusionSrvRead = /^(?:running|approval):/.test(srvSigStr);
+      if (srvRead && !srvRead.unread && !isLegacyNonConclusionSrvRead) {
         if (srvRead.at && (!seenMap[s.id] || srvRead.at > seenMap[s.id])) {
           seenMap[s.id] = srvRead.at;
           seenDirty = true;
         }
-        if (srvRead.sig && seenSigMap[s.id] !== srvRead.sig && (!seenMap[s.id] || srvRead.at >= seenMap[s.id])) {
-          seenSigMap[s.id] = srvRead.sig;
-          seenDirty = true;
-        }
-      }
-
-      if (s.id === activeSessionId && isChatOpenNow) {
-        const maxTs = Math.max(seenMap[s.id] || 0, s.updatedAt || 0, s.lastConclusionAt || 0);
-        if (seenMap[s.id] !== maxTs || (s.turnState === 'conclusion' && seenSigMap[s.id] !== s.conclusionSig)) {
-          seenMap[s.id] = maxTs;
-          if (s.turnState === 'conclusion') {
-            seenSigMap[s.id] = s.conclusionSig;
-            if (!srvRead || srvRead.unread || srvRead.sig !== s.conclusionSig) {
-              syncSessionReadToServer(s.id, s.conclusionSig, maxTs);
-            }
-          }
+        if (srvSigStr && seenSigMap[s.id] !== srvSigStr && (!seenMap[s.id] || srvRead.at >= seenMap[s.id])) {
+          seenSigMap[s.id] = srvSigStr;
           seenDirty = true;
         }
       }
@@ -1196,12 +1189,31 @@ export function initHubController() {
         return;
       }
 
+      const effectiveConclusionAt = Math.max(
+        Number(s.lastConclusionAt) || 0,
+        s.turnState === 'conclusion' ? (Number(s.updatedAt) || 0) : 0
+      );
+
+      if (s.id === activeSessionId && isChatOpenNow) {
+        const maxTs = Math.max(seenMap[s.id] || 0, s.updatedAt || 0, effectiveConclusionAt);
+        if (seenMap[s.id] !== maxTs || (s.turnState === 'conclusion' && seenSigMap[s.id] !== s.conclusionSig)) {
+          seenMap[s.id] = maxTs;
+          if (s.turnState === 'conclusion') {
+            seenSigMap[s.id] = s.conclusionSig;
+            if (!srvRead || srvRead.unread || srvRead.sig !== s.conclusionSig) {
+              syncSessionReadToServer(s.id, s.conclusionSig, maxTs);
+            }
+          }
+          seenDirty = true;
+        }
+      }
+
       // 首次加载时：除服务端明确标记为新完结未读 (srvRead.unread === true) 的会话外，旧历史完结会话自动归入已读基线
       if (!seenMap[s.id]) {
         if (srvRead?.unread && s.turnState === 'conclusion' && s.id !== activeSessionId) {
-          seenMap[s.id] = Math.max(1, (s.lastConclusionAt || s.updatedAt || 2) - 1000);
+          seenMap[s.id] = Math.max(1, (effectiveConclusionAt || s.updatedAt || 2) - 1000);
         } else {
-          seenMap[s.id] = Math.max(s.updatedAt || 0, s.lastConclusionAt || 0, Date.now());
+          seenMap[s.id] = Math.max(s.updatedAt || 0, effectiveConclusionAt, Date.now());
           if (s.turnState === 'conclusion') {
             seenSigMap[s.id] = s.conclusionSig;
           }
@@ -1216,7 +1228,7 @@ export function initHubController() {
       s.hasUnreadConclusion = !isCurrentOpen
         && s.turnState === 'conclusion'
         && s.conclusionSig !== seenSig
-        && (serverSaysUnread || (s.lastConclusionAt > 0 && s.lastConclusionAt > seenAt));
+        && (serverSaysUnread || (effectiveConclusionAt > 0 && effectiveConclusionAt > seenAt));
       s.isUnreadInterrupted = !isCurrentOpen
         && s.turnState === 'interrupted'
         && (s.lastInterruptedAt || s.updatedAt) > seenAt;
@@ -1802,22 +1814,32 @@ export function initHubController() {
     if (!found) return;
     activeSessionId = found.session.id;
     activeSessionHostId = found.session.hostId;
-    const readTs = Math.max(
-      found.session.updatedAt || 0,
-      found.session.lastConclusionAt || 0,
-      Date.now()
-    );
-    seenMap[activeSessionId] = readTs;
-    if (found.session.conclusionSig) {
-      seenSigMap[activeSessionId] = found.session.conclusionSig;
+    const isRunningOrApprovalOpen = found.session.status === 'running' || found.session.status === 'approval';
+    const srvReadForOpen = hubState.sessionReadState?.[activeSessionId];
+    const shouldMarkSessionReadOnOpen = !isRunningOrApprovalOpen
+      || Boolean(found.session.hasUnreadConclusion || found.session.isUnreadInterrupted || srvReadForOpen?.unread);
+    if (shouldMarkSessionReadOnOpen) {
+      const readTs = Math.max(
+        found.session.updatedAt || 0,
+        found.session.lastConclusionAt || 0,
+        Date.now()
+      );
+      seenMap[activeSessionId] = readTs;
+      if (found.session.turnState === 'conclusion' && found.session.conclusionSig) {
+        seenSigMap[activeSessionId] = found.session.conclusionSig;
+      }
+      if (!isDemoMode) {
+        try {
+          localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap));
+          localStorage.setItem('dsh_seen_sig_v1', JSON.stringify(seenSigMap));
+        } catch { }
+      }
+      syncSessionReadToServer(
+        activeSessionId,
+        found.session.turnState === 'conclusion' ? (found.session.conclusionSig || '') : '',
+        readTs
+      );
     }
-    if (!isDemoMode) {
-      try {
-        localStorage.setItem('dsh_seen_v4', JSON.stringify(seenMap));
-        localStorage.setItem('dsh_seen_sig_v1', JSON.stringify(seenSigMap));
-      } catch { }
-    }
-    syncSessionReadToServer(activeSessionId, found.session.conclusionSig || '', readTs);
     clearHomeScreenAppBadge();
     const chatEl = document.getElementById('chatFullscreen');
     if (chatEl) {
@@ -1859,6 +1881,9 @@ export function initHubController() {
     document.getElementById('chatFullscreen').classList.remove('open');
     document.body.classList.remove('mobile-chat-open');
     setScrollBottomVisible(false);
+    const nextSessions = getNormalizedSessions();
+    renderProjectStrip(nextSessions);
+    renderSessionList(nextSessions);
     triageCtrl?.onStateUpdated();
   }
 
