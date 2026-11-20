@@ -50,11 +50,12 @@ describe('terminal-qr zero-dependency generator', () => {
 })
 
 describe('npx CLI entrypoint & package.json bin', () => {
-  it('declares executable bin entries for npx pocketagent and dsh-remote', () => {
+  it('declares executable bin entries for npx pocketagents and dsh-remote', () => {
     const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'))
-    assert.equal(pkg.name, 'pocketagent')
-    assert.equal(pkg.bin?.pocketagent, './scripts/cli.mjs')
-    assert.equal(pkg.bin?.['dsh-remote'], './scripts/cli.mjs')
+    assert.equal(pkg.name, 'pocketagents')
+    assert.equal(pkg.bin?.pocketagents, 'scripts/cli.mjs')
+    assert.equal(pkg.bin?.pocketagent, 'scripts/cli.mjs')
+    assert.equal(pkg.bin?.['dsh-remote'], 'scripts/cli.mjs')
     assert.ok(pkg.files.includes('scripts/*.mjs'))
     const cliPath = join(REPO_ROOT, 'scripts/cli.mjs')
     accessSync(cliPath, constants.X_OK)

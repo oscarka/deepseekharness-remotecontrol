@@ -1,6 +1,6 @@
 - insert:
     - id: dsh-remotecontrol
-      name: 'pocketagent'
+      name: 'pocketagents'
       config:
         enabled: true
         autoLocalHub: true

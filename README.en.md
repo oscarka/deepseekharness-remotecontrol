@@ -16,7 +16,7 @@
   </p>
 
 ```bash
-npx pocketagent
+npx pocketagents
 ```
 
   <p align="center">
@@ -25,7 +25,7 @@ npx pocketagent
 
   <p align="center">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" />
-    <img src="https://img.shields.io/badge/npm-pocketagent-cb3837?logo=npm&logoColor=white" alt="npm package" />
+    <a href="https://www.npmjs.com/package/pocketagents"><img src="https://img.shields.io/badge/npm-pocketagents-cb3837?logo=npm&logoColor=white" alt="npm package" /></a>
     <img src="https://img.shields.io/badge/Host-macOS%20%7C%20Linux%20%7C%20NAS%20%7C%20Raspberry%20Pi-0f766e" alt="Supported Platforms" />
     <img src="https://img.shields.io/badge/node-%3E%3D20-43853d?logo=node.js&logoColor=white" alt="Node >= 20" />
     <img src="https://img.shields.io/badge/Web%20Console-English%20%26%20%E4%B8%AD%E6%96%87%20Auto-2563eb" alt="Bilingual Web Console" />
@@ -105,7 +105,7 @@ Before starting, it helps to understand the two lightweight pieces and how data 
 
 > **⚡ 5-Second Local Tryout via `npx` (Works with Claude Code, Codex, Antigravity IDE, DSH &amp; WorkBuddy — Zero Config)**:
 > ```bash
-> npx pocketagent
+> npx pocketagents
 > ```
 > Starts a local Control Hub + session watcher in 3 seconds, auto-enables Claude Code mobile approvals, and prints a **scannable QR code right in your terminal** (same Wi-Fi, 1-tap passwordless phone login — no `git clone`, no Railway, no config files).
 >
@@ -223,9 +223,9 @@ The background daemon automatically discovers local sessions across all 6 suppor
 > 💡 Grouped **one drawer per day** with every exact version tag preserved inside; see [`CHANGELOG.md`](CHANGELOG.md) for granular per-release notes.
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.9–v0.9.0</code> — PocketAgent Rebrand (<code>npx pocketagent</code>), Claude Code Approvals, Antigravity <code>ask_question</code> &amp; <code>?demo=1</code> Sandbox</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.9–v0.9.0</code> — PocketAgent Rebrand (<code>npx pocketagents</code>), Claude Code Approvals, Antigravity <code>ask_question</code> &amp; <code>?demo=1</code> Sandbox</strong></summary>
 
-- **PocketAgent Launch (`v0.9.0`)**: Rebranded repository and primary CLI package to **PocketAgent** (`github.com/oscarka/pocketagent`, `npx pocketagent`, `ghcr.io/oscarka/pocketagent:latest`) with automatic 301 redirect from legacy `deepseekharness-remotecontrol` links and full DSH Market compatibility.
+- **PocketAgent Launch (`v0.9.0`)**: Rebranded repository and primary CLI package to **PocketAgent** (`github.com/oscarka/pocketagent`, `npx pocketagents`, `ghcr.io/oscarka/pocketagent:latest`) with automatic 301 redirect from legacy `deepseekharness-remotecontrol` links and full DSH Market compatibility.
 
 - **Antigravity `ask_question` Interactive Options &amp; Reliable Resume (`v0.8.20–v0.8.21`)**: Parsed `ask_question` `questions` &amp; hydrated truncated `tool_calls` from `transcript_full.jsonl` into structured `kind: 'question'` cards (fixing the generic `Yes, allow this time` fallback), and cleanly cancelled the waiting step before delivering the user's selected choices via `SendUserCascadeMessage` so Antigravity resumes running immediately instead of treating it as a skipped popup.
 - **Native Claude Code Mobile Approvals (`v0.8.19`)**: Added official Claude Code `PermissionRequest` Hook bridge (`claude-permission-hook.js` + `--install-claude-hook` / auto-install in `npx`), real-time `<120ms` FSEvents approval watcher, 1-tap `Allow` / `Always allow in this chat` (`updatedPermissions`) / `Deny` and `AskUserQuestion` structured answers — bringing full mobile &amp; Swipe Triage approvals to all 5 coding harnesses (Claude Code, Codex, Antigravity IDE, DSH &amp; WorkBuddy).

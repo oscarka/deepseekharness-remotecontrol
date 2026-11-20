@@ -16,7 +16,7 @@
   </p>
 
 ```bash
-npx pocketagent
+npx pocketagents
 ```
 
   <p align="center">
@@ -25,7 +25,7 @@ npx pocketagent
 
   <p align="center">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" />
-    <img src="https://img.shields.io/badge/npm-pocketagent-cb3837?logo=npm&logoColor=white" alt="npm package" />
+    <a href="https://www.npmjs.com/package/pocketagents"><img src="https://img.shields.io/badge/npm-pocketagents-cb3837?logo=npm&logoColor=white" alt="npm package" /></a>
     <img src="https://img.shields.io/badge/%E6%94%AF%E6%8C%81%E7%94%B5%E8%84%91-macOS%20%7C%20Linux%20%7C%20NAS%20%7C%20%E6%A0%91%E8%8E%93%E6%B4%BE-0f766e" alt="支持平台" />
     <img src="https://img.shields.io/badge/node-%3E%3D20-43853d?logo=node.js&logoColor=white" alt="Node >= 20" />
     <img src="https://img.shields.io/badge/%E6%8E%A7%E5%88%B6%E5%8F%B0%E7%95%8C%E9%9D%A2-%E4%B8%AD%E8%8B%B1%E5%8F%8C%E8%AF%AD%E8%87%AA%E5%8A%A8%E8%AF%86%E5%88%AB-2563eb" alt="中英双语控制台" />
@@ -103,9 +103,9 @@ npx pocketagent
 
 ## 三步快速上手
 
-> **⚡ 5 秒本机体验（一行 `npx pocketagent` 终端出码 · 支持 Claude Code / Codex / Antigravity / DSH / WorkBuddy · 零配置）**：
+> **⚡ 5 秒本机体验（一行 `npx pocketagents` 终端出码 · 支持 Claude Code / Codex / Antigravity / DSH / WorkBuddy · 零配置）**：
 > ```bash
-> npx pocketagent
+> npx pocketagents
 > ```
 > 无需 `git clone`、无需云服务器、无需写配置：3 秒内自动启动本地总控台 + 扫描本机 AI 编程会话（自动装配 Claude Code 手机审批 Hook），并**直接在终端里打印手机可扫二维码**，手机连同一 Wi-Fi 扫一扫即刻免密遥控！
 >
@@ -223,9 +223,9 @@ HUB_TOKEN="自定义一个安全密码" \
 > 💡 按**自然日**折叠汇总，每条内保留完整子版本号；逐版本详细变更请见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 <details>
-<summary><strong><code>2026-11-19 · v0.8.9–v0.9.0</code> — 正式更名 PocketAgent（<code>npx pocketagent</code>）、Claude Code 审批、Antigravity 多选题 &amp; <code>?demo=1</code> 沙盒</strong></summary>
+<summary><strong><code>2026-11-19 · v0.8.9–v0.9.0</code> — 正式更名 PocketAgent（<code>npx pocketagents</code>）、Claude Code 审批、Antigravity 多选题 &amp; <code>?demo=1</code> 沙盒</strong></summary>
 
-- **品牌升级为 PocketAgent（`v0.9.0`）**：GitHub 仓库原地更名为 `oscarka/pocketagent`（原 `deepseekharness-remotecontrol` 链接永久 301 自动跳转兼容 DSH 插件市场），主命令与容器镜像全面切换为 `npx pocketagent` 与 `ghcr.io/oscarka/pocketagent:latest`。
+- **品牌升级为 PocketAgent（`v0.9.0`）**：GitHub 仓库原地更名为 `oscarka/pocketagent`（原 `deepseekharness-remotecontrol` 链接永久 301 自动跳转兼容 DSH 插件市场），主命令与容器镜像全面切换为 `npx pocketagents` 与 `ghcr.io/oscarka/pocketagent:latest`。
 
 - **修复 Antigravity `ask_question` 多选题渲染与提交续跑（`v0.8.20–v0.8.21`）**：完整解析 `ask_question` 的单选/多选题目并支持从 `transcript_full.jsonl` 回补被截断的 `tool_calls`，将 `kind: 'question'` 与完整选项数组透传至手机审批卡与滑卡批阅；提交时先通过 `CancelCascadeInvocation` 解除等待态，再通过 `SendUserCascadeMessage` 直接发送勾选结果，根治此前提交被误判为「跳过弹窗」并停跑的问题。
 - **Claude Code 原生手机审批与滑卡批阅全面打通（`v0.8.19`）**：新增官方 `PermissionRequest` Hook 桥接脚本（`claude-permission-hook.js` + `--install-claude-hook` / `npx` 启动自动装配）与 `<120ms` FSEvents 瞬时监听，支持手机端一键放行、`本对话始终允许`（`updatedPermissions`）、拒绝与 `AskUserQuestion` 多选题回传，自此五大主力引擎（Claude Code、Codex、Antigravity IDE、DSH、WorkBuddy）全部满血支持手机审批。

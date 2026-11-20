@@ -2,7 +2,7 @@
 // Completely isolated in browser memory — zero network calls, zero localStorage token access, zero real host leakage.
 
 const DEMO_REPO_URL = 'https://github.com/oscarka/pocketagent';
-const DEMO_NPX_CMD = 'npx pocketagent';
+const DEMO_NPX_CMD = 'npx pocketagents';
 
 const DEMO_HTML_PREVIEW = `<!doctype html>
 <html lang="en">

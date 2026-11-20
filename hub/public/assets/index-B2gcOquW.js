@@ -345,7 +345,7 @@ function TopBar() {
 		type: "button",
 		class: "demo-pill-btn demo-pill-primary",
 		onClick: () => window.demoCopyNpx?.(),
-		title: "Copy npx pocketagent"
+		title: "Copy npx pocketagents"
 	}, "📋 npx"), /* @__PURE__ */ k("button", {
 		type: "button",
 		class: "demo-pill-btn",
@@ -7074,7 +7074,7 @@ function createTriageDeckController(deps) {
 }
 // hub/web/src/demo-sandbox.js
 var DEMO_REPO_URL = "https://github.com/oscarka/pocketagent";
-var DEMO_NPX_CMD = "npx pocketagent";
+var DEMO_NPX_CMD = "npx pocketagents";
 var DEMO_HTML_PREVIEW = `<!doctype html>
 <html lang="en">
 <head>

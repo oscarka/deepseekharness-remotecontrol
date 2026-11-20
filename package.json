@@ -1,5 +1,5 @@
 {
-  "name": "pocketagent",
+  "name": "pocketagents",
   "version": "0.9.0",
   "type": "module",
   "license": "MIT",
@@ -8,8 +8,9 @@
   "icon": "./icon.svg",
   "main": "./index.js",
   "bin": {
-    "pocketagent": "./scripts/cli.mjs",
-    "dsh-remote": "./scripts/cli.mjs"
+    "pocketagents": "scripts/cli.mjs",
+    "pocketagent": "scripts/cli.mjs",
+    "dsh-remote": "scripts/cli.mjs"
   },
   "exports": {
     ".": "./index.js",
@@ -48,6 +49,7 @@
     }
   },
   "keywords": [
+    "pocketagents",
     "pocketagent",
     "claude-code",
     "codex",

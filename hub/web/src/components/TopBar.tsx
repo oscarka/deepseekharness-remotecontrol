@@ -56,7 +56,7 @@ export function TopBar() {
             type="button"
             class="demo-pill-btn demo-pill-primary"
             onClick={() => (window as any).demoCopyNpx?.()}
-            title="Copy npx pocketagent"
+            title="Copy npx pocketagents"
           >
             📋 npx
           </button>

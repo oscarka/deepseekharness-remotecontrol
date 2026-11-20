@@ -66,13 +66,13 @@
   <text x="88" y="156" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif" font-size="52" font-weight="800" letter-spacing="-0.6" fill="#F8FAFC">PocketAgent</text>
 
   <!-- Clear human subtitle -->
-  <text x="90" y="198" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="500" fill="#CBD5E1">把电脑上的 AI 编程助手装进口袋 —— 一行 npx pocketagent 扫码即用，手机滑卡审批、语音插话</text>
+  <text x="90" y="198" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="500" fill="#CBD5E1">把电脑上的 AI 编程助手装进口袋 —— 一行 npx pocketagents 扫码即用，手机滑卡审批、语音插话</text>
 
   <!-- 5 Highlight Pills -->
   <g font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="600" text-anchor="middle">
     <!-- Row 1 -->
     <rect x="90" y="226" width="218" height="34" rx="17" fill="#10B981" fill-opacity="0.14" stroke="#34D399" stroke-opacity="0.45"/>
-    <text x="199" y="248" fill="#D1FAE5">⚡ npx pocketagent 5 秒出码</text>
+    <text x="199" y="248" fill="#D1FAE5">⚡ npx pocketagents 5 秒出码</text>
 
     <rect x="320" y="226" width="228" height="34" rx="17" fill="#F59E0B" fill-opacity="0.14" stroke="#FBBF24" stroke-opacity="0.45"/>
     <text x="434" y="248" fill="#FEF3C7">🃏 滑卡批阅 · 危险命令手机拍板</text>

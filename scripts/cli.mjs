@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // PocketAgent — One-command zero-config mobile console for Claude Code, OpenAI Codex, Antigravity IDE, DSH & WorkBuddy.
-// Usage: npx pocketagent [--port 8788] [--hub-only] [--no-qr]
+// Usage: npx pocketagents [--port 8788] [--hub-only] [--no-qr]
 
 for (const k of [
   'HTTP_PROXY',
@@ -110,8 +110,8 @@ PocketAgent v${PKG_VERSION}
 Control Claude Code, OpenAI Codex, Antigravity IDE, DeepSeek Harness & WorkBuddy from your phone.
 
 Usage:
-  npx pocketagent [options]
-  pocketagent [options]
+  npx pocketagents [options]
+  pocketagents [options]
 
 Options:
   -p, --port <number>         Preferred Hub port (default: 8788, auto-fallback if busy)
@@ -126,9 +126,9 @@ Options:
   -h, --help                  Show this help
 
 Examples:
-  npx pocketagent              # Start local Hub + auto-watch local AI sessions + print QR
-  npx pocketagent --port 9000  # Use a custom port
-  npx pocketagent --hub-only   # Run Hub only (for VPS / server)
+  npx pocketagents              # Start local Hub + auto-watch local AI sessions + print QR
+  npx pocketagents --port 9000  # Use a custom port
+  npx pocketagents --hub-only   # Run Hub only (for VPS / server)
 
 Want 24/7 cellular (4G/5G) access away from home Wi-Fi?
   Deploy on Railway (1-click) or Docker: https://github.com/oscarka/pocketagent
