@@ -11,12 +11,15 @@ import { gzipSync } from 'node:zlib'
 import { checkAccessibilityPermission, getTurboNativeBinaryPath, TurboController } from '../../dsh-turbo/index.js'
 import {
   discoverAntigravityModelCatalog,
+  discoverAntigravityPlugins,
   executeAntigravityIdeAction,
   getDefaultAntigravityBrainDirs,
+  invalidateAntigravityPluginsCache,
   isAntigravityIdeSessionId,
   loadAntigravityIdeSessions,
   setAntigravityConversationPinned,
   setAntigravityConversationTitle,
+  toggleAntigravityPlugin,
   toRawConversationId,
 } from './antigravity-ide.js'
 
@@ -932,7 +935,10 @@ export class HubAgent {
       ? bridgeState.approvals.map(a => `${a.code}:${a.promptTitle || ''}:${a.reason || ''}`).join('|')
       : ''
     const wsCount = Array.isArray(bridgeState.workspaces) ? bridgeState.workspaces.length : 0
-    return `${bridgeState.agentVersion || ''}:${Boolean(bridgeState.remoteActive)}:${Boolean(bridgeState.feishuConnected)}:${wsCount}:${tasksSig}#${appSig}`
+    const pluginsSig = Array.isArray(bridgeState.antigravityPlugins)
+      ? bridgeState.antigravityPlugins.map(p => `${p.dir}:${p.enabled ? 1 : 0}:${p.version || ''}`).join('|')
+      : ''
+    return `${bridgeState.agentVersion || ''}:${Boolean(bridgeState.remoteActive)}:${Boolean(bridgeState.feishuConnected)}:${wsCount}:${tasksSig}#${appSig}#${pluginsSig}`
   }
 
   async tick() {
@@ -1173,6 +1179,15 @@ export class HubAgent {
           }
         }
       } catch { }
+      try {
+        if (this.config?.enableAntigravityIde !== false) {
+          bridgeState.antigravityPlugins = await discoverAntigravityPlugins({
+            workspacePaths: Array.isArray(bridgeState.workspaces) ? bridgeState.workspaces : [],
+            execImpl: this.execImpl,
+            fetchImpl: this.fetch,
+          })
+        }
+      } catch { }
       bridgeState.turbo = this.turbo
         ? this.turbo.getTelemetry()
         : {
@@ -1276,7 +1291,7 @@ export class HubAgent {
             }
           }
           executedAny = true
-          if (cmd?.type === 'read_file' || cmd?.type === 'list_files' || cmd?.type === 'load_full_transcript') {
+          if (cmd?.type === 'read_file' || cmd?.type === 'list_files' || cmd?.type === 'load_full_transcript' || cmd?.type === 'toggle_plugin') {
             hasFastReadCmd = true
           }
           const outcome = await this.handleHubCommand(cmd)
@@ -1705,6 +1720,15 @@ export class HubAgent {
           const res = await this.bridge.executeHubCommand(cmd)
           this.cachedDiskSessions = (this.cachedDiskSessions || []).filter(s => s.id !== targetId)
           await this.refreshDshStats(true)
+          return res
+        }
+        case 'toggle_plugin': {
+          const pluginName = String(cmd.pluginName || cmd.dir || '').trim()
+          const enabled = cmd.enabled !== false
+          const res = await toggleAntigravityPlugin(pluginName, enabled, {
+            execImpl: this.execImpl,
+          })
+          invalidateAntigravityPluginsCache()
           return res
         }
         case 'list_files':

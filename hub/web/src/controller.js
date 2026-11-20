@@ -15,6 +15,7 @@ import {
   renderMarkdownBlocks,
   renderMarkdown,
   formatAssistantText,
+  formatPluginCatalogMeta,
 } from './utils/markdown';
 import {
   previewKind,
@@ -1408,6 +1409,9 @@ export function initHubController() {
     if (document.getElementById('hostSheet')?.classList.contains('open')) {
       renderHostSheetList();
     }
+    if (document.getElementById('pluginDetailSheet')?.classList.contains('open')) {
+      renderAntigravityPluginSheetBody();
+    }
     triageCtrl?.onStateUpdated();
     applyLangToDom(document.body, langPref);
   }
@@ -2641,7 +2645,11 @@ export function initHubController() {
     const fcCollapsed = !filesExpandedSessionIds.has(s.id);
     const artCollapsed = !artifactsExpandedSessionIds.has(s.id);
     const chatKey = `${s.id}:${s.status}:${s.isStalledMidTurn ? 1 : 0}:${s.sessionRev || ''}:${s.transcript.length}:${hydratingWireSessionIds.has(s.id) ? 1 : 0}:${trSig}:${s.approvalObj?.code || ''}:${s.approvalObj?.settling ? 1 : 0}:${s.approvalObj?.lastError || ''}:${(s.changedFiles || []).length}:${fcMeta.sig}:${fcCollapsed ? 1 : 0}:${fcReviewed ? 1 : 0}:${artCollapsed ? 1 : 0}:${(s.artifacts || []).length}`;
-    if (chatKey === lastRenderedChatKey) return;
+    if (chatKey === lastRenderedChatKey) {
+      const existingBox = document.getElementById('chatMessages');
+      if (existingBox) hydrateAntigravityPluginCards(found.host, existingBox);
+      return;
+    }
     const box = document.getElementById('chatMessages');
     if (
       lastRenderedChatKey &&
@@ -3103,6 +3111,7 @@ export function initHubController() {
       : '';
     box.innerHTML = loadEarlierHtml + bubblesHtml + stalledNoticeHtml + sessionArtifactsHtml + filesChangedHtml + approvalCardHtml + followupsHtml;
     void hydrateInlineChatImages(s, box);
+    hydrateAntigravityPluginCards(found.host, box);
     if (sessionSwitched || chatPinnedToBottom) {
       pinChatToBottomImmediate(box);
     } else {
@@ -4575,6 +4584,274 @@ export function initHubController() {
     await clickRealFileEntry(found.session.hostId, found.session.id, fileProjectCwd, relPath, false, true, {
       ...(backupRelPath ? { backupRelPath } : {}),
     });
+  }
+
+  let activePluginDetailSpec = null;
+  let togglingPluginKey = '';
+
+  function findHostAntigravityPlugin(host, { catalogId = '', dir = '', sidecarId = '' } = {}) {
+    const plugins = Array.isArray(host?.bridgeState?.antigravityPlugins)
+      ? host.bridgeState.antigravityPlugins
+      : [];
+    if (plugins.length === 0) return null;
+    const cleanCatalog = String(catalogId || '').trim().toLowerCase();
+    const cleanDir = String(dir || '').trim().toLowerCase();
+    const cleanSidecar = String(sidecarId || '').trim().toLowerCase();
+    const sidecarPlugin = cleanSidecar ? cleanSidecar.split('/')[0] : '';
+    const catalogSlug = cleanCatalog ? (cleanCatalog.split('/').filter(Boolean).pop() || '') : '';
+
+    return plugins.find(p => {
+      if (!p) return false;
+      const pDir = String(p.dir || '').trim().toLowerCase();
+      const pName = String(p.name || '').trim().toLowerCase();
+      const pCat = String(p.catalogId || '').trim().toLowerCase();
+      if (cleanCatalog && pCat && pCat === cleanCatalog) return true;
+      if (cleanDir && (pDir === cleanDir || pName === cleanDir)) return true;
+      if (sidecarPlugin && (pDir === sidecarPlugin || pName === sidecarPlugin)) return true;
+      if (catalogSlug && (pDir === catalogSlug || pName === catalogSlug)) return true;
+      return false;
+    }) || null;
+  }
+
+  function hydrateAntigravityPluginCards(host, containerEl) {
+    if (!containerEl) return;
+    const plugins = Array.isArray(host?.bridgeState?.antigravityPlugins)
+      ? host.bridgeState.antigravityPlugins
+      : null;
+    const hasSyncedList = Array.isArray(plugins) && plugins.length > 0;
+
+    containerEl.querySelectorAll('.md-plugin-card[data-plugin-catalog-id]').forEach(cardEl => {
+      const catId = cardEl.getAttribute('data-plugin-catalog-id') || '';
+      if (!catId) return;
+      const matched = hasSyncedList ? findHostAntigravityPlugin(host, { catalogId: catId }) : null;
+      const nameEl = cardEl.querySelector('.md-plugin-card-name');
+      const badgeEl = cardEl.querySelector('[data-plugin-status-badge]');
+      const subEl = cardEl.querySelector('[data-plugin-card-sub]');
+      if (matched) {
+        if (nameEl && matched.displayName) nameEl.textContent = matched.displayName;
+        if (badgeEl) {
+          badgeEl.classList.remove('installed-on', 'installed-off', 'not-installed');
+          badgeEl.classList.add(matched.enabled ? 'installed-on' : 'installed-off');
+          const verTag = matched.version ? ` v${matched.version}` : '';
+          badgeEl.textContent = matched.enabled ? `✅ 已安装 · 已启用${verTag}` : `⏸ 已安装 · 已停用${verTag}`;
+        }
+        if (subEl) {
+          subEl.textContent = matched.description || `${matched.dir} · 点此查看详情或远程开关`;
+        }
+      } else if (hasSyncedList) {
+        if (badgeEl) {
+          badgeEl.classList.remove('installed-on', 'installed-off', 'not-installed');
+          badgeEl.classList.add('not-installed');
+          badgeEl.textContent = '未安装 · 电脑端添加';
+        }
+        if (subEl) {
+          subEl.textContent = `${catId} · 需在电脑端 Antigravity IDE 添加并授权登录`;
+        }
+      }
+    });
+
+    containerEl.querySelectorAll('.md-plugin-chip[data-plugin-dir]').forEach(chipEl => {
+      const dir = chipEl.getAttribute('data-plugin-dir') || '';
+      const stateEl = chipEl.querySelector('[data-plugin-chip-state]');
+      if (!dir || !stateEl) return;
+      const matched = hasSyncedList ? findHostAntigravityPlugin(host, { dir }) : null;
+      if (matched) {
+        stateEl.classList.remove('on', 'off');
+        stateEl.classList.add(matched.enabled ? 'on' : 'off');
+        stateEl.textContent = matched.enabled ? '已启用' : '已停用';
+      } else {
+        stateEl.classList.remove('on', 'off');
+        stateEl.textContent = '';
+      }
+    });
+  }
+
+  function renderAntigravityPluginSheetBody() {
+    const bodyEl = document.getElementById('pluginDetailBody');
+    const titleEl = document.getElementById('pluginDetailSheetTitle');
+    if (!bodyEl || !activePluginDetailSpec) return;
+
+    const spec = activePluginDetailSpec;
+    const found = findSessionGlobal(spec.sessionId || activeSessionId);
+    const host = found?.host || (hubState.hosts || []).find(h => h.hostId === spec.hostId) || (hubState.hosts || [])[0] || null;
+    const hostId = host?.hostId || spec.hostId || '';
+    const hostName = host?.hostName || hostId || '电脑端';
+    const hostOnline = Boolean(host && isHostLiveOnline(host));
+    const matched = findHostAntigravityPlugin(host, spec);
+    const catalogMeta = spec.catalogId ? formatPluginCatalogMeta(spec.catalogId) : null;
+    const sidecarPath = String(spec.sidecarId || '').trim();
+    const fallbackName = matched?.displayName || catalogMeta?.displayName || spec.label || spec.dir || sidecarPath || 'Antigravity 插件';
+
+    if (titleEl) {
+      titleEl.textContent = `🧩 ${fallbackName}`;
+    }
+
+    const busyKey = matched ? `${hostId}:${matched.dir}` : '';
+    const isToggling = Boolean(busyKey && togglingPluginKey === busyKey);
+    const hasPluginInventory = Array.isArray(host?.bridgeState?.antigravityPlugins);
+
+    if (matched) {
+      const statusBadge = matched.enabled
+        ? `<span class="md-plugin-card-badge installed-on">🟢 已启用</span>`
+        : `<span class="md-plugin-card-badge installed-off">⚪ 已停用</span>`;
+      const sourceText = matched.isBuiltin
+        ? '内置插件'
+        : matched.marketplace
+          ? `${matched.marketplace}`
+          : '本机已安装插件';
+      const skillsHtml = Array.isArray(matched.skills) && matched.skills.length > 0
+        ? `<div style="font-size:12px;font-weight:700;color:var(--text);">⚡ 包含技能 (${matched.skills.length})</div>
+           <div class="plugin-detail-pills">${matched.skills.map(sk => `<span class="plugin-detail-pill">${esc(sk)}</span>`).join('')}</div>`
+        : '';
+      const mcpHtml = Array.isArray(matched.mcpServers) && matched.mcpServers.length > 0
+        ? `<div style="font-size:12px;font-weight:700;color:var(--text);">🔌 MCP 服务 (${matched.mcpServers.length})</div>
+           <div class="plugin-detail-pills">${matched.mcpServers.map(m => `<span class="plugin-detail-pill">${esc(m)}</span>`).join('')}</div>`
+        : '';
+      const extraBadges = [];
+      if (matched.rulesCount > 0) extraBadges.push(`📜 规则 (${matched.rulesCount})`);
+      if (matched.hooksCount > 0) extraBadges.push(`🪝 Hooks (${matched.hooksCount})`);
+      if (Array.isArray(matched.sidecars) && matched.sidecars.length > 0) {
+        extraBadges.push(`🪟 Sidecar UI (${matched.sidecars.map(sc => sc.name || sc.id).join(', ')})`);
+      }
+      const extraHtml = extraBadges.length > 0
+        ? `<div class="plugin-detail-pills">${extraBadges.map(b => `<span class="plugin-detail-pill">${esc(b)}</span>`).join('')}</div>`
+        : '';
+      const sidecarNoteHtml = sidecarPath
+        ? `<div class="plugin-detail-notice">🪟 <strong>桌面端侧边栏面板</strong>（<code>sidecar://${esc(sidecarPath)}</code>）：Sidecar 面板运行在电脑端 Antigravity IDE 侧栏中，请回到电脑 IDE 点击对应胶囊打开交互面板。</div>`
+        : '';
+      const toggleBtnHtml = matched.isBuiltin
+        ? `<div class="plugin-detail-notice">🔒 这是 Antigravity 内置插件，启停请在电脑端 Antigravity IDE 插件管理页操作。</div>`
+        : !hostOnline
+          ? `<div class="plugin-detail-notice">⚪ 电脑 <strong>${esc(hostName)}</strong> 当前离线，恢复在线后可在此远程启停该插件。</div>`
+          : `<div class="plugin-detail-actions">
+               <button type="button" class="pill-action-btn ${matched.enabled ? '' : 'primary'}" ${isToggling ? 'disabled style="opacity:0.6;"' : ''} onclick="toggleRemoteAntigravityPlugin('${esc(hostId)}', '${esc(matched.dir || matched.name)}', ${matched.enabled ? 'false' : 'true'})">
+                 ${isToggling ? '⏳ 正在同步到电脑端…' : (matched.enabled ? '⏸ 停用此插件' : '▶️ 启用此插件')}
+               </button>
+               ${matched.homepage ? `<a class="pill-action-btn" href="${esc(matched.homepage)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">🌐 文档主页</a>` : ''}
+               ${matched.repository ? `<a class="pill-action-btn" href="${esc(matched.repository)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">📦 源码仓库</a>` : ''}
+             </div>`;
+      bodyEl.innerHTML = `
+        <div class="plugin-detail-card">
+          <div class="plugin-detail-header">
+            <div class="plugin-detail-icon">🧩</div>
+            <div style="min-width:0;flex:1;">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <span style="font-size:15.5px;font-weight:700;color:var(--text);">${esc(matched.displayName)}</span>
+                ${matched.version ? `<span style="font-size:11.5px;color:var(--muted);">v${esc(matched.version)}</span>` : ''}
+                ${statusBadge}
+              </div>
+              <div style="font-size:12px;color:var(--muted);margin-top:3px;">💻 ${esc(hostName)} · ${esc(sourceText)} · <code>${esc(matched.dir)}</code></div>
+            </div>
+          </div>
+          ${matched.description ? `<div style="font-size:13px;color:var(--text-secondary);line-height:1.55;">${esc(matched.description)}</div>` : ''}
+          ${extraHtml}
+          ${skillsHtml}
+          ${mcpHtml}
+          ${sidecarNoteHtml}
+          ${toggleBtnHtml}
+        </div>
+      `;
+    } else {
+      const targetId = spec.catalogId || spec.dir || sidecarPath || fallbackName;
+      const encTarget = encodeURIComponent(targetId).replace(/'/g, '%27');
+      const notSyncedHint = !hasPluginInventory
+        ? `当前电脑（${esc(hostName)}）尚未同步插件清单（升级电脑端到 v0.9.7+ 后即可实时显示已装插件状态并支持手机远程开关）。`
+        : spec.catalogId
+          ? `电脑 <strong>${esc(hostName)}</strong> 上尚未安装该插件。Antigravity 官方插件市场的安装及 OAuth 账号登录授权需要在电脑端 Antigravity IDE 中点击卡片完成。`
+          : sidecarPath
+            ? `电脑 <strong>${esc(hostName)}</strong> 上未检测到已启用的 Sidecar 面板（<code>sidecar://${esc(sidecarPath)}</code>），请在电脑端 Antigravity IDE 的插件设置页开启。`
+            : `电脑 <strong>${esc(hostName)}</strong> 上未找到目录名为 <code>${esc(spec.dir || fallbackName)}</code> 的插件。`;
+      bodyEl.innerHTML = `
+        <div class="plugin-detail-card">
+          <div class="plugin-detail-header">
+            <div class="plugin-detail-icon">${sidecarPath ? '🪟' : '🧩'}</div>
+            <div style="min-width:0;flex:1;">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <span style="font-size:15.5px;font-weight:700;color:var(--text);">${esc(fallbackName)}</span>
+                <span class="md-plugin-card-badge not-installed">${hasPluginInventory ? '未安装' : '需升级电脑端'}</span>
+              </div>
+              <div style="font-size:12px;color:var(--muted);margin-top:3px;">${esc(catalogMeta?.publisherLabel || hostName)} · <code>${esc(targetId)}</code></div>
+            </div>
+          </div>
+          <div class="plugin-detail-notice">${notSyncedHint}</div>
+          <div class="plugin-detail-actions">
+            <button type="button" class="pill-action-btn" onclick="copyText(decodeURIComponent('${encTarget}'), { successMessage: '📋 已复制插件 ID' })">📋 复制插件 ID</button>
+          </div>
+        </div>
+      `;
+    }
+    applyLangToDom(bodyEl, langPref);
+  }
+
+  function openAntigravityPluginSheet(spec = {}) {
+    const found = findSessionGlobal(activeSessionId);
+    activePluginDetailSpec = {
+      catalogId: String(spec.catalogId || '').trim(),
+      dir: String(spec.dir || '').trim(),
+      sidecarId: String(spec.sidecarId || '').trim(),
+      label: String(spec.label || '').trim(),
+      sessionId: activeSessionId || '',
+      hostId: found?.host?.hostId || '',
+    };
+    renderAntigravityPluginSheetBody();
+    openSheet('pluginDetailSheet');
+  }
+
+  async function toggleRemoteAntigravityPlugin(hostId, pluginName, nextEnabled) {
+    const cleanHostId = String(hostId || '').trim();
+    const cleanName = String(pluginName || '').trim();
+    if (!cleanHostId || !cleanName) return;
+    const busyKey = `${cleanHostId}:${cleanName}`;
+    if (togglingPluginKey === busyKey) return;
+    togglingPluginKey = busyKey;
+    renderAntigravityPluginSheetBody();
+    showToast(nextEnabled ? `⏳ 正在电脑端启用 ${cleanName}…` : `⏳ 正在电脑端停用 ${cleanName}…`);
+    try {
+      const res = await dispatchHostCommand(cleanHostId, {
+        type: 'toggle_plugin',
+        pluginName: cleanName,
+        enabled: Boolean(nextEnabled),
+      });
+      if (!res?.ok) {
+        showToast('❌ 操作失败：' + (res?.error || '电脑未响应'));
+        return;
+      }
+      // 乐观更新本地缓存，并立即刷新 Hub 状态等待电脑端回传最新插件列表
+      const host = (hubState.hosts || []).find(h => h.hostId === cleanHostId);
+      const targetPlugin = (host?.bridgeState?.antigravityPlugins || []).find(
+        p => p && (p.dir === cleanName || p.name === cleanName)
+      );
+      if (targetPlugin) {
+        targetPlugin.enabled = Boolean(nextEnabled);
+      }
+      showToast(nextEnabled ? `✅ 已发送启用 ${cleanName} 指令` : `⏸ 已发送停用 ${cleanName} 指令`);
+      setTimeout(() => { void fetchState({ silent: true, forceFresh: true }); }, 700);
+      setTimeout(() => { void fetchState({ silent: true, forceFresh: true }); }, 1800);
+    } catch (err) {
+      showToast('❌ 操作失败：' + ((err && err.message) || err));
+    } finally {
+      togglingPluginKey = '';
+      renderAll();
+      if (document.getElementById('pluginDetailSheet')?.classList.contains('open')) {
+        renderAntigravityPluginSheetBody();
+      }
+    }
+  }
+
+  function openConversationDeepLink(rawConvId) {
+    const cleanId = String(rawConvId || '').trim();
+    if (!cleanId) return;
+    const sessions = getNormalizedSessions();
+    const matched = sessions.find(s =>
+      s.id === cleanId ||
+      s.id === `agy-ide:${cleanId}` ||
+      s.id.endsWith(`:${cleanId}`)
+    );
+    if (matched) {
+      openChat(matched.id);
+      return;
+    }
+    showToast(`💬 未在当前在线列表中找到对话 (${cleanId.slice(0, 8)}…)`);
   }
 
   async function hydrateInlineChatImages(session, containerEl) {
@@ -10355,6 +10632,9 @@ export function initHubController() {
     trackOverlay,
     openSheet,
     openChatFileLink,
+    openAntigravityPluginSheet,
+    toggleRemoteAntigravityPlugin,
+    openConversationDeepLink,
     toggleMdPreviewMode,
     toggleHtmlPreviewMode,
     openInlineHtmlPreview,

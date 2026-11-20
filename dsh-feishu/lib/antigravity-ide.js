@@ -3600,3 +3600,213 @@ export async function setAntigravityConversationTitle(
     method: rpcUpdated ? 'connect-rpc' : 'pbtxt',
   }
 }
+
+let cachedAgyPlugins = null
+let cachedAgyPluginsAt = 0
+
+export function invalidateAntigravityPluginsCache() {
+  cachedAgyPlugins = null
+  cachedAgyPluginsAt = 0
+}
+
+async function resolveOfficialAgyCliPath() {
+  const home = homedir()
+  const candidates = [
+    process.env.ANTIGRAVITY_AGENTAPI_EXE,
+    join(home, '.gemini', 'bin', 'agy'),
+    join(home, '.local', 'bin', 'agy'),
+  ].filter(Boolean)
+  for (const bin of candidates) {
+    try {
+      await access(bin)
+      return bin
+    } catch {
+      // try next candidate
+    }
+  }
+  return 'agy'
+}
+
+function normalizeCompactPluginItem(raw = {}) {
+  const rawPath = String(raw.path || '').replace(/^file:\/\//i, '').replace(/\/+$/, '')
+  const dir = rawPath ? basename(rawPath) : String(raw.dir || raw.name || '').trim()
+  const name = String(raw.name || dir || '').trim()
+  if (!name && !dir) return null
+  const displayName = String(raw.displayName || name || dir).trim()
+  const description = String(raw.description || '').replace(/\s+/g, ' ').trim().slice(0, 240)
+  const installedFrom = raw.installedFrom || raw.userConfig?.installedFrom || null
+  const catalogId = String(installedFrom?.id || raw.catalogId || '').trim()
+  const marketplace = String(installedFrom?.marketplace || raw.source || raw.marketplace || '').trim()
+  const isBuiltin = Boolean(raw.isBuiltin || /\/builtin\/plugins\//i.test(rawPath))
+  const enabled = typeof raw.enabled === 'boolean' ? raw.enabled : !Boolean(raw.disabled)
+  const skills = Array.isArray(raw.skills)
+    ? raw.skills
+      .map(s => (typeof s === 'string' ? s : String(s?.name || '').trim()))
+      .filter(Boolean)
+      .slice(0, 24)
+    : []
+  const mcpServers = Array.isArray(raw.mcpServers)
+    ? raw.mcpServers
+      .map(m => (typeof m === 'string' ? m : String(m?.name || '').trim()))
+      .filter(Boolean)
+      .slice(0, 12)
+    : []
+  const rulesCount = Array.isArray(raw.rules) ? raw.rules.length : Number(raw.rulesCount) || 0
+  const hooksCount = raw.hooksJson
+    ? 1
+    : Array.isArray(raw.hooks)
+      ? raw.hooks.length
+      : Number(raw.hooksCount) || 0
+  const sidecars = Array.isArray(raw.sidecars)
+    ? raw.sidecars
+      .map(sc => {
+        if (typeof sc === 'string') return { id: sc, name: sc, hasWebUi: true }
+        const scId = String(sc?.id || sc?.sidecarId || sc?.name || '').trim()
+        const scName = String(sc?.displayName || sc?.name || scId || 'UI 面板').trim()
+        if (!scId && !scName) return null
+        return { id: scId || scName, name: scName, hasWebUi: sc?.hasWebUi !== false }
+      })
+      .filter(Boolean)
+      .slice(0, 6)
+    : []
+
+  return {
+    dir: dir || name,
+    name,
+    displayName,
+    description,
+    version: String(raw.version || installedFrom?.version || '').trim(),
+    enabled,
+    isBuiltin,
+    isGlobal: raw.isGlobal !== false,
+    catalogId,
+    marketplace,
+    skills,
+    rulesCount,
+    mcpServers,
+    hooksCount,
+    sidecars,
+    homepage: String(raw.homepage || '').trim(),
+    repository: String(raw.repository || '').trim(),
+  }
+}
+
+/**
+ * Discover installed Antigravity plugins (compact metadata only — never inlines SKILL.md or README bodies).
+ * Primary: Connect-RPC `GetAllPlugins` on live Antigravity Language Server.
+ * Fallback: official `agy plugin list --json` CLI when desktop IDE is closed.
+ */
+export async function discoverAntigravityPlugins({
+  workspacePaths = [],
+  forceRefresh = false,
+  execImpl = execFileAsync,
+  fetchImpl = globalThis.fetch,
+  agyBin = '',
+} = {}) {
+  const now = Date.now()
+  if (!forceRefresh && cachedAgyPlugins && now - cachedAgyPluginsAt < 30_000) {
+    return cachedAgyPlugins
+  }
+
+  const wsUris = [...new Set(
+    (workspacePaths || [])
+      .map(p => String(p || '').trim())
+      .filter(p => p.startsWith('/'))
+      .slice(0, 6)
+      .map(p => `file://${p}`),
+  )]
+
+  if (typeof fetchImpl === 'function') {
+    try {
+      const hubs = await discoverAntigravityHubInstances({ execImpl })
+      for (const hub of hubs) {
+        try {
+          const resp = await fetchImpl(
+            `http://${hub.address}/exa.language_server_pb.LanguageServerService/GetAllPlugins`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-codeium-csrf-token': hub.csrfToken,
+              },
+              body: JSON.stringify(wsUris.length > 0 ? { workspaceUris: wsUris } : {}),
+            },
+          )
+          if (!resp?.ok) continue
+          const data = await resp.json().catch(() => null)
+          const rawList = Array.isArray(data?.plugins) ? data.plugins : null
+          if (rawList) {
+            const normalized = rawList
+              .map(normalizeCompactPluginItem)
+              .filter(Boolean)
+            cachedAgyPlugins = normalized
+            cachedAgyPluginsAt = now
+            return normalized
+          }
+        } catch {
+          // try next hub
+        }
+      }
+    } catch {
+      // fall through to CLI
+    }
+  }
+
+  if (typeof execImpl === 'function') {
+    try {
+      const cli = agyBin || (await resolveOfficialAgyCliPath())
+      const { stdout } = await execImpl(cli, ['plugin', 'list', '--json'], { timeout: 6000 })
+      const parsed = JSON.parse(String(stdout || '[]'))
+      if (Array.isArray(parsed)) {
+        const normalized = parsed
+          .map(normalizeCompactPluginItem)
+          .filter(Boolean)
+        cachedAgyPlugins = normalized
+        cachedAgyPluginsAt = now
+        return normalized
+      }
+    } catch {
+      // CLI unavailable or older format
+    }
+  }
+
+  return cachedAgyPlugins || []
+}
+
+/**
+ * Enable or disable an installed Antigravity plugin strictly via the official `agy plugin enable/disable` CLI.
+ * Never hand-edits `~/.gemini/config/config.json`.
+ */
+export async function toggleAntigravityPlugin(
+  pluginName,
+  enabled = true,
+  { execImpl = execFileAsync, agyBin = '' } = {},
+) {
+  const cleanName = String(pluginName || '').trim()
+  if (!cleanName || !/^[a-zA-Z0-9._-]+$/.test(cleanName)) {
+    return { ok: false, error: '无效的插件名称' }
+  }
+  const verb = enabled ? 'enable' : 'disable'
+  try {
+    const cli = agyBin || (await resolveOfficialAgyCliPath())
+    const { stdout, stderr } = await execImpl(cli, ['plugin', verb, cleanName], { timeout: 12_000 })
+    invalidateAntigravityPluginsCache()
+    const detail = String(stdout || stderr || '').trim()
+    return {
+      ok: true,
+      pluginName: cleanName,
+      enabled: Boolean(enabled),
+      message: enabled
+        ? `✅ 已在电脑端启用插件 ${cleanName}${detail ? ` (${detail.slice(0, 80)})` : ''}`
+        : `⏸ 已在电脑端停用插件 ${cleanName}${detail ? ` (${detail.slice(0, 80)})` : ''}`,
+    }
+  } catch (error) {
+    const errText = String(error?.stderr || error?.stdout || error?.message || '操作失败').trim()
+    return {
+      ok: false,
+      pluginName: cleanName,
+      enabled: Boolean(enabled),
+      error: errText.slice(0, 180) || `执行 agy plugin ${verb} 失败`,
+    }
+  }
+}

@@ -35,7 +35,7 @@ import { listWorkspaceFiles, readWorkspaceFile } from '../dsh-feishu/lib/workspa
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PKG_PATH = join(__dirname, '..', 'package.json')
-let PKG_VERSION = '0.9.6'
+let PKG_VERSION = '0.9.7'
 try {
   PKG_VERSION = JSON.parse(readFileSync(PKG_PATH, 'utf8')).version || PKG_VERSION
 } catch {

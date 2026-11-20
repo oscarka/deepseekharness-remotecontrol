@@ -2,6 +2,15 @@
 
 本项目的重要变更都记录在这里。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.9.7] - 2026-11-20
+
+### Added
+
+- **手机端原生渲染 Antigravity 插件卡片、插件详情抽屉与远程一键启停（`hub/web/src/utils/markdown.ts` / `hub/web/src/components/Sheets.tsx` / `hub/web/src/controller.js` / `dsh-feishu/lib/antigravity-ide.js` / `dsh-feishu/lib/hub-agent.js`）**：
+  - **插件市场卡片原生化（`<plugin-card catalog-id="..."></plugin-card>`）**：彻底消灭聊天中裸露的 `<plugin-card>` 标签源码，渲染为原生卡片并实时联动电脑端安装状态（`✅ 已安装 · 已启用` / `⏸ 已停用` / `未安装 · 电脑端添加`）；
+  - **专属协议胶囊化**：将 `[name](customization://<dir>)`、`[label](sidecar://<id>/<path>)`、`[label](conversation://<id>)` 分别渲染为精致的插件胶囊（带实时启停角标）、Sidecar 面板胶囊和一键会话跳转胶囊，同时严格保护反引号代码里的示例语法；
+  - **手机端插件详情抽屉 + 电脑端远程启停**：电脑端通过 Antigravity `GetAllPlugins` RPC（离线自动回退官方 `agy plugin list --json`）轻量同步本机已装插件清单（版本、技能列表、MCP 服务、规则与 Sidecar）；在手机点击插件卡片或胶囊弹出详情抽屉，可查看完整组件清单并通过官方 `agy plugin enable / disable` 一键远程启停（官方市场安装与 OAuth 登录则清晰标注需回电脑端完成）。
+
 ## [0.9.6] - 2026-11-20
 
 ### Improved

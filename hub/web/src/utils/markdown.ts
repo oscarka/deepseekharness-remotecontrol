@@ -1,4 +1,66 @@
-import { esc } from './format';
+import { esc } from './format.ts';
+
+const KNOWN_PLUGIN_DISPLAY_NAMES = {
+  cloudflare: 'Cloudflare',
+  railway: 'Railway',
+  figma: 'Figma',
+  canva: 'Canva',
+  netlify: 'Netlify',
+  auth0: 'Auth0',
+  clickup: 'ClickUp',
+  gdocs: 'Google Docs',
+  gsheets: 'Google Sheets',
+  gslides: 'Google Slides',
+  'gemini-api': 'Gemini API',
+  'chrome-devtools-plugin': 'Chrome DevTools',
+  'android-cli-plugin': 'Android CLI',
+  invideo: 'invideo',
+  looker: 'Looker',
+  databricks: 'Databricks',
+  'arize-skills': 'Arize AX',
+  'zoho-bigin': 'Zoho Bigin',
+  'atlassian-twg-cli': 'Atlassian Teamwork Graph',
+  genomics: 'Genomics',
+  'science-overview': 'Science Overview',
+};
+
+export function formatPluginCatalogMeta(catalogId: string) {
+  const cleanId = String(catalogId || '').trim();
+  const parts = cleanId.split('/').filter(Boolean);
+  const slug = parts[parts.length - 1] || cleanId;
+  const publisher = parts.length >= 2 ? parts[0] : '';
+  const publisherLabel = publisher === 'antigravity-plugins-official'
+    ? 'Google 官方插件'
+    : publisher === 'antigravity-plugins-partners'
+      ? '官方合作插件'
+      : (publisher || 'Antigravity 插件市场');
+  const displayName = KNOWN_PLUGIN_DISPLAY_NAMES[slug.toLowerCase()]
+    || slug
+      .split(/[-_]+/)
+      .filter(Boolean)
+      .map(seg => seg.charAt(0).toUpperCase() + seg.slice(1))
+      .join(' ')
+    || cleanId;
+  return { catalogId: cleanId, slug, publisher, publisherLabel, displayName };
+}
+
+export function renderPluginCardHtml(rawCatalogId: string, inline = false): string {
+  const meta = formatPluginCatalogMeta(rawCatalogId);
+  const safeId = esc(meta.catalogId);
+  const encId = encodeURIComponent(meta.catalogId).replace(/'/g, '%27');
+  const tag = inline ? 'span' : 'div';
+  return `<${tag} class="md-plugin-card${inline ? ' inline' : ''}" role="button" tabindex="0" data-plugin-catalog-id="${safeId}" data-plugin-slug="${esc(meta.slug)}" onclick="event.stopPropagation(); openAntigravityPluginSheet({ catalogId: decodeURIComponent('${encId}') })">` +
+    `<span class="md-plugin-card-icon">🧩</span>` +
+    `<span class="md-plugin-card-main">` +
+    `<span class="md-plugin-card-title-row">` +
+    `<span class="md-plugin-card-name">${esc(meta.displayName)}</span>` +
+    `<span class="md-plugin-card-badge" data-plugin-status-badge="1">${esc(meta.publisherLabel)}</span>` +
+    `</span>` +
+    `<span class="md-plugin-card-sub" data-plugin-card-sub="1">${safeId} · 点击查看本机安装状态与详情</span>` +
+    `</span>` +
+    `<span class="md-plugin-card-cta">详情 ›</span>` +
+    `</${tag}>`;
+}
 
 // ---- 轻量 Markdown 渲染：标题 / 列表 / 引用 / 代码 / 链接 / 本地文件胶囊 / 本地图片 ----
 export function renderInlineMarkdown(rawLine: string): string {
@@ -67,7 +129,7 @@ export function renderInlineMarkdown(rawLine: string): string {
 
   // 2. 本地文件链接：[label](file:///... 或 /Users/... 或 /home/... 或 相对路径文件如 walkthrough.md / src/index.ts#L10) -> 渲染为可点击文件胶囊
   safe = safe.replace(
-    /\[((?:[^\[\]]|\[[^\]]*\])+)\]\(((?:file:\/\/\/?|\/Users\/|\/home\/|(?!https?:\/\/|mailto:|javascript:)[a-zA-Z0-9_.\-/~]+\.[a-zA-Z0-9]{1,8}(?:#L\d+(?:-L?\d+)?)?)[^)\n]*)\)/g,
+    /\[((?:[^\[\]]|\[[^\]]*\])+)\]\(((?:file:\/\/\/?|\/Users\/|\/home\/|(?!https?:\/\/|mailto:|javascript:|customization:\/\/|sidecar:\/\/|conversation:\/\/)[a-zA-Z0-9_.\-/~]+\.[a-zA-Z0-9]{1,8}(?:#L\d+(?:-L?\d+)?)?)[^)\n]*)\)/g,
     (_m, rawLabel, rawUrl) => {
       let cleanLabel = String(rawLabel || '').replace(/^`+|`+$/g, '').trim();
       const lineAnchorMatch = /#(L\d+(?:-L?\d+)?)$/i.exec(rawUrl);
@@ -137,6 +199,46 @@ export function renderInlineMarkdown(rawLine: string): string {
   safe = safe.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_m, label, url) =>
     stash(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`)
   );
+  // 3b. Antigravity 插件/面板/会话专属链接与插件市场卡片（在行内代码 stash 之后匹配，确保反引号里的示例源码不被误渲染）
+  safe = safe.replace(
+    /&lt;plugin-card\s+[^>]*?catalog-id=(?:&quot;|&#39;)([^&"'\s]+)(?:&quot;|&#39;)[^>]*?(?:\/&gt;|&gt;\s*&lt;\/plugin-card&gt;)/gi,
+    (_m, rawCatalogId) => stash(renderPluginCardHtml(rawCatalogId, true))
+  );
+  safe = safe.replace(
+    /\[((?:[^\[\]]|\[[^\]]*\])+)\]\(customization:\/\/([^\s)]+)\)/gi,
+    (_m, rawLabel, rawDir) => {
+      const cleanLabel = String(rawLabel || '').replace(/^`+|`+$/g, '').trim() || rawDir;
+      const cleanDir = String(rawDir || '').replace(/^\/+|\/+$/g, '').trim();
+      const encDir = encodeURIComponent(cleanDir).replace(/'/g, '%27');
+      const encLbl = encodeURIComponent(cleanLabel).replace(/'/g, '%27');
+      return stash(
+        `<button type="button" class="md-plugin-chip" data-plugin-dir="${esc(cleanDir)}" onclick="event.stopPropagation(); openAntigravityPluginSheet({ dir: decodeURIComponent('${encDir}'), label: decodeURIComponent('${encLbl}') })" title="customization://${esc(cleanDir)}"><span class="md-plugin-chip-icon">🧩</span><span class="md-plugin-chip-label">${cleanLabel}</span><span class="md-plugin-chip-state" data-plugin-chip-state="1"></span></button>`
+      );
+    }
+  );
+  safe = safe.replace(
+    /\[((?:[^\[\]]|\[[^\]]*\])+)\]\(sidecar:\/\/([^\s)]+)\)/gi,
+    (_m, rawLabel, rawSidecar) => {
+      const cleanLabel = String(rawLabel || '').replace(/^`+|`+$/g, '').trim() || rawSidecar;
+      const cleanSidecar = String(rawSidecar || '').replace(/^\/+/, '').trim();
+      const encSc = encodeURIComponent(cleanSidecar).replace(/'/g, '%27');
+      const encLbl = encodeURIComponent(cleanLabel).replace(/'/g, '%27');
+      return stash(
+        `<button type="button" class="md-plugin-chip md-sidecar-chip" data-sidecar-id="${esc(cleanSidecar)}" onclick="event.stopPropagation(); openAntigravityPluginSheet({ sidecarId: decodeURIComponent('${encSc}'), label: decodeURIComponent('${encLbl}') })" title="sidecar://${esc(cleanSidecar)}"><span class="md-plugin-chip-icon">🪟</span><span class="md-plugin-chip-label">${cleanLabel}</span></button>`
+      );
+    }
+  );
+  safe = safe.replace(
+    /\[((?:[^\[\]]|\[[^\]]*\])+)\]\(conversation:\/\/([^\s)]+)\)/gi,
+    (_m, rawLabel, rawConvId) => {
+      const cleanLabel = String(rawLabel || '').replace(/^`+|`+$/g, '').trim() || rawConvId;
+      const cleanConvId = String(rawConvId || '').replace(/^\/+|\/+$/g, '').trim();
+      const encId = encodeURIComponent(cleanConvId).replace(/'/g, '%27');
+      return stash(
+        `<button type="button" class="md-plugin-chip md-conv-chip" onclick="event.stopPropagation(); openConversationDeepLink(decodeURIComponent('${encId}'))" title="跳转到对话 ${esc(cleanConvId)}"><span class="md-plugin-chip-icon">💬</span><span class="md-plugin-chip-label">${cleanLabel}</span></button>`
+      );
+    }
+  );
   safe = safe
     .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
     .replace(/__([^_\n]+)__/g, '<strong>$1</strong>')
@@ -188,6 +290,14 @@ export function renderMarkdownBlocks(rawBlock: string): string {
     const line = lines[lineIndex];
     if (!line.trim()) {
       flushAll();
+      continue;
+    }
+
+    // 独立整行的 Antigravity 插件市场卡片：<plugin-card catalog-id="..."></plugin-card>
+    const standalonePluginCard = /^\s*<plugin-card\s+[^>]*?catalog-id=["']([^"'\s]+)["'][^>]*?(?:\/>|>\s*<\/plugin-card>)\s*$/i.exec(line);
+    if (standalonePluginCard) {
+      flushAll();
+      out.push(renderPluginCardHtml(standalonePluginCard[1], false));
       continue;
     }
 

@@ -508,6 +508,24 @@ export function Sheets() {
         </div>
       </div>
 
+      {/* 抽屉：Antigravity 插件详情与远程启停 */}
+      <div class="sheet-backdrop" id="pluginDetailSheet" onClick={closeIfBackdrop('pluginDetailSheet')}>
+        <div class="sheet-panel">
+          <div class="sheet-handle"></div>
+          <div class="sheet-title" style="margin-bottom:10px;">
+            <span id="pluginDetailSheetTitle">🧩 插件详情</span>
+            <button
+              type="button"
+              style="border:none;background:transparent;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;"
+              onClick={() => (window as any).closeSheet?.('pluginDetailSheet')}
+            >
+              ✕
+            </button>
+          </div>
+          <div id="pluginDetailBody"></div>
+        </div>
+      </div>
+
       {/* 全屏 HTML 交互预览层（自带顶部安全区返回栏，解决移动端与 iOS 主屏幕模式体验网页无返回键问题） */}
       <div
         id="htmlPreviewOverlay"
